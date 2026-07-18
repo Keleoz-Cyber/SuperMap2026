@@ -71,10 +71,10 @@ class SurveyPoint(MicroseismicModel):
     original_point_label: str
     source_file_id: str
     line_id: str
-    sequence_on_line: int = Field(ge=0)
+    sequence_on_line: int | None = Field(default=None, ge=1)
     previous_point_id: str | None = None
     interval_from_previous_m: float | None = None
-    cumulative_s_m: float = Field(ge=0)
+    cumulative_s_m: float | None = Field(default=None, ge=0)
     interval_source: str | None = None
     order_source: str
     included_in_formal_set: bool = True

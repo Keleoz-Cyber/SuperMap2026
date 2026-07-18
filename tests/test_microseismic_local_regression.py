@@ -79,6 +79,9 @@ def test_w28_excluded_from_formal_set(audit_result):
     w28 = [point for point in result.points if point.point_id == "W28"]
     assert len(w28) == 1
     assert w28[0].included_in_formal_set is False
+    assert w28[0].sequence_on_line is None
+    assert w28[0].cumulative_s_m is None
+    assert w28[0].interval_from_previous_m == 350
     l3 = [point for point in result.points if point.line_id == "L3" and point.included_in_formal_set]
     assert [point.point_id for point in sorted(l3, key=lambda row: row.sequence_on_line)] == ["W24", "W25", "W26", "W27"]
     assert max(point.cumulative_s_m for point in l3) == 1455
@@ -112,3 +115,11 @@ def test_no_fabricated_xy_or_z(audit_result):
 def test_validation_passed(audit_result):
     result, _, _ = audit_result
     assert result.validation.passed is True
+
+
+def test_manifest_relative_paths_not_absolute(audit_result):
+    result, _, _ = audit_result
+    for entry in result.manifest:
+        assert not Path(entry.relative_path).is_absolute(), entry.relative_path
+        assert "超图杯资料" in entry.relative_path
+        assert entry.relative_path.endswith(entry.file_name)

@@ -1,16 +1,26 @@
 from __future__ import annotations
 
 import math
+import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
 
 from ..io import sha256_file
+from .config import PROJECT_ROOT
 from .schemas import SourceFileManifestEntry, VelocitySample
 
 MSVC_SPECIAL_RE = re.compile(r"^[+-]?(?:\d+(?:\.\d*)?|\.\d+)?#(QNAN|SNAN|NAN|INF|IND)", re.IGNORECASE)
 
 SOURCE_UNIT = "WL/2(km) verbatim; Vx unit pending source confirmation"
+
+
+def stable_relative_path(path: str | Path) -> str:
+    resolved = Path(path).resolve()
+    try:
+        return os.path.relpath(resolved, PROJECT_ROOT)
+    except ValueError:
+        return resolved.name
 
 
 def classify_token(token: str) -> tuple[float | None, str | None, str | None]:
@@ -142,7 +152,7 @@ def parse_dat_file(path: str | Path, point_id: str, line_id: str) -> tuple[Sourc
 
     manifest = SourceFileManifestEntry(
         source_file_id=source_file_id,
-        relative_path=str(source_path),
+        relative_path=stable_relative_path(source_path),
         file_name=source_path.name,
         size_bytes=len(raw),
         sha256=sha256,

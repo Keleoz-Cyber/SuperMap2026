@@ -205,7 +205,12 @@ def export_data_dictionary(path: Path) -> Path:
 def export_audit_summary_markdown(result: MicroseismicAuditResult, path: Path) -> Path:
     counts = result.counts
     failed = [check for check in result.validation.checks if not check.passed]
-    blockers = [issue for issue in result.issues if issue.severity == "blocker"]
+    validation_blockers = [
+        check for check in failed if check.severity in {"blocker", "error"}
+    ]
+    geometry_gates = [issue for issue in result.issues if issue.blocks_geometry]
+    cleaning_gates = [issue for issue in result.issues if issue.blocks_cleaning]
+    interpolation_gates = [issue for issue in result.issues if issue.blocks_interpolation]
     lines = [
         "# Microseismic v0.2a Audit Summary",
         "",
@@ -219,9 +224,17 @@ def export_audit_summary_markdown(result: MicroseismicAuditResult, path: Path) -
         f"- survey_points rows: {len(result.points)} (formal {sum(1 for point in result.points if point.included_in_formal_set)})",
         f"- velocity_samples rows: {len(result.samples)}",
         f"- sha256_protection_unchanged: {result.validation.sha256_protection.get('unchanged')}",
-        f"- issues: {len(result.issues)} (blockers {len(blockers)})",
+        f"- issues: {len(result.issues)} (validation blockers {len(validation_blockers)})",
         "",
-        "## Failed checks",
+        "## Downstream gates",
+        "",
+        "These gates are separate from validation blockers: validation passing means the audit facts are consistent, not that 3D interpolation is ready.",
+        "",
+        f"- geometry_blocked: {bool(geometry_gates)} ({', '.join(sorted(issue.code for issue in geometry_gates)) or 'none'})",
+        f"- cleaning_blocked: {bool(cleaning_gates)} ({', '.join(sorted(issue.code for issue in cleaning_gates)) or 'none'})",
+        f"- interpolation_blocked: {bool(interpolation_gates)} ({', '.join(sorted(issue.code for issue in interpolation_gates)) or 'none'})",
+        "",
+        "## Validation blockers",
         "",
     ]
     if failed:

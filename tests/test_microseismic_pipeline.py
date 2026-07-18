@@ -83,6 +83,34 @@ def test_excluded_point_not_in_formal_set(fixture_setup):
     assert "W99" not in sample_points
 
 
+def test_excluded_point_has_null_sequence_and_cumulative(fixture_setup):
+    config, _, _ = fixture_setup
+    result = build_audit(config)
+    excluded = next(point for point in result.points if point.point_id == "W99")
+    assert excluded.sequence_on_line is None
+    assert excluded.cumulative_s_m is None
+    assert excluded.interval_from_previous_m == 350
+    formal = [point for point in result.points if point.included_in_formal_set]
+    assert all(point.sequence_on_line is not None and point.sequence_on_line >= 1 for point in formal)
+    assert all(point.cumulative_s_m is not None for point in formal)
+    assert next(point for point in formal if point.point_id == "W1").cumulative_s_m == 0
+
+
+def test_manifest_relative_path_is_stable_and_resolvable(fixture_setup):
+    config, _, _ = fixture_setup
+    result = build_audit(config)
+    from geomodeling.microseismic.config import PROJECT_ROOT
+
+    for entry in result.manifest:
+        assert not Path(entry.relative_path).is_absolute(), entry.relative_path
+        assert not entry.relative_path.startswith(("D:", "d:", "C:", "c:", "/"))
+        resolved = (PROJECT_ROOT / entry.relative_path).resolve()
+        if not resolved.is_file():
+            resolved = (config.data_dir / entry.relative_path).resolve()
+        assert resolved.is_file(), entry.relative_path
+        assert resolved.name == entry.file_name
+
+
 def test_cumulative_distance(fixture_setup):
     config, _, _ = fixture_setup
     result = build_audit(config)
@@ -153,6 +181,19 @@ def test_export_all_outputs(fixture_setup):
     assert EXPECTED_ISSUE_CODES <= {issue["code"] for issue in issues}
     summary = (out_dir / "microseismic_audit_summary.md").read_text(encoding="utf-8")
     assert "validation_passed: True" in summary
+
+
+def test_audit_summary_separates_blockers_and_gates(fixture_setup):
+    config, _, out_dir = fixture_setup
+    result = build_audit(config)
+    export_all(result, out_dir)
+    summary = (out_dir / "microseismic_audit_summary.md").read_text(encoding="utf-8")
+    assert "## Downstream gates" in summary
+    assert "## Validation blockers" in summary
+    assert "geometry_blocked: True" in summary
+    assert "cleaning_blocked: True" in summary
+    assert "interpolation_blocked: True" in summary
+    assert "ABSOLUTE_COORDINATES_UNAVAILABLE" in summary
 
 
 def test_sha256_protection_check(fixture_setup):
