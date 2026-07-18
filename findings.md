@@ -32,11 +32,16 @@
 | Use Python 3.12 with pandas/numpy/pydantic/Typer/Rich/PyYAML/pytest | Available locally and best fit for CSV validation, metrics, CLI reports, and tests |
 | Use file-backed JSON registry plus Markdown/HTML reports for MVP UI | Provides a clear analysis entry without overbuilding web/desktop UI before the data contract is stable |
 | Prefer formal succeeded openable non-empty SuperMap records when multiple records share a `model_id` | Failed isosurface shells and formal voxel datasets can share a model; selection must be integrity-aware |
+| Use explicit SuperMap evidence levels | Configuration registration, file existence checks, dataset API checks, and manual iDesktopX evidence must not be conflated |
+| Keep `dataset_verified=false` until a supported SuperMap API adapter succeeds | Current `dataset_api=none`; guessing UDBX internals would violate evidence requirements |
+| Split portable fixtures from local real-data regression | GitHub CI cannot assume adjacent private research data, while local regression must still protect the real baseline |
 
 ## Issues Encountered
 | Issue | Resolution |
 |-------|------------|
 | Duplicate `model_id` SuperMap records caused failed isosurface metadata to override formal voxel metadata | Added `select_supermap_result_for_model()` to prefer formal succeeded openable non-empty results |
+| Missing report import caused end-to-end report export failure | Added the missing import and reran the failing test |
+| Selection metadata file was parsed as a model task | Skipped underscore-prefixed registry metadata files and added a regression test |
 
 ## Resources
 - `KIMI3_MASTER_PROMPT.md`

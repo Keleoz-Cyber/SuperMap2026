@@ -74,11 +74,33 @@
   - `findings.md` (updated)
   - `progress.md` (updated)
 
+### Phase 6: v0.1 验收加固与发布
+- **Status:** in_progress
+- Actions taken:
+  - Re-read required docs, source, tests, planning files, and configuration.
+  - Checked Git status, diff, remote, log, and GitHub auth; confirmed origin points to `https://github.com/Keleoz-Cyber/SuperMap2026.git`.
+  - Created `feat/rho-mvp-v0.1-hardening` while preserving uncommitted work.
+  - Re-ran baseline install, tests, `run-all`, help, and `git diff --check`; committed the verified MVP baseline as `feat: implement resistivity MVP data and QA pipeline`.
+  - Added SuperMap evidence levels, file-level `verify-supermap`, model task registry/commands, view configuration export, audit JSONL, issue list, expanded reports, portable fixtures, local-data markers, dependency bounds, and GitHub Actions.
+  - Fixed missing report import and model registry selection-file parsing bug.
+- Files created/modified:
+  - `src/geomodeling/*` (updated and extended)
+  - `tests/*` (updated and extended)
+  - `tests/fixtures/*` (created)
+  - `.github/workflows/ci.yml` (created)
+  - `config/default.yaml` (updated)
+  - `pyproject.toml` (updated)
+  - `README.md` (updated)
+  - `docs/*` (updated)
+
 ## Test Results
 | Test | Input | Expected | Actual | Status |
 |------|-------|----------|--------|--------|
-| Full automated suite | `pytest -q` | all tests pass | 18 passed | ✓ |
-| CLI end-to-end smoke | `python -m geomodeling.cli run-all -o outputs/mvp_verify` | validation, metrics, SuperMap registry, reports complete | completed with `baseline_passed=True`, 3 SuperMap results registered, 1 formal result | ✓ |
+| Full automated suite | `python -m pytest -q` | all tests pass | 36 passed | ✓ |
+| Portable CI layer | `python -m pytest -q -m "not local_data"` | fixture-only tests pass without reference data | 24 passed, 12 deselected | ✓ |
+| Local real-data regression | `python -m pytest -q -m local_data` | real baseline tests pass when reference data exists | 12 passed, 24 deselected | ✓ |
+| CLI end-to-end smoke | `python -m geomodeling.cli run-all -o outputs/mvp_release_verify` | validation, metrics, SuperMap registry, reports complete | completed with `baseline_passed=True`, 3 SuperMap configuration results registered, 1 formal configuration result | ✓ |
+| SuperMap verification | `python -m geomodeling.cli verify-supermap -o outputs/mvp_release_verify` | UDBX file-level verification without fake dataset-level claim | `udbx_exists=True`, `udbx_file_verified=True`, `dataset_verified=False` | ✓ |
 | Dataset validation | standardized/training/validation CSVs | 17,549 / 15,827 / 1,722 rows and zero split overlap | passed | ✓ |
 | Prediction import | five SuperMap prediction CSVs | 1,481 valid, 241 NoData, XY mismatch 0 for each model | passed | ✓ |
 | Metric regression | five common-valid metric summaries | match overall baseline within tolerance | passed | ✓ |

@@ -4,7 +4,7 @@
 Build a runnable, verifiable, traceable first-version MVP for underground resistivity 3D property simulation management, with data registration, contract validation, model/task status, metric recomputation, SuperMap result registration, tests, and delivery documentation.
 
 ## Current Phase
-Phase 5
+Phase 6
 
 ## Phases
 
@@ -43,6 +43,15 @@ Phase 5
 - [x] Deliver concise usage, verification, SuperMap boundary, and next-stage guidance
 - **Status:** complete
 
+### Phase 6: v0.1 验收加固与发布
+- [x] Preserve the verified baseline in a separate commit on `feat/rho-mvp-v0.1-hardening`
+- [x] Add SuperMap evidence levels and file-level `verify-supermap` reporting without claiming dataset-level verification
+- [x] Add model task creation, uniqueness checks, config snapshots, and default/comparison selection rationale
+- [x] Add view configuration registration, audit JSONL, structured issue list, and expanded reports
+- [x] Split portable CI tests from local real-data regression tests and add GitHub Actions
+- [ ] Run final release verification, push branch, create PR, and inspect CI
+- **Status:** in_progress
+
 ## Key Questions
 1. What project files and handover documents already exist in the repository?
 2. Which local runtimes and tools are available on this Windows machine?
@@ -62,6 +71,8 @@ Phase 5
 |-------|---------|------------|
 | None yet | 1 |  |
 | Duplicate `model_id` in SuperMap config caused failed isosurface record to overwrite formal voxel record in a `model_id -> record` dict | 1 | Added `select_supermap_result_for_model()` to prefer formal succeeded openable non-empty results and used it in CLI/tests |
+| Missing `export_model_list_markdown` import caused `run-all` to fail during report export | 1 | Added the missing report function import and reran the failing end-to-end test |
+| `ModelTaskRegistry.list()` tried to parse `_selection.json` as a model task | 1 | Skipped underscore-prefixed registry metadata files and added a regression test |
 
 ## Notes
 - Re-read this plan before major architecture or implementation decisions.
