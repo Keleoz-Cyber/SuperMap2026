@@ -1,9 +1,13 @@
 from pathlib import Path
 
+import pytest
+
 from geomodeling.config import load_config
 from geomodeling.registry import DatasetRegistry
 from geomodeling.schemas import DatasetType, QualityStatus
 from geomodeling.validation import registration_from_report, validate_train_validation_split, validate_xyzrho_contract
+
+pytestmark = pytest.mark.local_data
 
 
 def test_real_xyzrho_contracts_pass():

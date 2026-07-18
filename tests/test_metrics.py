@@ -9,6 +9,8 @@ from geomodeling.metrics import (
     read_validation_truth,
 )
 
+pytestmark = pytest.mark.local_data
+
 
 def _predictions(config):
     validation = read_validation_truth(config.resolve_path(config.paths["validation"]))

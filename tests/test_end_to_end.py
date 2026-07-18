@@ -1,6 +1,9 @@
+import pytest
 from typer.testing import CliRunner
 
 from geomodeling.cli import app
+
+pytestmark = pytest.mark.local_data
 
 runner = CliRunner()
 

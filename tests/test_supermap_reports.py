@@ -1,6 +1,6 @@
 from geomodeling.config import load_config
 from geomodeling.reports import export_inventory_markdown, export_metrics_markdown, model_metadata_from_config
-from geomodeling.schemas import ModelStatus, ResultCategory
+from geomodeling.schemas import EvidenceLevel, ModelStatus, ResultCategory
 from geomodeling.supermap import formal_results, registrations_from_config, result_inventory, select_supermap_result_for_model
 
 
@@ -8,6 +8,8 @@ def test_supermap_config_registration_separates_failed_empty():
     config = load_config()
     records = registrations_from_config(config, udbx_path="D:/data/expore1.udbx")
     assert len(records) == 3
+    assert all(record.evidence_level == EvidenceLevel.DECLARED for record in records)
+    assert all(record.dataset_verified is False for record in records)
     formal = formal_results(records)
     assert [record.dataset for record in formal] == ["RHO_KRIG_FINAL_20M_40"]
     failed = {record.dataset: record for record in records if record.result_category == ResultCategory.FAILED_EMPTY}
