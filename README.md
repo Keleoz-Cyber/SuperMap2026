@@ -24,6 +24,31 @@
 ## 当前状态
 
 - 开发交接资料已经就位。
-- 代码工程尚未初始化，技术栈和目录结构应由首轮开发方案确定。
-- 第一阶段只实现地下电阻率三维属性模拟 MVP，不直接实现三类数据融合。
-- 原始资料只读；代码生成的数据、缓存和成果应写入本项目下后续建立的独立目录。
+- MVP 工程已初始化为 Python 包，核心代码位于 `src/geomodeling/`。
+- 已实现电阻率数据登记、契约校验、训练/验证空间柱检查、五种预测结果导入、NoData 处理、统一指标复算、SuperMap 成果登记和报告导出。
+- 原始资料只读；代码生成的数据、缓存和成果写入本项目下被忽略的 `artifacts/`、`outputs/`、`logs/` 等目录。
+
+## 安装与测试
+
+```powershell
+pip install -e .[test]
+pytest -q
+```
+
+也可以不安装包，直接在项目根目录运行：
+
+```powershell
+$env:PYTHONPATH='src'
+python -m geomodeling.cli --help
+Remove-Item Env:PYTHONPATH
+```
+
+## MVP 运行
+
+```powershell
+$env:PYTHONPATH='src'
+python -m geomodeling.cli run-all -o outputs/mvp_smoke
+Remove-Item Env:PYTHONPATH
+```
+
+默认配置位于 `config/default.yaml`。运行后会生成数据登记、验证报告、指标复算、SuperMap 成果清单和模型元数据；不会修改 `../超图杯资料`。
