@@ -1,0 +1,101 @@
+project:
+  name: GeoModelingPlatform
+  version: "0.2a"
+
+source:
+  data_dir: "../超图杯资料/参考资料/李含淼/2026-李含淼-微震测量与测线数据"
+  interval_workbook: "点间距.xlsx"
+  paper_reference: "../超图杯资料/参考资料/李含淼/2026-李含淼-基于微震测量数据的地下岩石结构三维重建研究.pdf"
+  line_map_image: "../超图杯资料/参考资料/李含淼/2026-李含淼-微震测量与测线数据/三条测线 (压缩).jpg"
+  source_unit: "km (WL/2 field verbatim); Vx unit pending source confirmation"
+
+lines:
+  - line_id: "L1"
+    point_start: "W1"
+    point_end: "W9"
+    points:
+      - {point_id: "W1", source_file: "W1.dat"}
+      - {point_id: "W2", source_file: "W2.dat"}
+      - {point_id: "W3", source_file: "W3.dat"}
+      - {point_id: "W4", source_file: "W4.dat"}
+      - {point_id: "W5", source_file: "W5.dat"}
+      - {point_id: "W6", source_file: "W6.dat"}
+      - {point_id: "W7", source_file: "W7.dat"}
+      - {point_id: "W8", source_file: "W8.dat"}
+      - {point_id: "W9", source_file: "W9.dat"}
+  - line_id: "L2"
+    point_start: "W12"
+    point_end: "W20"
+    points:
+      - {point_id: "W12", source_file: "WD12-Vx.dat"}
+      - {point_id: "W13", source_file: "WD13-Vx.dat"}
+      - {point_id: "W14", source_file: "WD14-Vx.dat"}
+      - {point_id: "W15", source_file: "WD15-Vx.dat"}
+      - {point_id: "W16", source_file: "WD16-Vx.dat"}
+      - {point_id: "W17", source_file: "WD17-Vx.dat"}
+      - {point_id: "W18", source_file: "WD18-Vx.dat"}
+      - {point_id: "W19", source_file: "WD19-Vx.dat"}
+      - {point_id: "W20", source_file: "WD20-Vx.dat"}
+  - line_id: "L3"
+    point_start: "W24"
+    point_end: "W27"
+    points:
+      - {point_id: "W24", source_file: "WD24-Vx.dat"}
+      - {point_id: "W25", source_file: "WD25-Vx.dat"}
+      - {point_id: "W26", source_file: "WD26-Vx.dat"}
+      - {point_id: "W27", source_file: "WD27-Vx.dat"}
+
+intervals_m:
+  L1:
+    - {from: "W1", to: "W2", distance_m: 150}
+    - {from: "W2", to: "W3", distance_m: 100}
+    - {from: "W3", to: "W4", distance_m: 100}
+    - {from: "W4", to: "W5", distance_m: 50}
+    - {from: "W5", to: "W6", distance_m: 50}
+    - {from: "W6", to: "W7", distance_m: 150}
+    - {from: "W7", to: "W8", distance_m: 250}
+    - {from: "W8", to: "W9", distance_m: 300}
+  L2:
+    - {from: "W12", to: "W13", distance_m: 275}
+    - {from: "W13", to: "W14", distance_m: 275}
+    - {from: "W14", to: "W15", distance_m: 250}
+    - {from: "W15", to: "W16", distance_m: 195}
+    - {from: "W16", to: "W17", distance_m: 110}
+    - {from: "W17", to: "W18", distance_m: 600}
+    - {from: "W18", to: "W19", distance_m: 300}
+    - {from: "W19", to: "W20", distance_m: 300}
+  L3:
+    - {from: "W24", to: "W25", distance_m: 800}
+    - {from: "W25", to: "W26", distance_m: 320}
+    - {from: "W26", to: "W27", distance_m: 335}
+
+excluded_points:
+  - point_id: "W28"
+    line_id: "L3"
+    conflict_interval_m: 350
+    interval_from: "W27"
+    reason: "W28 appears only in paper figures and interval material; excluded from the formal L3 set, cumulative distance, cleaning set, and models"
+    issue_code: "L3_W28_SOURCE_CONFLICT"
+
+expected:
+  dat_file_count: 22
+  nul_terminator_count: 22
+  line_point_counts: {L1: 9, L2: 9, L3: 4}
+  source_record_counts: {L1: 823, L2: 819, L3: 364}
+  source_record_total: 2006
+  valid_numeric_counts: {L1: 822, L2: 819, L3: 364}
+  valid_numeric_total: 2005
+  invalid_numeric_total: 1
+  special_nan_token: "1.#QNAN0"
+  special_nan_point: "W8"
+  paper_counts: {L1: 823, L2: 818, L3: 364, total: 2005}
+
+cleaning_conflicts:
+  outlier_count_claim: 80
+  rate_claim_percent: 3.59
+  computed_rate_percent: 3.99
+  method_a: "linear interpolation"
+  method_b: "nearest 5 point IDW"
+
+outputs:
+  default_dir: "outputs/microseismic_v0.2a"
