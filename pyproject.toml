@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "geomodeling-platform"
+version = "0.1.0"
+description = "Underground resistivity 3D property simulation MVP"
+requires-python = ">=3.12"
+dependencies = [
+  "pandas>=2.0,<3.0",
+  "numpy>=1.26,<3.0",
+  "pydantic>=2.0,<3.0",
+  "typer>=0.12,<0.30",
+  "rich>=13.0,<15.0",
+  "PyYAML>=6.0,<7.0",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8.0,<10.0"]
+
+[project.scripts]
+geomodeling = "geomodeling.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+markers = [
+  "local_data: tests that require adjacent read-only reference data",
+]

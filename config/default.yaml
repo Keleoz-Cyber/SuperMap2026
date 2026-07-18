@@ -1,0 +1,173 @@
+project:
+  name: GeoModelingPlatform
+  version: "0.1.0"
+
+paths:
+  standardized: "../超图杯资料/标准化数据/地下电阻率节点_标准化.csv"
+  training: "../超图杯资料/标准化数据/地下电阻率节点_训练集90.csv"
+  validation: "../超图杯资料/标准化数据/地下电阻率节点_验证集10.csv"
+  metrics_baseline: "../超图杯资料/标准化数据/插值精度对比_总体指标.csv"
+  analysis_summary: "../超图杯资料/标准化数据/插值精度对比_分析摘要.json"
+  prediction_files:
+    "IDW 20m/25点": "../超图杯资料/标准化数据/RHO_IDW_CV_VALID_POINTS.csv"
+    "Kriging 20m/25点": "../超图杯资料/标准化数据/RHO_KRIG_CV_VALID_POINTS.csv"
+    "Kriging 20m/15点": "../超图杯资料/标准化数据/RHO_KRIG_CV_VALID_15.csv"
+    "Kriging 20m/40点": "../超图杯资料/标准化数据/RHO_KRIG_CV_VALID_40.csv"
+    "Kriging 10m/40点": "../超图杯资料/标准化数据/RHO_KRIG_CV_VALID_10M_40.csv"
+
+expected:
+  standardized_rows: 17549
+  training_rows: 15827
+  validation_rows: 1722
+  training_columns: 264
+  validation_columns: 29
+  spatial_column_overlap: 0
+  common_valid: 1481
+  common_nodata: 241
+  coverage_rate: 0.8600464576074333
+
+nodata_value: -9999
+metric_tolerance: 0.00001
+
+models:
+  - model_id: "rho_idw_20m_n25_v1"
+    display_name: "IDW 20m/25点"
+    method: "IDW"
+    resolution_xy_m: 20
+    neighbor_count: 25
+    role: "comparison"
+    parameters:
+      search: "variable"
+      slice_min_z_m: -840
+      slice_count: 42
+      slice_interval_m: 20
+  - model_id: "rho_kriging_20m_n25_v1"
+    display_name: "Kriging 20m/25点"
+    method: "KRIGING_ORDINARY"
+    resolution_xy_m: 20
+    neighbor_count: 25
+    role: "candidate"
+    parameters:
+      search: "variable"
+      slice_min_z_m: -840
+      slice_count: 42
+      slice_interval_m: 20
+  - model_id: "rho_kriging_20m_n15_v1"
+    display_name: "Kriging 20m/15点"
+    method: "KRIGING_ORDINARY"
+    resolution_xy_m: 20
+    neighbor_count: 15
+    role: "candidate"
+    parameters:
+      search: "variable"
+      slice_min_z_m: -840
+      slice_count: 42
+      slice_interval_m: 20
+  - model_id: "rho_kriging_20m_n40_v1"
+    display_name: "Kriging 20m/40点"
+    method: "KRIGING_ORDINARY"
+    resolution_xy_m: 20
+    neighbor_count: 40
+    role: "default"
+    parameters:
+      search: "variable"
+      slice_min_z_m: -840
+      slice_count: 42
+      slice_interval_m: 20
+  - model_id: "rho_kriging_10m_n40_v1"
+    display_name: "Kriging 10m/40点"
+    method: "KRIGING_ORDINARY"
+    resolution_xy_m: 10
+    neighbor_count: 40
+    role: "not_formal_candidate"
+    parameters:
+      search: "variable"
+      slice_min_z_m: -840
+      slice_count: 42
+      slice_interval_m: 20
+
+supermap:
+  version: "iDesktopX 2026"
+  datasource_alias: "expore1"
+  udbx_path: "../Project/expore1.udbx"
+  dataset_api: "none"
+  results:
+    - dataset: "RHO_KRIG_FINAL_20M_40"
+      model_id: "rho_kriging_20m_n40_v1"
+      dataset_type: "voxel_grid"
+      method: "KRIGING_ORDINARY"
+      resolution_xy_m: 20
+      neighbor_count: 40
+      rows: 7
+      columns: 23
+      bands: 42
+      value_min: 1.418283
+      value_max: 133.146194
+      status: "succeeded"
+      result_category: "formal"
+      openable: true
+      threshold_demo:
+        min_visible_rho: 77
+        note: "engineering demo threshold, not a validated geological hazard threshold"
+      manual_evidence:
+        - "iDesktopX 2026 manual verification recorded in handover package: full voxel, horizontal thin slice, and RHO >= 77 filter were visually verified"
+    - dataset: "RHO_ISO_77_K40"
+      model_id: "rho_kriging_20m_n40_v1"
+      dataset_type: "isosurface"
+      method: "KRIGING_ORDINARY"
+      status: "failed"
+      result_category: "failed_empty"
+      object_count: 0
+      openable: true
+      error_evidence: "Failed to extract continuous surface, please check IsoValue."
+      manual_evidence:
+        - "iDesktopX 2026 native isosurface attempt produced an empty dataset; registered only as failed/empty evidence"
+    - dataset: "RHO_ISO_HIGH_P95_K40"
+      model_id: "rho_kriging_20m_n40_v1"
+      dataset_type: "isosurface"
+      method: "KRIGING_ORDINARY"
+      status: "failed"
+      result_category: "failed_empty"
+      object_count: 0
+      openable: true
+      error_evidence: "Failed to extract continuous surface, please check IsoValue."
+      manual_evidence:
+        - "iDesktopX 2026 native isosurface attempt produced an empty dataset; registered only as failed/empty evidence"
+
+views:
+  - name: "full_voxel_entry"
+    model_id: "rho_kriging_20m_n40_v1"
+    dataset: "RHO_KRIG_FINAL_20M_40"
+    evidence_level: "manual_evidence"
+    extent: {"x_min": null, "x_max": null, "y_min": null, "y_max": null, "z_min": -840, "z_max": 0}
+    rows: 7
+    columns: 23
+    bands: 42
+    value_min: 1.418283
+    value_max: 133.146194
+    horizontal_slices:
+      - name: "typical_horizontal_thin_slice"
+        mode: "normalized_z"
+        normalized_min: 0.0
+        normalized_max: 0.05
+        verified: true
+        evidence: "manual iDesktopX display-range thin slice verification"
+    threshold:
+      label: "RHO >= 77 demo high-value filter"
+      min_rho: 77
+      max_rho: null
+      demonstration_only: true
+      note: "engineering demo threshold, not a validated geological hazard threshold"
+    vertical_slice_status: "unverified"
+    isosurface_status: "failed"
+    external_open_info:
+      software: "SuperMap iDesktopX 2026"
+      datasource_alias: "expore1"
+      udbx_path: "../Project/expore1.udbx"
+      dataset: "RHO_KRIG_FINAL_20M_40"
+
+outputs:
+  registry_dir: "artifacts/registry"
+  reports_dir: "outputs/reports"
+  metrics_dir: "outputs/metrics"
+  logs_dir: "logs"
