@@ -1,7 +1,7 @@
 # Kimi 3 长程任务：微震 v0.2a 数据审计与标准化底座
 
-> 使用方式：将本文件完整作为 Kimi 3 压缩上下文后的恢复任务说明。  
-> 项目目录：`D:\study\Contest\Supermap\GeoModelingPlatform`  
+> 使用方式：将本文件完整作为 Kimi 3 压缩上下文后的恢复任务说明。
+> 项目目录：`D:\study\Contest\Supermap\GeoModelingPlatform`
 > 当前开发分支：`feat/microseismic-data-audit-v0.2a`
 
 ## 1. 角色与目标
