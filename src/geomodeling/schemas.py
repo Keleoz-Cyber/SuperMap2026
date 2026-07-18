@@ -56,6 +56,9 @@ class EvidenceLevel(str, Enum):
     MANUAL_EVIDENCE = "manual_evidence"
 
 
+MODEL_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"
+
+
 class ContractModel(BaseModel):
     model_config = ConfigDict(extra="forbid", use_enum_values=True)
 
@@ -99,7 +102,7 @@ class ValidationReport(ContractModel):
 
 
 class ModelMetadata(ContractModel):
-    model_id: str
+    model_id: str = Field(pattern=MODEL_ID_PATTERN)
     property: str = "RHO"
     property_unit: str | None = None
     method: ModelMethod
@@ -115,7 +118,7 @@ class ModelMetadata(ContractModel):
 
 
 class ModelTask(ContractModel):
-    model_id: str
+    model_id: str = Field(pattern=MODEL_ID_PATTERN)
     display_name: str
     method: ModelMethod
     input_dataset_id: str
@@ -130,8 +133,8 @@ class ModelTask(ContractModel):
 
 
 class ModelSelection(ContractModel):
-    default_model_id: str
-    comparison_model_id: str
+    default_model_id: str = Field(pattern=MODEL_ID_PATTERN)
+    comparison_model_id: str = Field(pattern=MODEL_ID_PATTERN)
     rationale: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 

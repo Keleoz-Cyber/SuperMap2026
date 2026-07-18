@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,9 @@ from .config import AppConfig
 from .io import read_json, write_json
 from .schemas import MetricSummary, ModelSelection, ModelStatus, ModelTask, SuperMapResultRegistration
 from .supermap import select_supermap_result_for_model
+
+
+SAFE_MODEL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 
 
 def _enum_value(value):
@@ -44,7 +48,13 @@ class ModelTaskRegistry:
         self.base_dir.mkdir(parents=True, exist_ok=True)
 
     def path_for(self, model_id: str) -> Path:
-        return self.base_dir / f"{model_id}.json"
+        if not SAFE_MODEL_ID_RE.fullmatch(model_id):
+            raise ValueError(f"unsafe model_id: {model_id}")
+        base = self.base_dir.resolve()
+        path = (base / f"{model_id}.json").resolve()
+        if path.parent != base:
+            raise ValueError(f"unsafe model_id path: {model_id}")
+        return path
 
     def get(self, model_id: str) -> ModelTask | None:
         path = self.path_for(model_id)
@@ -157,11 +167,18 @@ def ensure_config_model_tasks(
 def select_models(
     tasks: list[ModelTask],
     summaries: dict[str, MetricSummary] | None = None,
+    default_model_id: str | None = None,
+    comparison_model_id: str | None = None,
 ) -> ModelSelection:
     if not tasks:
         raise ValueError("no model tasks available for selection")
-    default = next((task for task in tasks if task.role == "default"), None)
-    comparison = next((task for task in tasks if task.role == "comparison"), None)
+    by_id = {task.model_id: task for task in tasks}
+    default = by_id.get(default_model_id) if default_model_id else next((task for task in tasks if task.role == "default"), None)
+    comparison = by_id.get(comparison_model_id) if comparison_model_id else next((task for task in tasks if task.role == "comparison"), None)
+    if default_model_id and default is None:
+        raise ValueError(f"unknown default_model_id: {default_model_id}")
+    if comparison_model_id and comparison is None:
+        raise ValueError(f"unknown comparison_model_id: {comparison_model_id}")
     best_mae = None
     best_rmse = None
     if summaries:
@@ -175,6 +192,7 @@ def select_models(
         raise ValueError("default and comparison models must be configured or derivable from metric summaries")
     rationale = (
         f"default={default.display_name} (role={default.role}); comparison={comparison.display_name} (role={comparison.role}); "
-        f"best_mae={best_mae}; best_rmse={best_rmse}; single_overall_winner={best_mae == best_rmse if best_mae and best_rmse else 'unknown'}"
+        f"best_mae={best_mae}; best_rmse={best_rmse}; single_overall_winner={best_mae == best_rmse if best_mae and best_rmse else 'unknown'}; "
+        f"user_default_override={default_model_id is not None}; user_comparison_override={comparison_model_id is not None}"
     )
     return ModelSelection(default_model_id=default.model_id, comparison_model_id=comparison.model_id, rationale=rationale)

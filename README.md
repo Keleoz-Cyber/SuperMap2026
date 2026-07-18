@@ -58,6 +58,7 @@ python -m geomodeling.cli verify-supermap -o outputs/mvp_release_verify
 ```powershell
 python -m geomodeling.cli list-models -o outputs/mvp_release_verify
 python -m geomodeling.cli select-models -o outputs/mvp_release_verify
+python -m geomodeling.cli select-models --default-model-id rho_kriging_20m_n40_v1 --comparison-model-id rho_idw_20m_n25_v1 -o outputs/mvp_release_verify
 python -m geomodeling.cli create-model --model-id rho_idw_20m_n25_test --display-name "IDW test" --method IDW --parameters-json '{"resolution_xy_m":20,"neighbor_count":25}' -o outputs/mvp_release_verify
 ```
 

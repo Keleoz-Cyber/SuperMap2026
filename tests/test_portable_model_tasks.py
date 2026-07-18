@@ -71,3 +71,33 @@ def test_registry_list_ignores_selection_file(tmp_path):
     selection = select_models([comparison, default])
     registry.save_selection(selection)
     assert [task.model_id for task in registry.list()] == ["comparison_model", "default_model"]
+
+
+def test_model_task_rejects_unsafe_model_id():
+    with pytest.raises(ValidationError):
+        build_model_task(
+            model_id="../escape",
+            display_name="escape",
+            method="IDW",
+            input_dataset_id="rho_training_v1",
+            input_sha256="0" * 64,
+            parameters={},
+            config_snapshot={},
+        )
+
+
+def test_registry_path_for_rejects_traversal(tmp_path):
+    registry = ModelTaskRegistry(tmp_path / "models")
+    with pytest.raises(ValueError, match="unsafe model_id"):
+        registry.path_for("../escape")
+
+
+def test_select_models_allows_explicit_overrides():
+    first = _task("first_model").model_copy(update={"role": "default"})
+    second = _task("second_model").model_copy(update={"role": "comparison"})
+    third = _task("third_model")
+    selection = select_models([first, second, third], default_model_id="third_model", comparison_model_id="first_model")
+    assert selection.default_model_id == "third_model"
+    assert selection.comparison_model_id == "first_model"
+    assert "user_default_override=True" in selection.rationale
+    assert "user_comparison_override=True" in selection.rationale

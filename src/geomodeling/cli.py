@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import typer
+from pydantic import ValidationError
 
 from .audit import AuditLogger
 from .config import AppConfig, load_config
@@ -302,20 +303,20 @@ def create_model(
         "parameters": parameters,
         "role": role,
     }
-    task = build_model_task(
-        model_id=model_id,
-        display_name=display_name,
-        method=method,
-        input_dataset_id=input_dataset_id,
-        input_sha256=input_sha256 or _training_sha256(app_config),
-        parameters=parameters,
-        config_snapshot=snapshot,
-        role=role,
-    )
     registry = ModelTaskRegistry(dirs["registry"] / "models")
     try:
+        task = build_model_task(
+            model_id=model_id,
+            display_name=display_name,
+            method=method,
+            input_dataset_id=input_dataset_id,
+            input_sha256=input_sha256 or _training_sha256(app_config),
+            parameters=parameters,
+            config_snapshot=snapshot,
+            role=role,
+        )
         registry.create(task)
-    except ValueError as exc:
+    except (ValueError, ValidationError) as exc:
         _audit(app_config, dirs, "create-model", "failed", inputs=[app_config.resolve_path(app_config.paths["training"])], parameters=snapshot, error=str(exc))
         typer.echo(str(exc))
         raise typer.Exit(code=1) from exc
@@ -341,6 +342,8 @@ def list_models(
 
 @app.command("select-models")
 def select_models_command(
+    default_model_id: str | None = typer.Option(None, "--default-model-id"),
+    comparison_model_id: str | None = typer.Option(None, "--comparison-model-id"),
     config: Path = typer.Option(Path("config/default.yaml"), "--config", "-c"),
     output_dir: Path | None = typer.Option(None, "--output-dir", "-o"),
     udbx_path: str | None = typer.Option(None, "--udbx-path"),
@@ -352,7 +355,24 @@ def select_models_command(
     tasks = ensure_config_model_tasks(app_config, registry, "rho_training_v1", _training_sha256(app_config), records)
     _, predictions, _ = _import_predictions(app_config, dirs["metrics"])
     summaries = compute_common_metric_summaries(predictions)
-    selection = select_models(tasks, summaries)
+    try:
+        selection = select_models(
+            tasks,
+            summaries,
+            default_model_id=default_model_id,
+            comparison_model_id=comparison_model_id,
+        )
+    except ValueError as exc:
+        _audit(
+            app_config,
+            dirs,
+            "select-models",
+            "failed",
+            parameters={"default_model_id": default_model_id, "comparison_model_id": comparison_model_id},
+            error=str(exc),
+        )
+        typer.echo(str(exc))
+        raise typer.Exit(code=1) from exc
     registry.save_selection(selection)
     typer.echo(f"default_model={selection.default_model_id} comparison_model={selection.comparison_model_id}")
     typer.echo(selection.rationale)
