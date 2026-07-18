@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -19,6 +19,7 @@ class AppConfig(BaseModel):
     metric_tolerance: float
     models: list[dict[str, Any]]
     supermap: dict[str, Any]
+    views: list[dict[str, Any]] = Field(default_factory=list)
     outputs: dict[str, str]
 
     def resolve_path(self, value: str | None) -> Path | None:

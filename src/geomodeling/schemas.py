@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class DatasetType(str, Enum):
@@ -47,6 +47,13 @@ class ResultCategory(str, Enum):
     VALIDATION = "validation"
     PREVIEW = "preview"
     FAILED_EMPTY = "failed_empty"
+
+
+class EvidenceLevel(str, Enum):
+    DECLARED = "declared"
+    FILE_VERIFIED = "file_verified"
+    DATASET_VERIFIED = "dataset_verified"
+    MANUAL_EVIDENCE = "manual_evidence"
 
 
 class ContractModel(BaseModel):
@@ -107,6 +114,28 @@ class ModelMetadata(ContractModel):
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class ModelTask(ContractModel):
+    model_id: str
+    display_name: str
+    method: ModelMethod
+    input_dataset_id: str
+    input_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    config_snapshot: dict[str, Any] = Field(default_factory=dict)
+    status: ModelStatus = ModelStatus.CREATED
+    role: str = "candidate"
+    fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class ModelSelection(ContractModel):
+    default_model_id: str
+    comparison_model_id: str
+    rationale: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
 class MetricSummary(ContractModel):
     model: str
     n_total: int = Field(ge=0)
@@ -143,6 +172,14 @@ class SuperMapResultRegistration(ContractModel):
     openable: bool = False
     parameters: dict[str, Any] = Field(default_factory=dict)
     error_evidence: str | None = None
+    evidence_level: EvidenceLevel = EvidenceLevel.DECLARED
+    file_verified: bool = False
+    dataset_verified: bool = False
+    file_size_bytes: int | None = Field(default=None, ge=0)
+    file_mtime: datetime | None = None
+    file_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    dataset_verification_note: str | None = None
+    manual_evidence: list[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     @model_validator(mode="after")
@@ -152,7 +189,92 @@ class SuperMapResultRegistration(ContractModel):
                 raise ValueError("successful SuperMap result must be openable, non-empty, and free of error evidence")
         if self.result_category == ResultCategory.FAILED_EMPTY and self.status != ModelStatus.FAILED:
             raise ValueError("failed_empty results must use failed status")
+        if self.evidence_level == EvidenceLevel.FILE_VERIFIED and not self.file_verified:
+            raise ValueError("file_verified evidence requires file_verified=true")
+        if self.evidence_level == EvidenceLevel.DATASET_VERIFIED and not self.dataset_verified:
+            raise ValueError("dataset_verified evidence requires dataset_verified=true")
+        if self.dataset_verified and not self.file_verified:
+            raise ValueError("dataset_verified evidence requires file_verified=true")
+        if self.file_verified and (not self.udbx_path or self.file_size_bytes is None or self.file_mtime is None):
+            raise ValueError("file_verified evidence requires udbx_path, file size, and file mtime")
         return self
+
+
+class SuperMapVerificationReport(ContractModel):
+    udbx_path: str | None
+    file_exists: bool
+    file_verified: bool
+    dataset_api: str
+    dataset_verified: bool
+    records: list[SuperMapResultRegistration]
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class SliceConfiguration(ContractModel):
+    name: str
+    mode: str
+    normalized_min: float | None = None
+    normalized_max: float | None = None
+    actual_min_z_m: float | None = None
+    actual_max_z_m: float | None = None
+    thickness_m: float | None = None
+    verified: bool = False
+    evidence: str | None = None
+
+    @field_validator("mode")
+    @classmethod
+    def check_mode(cls, value: str) -> str:
+        if value not in {"normalized_z", "actual_z"}:
+            raise ValueError("slice mode must be normalized_z or actual_z")
+        return value
+
+
+class ThresholdConfiguration(ContractModel):
+    label: str
+    min_rho: float
+    max_rho: float | None = None
+    demonstration_only: bool = True
+    note: str
+
+    @model_validator(mode="after")
+    def check_demo_threshold(self):
+        if not self.demonstration_only:
+            raise ValueError("MVP thresholds must remain demonstration_only unless a validated geological basis is added")
+        if "geological hazard" in self.note.lower() and "not" not in self.note.lower():
+            raise ValueError("threshold note must not claim an unvalidated geological hazard threshold")
+        return self
+
+
+class ViewConfiguration(ContractModel):
+    name: str
+    model_id: str
+    dataset: str
+    evidence_level: EvidenceLevel = EvidenceLevel.DECLARED
+    extent: dict[str, Any] = Field(default_factory=dict)
+    rows: int | None = Field(default=None, ge=0)
+    columns: int | None = Field(default=None, ge=0)
+    bands: int | None = Field(default=None, ge=0)
+    value_min: float | None = None
+    value_max: float | None = None
+    horizontal_slices: list[SliceConfiguration] = Field(default_factory=list)
+    threshold: ThresholdConfiguration | None = None
+    vertical_slice_status: str = "unverified"
+    isosurface_status: str = "failed"
+    external_open_info: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("vertical_slice_status")
+    @classmethod
+    def check_vertical_status(cls, value: str) -> str:
+        if value not in {"unverified", "unsupported", "verified"}:
+            raise ValueError("vertical slice status must be unverified, unsupported, or verified")
+        return value
+
+    @field_validator("isosurface_status")
+    @classmethod
+    def check_isosurface_status(cls, value: str) -> str:
+        if value not in {"failed", "unverified", "verified"}:
+            raise ValueError("isosurface status must be failed, unverified, or verified")
+        return value
 
 
 class ResultInventoryItem(ContractModel):
@@ -161,4 +283,5 @@ class ResultInventoryItem(ContractModel):
     status: ModelStatus
     path: str | None = None
     supermap_dataset: str | None = None
+    evidence_level: EvidenceLevel = EvidenceLevel.DECLARED
     trace: dict[str, Any] = Field(default_factory=dict)
