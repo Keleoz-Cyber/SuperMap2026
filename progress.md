@@ -75,7 +75,7 @@
   - `progress.md` (updated)
 
 ### Phase 6: v0.1 验收加固与发布
-- **Status:** in_progress
+- **Status:** complete
 - Actions taken:
   - Re-read required docs, source, tests, planning files, and configuration.
   - Checked Git status, diff, remote, log, and GitHub auth; confirmed origin points to `https://github.com/Keleoz-Cyber/SuperMap2026.git`.
@@ -83,6 +83,7 @@
   - Re-ran baseline install, tests, `run-all`, help, and `git diff --check`; committed the verified MVP baseline as `feat: implement resistivity MVP data and QA pipeline`.
   - Added SuperMap evidence levels, file-level `verify-supermap`, model task registry/commands, view configuration export, audit JSONL, issue list, expanded reports, portable fixtures, local-data markers, dependency bounds, and GitHub Actions.
   - Fixed missing report import and model registry selection-file parsing bug.
+  - Pushed `feat/rho-mvp-v0.1-hardening`, created PR #1, and verified GitHub Actions portable tests passed.
 - Files created/modified:
   - `src/geomodeling/*` (updated and extended)
   - `tests/*` (updated and extended)
@@ -101,6 +102,7 @@
 | Local real-data regression | `python -m pytest -q -m local_data` | real baseline tests pass when reference data exists | 12 passed, 24 deselected | ✓ |
 | CLI end-to-end smoke | `python -m geomodeling.cli run-all -o outputs/mvp_release_verify` | validation, metrics, SuperMap registry, reports complete | completed with `baseline_passed=True`, 3 SuperMap configuration results registered, 1 formal configuration result | ✓ |
 | SuperMap verification | `python -m geomodeling.cli verify-supermap -o outputs/mvp_release_verify` | UDBX file-level verification without fake dataset-level claim | `udbx_exists=True`, `udbx_file_verified=True`, `dataset_verified=False` | ✓ |
+| GitHub Actions portable tests | PR #1 CI run 29640421186 | portable tests pass in CI | 24 passed, 12 deselected | ✓ |
 | Dataset validation | standardized/training/validation CSVs | 17,549 / 15,827 / 1,722 rows and zero split overlap | passed | ✓ |
 | Prediction import | five SuperMap prediction CSVs | 1,481 valid, 241 NoData, XY mismatch 0 for each model | passed | ✓ |
 | Metric regression | five common-valid metric summaries | match overall baseline within tolerance | passed | ✓ |
@@ -113,11 +115,11 @@
 ## 5-Question Reboot Check
 | Question | Answer |
 |----------|--------|
-| Where am I? | Phase 5 complete |
-| Where am I going? | Await user review or next-stage instructions |
+| Where am I? | Phase 6 complete |
+| Where am I going? | Await PR review; do not merge unless explicitly instructed |
 | What's the goal? | Build a runnable, verifiable, traceable underground resistivity 3D property simulation MVP |
 | What have I learned? | See `findings.md` |
-| What have I done? | Required reading, environment checks, architecture decision, implementation, tests, CLI smoke run, and delivery docs |
+| What have I done? | Required reading, environment checks, architecture decision, implementation, tests, CLI smoke run, hardening, commits, push, PR creation, and CI verification |
 
 ---
 *Update after completing each phase or encountering errors*

@@ -49,8 +49,8 @@ Phase 6
 - [x] Add model task creation, uniqueness checks, config snapshots, and default/comparison selection rationale
 - [x] Add view configuration registration, audit JSONL, structured issue list, and expanded reports
 - [x] Split portable CI tests from local real-data regression tests and add GitHub Actions
-- [ ] Run final release verification, push branch, create PR, and inspect CI
-- **Status:** in_progress
+- [x] Run final release verification, push branch, create PR, and inspect CI
+- **Status:** complete
 
 ## Key Questions
 1. What project files and handover documents already exist in the repository?
