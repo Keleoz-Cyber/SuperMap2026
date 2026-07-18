@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Node and frontend builds
+node_modules/
+dist/
+build/
+.next/
+coverage/
+
+# IDE and operating system
+.vscode/
+.idea/
+*.code-workspace
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Generated and local-only artifacts
+artifacts/
+outputs/
+cache/
+logs/
+tmp/
+*.log
+
+# Large/local spatial data and database files
+data/raw/
+data/private/
+*.udb
+*.udd
+*.udbx
+*.sdb
+*.sdd
