@@ -37,4 +37,27 @@
 - Full voxel and horizontal slice support are manual iDesktopX evidence.
 - Vertical slices and native isosurface extraction remain unverified/failed as documented in known issues.
 - RHO physical unit is still marked as pending source confirmation.
-- Microseismic, coalbed methane, and DSI-like modules are interfaces/documentation only.
+- Coalbed methane and DSI-like modules are interfaces/documentation only.
+
+## 2026-07-18 — Microseismic v0.2a data audit foundation
+
+### Implemented
+
+- `config/microseismic.yaml` and `src/geomodeling/microseismic/` package: config model, DAT parser (ASCII whitespace, trailing NUL pseudo-line detection, MSVC `1.#QNAN0`-class token handling), source inventory with SHA-256, 1D survey geometry, pydantic contracts, 11 standard issues, JSON/Markdown reports, orchestration service, and a `geomodeling microseismic` Typer sub-app (`inventory`, `parse`, `validate`, `export-reports`, `run-audit`).
+- Three standard tables: `survey_lines.csv` (3 rows), `survey_points.csv` (23 rows, 22 formal + W28 conflict-only), `velocity_samples.csv` (2,006 rows).
+- Reports: `source_manifest.json`, `microseismic_validation.json`, `microseismic_issue_list.json/.md`, `microseismic_data_quality.md`, `microseismic_data_dictionary.md`, `microseismic_audit_summary.md`, plus audit JSONL.
+- Portable tests with tmp-generated fixtures and `local_data` real-data regression.
+
+### Verification Evidence
+
+- `python -m pytest -q` → 76 passed; portable layer 54 passed/22 deselected; local layer 22 passed/54 deselected.
+- Real audit: 22 DAT (66,880 bytes), 22 NUL terminators, 2,028 first-pass rows = 2,006 source records + 22 NUL pseudo-lines; valid numeric 2,005 (822/819/364); invalid numeric 1 (W8 line 2 `1.#QNAN0`, preserved and traceable).
+- 15 contract checks pass, including per-line counts, uniqueness, W28 exclusion, monotonic cumulative distance, no fabricated XY/Z, and unchanged source SHA-256.
+- v0.1 resistivity regression unchanged: 17,549/15,827/1,722 rows, overlap 0, five models 1,481 valid/241 NoData/XY mismatch 0, `baseline_passed=True`, `dataset_verified=False`.
+
+### Current Boundaries
+
+- v0.2a provides 1D `cumulative_s_m` only; no X/Y/Z, EPSG, origin, azimuth, or depth derivation is claimed.
+- `WL/2(km)` is preserved verbatim with unconfirmed meaning; `derived_depth_m`/`derived_z_m` stay empty.
+- Cleaning conflicts (80/2,005≈3.99% vs 3.59%; linear interpolation vs nearest-5-point IDW) are registered; no formal cleaning output.
+- Paper per-line counts `823/818/364=2,005` conflict with file facts and remain an open source conflict.

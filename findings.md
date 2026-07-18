@@ -99,6 +99,21 @@
 - SuperMap registration separates one formal succeeded voxel dataset from two failed/empty isosurface datasets; duplicate `model_id` records must be resolved by preferring formal succeeded openable non-empty results.
 - Actual adjacent UDBX path found at `../Project/expore1.udbx` and written to `config/default.yaml` as a configurable path.
 
+## Microseismic v0.2a Requirements
+- Current branch must start from clean `main` at `b160405ac10b3eb0b5973481a967a17d9bbf7084` / `v0.1.0`; verified before branch creation.
+- New branch: `feat/microseismic-data-audit-v0.2a`; PR required but must remain unmerged; no new tag or Release.
+- Scope is data audit and standardization foundation only: source manifest, DAT parsing, survey lines/points/velocity samples, raw count consistency, 1D cumulative distance, conflicts/issues, reports, CLI, tests, audit logs.
+- Formal lines: L1=W1—W9 (9), L2=W12—W20 (9), L3=W24—W27 (4); W28 is conflict/source-only and excluded from formal L3, cumulative distance, cleaning set, and later models.
+- Measured DAT facts: 22 ASCII whitespace-separated DAT files, 66,880 bytes total, header `WL/2(km)  Vx`; each file ends with one NUL pseudo-line (22 total); generic first-pass rows are 2,028 = 2,006 real source records + 22 NUL pseudo-lines.
+- Record-count layers: source records L1=823/L2=819/L3=364 (total 2,006); W8.dat line 2 holds MSVC token `1.#QNAN0`, so finite valid values are L1=822/L2=819/L3=364 (total 2,005); invalid numeric is exactly 1 and stays traceable in the standard table.
+- Paper table `823/818/364=2,005` conflicts with file facts and is registered as `LINE_COUNT_CONFLICT`; records are never moved between lines to match the paper.
+- DAT source field `WL/2(km)` must be preserved verbatim; depth/Z derivation remains unconfirmed and empty unless direct evidence exists.
+- Paper cleaning statements conflict: 80/2,005≈3.99% vs 3.59%, and linear interpolation vs nearest-5-point IDW; v0.2a must not choose a formal cleaning algorithm.
+- No trusted absolute 3D coordinates; do not generate claimed-real X/Y/Z. v0.2a may compute one-dimensional along-line `s_m` only with point order, interval source, and confidence state.
+- Git may contain code, config, contracts, tests, tiny fixtures, and quality summaries without original numeric research data; it must not contain raw DAT/PDF/XLSX/images, complete derived observation tables, outputs/artifacts/logs, secrets, or unnecessary absolute paths.
+- Interval evidence from `点间距.xlsx` (GBK workbook): L1 W1—W9 = 150/100/100/50/50/150/250/300 m; L2 W12—W20 = 275/275/250/195/110/600/300/300 m; L3 W24—W27 = 800/320/335 m; W28 350 m is conflict-only.
+- v0.2a implemented: `src/geomodeling/microseismic/` (config, parser, inventory, geometry, contracts, issues, reports, service, CLI sub-app) plus `config/microseismic.yaml`; CLI group `geomodeling microseismic inventory/parse/validate/export-reports/run-audit`; full local audit passes with 15 contract checks and 11 registered issues.
+
 ## Visual/Browser Findings
 - None yet.
 

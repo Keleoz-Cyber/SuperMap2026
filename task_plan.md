@@ -4,7 +4,7 @@
 Build a runnable, verifiable, traceable first-version MVP for underground resistivity 3D property simulation management, with data registration, contract validation, model/task status, metric recomputation, SuperMap result registration, tests, and delivery documentation.
 
 ## Current Phase
-Phase 6
+Phase 7
 
 ## Phases
 
@@ -51,6 +51,14 @@ Phase 6
 - [x] Split portable CI tests from local real-data regression tests and add GitHub Actions
 - [x] Run final release verification, push branch, create PR, and inspect CI
 - **Status:** complete
+
+### Phase 7: 微震 v0.2a 数据审计与标准化底座
+- [x] Read project files and read-only microseismic research materials
+- [x] Implement source inventory, DAT parsing, contracts, three standard tables, and 1D survey distance
+- [x] Implement conflict/issue reporting, data quality reports, CLI, and audit logging
+- [x] Add portable fixtures/tests and local real-data regression tests
+- [ ] Run full v0.1 + v0.2a verification, commit, push, and create unmerged PR
+- **Status:** in_progress
 
 ## Key Questions
 1. What project files and handover documents already exist in the repository?
