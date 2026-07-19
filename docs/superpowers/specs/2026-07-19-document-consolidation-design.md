@@ -44,6 +44,7 @@
 - `docs/decisions/`：仍有效的架构与证据等级决策；
 - `docs/status/`：当前里程碑、已验证成果和下一阶段门槛；
 - `docs/superpowers/specs/`：仍会指导后续工作的设计说明。
+- `docs/superpowers/plans/`：只保留尚未执行、仍会指导下一阶段工作的实施计划。
 
 不建立仅用于容纳旧文件的 archive、legacy 或 backup 目录。真正失效且信息已迁移的文档直接删除。
 
@@ -64,6 +65,7 @@
 - `WL/2(km)`、测线几何、清洗规则和论文计数冲突；
 - geometry、cleaning、interpolation downstream gates；
 - v0.2b 数据确认设计；
+- v0.2b 数据确认实施计划，并将其来源链接更新到整理后的正式文档；
 - 原始资料只读和原始/派生数据分离原则；
 - 尚未实现的瓦斯、DSI-like、垂直切片、等值面和数据集级 API 验证边界。
 

@@ -24,6 +24,7 @@ The completed repository should use these documentation responsibilities:
 - `docs/decisions/0001-technology-stack.md`: retained accepted technology ADR.
 - `docs/decisions/0002-supermap-evidence-levels.md`: retained evidence-level ADR.
 - `docs/superpowers/specs/2026-07-19-microseismic-v0.2b-data-confirmation-design.md`: retained because it governs the next data-confirmation task.
+- `docs/superpowers/plans/2026-07-19-microseismic-v0.2b-data-confirmation.md`: retained because it is the approved, not-yet-executed next-stage plan; its source references must be redirected to the new canonical documents.
 - `tests/fixtures/README.md`: retained as fixture-specific operational documentation.
 
 The consolidation design and this execution plan may be deleted in the final cleanup commit after all requirements have been transferred into the retained documentation and PR description.
@@ -224,6 +225,7 @@ Expected: one documentation-only commit.
 - Modify: `docs/architecture.md`.
 - Modify: `docs/acceptance.md`.
 - Create: `docs/status/current-status.md`.
+- Modify: `docs/superpowers/plans/2026-07-19-microseismic-v0.2b-data-confirmation.md` only to replace references to documents deleted by Task 4.
 - Read: current CLI help, source package tree, tests, ADRs, and the three files created in Task 2.
 
 - [ ] **Step 1: Rewrite `README.md` as the only project entry**
@@ -292,12 +294,16 @@ Required state:
 
 Every local Markdown link in `README.md`, `docs/architecture.md`, `docs/acceptance.md`, and `docs/status/current-status.md` must target one of the retained files. Use repository-relative links and avoid absolute local machine paths.
 
-- [ ] **Step 6: Commit the entry and current-state documents**
+- [ ] **Step 6: Redirect the retained v0.2b implementation plan**
+
+In `docs/superpowers/plans/2026-07-19-microseismic-v0.2b-data-confirmation.md`, replace references to `docs/progress.md` and `KIMI3_MICROSEISMIC_V0.2A_PROMPT.md` with the new canonical sources `docs/data/microseismic.md`, `docs/data/contracts.md`, and `docs/status/current-status.md`. Do not change its approved scope or authorize code, cleaning, geometry, or interpolation work.
+
+- [ ] **Step 7: Commit the entry and current-state documents**
 
 Run:
 
 ```powershell
-git add README.md docs/architecture.md docs/acceptance.md docs/status/current-status.md
+git add README.md docs/architecture.md docs/acceptance.md docs/status/current-status.md docs/superpowers/plans/2026-07-19-microseismic-v0.2b-data-confirmation.md
 git diff --cached --check
 git commit -m "docs: establish canonical project navigation and status"
 ```
@@ -316,7 +322,7 @@ Expected: one documentation-only commit.
 - Delete after migration: all tracked Markdown files under `开发交接包/`, then remove empty directories.
 - Delete after migration: `docs/superpowers/plans/2026-07-18-rho-mvp.md`.
 - Delete at the end of execution: `docs/superpowers/specs/2026-07-19-document-consolidation-design.md` and this plan.
-- Keep: both ADRs, the microseismic v0.2b confirmation design, and `tests/fixtures/README.md`.
+- Keep: both ADRs, the microseismic v0.2b confirmation design, the microseismic v0.2b implementation plan with repaired references, and `tests/fixtures/README.md`.
 
 - [ ] **Step 1: Complete the deletion audit before deleting**
 
@@ -347,7 +353,7 @@ Run:
 rg --files -g '*.md' -g '*.txt' | Sort-Object
 ```
 
-Expected retained set is limited to the canonical entry, architecture, acceptance, data, status, ADR, microseismic v0.2b design, and fixture documentation described in the File Structure section.
+Expected retained set is limited to the canonical entry, architecture, acceptance, data, status, ADR, microseismic v0.2b design and implementation plan, and fixture documentation described in the File Structure section.
 
 - [ ] **Step 5: Commit deletions and reference repairs**
 
