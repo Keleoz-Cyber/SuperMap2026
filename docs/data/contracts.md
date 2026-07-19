@@ -151,7 +151,7 @@ x,y,z,value,i,j,k,is_observed,is_valid,source_point_id,method,model_id
 | R² | `1 - SSE/SST` | 越高越好；分组样本小时谨慎解释 |
 | Median AE | 绝对误差中位数 | 越低越好 |
 | Mean ARE | `mean(abs(pred-truth)/truth)` | 越低越好 |
-| Median ARE | 相对误差中位数 | 越低越好 |
+| Median ARE | `median(abs(pred-truth)/truth)`，绝对相对误差中位数 | 越低越好 |
 | log10 RMSE | 正值 truth/pred 的 log10 空间 RMSE | 越低越好 |
 | Bias | `mean(pred-truth)` | 越接近 0 越好 |
 | P90 AE | 绝对误差第 90 百分位 | 越低越好 |
