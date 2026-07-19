@@ -106,6 +106,30 @@
 | Dataset validation | standardized/training/validation CSVs | 17,549 / 15,827 / 1,722 rows and zero split overlap | passed | ✓ |
 | Prediction import | five SuperMap prediction CSVs | 1,481 valid, 241 NoData, XY mismatch 0 for each model | passed | ✓ |
 | Metric regression | five common-valid metric summaries | match overall baseline within tolerance | passed | ✓ |
+| Microseismic full suite | `python -m pytest -q` | all tests pass | 76 passed | ✓ |
+| Microseismic portable layer | `python -m pytest -q -m "not local_data"` | fixture-only tests pass | 54 passed, 22 deselected | ✓ |
+| Microseismic local regression | `python -m pytest -q -m local_data` | real DAT regression passes | 22 passed, 54 deselected | ✓ |
+| Microseismic run-audit | `python -m geomodeling.cli microseismic run-audit -o outputs/microseismic_v0.2a_verify` | 22 DAT, 22 NUL, 2,006 source records, 2,005 valid, 1 invalid | `validation_passed=True` | ✓ |
+
+### Phase 7: 微震 v0.2a 数据审计与标准化底座
+- **Status:** in_progress
+- Actions taken:
+  - Re-read required project docs and the read-only microseismic research materials; confirmed DAT format facts by read-only byte inspection.
+  - Implemented `config/microseismic.yaml` and `src/geomodeling/microseismic/` (config, parser, inventory, geometry, contracts, issues, reports, service, CLI sub-app).
+  - Added `geomodeling microseismic inventory/parse/validate/export-reports/run-audit` CLI group.
+  - Added portable tests (`tests/test_microseismic_parser.py`, `tests/test_microseismic_pipeline.py`, `tests/microseismic_fixtures.py`) and local real-data regression (`tests/test_microseismic_local_regression.py`).
+- Verification:
+  - `python -m pytest -q` → 76 passed.
+  - `python -m pytest -q -m "not local_data"` → 54 passed, 22 deselected.
+  - `python -m pytest -q -m local_data` → 22 passed, 54 deselected.
+  - `python -m geomodeling.cli microseismic run-audit -o outputs/microseismic_v0.2a_verify` → `validation_passed=True`, 22 DAT, 22 NUL terminators, 2,006 source records (823/819/364), 2,005 valid numeric (822/819/364), 1 invalid (W8 `1.#QNAN0`).
+  - v0.1 regression `run-all -o outputs/v0.2a_rho_regression` → 17,549/15,827/1,722 rows, overlap 0, five models 1,481 valid/241 NoData/XY mismatch 0, `baseline_passed=True`, `dataset_verified=False`.
+- Files created/modified:
+  - `config/microseismic.yaml` (created)
+  - `src/geomodeling/microseismic/*` (created)
+  - `src/geomodeling/cli.py` (updated: microseismic sub-app)
+  - `tests/microseismic_fixtures.py`, `tests/test_microseismic_parser.py`, `tests/test_microseismic_pipeline.py`, `tests/test_microseismic_local_regression.py` (created)
+  - `findings.md`, `task_plan.md`, `progress.md` (updated)
 
 ## Error Log
 | Timestamp | Error | Attempt | Resolution |

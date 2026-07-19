@@ -1,0 +1,163 @@
+from __future__ import annotations
+
+from .config import MicroseismicConfig
+from .schemas import MicroseismicIssue, MicroseismicSeverity
+
+
+def build_standard_issues(config: MicroseismicConfig, counts: dict) -> list[MicroseismicIssue]:
+    expected = config.expected
+    paper = expected.get("paper_counts", {})
+    source_counts = counts.get("source_record_counts", {})
+    cleaning = config.cleaning_conflicts
+    excluded = config.excluded_points[0] if config.excluded_points else None
+    return [
+        MicroseismicIssue(
+            severity=MicroseismicSeverity.INFO,
+            code="SOURCE_NUL_TERMINATOR",
+            message="each DAT file ends with a NUL byte pseudo-line that must not be counted as a sample",
+            affected_scope="all 22 DAT source files",
+            evidence=f"nul_terminator_files={counts.get('nul_terminator_count')}; parsed_rows_excluded={counts.get('nul_terminator_count')}",
+            source_a="binary inspection of DAT files",
+            source_b="generic pandas first-pass row count of 2,028",
+            current_handling="detect trailing NUL bytes, register one pseudo-line per file, exclude from samples, and record in the manifest",
+            blocks_geometry=False,
+            blocks_cleaning=False,
+            blocks_interpolation=False,
+        ),
+        MicroseismicIssue(
+            severity=MicroseismicSeverity.WARNING,
+            code="SOURCE_SPECIAL_NAN_TOKEN",
+            message="W8.dat line 2 contains the legacy MSVC NaN token 1.#QNAN0 which is not a finite value",
+            affected_scope="W8 / L1 valid numeric statistics",
+            evidence="W8.dat line 2: '0.050000        1.#QNAN0'",
+            source_a="W8.dat raw bytes",
+            source_b="finite numeric contract",
+            current_handling="keep the raw token and line trace, mark is_numeric_valid=false, exclude from the 2,005 finite records, never replace with 0 or silent interpolation",
+            blocks_geometry=False,
+            blocks_cleaning=False,
+            blocks_interpolation=False,
+        ),
+        MicroseismicIssue(
+            severity=MicroseismicSeverity.WARNING,
+            code="LINE_COUNT_CONFLICT",
+            message="paper per-line record counts differ from parsed file facts",
+            affected_scope="L1/L2/L3 record statistics",
+            evidence=(
+                f"files source records L1/L2/L3={source_counts.get('L1')}/{source_counts.get('L2')}/{source_counts.get('L3')} "
+                f"(total {counts.get('source_record_total')}); paper table={paper.get('L1')}/{paper.get('L2')}/{paper.get('L3')}={paper.get('total')}"
+            ),
+            source_a="22 parsed DAT files (2,006 source records; 2,005 finite values)",
+            source_b="paper table 823/818/364=2,005",
+            current_handling="register both statements as a source conflict; do not move records between lines to match the paper",
+            blocks_geometry=False,
+            blocks_cleaning=False,
+            blocks_interpolation=False,
+        ),
+        MicroseismicIssue(
+            severity=MicroseismicSeverity.WARNING,
+            code="L3_W28_SOURCE_CONFLICT",
+            message="W28 appears in paper figures and interval material but has no formal DAT and is not part of formal L3",
+            affected_scope="L3 point set",
+            evidence=excluded.reason if excluded else "W28 conflict registered in configuration",
+            source_a="paper figures / 点间距.xlsx W28 row",
+            source_b="formal DAT set W24—W27",
+            current_handling="register W28 as conflict-only; exclude from formal L3, cumulative distance, cleaning set, and models",
+            blocks_geometry=False,
+            blocks_cleaning=False,
+            blocks_interpolation=False,
+        ),
+        MicroseismicIssue(
+            severity=MicroseismicSeverity.WARNING,
+            code="L3_W28_INTERVAL_EXCLUDED",
+            message="the 350 m interval associated with W28 is conflict information only",
+            affected_scope="L3 cumulative distance",
+            evidence=f"conflict_interval_m={excluded.conflict_interval_m if excluded else 350}",
+            source_a="点间距.xlsx W28 row (350 m)",
+            source_b="formal L3 intervals 800/320/335 m",
+            current_handling="keep the 350 m value in the conflict record only; formal L3 cumulative distance ends at W27",
+            blocks_geometry=False,
+            blocks_cleaning=False,
+            blocks_interpolation=False,
+        ),
+        MicroseismicIssue(
+            severity=MicroseismicSeverity.WARNING,
+            code="WL_HALF_MEANING_UNCONFIRMED",
+            message="the physical meaning of source field WL/2(km) is not confirmed by direct source evidence",
+            affected_scope="velocity_samples WL/2 interpretation",
+            evidence="DAT header 'WL/2(km)' preserved verbatim; no confirming source text located yet",
+            source_a="DAT header WL/2(km)",
+            source_b="no direct definition in available materials",
+            current_handling="keep the field name verbatim; do not rename to Depth, scale it, or map it to Z",
+            blocks_geometry=False,
+            blocks_cleaning=False,
+            blocks_interpolation=True,
+        ),
+        MicroseismicIssue(
+            severity=MicroseismicSeverity.WARNING,
+            code="DEPTH_Z_DERIVATION_UNCONFIRMED",
+            message="no confirmed derivation from WL/2(km) to depth or Z exists",
+            affected_scope="derived_depth_m / derived_z_m",
+            evidence="no sign convention, datum, or scaling evidence available",
+            source_a="DAT WL/2(km) values in km",
+            source_b="no documented depth/Z conversion rule",
+            current_handling="keep derived_depth_m and derived_z_m empty with depth_derivation_status=unconfirmed",
+            blocks_geometry=True,
+            blocks_cleaning=False,
+            blocks_interpolation=True,
+        ),
+        MicroseismicIssue(
+            severity=MicroseismicSeverity.WARNING,
+            code="ABSOLUTE_COORDINATES_UNAVAILABLE",
+            message="no trusted absolute geographic coordinates or EPSG exist for the survey points",
+            affected_scope="all geometry outputs",
+            evidence="no CRS/EPSG/origin evidence in available materials",
+            source_a="config geometry_status=cumulative_1d_only",
+            source_b="absolute coordinate requirement for 3D reconstruction",
+            current_handling="do not fabricate X/Y; x_local_m and y_local_m remain empty with coordinate_status=unconfirmed",
+            blocks_geometry=True,
+            blocks_cleaning=False,
+            blocks_interpolation=True,
+        ),
+        MicroseismicIssue(
+            severity=MicroseismicSeverity.WARNING,
+            code="LINE_AZIMUTH_UNCONFIRMED",
+            message="survey line origin and direction/azimuth are not confirmed",
+            affected_scope="2D/3D reconstruction prerequisites",
+            evidence="line map image is schematic; no numeric azimuth or origin values available",
+            source_a="三条测线 (压缩).jpg schematic",
+            source_b="no numeric origin/direction source",
+            current_handling="keep origin_status and direction_status unconfirmed; do not derive angles from image pixels",
+            blocks_geometry=True,
+            blocks_cleaning=False,
+            blocks_interpolation=True,
+        ),
+        MicroseismicIssue(
+            severity=MicroseismicSeverity.WARNING,
+            code="CLEANING_RATE_CONFLICT",
+            message="paper cleaning rate statement conflicts with the computed ratio",
+            affected_scope="cleaning rule definition",
+            evidence=(
+                f"paper claims {cleaning.get('outlier_count_claim')} outliers removed at {cleaning.get('rate_claim_percent')}%; "
+                f"{cleaning.get('outlier_count_claim')}/2005 = {cleaning.get('computed_rate_percent')}%"
+            ),
+            source_a="paper text: 80 outliers, 3.59%",
+            source_b="file facts: 80/2005 ≈ 3.99%",
+            current_handling="register both values as a conflict; v0.2a produces no formal cleaning result",
+            blocks_geometry=False,
+            blocks_cleaning=True,
+            blocks_interpolation=False,
+        ),
+        MicroseismicIssue(
+            severity=MicroseismicSeverity.WARNING,
+            code="CLEANING_METHOD_CONFLICT",
+            message="paper materials describe two different outlier handling methods",
+            affected_scope="cleaning rule definition",
+            evidence=f"method_a={cleaning.get('method_a')}; method_b={cleaning.get('method_b')}",
+            source_a="paper text: linear interpolation",
+            source_b="paper text: nearest 5 point IDW",
+            current_handling="record both as candidate methods; neither is adopted as the formal rule in v0.2a; no source record is deleted or overwritten",
+            blocks_geometry=False,
+            blocks_cleaning=True,
+            blocks_interpolation=False,
+        ),
+    ]

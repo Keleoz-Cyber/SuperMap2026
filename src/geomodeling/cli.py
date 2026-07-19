@@ -18,6 +18,7 @@ from .metrics import (
     read_validation_truth,
     summarize_group_metrics,
 )
+from .microseismic.cli import microseismic_app
 from .model_tasks import ModelTaskRegistry, build_model_task, ensure_config_model_tasks, select_models
 from .registry import DatasetRegistry
 from .reports import (
@@ -49,6 +50,7 @@ from .validation import registration_from_report, validate_train_validation_spli
 from .views import view_configurations_from_config
 
 app = typer.Typer(add_completion=False)
+app.add_typer(microseismic_app, name="microseismic")
 
 
 def _dirs(config: AppConfig, output_dir: Path | None) -> dict[str, Path]:
