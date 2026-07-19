@@ -2,64 +2,89 @@
 
 > 地矿属性模拟与三维建模平台（超图杯项目）
 
-本目录是代码开发根目录。原始论文、原始数据和标准化数据继续保存在相邻的 `../超图杯资料` 目录中，不在代码项目中复制或修改。
+本目录是代码开发根目录。原始论文、原始数据和标准化数据继续保存在相邻的只读目录 `../超图杯资料` 中，不在代码项目中复制或修改。
 
-## 开发入口
+## 项目目标
 
-开始开发前按顺序阅读：
+建立可复现、可追溯的地下属性数据管理、插值验证和三维表达流程，并逐步接入微震测量、煤层瓦斯与 DSI-like 算法。第一版（v0.1.0）打通地下电阻率从标准数据到 SuperMap 三维成果的完整闭环；当前 `main` 在此基础上额外包含已合并的微震 v0.2a 数据审计底座。
 
-1. [Kimi 3 长程开发总提示词](./KIMI3_MASTER_PROMPT.md)
-2. [开发交接包 README](./开发交接包/00_项目总览/README.md)
-3. [MVP 功能清单](./开发交接包/01_需求与范围/MVP功能清单.md)
-4. [数据契约](./开发交接包/03_数据规范/数据契约.md)
-5. [SuperMap 已知问题](./开发交接包/05_SuperMap验证/已知问题.md)
+## 当前能力
 
-## 资料位置
+- 电阻率数据登记与契约校验：17,549 / 15,827 / 1,722 行，训练/验证空间柱重叠 0。
+- 五种模型预测导入与公共有效点指标复算：每个模型 1,481 valid、241 NoData、XY mismatch 0，`baseline_passed=True`。
+- 模型任务、SuperMap 成果登记与证据等级管理：`RHO_KRIG_FINAL_20M_40` 为唯一正式成果，`dataset_verified=False`。
+- 微震数据审计（v0.2a）：22 个 DAT 清单与哈希、2,006 条源记录标准化、三张标准表、一维累计距离、契约验证、问题清单和审计报告。
+- 便携测试（CI）与本地真实数据回归测试分层。
 
-- [项目说明](../超图杯资料/项目说明.md)
-- [三类数据开发方向与优先级](../超图杯资料/三类数据开发方向与优先级.md)
-- [标准化数据目录](../超图杯资料/标准化数据)
-- [参考资料目录](../超图杯资料/参考资料)
+## 当前边界
 
-## 当前状态
+- 微震只有一维沿线距离；没有可信 X/Y/Z，`geometry/cleaning/interpolation` downstream gates 均为阻断。
+- RHO 物理单位、EPSG 未确认；微震 `WL/2(km)` 含义、测线原点/方位角/CRS、清洗规则未确认。
+- SuperMap 垂直切片未验证；原生等值面失败/空结果；数据集级 API 验证未实现。
+- 瓦斯、DSI-like、微震三维插值尚未实现；下一阶段是微震数据确认，不是直接开始三维插值开发。
 
-- 电阻率数据与指标闭环：已在本机用真实资料验证。
-- Python 包安装与 CLI：已验证。
-- SuperMap UDBX 文件存在性：可由 `verify-supermap` 做文件级程序验证。
-- SuperMap 内部数据集：当前未声称程序化 `dataset_verified`；只有接入真实受支持 API 并检查成功后才允许升级证据等级。
-- 完整体元与水平切片：已有 iDesktopX 人工证据，登记为 `manual_evidence`。
-- 垂直切片：未验证。
-- 原生等值面：失败，两个空结果仅作失败证据。
-- RHO 单位：待来源确认。
-- 微震、瓦斯、DSI-like：暂缓，仅保留接口和边界说明。
-
-原始资料只读；代码生成的数据、缓存和成果写入本项目下被忽略的 `artifacts/`、`outputs/`、`logs/` 等目录。
-
-## 安装与测试
+## 安装
 
 ```powershell
 python -m pip install -e ".[test]"
+```
+
+## 快速验证
+
+```powershell
+python -m pytest -q
 python -m pytest -q -m "not local_data"
 python -m pytest -q -m local_data
-python -m pytest -q
+geomodeling run-all -o outputs/release_verify
+geomodeling verify-supermap -o outputs/release_verify
+geomodeling microseismic run-audit --config config/microseismic.yaml -o outputs/microseismic_verify
 ```
 
-便携测试只使用 `tests/fixtures/` 中的人工小样本，可在 GitHub Actions 中运行。`local_data` 测试依赖相邻只读资料目录；资料不存在时会明确 skip。
+便携测试只使用 `tests/fixtures/` 中的人工小样本，可在 GitHub Actions 中运行；`local_data` 测试依赖相邻只读资料目录，资料不存在时会明确 skip。详细验收口径见 [docs/acceptance.md](docs/acceptance.md)。
 
-## MVP 运行
+## CLI 入口
+
+每个命令单独一行执行；`--help` 可查看参数：
 
 ```powershell
-python -m geomodeling.cli run-all -o outputs/mvp_release_verify
-python -m geomodeling.cli verify-supermap -o outputs/mvp_release_verify
+geomodeling --help
+geomodeling validate-data --help
+geomodeling import-predictions --help
+geomodeling compute-metrics --help
+geomodeling register-supermap-results --help
+geomodeling verify-supermap --help
+geomodeling create-model --help
+geomodeling list-models --help
+geomodeling select-models --help
+geomodeling export-reports --help
+geomodeling run-all --help
+geomodeling microseismic --help
+geomodeling microseismic inventory --help
+geomodeling microseismic parse --help
+geomodeling microseismic validate --help
+geomodeling microseismic export-reports --help
+geomodeling microseismic run-audit --help
 ```
 
-模型任务命令：
+默认配置位于 `config/default.yaml`（电阻率）和 `config/microseismic.yaml`（微震）。运行后生成数据登记、验证报告、指标复算、SuperMap 证据、问题清单、审计 JSONL 和验收摘要。
 
-```powershell
-python -m geomodeling.cli list-models -o outputs/mvp_release_verify
-python -m geomodeling.cli select-models -o outputs/mvp_release_verify
-python -m geomodeling.cli select-models --default-model-id rho_kriging_20m_n40_v1 --comparison-model-id rho_idw_20m_n25_v1 -o outputs/mvp_release_verify
-python -m geomodeling.cli create-model --model-id rho_idw_20m_n25_test --display-name "IDW test" --method IDW --parameters-json '{"resolution_xy_m":20,"neighbor_count":25}' -o outputs/mvp_release_verify
-```
+## 文档导航
 
-默认配置位于 `config/default.yaml`。运行后会生成数据登记、验证报告、指标复算、SuperMap 证据等级、视图配置、问题清单、审计 JSONL 和验收摘要；不会修改 `../超图杯资料`。
+- [docs/architecture.md](docs/architecture.md)：系统架构与模块边界
+- [docs/acceptance.md](docs/acceptance.md)：验收命令与证据口径
+- [docs/data/contracts.md](docs/data/contracts.md)：数据契约
+- [docs/data/resistivity.md](docs/data/resistivity.md)：电阻率数据与成果事实
+- [docs/data/microseismic.md](docs/data/microseismic.md)：微震审计事实与冲突
+- [docs/status/current-status.md](docs/status/current-status.md)：当前开发状态与下一阶段门槛
+- [docs/decisions/0001-technology-stack.md](docs/decisions/0001-technology-stack.md)：技术栈 ADR
+- [docs/decisions/0002-supermap-evidence-levels.md](docs/decisions/0002-supermap-evidence-levels.md)：SuperMap 证据等级 ADR
+- [docs/microseismic_v0.2b_data_confirmation.md](docs/microseismic_v0.2b_data_confirmation.md)：微震 v0.2b 数据确认清单与证据登记
+- [docs/superpowers/specs/2026-07-19-microseismic-v0.2b-data-confirmation-design.md](docs/superpowers/specs/2026-07-19-microseismic-v0.2b-data-confirmation-design.md)：v0.2b 数据确认设计
+- [docs/superpowers/plans/2026-07-19-microseismic-v0.2b-data-confirmation.md](docs/superpowers/plans/2026-07-19-microseismic-v0.2b-data-confirmation.md)：v0.2b 数据确认实施计划
+- [tests/fixtures/README.md](tests/fixtures/README.md)：便携测试样本说明
+
+## 原始资料保护
+
+- `../超图杯资料` 只读：不移动、不改名、不覆盖、不清洗、不删除。
+- 派生成果只写入本项目内被 Git 忽略的 `outputs/`、`artifacts/`、`logs/`。
+- 原始 DAT、PDF、XLSX、图片、UDB/UDBX、完整派生观测表、缓存和密钥不提交 Git；派生数据绝不覆盖标准化源数据。
