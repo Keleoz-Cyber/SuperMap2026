@@ -14,9 +14,10 @@
 
 - Create: `docs/microseismic_v0.2b_data_confirmation.md` — the only user-facing confirmation guide and evidence register.
 - Read: `docs/superpowers/specs/2026-07-19-microseismic-v0.2b-data-confirmation-design.md` — approved structure and acceptance criteria.
-- Read: `docs/progress.md` — merged v0.2a facts and open boundaries.
+- Read: `docs/data/microseismic.md` — merged v0.2a facts, conflicts, and downstream gates.
 - Read: `config/microseismic.yaml` — formal point membership, intervals, expected counts, and registered cleaning conflicts.
-- Read: `KIMI3_MICROSEISMIC_V0.2A_PROMPT.md` — source boundaries and conflict-handling requirements.
+- Read: `docs/data/contracts.md` — data contract boundaries and null/NoData semantics.
+- Read: `docs/status/current-status.md` — current blockers and the authorized next stage.
 - Do not modify: `src/`, `tests/`, `config/`, `../超图杯资料/`, `outputs/`, or `artifacts/`.
 
 ## Spec coverage map
@@ -32,16 +33,16 @@
 
 **Files:**
 - Create: `docs/microseismic_v0.2b_data_confirmation.md`
-- Reference: `docs/progress.md:43`
-- Reference: `config/microseismic.yaml:12`
-- Reference: `KIMI3_MICROSEISMIC_V0.2A_PROMPT.md:153`
+- Reference: `docs/data/microseismic.md` (v0.2a verified facts and conflicts)
+- Reference: `config/microseismic.yaml` (formal points, intervals, expected counts)
+- Reference: `docs/data/contracts.md` (contract boundaries)
 
 - [ ] **Step 1: Reconfirm the source anchors before writing**
 
 Run:
 
 ```powershell
-rg -n "2,006|2,005|W28|WL/2|823/818|823/819|3.59|3.99|linear interpolation|nearest 5 point IDW" docs/progress.md config/microseismic.yaml KIMI3_MICROSEISMIC_V0.2A_PROMPT.md
+rg -n "2,006|2,005|W28|WL/2|823/818|823/819|3.59|3.99|linear interpolation|nearest 5 point IDW" docs/data/microseismic.md docs/data/contracts.md config/microseismic.yaml
 ```
 
 Expected: matches show the 2,006/2,005/1 row-count chain, W28 exclusion, unconfirmed `WL/2(km)`, count conflict, and the two cleaning methods. Stop if the sources no longer agree with the approved design.
