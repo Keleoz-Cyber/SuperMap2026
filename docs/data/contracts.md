@@ -30,7 +30,7 @@
 
 1. 所有数据集至少登记：`dataset_id`、`dataset_type`、`version`、`source_path`、`sha256`（64 位小写十六进制）、`row_count`、`created_at`、`created_by`、`source_reference`、`quality_status`（`unreviewed/passed/warning/failed`）。
 2. `dataset_id` 必须稳定唯一，不能使用易变绝对路径。
-3. 微震 `source_manifest.json` 的 `relative_path` 使用相对于项目根目录（或配置 `source.data_dir`）的稳定相对路径，禁止输出 `D:\...` 等绝对本机路径。
+3. 微震 `source_manifest.json` 的 `relative_path` 使用相对于项目根目录（或配置 `source.data_dir`）的稳定相对路径，禁止输出带盘符的绝对本机路径。
 4. 处理前后原始文件的 SHA-256 必须一致；微震审计将源文件哈希不变性作为契约检查项。
 5. 原始 DAT、PDF、XLSX、图片、UDB/UDBX、完整派生观测表、`outputs/`、`artifacts/`、`logs/`、缓存、虚拟环境和密钥均不得提交到 Git。
 
