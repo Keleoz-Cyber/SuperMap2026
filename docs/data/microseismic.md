@@ -102,4 +102,6 @@ geomodeling microseismic run-audit --config config/microseismic.yaml -o outputs/
 python -m pytest -q -m local_data
 ```
 
-预期：22 个 DAT、22 个 NUL 终止符、2,006 源记录（823/819/364）、2,005 有效数值（822/819/364）、1 条无效数值（W8 `1.#QNAN0` 可追溯）、W28 不在正式集合、15 项契约检查通过、源文件 SHA-256 不变、无伪造 XY/Z，`validation_passed=True`。阻断问题使命令返回非零退出码，但仍输出诊断报告。
+预期：22 个 DAT、22 个 NUL 终止符、2,006 源记录（823/819/364）、2,005 有效数值（822/819/364）、1 条无效数值（W8 `1.#QNAN0` 可追溯）、W28 不在正式集合、15 项契约检查通过、源文件 SHA-256 不变、无伪造 XY/Z，`validation_passed=True`。
+
+退出码语义：只有契约检查失败（`validation_passed=False`）时 CLI 返回 1，且仍尽量输出诊断报告；`validation_passed=True` 时 `run-audit` 返回 0。downstream `geometry/cleaning/interpolation` gates 即使在退出码 0 时仍可保持阻断（见第 9 节），退出码为 0 不代表已具备插值条件。

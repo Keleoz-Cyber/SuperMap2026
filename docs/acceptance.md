@@ -30,7 +30,7 @@ geomodeling verify-supermap -o outputs/release_verify
 - 2,006 条源记录（L1/L2/L3 = 823/819/364）、2,005 条有限数值（822/819/364）、1 条无效数值（W8 `1.#QNAN0`）。
 - 三张标准表：3 / 23 / 2,006 行；W28 不在正式集合且序号与累计距离为空。
 - 15 项契约检查通过，源文件 SHA-256 处理前后不变，无伪造 XY/Z，`validation_passed=True`。
-- 阻断问题使 CLI 返回非零退出码，但仍输出诊断报告。
+- 退出码语义：只有契约检查失败（`validation_passed=False`）时 CLI 返回 1，且仍尽量输出诊断报告；`validation_passed=True` 时 `run-audit` 返回 0。downstream `geometry/cleaning/interpolation` gates 即使在退出码 0 时仍可保持阻断，退出码不代表可插值。
 
 ## 证据边界（必须保持显式）
 

@@ -73,7 +73,24 @@
 - 指标只能在 `is_nodata=false` 的公共有效点上计算。
 - 当前五个模型的公共有效点为 1,481，公共 NoData 为 241，覆盖率约 86.0%。
 
-### 4.4 三维规则节点交换表
+### 4.4 SuperMap 原始预测导出契约
+
+SuperMap 导出的验证点预测 CSV 必须包含三个必填字段：
+
+| 字段 | 类型 | 规则 |
+|---|---|---|
+| `SmUserID` | 整数 | 源导出标识，按原样保留 |
+| `Attribute` | float64 | 预测值；`-9999` 表示 NoData |
+| `Geometry` | WKT 文本 | 形如 `POINT(x y)`，解析为平面坐标 |
+
+导入规则：
+
+1. 用 `POINT(x y)` 解析 `Geometry` 得到 X/Y；
+2. 按验证表行序与验证集真值对齐，对齐后必须检查 XY 错位（`xy_mismatch_count` 必须为 0）；
+3. `Attribute=-9999` 只能在导入适配层识别，转换为 `rho_pred=null` 且 `is_nodata=true`；其他值按 float64 解析；
+4. 不修改原始导出文件；导入质量（行数、有效数、NoData 数、XY 错位数）逐模型登记。
+
+### 4.5 三维规则节点交换表
 
 外部算法与 SuperMap 之间使用：
 
@@ -123,7 +140,26 @@ x,y,z,value,i,j,k,is_observed,is_valid,source_point_id,method,model_id
 - 成果清单区分正式、验证、预览和失败/空成果；失败/空结果只作证据登记。
 - 数据契约发生坐标系/单位/Z 方向、字段含义、NoData 规则、记录集合、训练/验证划分或交换表必填字段变化时提升版本，受影响模型进入 `invalidated` 审核。
 
-## 9. 版本、追溯和禁止事项
+## 9. 质量指标定义
+
+所有模型比较必须使用同一公共有效点集合（`is_nodata=false` 的交集），并同时报告 `n_total`、`n_valid` 和 `n_nodata`。当前公共有效点为 1,481、公共 NoData 为 241。
+
+| 指标 | 定义/公式 | 比较方向 |
+|---|---|---|
+| MAE | `mean(abs(pred-truth))` | 越低越好 |
+| RMSE | `sqrt(mean((pred-truth)^2))` | 越低越好 |
+| R² | `1 - SSE/SST` | 越高越好；分组样本小时谨慎解释 |
+| Median AE | 绝对误差中位数 | 越低越好 |
+| Mean ARE | `mean(abs(pred-truth)/truth)` | 越低越好 |
+| Median ARE | 相对误差中位数 | 越低越好 |
+| log10 RMSE | 正值 truth/pred 的 log10 空间 RMSE | 越低越好 |
+| Bias | `mean(pred-truth)` | 越接近 0 越好 |
+| P90 AE | 绝对误差第 90 百分位 | 越低越好 |
+| Coverage | 有效预测点数 / 全部验证点数 | 越高越好 |
+
+复算结果必须与 `插值精度对比_总体指标.csv` 在配置容差（`metric_tolerance`）内一致。
+
+## 10. 版本、追溯和禁止事项
 
 追溯要求：
 

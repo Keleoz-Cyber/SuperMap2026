@@ -44,13 +44,26 @@ geomodeling microseismic run-audit --config config/microseismic.yaml -o outputs/
 
 ## CLI 入口
 
+每个命令单独一行执行；`--help` 可查看参数：
+
 ```powershell
 geomodeling --help
-geomodeling validate-data / import-predictions / compute-metrics
-geomodeling register-supermap-results / verify-supermap
-geomodeling create-model / list-models / select-models
-geomodeling export-reports / run-all
-geomodeling microseismic inventory / parse / validate / export-reports / run-audit
+geomodeling validate-data --help
+geomodeling import-predictions --help
+geomodeling compute-metrics --help
+geomodeling register-supermap-results --help
+geomodeling verify-supermap --help
+geomodeling create-model --help
+geomodeling list-models --help
+geomodeling select-models --help
+geomodeling export-reports --help
+geomodeling run-all --help
+geomodeling microseismic --help
+geomodeling microseismic inventory --help
+geomodeling microseismic parse --help
+geomodeling microseismic validate --help
+geomodeling microseismic export-reports --help
+geomodeling microseismic run-audit --help
 ```
 
 默认配置位于 `config/default.yaml`（电阻率）和 `config/microseismic.yaml`（微震）。运行后生成数据登记、验证报告、指标复算、SuperMap 证据、问题清单、审计 JSONL 和验收摘要。
