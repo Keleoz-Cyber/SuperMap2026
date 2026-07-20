@@ -6,7 +6,9 @@
 
 ## 项目目标
 
-建立可复现、可追溯的地下属性数据管理、插值验证和三维表达流程，并逐步接入微震测量、煤层瓦斯与 DSI-like 算法。第一版（v0.1.0）打通地下电阻率从标准数据到 SuperMap 三维成果的完整闭环；当前 `main` 在此基础上额外包含已合并的微震 v0.2a 数据审计底座。
+建设面向超图杯答辩的浏览器建模平台：用户上传 CSV、Excel 或受支持的专业文本数据，完成字段映射、质量校验、二维/三维插值调参、空间验证、成果展示和报告导出。第一版（v0.1.0）已打通地下电阻率从标准数据到 SuperMap 三维成果的闭环；当前 `main` 还包含微震 v0.2a 数据审计底座。
+
+电阻率、微震、瓦斯及后续新增属性作为**独立案例**复用平台能力。没有共同坐标依据时不得空间叠加，不做无证据的多源融合。
 
 ## 当前能力
 
@@ -16,12 +18,15 @@
 - 微震数据审计（v0.2a）：22 个 DAT 清单与哈希、2,006 条源记录标准化、三张标准表、一维累计距离、契约验证、问题清单和审计报告。
 - 便携测试（CI）与本地真实数据回归测试分层。
 
-## 当前边界
+## 下一阶段方向
 
-- 微震只有一维沿线距离；没有可信 X/Y/Z，`geometry/cleaning/interpolation` downstream gates 均为阻断。
-- RHO 物理单位、EPSG 未确认；微震 `WL/2(km)` 含义、测线原点/方位角/CRS、清洗规则未确认。
-- SuperMap 垂直切片未验证；原生等值面失败/空结果；数据集级 API 验证未实现。
-- 瓦斯、DSI-like、微震三维插值尚未实现；下一阶段是微震数据确认，不是直接开始三维插值开发。
+- 浏览器界面 + Python FastAPI 建模后端 + SuperMap iServer 发布的混合架构。
+- 通用 CSV/XLSX 上传、二维/三维字段映射和独立案例管理。
+- IDW、普通 Kriging 的手动调参和网格搜索，使用空间隔离验证生成模型排行榜。
+- 二维地图、三维体元、切片和阈值过滤展示，保留完整数据与参数证据链。
+- 微震局部坐标、深度和有效值规则已形成设计输入，但当前代码尚未实现二维/三维坐标重建与插值。
+
+完整目标、边界和分期见 [docs/product-blueprint.md](docs/product-blueprint.md)。当前实现状态与未来设计必须分开陈述。
 
 ## 安装
 
@@ -70,6 +75,7 @@ geomodeling microseismic run-audit --help
 
 ## 文档导航
 
+- [docs/product-blueprint.md](docs/product-blueprint.md)：浏览器建模平台的唯一产品与开发蓝图
 - [docs/architecture.md](docs/architecture.md)：系统架构与模块边界
 - [docs/acceptance.md](docs/acceptance.md)：验收命令与证据口径
 - [docs/data/contracts.md](docs/data/contracts.md)：数据契约
@@ -78,10 +84,15 @@ geomodeling microseismic run-audit --help
 - [docs/status/current-status.md](docs/status/current-status.md)：当前开发状态与下一阶段门槛
 - [docs/decisions/0001-technology-stack.md](docs/decisions/0001-technology-stack.md)：技术栈 ADR
 - [docs/decisions/0002-supermap-evidence-levels.md](docs/decisions/0002-supermap-evidence-levels.md)：SuperMap 证据等级 ADR
-- [docs/microseismic_v0.2b_data_confirmation.md](docs/microseismic_v0.2b_data_confirmation.md)：微震 v0.2b 数据确认清单与证据登记
-- [docs/superpowers/specs/2026-07-19-microseismic-v0.2b-data-confirmation-design.md](docs/superpowers/specs/2026-07-19-microseismic-v0.2b-data-confirmation-design.md)：v0.2b 数据确认设计
-- [docs/superpowers/plans/2026-07-19-microseismic-v0.2b-data-confirmation.md](docs/superpowers/plans/2026-07-19-microseismic-v0.2b-data-confirmation.md)：v0.2b 数据确认实施计划
 - [tests/fixtures/README.md](tests/fixtures/README.md)：便携测试样本说明
+
+## SuperMap iServer
+
+- 本机部署：`D:\supermap\supermap-iserver-2026-windows-x64-deploy\supermap-iserver-2026-windows-x64-deploy`
+- 最新官方帮助：<https://help.supermap.com/iServer/1201/zh/>
+- 默认管理入口：<http://localhost:8090/iserver/admin-ui/home/>
+
+本机根目录构建标识为`12.1.0.0`。网址路径中的`1201`不作为文档过期或版本不匹配的判据；接口开发以该最新官方帮助和本机运行时探测为准。详细环境说明见[docs/product-blueprint.md](docs/product-blueprint.md#8-supermap-iserver-环境)。
 
 ## 原始资料保护
 

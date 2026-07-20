@@ -1,8 +1,10 @@
 # GeoModelingPlatform Architecture
 
-## Purpose
+## Purpose and status
 
-The project builds a reliable management and analysis layer for underground property 3D simulation. v0.1.0 connects standardized `X,Y,Z,RHO` data, train/validation splits, existing SuperMap prediction exports, quality metrics, model/task state, and SuperMap result registration into a traceable closed loop. Current `main` additionally contains the merged microseismic v0.2a data audit foundation: source inventory, DAT parsing, standard tables, 1D survey distance, contracts, issues, and reports.
+The project builds a browser-based modeling platform for independent underground-property cases. The target workflow is upload, field mapping, validation, interpolation tuning, spatial validation, formal modeling, visualization, and evidence export. The approved product design is [product-blueprint.md](product-blueprint.md).
+
+Current implementation is still the Python CLI foundation: v0.1.0 connects standardized `X,Y,Z,RHO` data, train/validation splits, existing SuperMap prediction exports, quality metrics, model/task state, and SuperMap result registration. Current `main` additionally contains the merged microseismic v0.2a audit foundation. FastAPI, the browser UI, generic upload, tuning execution, iServer publishing, microseismic geometry/interpolation, and gas modeling are target capabilities, not implemented capabilities.
 
 ## Constraints
 
@@ -11,11 +13,46 @@ The project builds a reliable management and analysis layer for underground prop
 - `-9999` in prediction exports is NoData and must become null plus `is_nodata=true`.
 - Empty or failed SuperMap outputs must not be marked as successful formal results.
 - IDW and ordinary Kriging must not be renamed as DSI.
-- Coalbed methane and DSI-like capabilities are interfaces only; microseismic has an implemented audit layer but no 2D/3D geometry, cleaning, or interpolation.
+- Different research cases retain independent coordinate systems. They may share software and algorithms but must not be spatially overlaid without control points and a proven transformation.
+- Coalbed methane and DSI-like capabilities are interfaces only; microseismic has an implemented audit layer but no implemented 2D/3D geometry or interpolation.
 
-## Chosen Stack
+## Current and target stack
 
-See `docs/decisions/0001-technology-stack.md`. The project uses Python 3.12, pandas/numpy, pydantic, Typer/Rich, PyYAML, pytest, JSON registries, and Markdown/HTML reports.
+See `docs/decisions/0001-technology-stack.md` for the delivered CLI baseline. It uses Python 3.12, pandas/numpy, pydantic, Typer/Rich, PyYAML, pytest, JSON registries, and Markdown/HTML reports.
+
+The next stage keeps that core and adds:
+
+- FastAPI for dataset, experiment, tuning, result, and publishing APIs;
+- a TypeScript browser client for upload, tuning, comparison, and visualization;
+- a replaceable interpolation-engine interface with Python IDW/Kriging as the first implementation;
+- a SuperMap iServer adapter for runtime checks and service publishing;
+- a SuperMap Web client path for final map/scene presentation.
+
+## Target runtime architecture (not yet implemented)
+
+```text
+Browser UI
+  -> FastAPI application service
+       -> existing validation / metrics / registry / audit modules
+       -> dataset adapters (CSV, XLSX, microseismic DAT)
+       -> tuning engine (manual run + grid search)
+       -> interpolation engines (Python first; iServer/GPA optional adapter)
+       -> result exporters
+       -> iServer publishing adapter
+  -> published SuperMap map/data/3D services
+```
+
+The FastAPI layer owns job state and calls the modeling core. The browser does not implement interpolation formulas. iServer publishing is a separate stage: a successful local model is not marked as a successful published service until the service URL is reachable and its metadata is checked.
+
+## Target module boundaries
+
+- `datasets`: uploads, workbook selection, field mapping, units, coordinate declaration, preview, hash, and schema version.
+- `experiments`: a stable experiment ID, input dataset fingerprint, algorithm, parameters, validation split, status, metrics, and artifacts.
+- `interpolation`: common 2D/3D engine protocol; IDW and ordinary Kriging implementations; no SuperMap-specific UI dependency.
+- `tuning`: manual candidate runs, grid search, cancellation, per-candidate errors, common-valid comparison, and recommendation rationale.
+- `api`: FastAPI routes and task progress; delegates domain logic instead of duplicating it.
+- `publishing`: iServer health/version/capability checks, publishing requests, service URL evidence, and retryable failure state.
+- `web`: upload wizard, tuning laboratory, model leaderboard, result scene, and evidence export.
 
 ## Module Boundaries
 
@@ -71,9 +108,9 @@ Provides the analysis entry for registering data, validating contracts, importin
 
 ### Future interfaces (not implemented)
 
-- Coalbed methane: attribute statistics only until CRS/elevation/depth datum are confirmed.
+- Coalbed methane: first as an independent 2D borehole-property case; 3D remains blocked until collar elevation and borehole trajectory are confirmed.
 - DSI-like/GOCAD: external backends emitting unified XYZV/regular-grid nodes plus model metadata; DSI results must not be re-interpolated with IDW/Kriging inside SuperMap.
-- Microseismic 2D/3D reconstruction, formal cleaning, and interpolation remain gated by the confirmation items in `docs/data/microseismic.md`.
+- Microseismic local geometry and data rules are now design inputs recorded in `docs/data/microseismic.md`; code/config implementation and regression validation remain pending.
 
 ## Data Flow
 
@@ -119,3 +156,5 @@ Provides the analysis entry for registering data, validating contracts, importin
 ## SuperMap Boundary
 
 The project does not automate iDesktopX controls. It records and checks SuperMap outputs through configuration and evidence. Evidence is split into `declared`, `file_verified`, `dataset_verified`, and `manual_evidence` (see `docs/decisions/0002-supermap-evidence-levels.md`). Formal candidate `RHO_KRIG_FINAL_20M_40` is registered with method, resolution, neighbor count, dimensions, value range, slice settings, threshold settings, and status. Failed datasets `RHO_ISO_77_K40` and `RHO_ISO_HIGH_P95_K40` are registered only as failed/empty evidence. Because the current `dataset_api` is `none`, code may verify the UDBX file but must not claim internal dataset verification.
+
+The target iServer adapter does not weaken this boundary. Installation, process startup, license availability, REST reachability, publishing success, and browser rendering are separate evidence states. Local environment details and version links are in [product-blueprint.md](product-blueprint.md#8-supermap-iserver-环境).

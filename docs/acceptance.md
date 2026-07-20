@@ -34,7 +34,7 @@ geomodeling verify-supermap -o outputs/release_verify
 
 ## 证据边界（必须保持显式）
 
-- 微震审计 `validation_passed=True` **不解除** downstream gates：`geometry_blocked`、`cleaning_blocked`、`interpolation_blocked` 仍为 True，不能把审计通过解释为可插值。
+- 当前v0.2a微震审计`validation_passed=True`**不会自动解除**运行时downstream gates。2026-07-20已经确认的局部坐标、深度、单位和有效值规则只有在schema、config、geometry、报告和回归测试全部升级后，才能修改对应gate；详见[data/microseismic.md](data/microseismic.md)。
 - `dataset_verified=False`：没有受支持的 SuperMap 数据集 API 适配器，只声明文件级验证。
 - 完整体元和水平切片为人工 iDesktopX 证据；垂直切片 `unverified`；原生等值面 `failed`，空数据集不进入正式成果。
 - `RHO >= 77` 仅为演示阈值；RHO 物理单位和 EPSG 未确认。
@@ -45,3 +45,5 @@ geomodeling verify-supermap -o outputs/release_verify
 - 煤层瓦斯三维融合（CRS/高程/深度基准未确认前只允许属性统计）。
 - DSI-like 插值内核与 GOCAD 工程转换。
 - iDesktopX 控件自动化、Web 前端、账户体系、云部署和 iServer 发布。
+
+下一阶段浏览器建模平台的目标验收标准见[product-blueprint.md](product-blueprint.md#11-mvp验收标准)。该蓝图是未来验收目标，不得与本页当前`main`基线混报。

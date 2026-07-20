@@ -2,6 +2,8 @@
 
 > 状态入口。数据事实细节见 [../data/resistivity.md](../data/resistivity.md)、[../data/microseismic.md](../data/microseismic.md) 和 [../data/contracts.md](../data/contracts.md)。
 
+目标产品和分期见 [../product-blueprint.md](../product-blueprint.md)。本文严格区分“当前代码已实现”与“已经确认、等待实现的设计”。
+
 ## 已发布基线
 
 - **v0.1.0**（标签 + GitHub Release，merge commit `b160405`）：电阻率三维属性模拟 MVP。
@@ -23,28 +25,40 @@
 | 微震三张标准表与审计报告 | 正式（审计层） | 本地可复现 CLI + 测试 |
 | `RHO_ISO_77_K40` / `RHO_ISO_HIGH_P95_K40` | 失败/空 | 仅失败证据登记 |
 
-## 当前阻断
+## 已确认、等待实现
 
-微震 downstream gates（审计通过不解除）：
+- 产品形态：上传数据后完成校验、插值调参、空间验证和展示的独立浏览器建模平台。
+- 架构：Python/FastAPI建模核心 + SuperMap iServer发布 + SuperMap浏览器展示。
+- 插值调参：手动参数调整 + 网格搜索；通过空间隔离验证比较候选模型。
+- 案例关系：电阻率、微震、瓦斯及后续数据是独立案例，共用平台但不跨坐标叠加。
+- 微震局部坐标：W16为原点，X沿L3指向W24，Y沿L2指向W20；W5为L1/L2交点且坐标为`(0,220)`；各测点距离按Excel计算。
+- 微震深度与单位：`depth_m = WL_half_km × 1000`，Vx为km/s；只排除W8的`1.#QNAN0`，其余2,005条有限值进入候选建模集合；W28不建模。
 
-- `geometry_blocked=True`：无可信绝对坐标、原点、方位角、CRS，深度/Z 换算未确认。
-- `cleaning_blocked=True`：80 条异常值清单/规则、3.59% vs 3.99% 比例口径、线性插值 vs 邻近 5 点 IDW 方法冲突未解决。
-- `interpolation_blocked=True`：以上几何问题 + `WL/2(km)` 含义未确认。
+这些决策尚未进入当前`config/microseismic.yaml`、geometry代码和测试，因此当前CLI仍会输出旧的downstream gates；不能只修改状态输出来冒充功能完成。
 
-其他显式未决：RHO 物理单位未确认；EPSG 未确认；论文计数 `823/818/364=2,005` 与文件事实冲突保留。
+## 仍然未知但不阻塞平台主干
+
+- 电阻率RHO物理单位和绝对EPSG；电阻率只按局部三维案例处理。
+- 微震绝对方位角、绝对控制点和EPSG；微震只按局部三维案例处理。
+- 瓦斯西安80的准确带号/EPSG、正式属性字段和同孔多深度聚合规则；实现瓦斯案例前确认。
+- 老师后续属性数据的字段、维度和单位；通过通用字段映射接入。
+- SuperMap垂直切片、原生等值面和数据集级API验证；作为增强项逐项验证。
+- DSI-like真实后端；不作为MVP前置条件。
 
 ## 下一阶段顺序
 
-1. **微震 v0.2b 数据确认**（下一阶段，不是三维插值开发）：按 [../microseismic_v0.2b_data_confirmation.md](../microseismic_v0.2b_data_confirmation.md) 逐项登记证据，确认 `WL/2(km)` 含义与 Z 换算、测线几何与 CRS、清洗规则、计数冲突；实施计划见 [../superpowers/plans/2026-07-19-microseismic-v0.2b-data-confirmation.md](../superpowers/plans/2026-07-19-microseismic-v0.2b-data-confirmation.md)。
-2. 数据确认完成后才评估：正式清洗、二维/三维几何重建、微震插值。
-3. 瓦斯条件确认（CRS、轴顺序、孔口高程、深度基准）后做属性统计扩展。
-4. 更晚：DSI-like、多源融合和业务评价。
+1. 验证本机iServer 2026启动、许可、REST管理端、可用服务和发布链路；不得仅凭目录存在判断可用。
+2. 把微震已确认规则写入schema/config/geometry并完成真实数据回归，生成2,005条局部三维建模样本。
+3. 建立FastAPI通用数据集与实验任务接口，支持CSV/XLSX字段映射。
+4. 实现二维/三维IDW、普通Kriging、手动调参、网格搜索和空间验证。
+5. 开发浏览器上传、调参、模型对比和成果场景，优先打通电阻率和微震。
+6. 打通iServer发布与SuperMap Web展示；随后接入瓦斯和老师新增数据。
 
 ## 明确未实现
 
-- 微震二维/三维坐标、正式清洗、空间插值、SuperMap 三维点导入。
+- 微震局部二维/三维坐标代码、空间插值、SuperMap三维点导入。
 - 煤层瓦斯可信三维叠加；GOCAD SGrid/Voxet/VTU 转换。
 - DSI-like 插值内核；不得把 IDW 或普通克里金改名为 DSI。
 - SuperMap 垂直切片（未验证）、原生等值面（失败）、数据集级 API 验证（`dataset_api=none`）。
-- iDesktopX 自动点击、Web 前端、账户权限、云部署、iServer 发布。
+- iDesktopX自动点击、Web前端、FastAPI服务、通用上传、调参执行和iServer发布。
 - 自动成矿概率、储量和自动地质结论。
