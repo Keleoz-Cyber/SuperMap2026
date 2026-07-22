@@ -11,13 +11,19 @@ from geomodeling.publishing import (
     IServerClient,
     build_publish_evidence_chain,
     latest_browser_load,
+    latest_valid_browser_load,
     probe_iserver,
     record_browser_load,
     verify_data_service,
     verify_realspace_service,
 )
 from geomodeling.publishing.evidence import BROWSER_LOADS_FILENAME
-from geomodeling.publishing.schemas import BrowserLoadReport, EvidenceStateName
+from geomodeling.publishing.schemas import (
+    BrowserLoadEvidenceRecord,
+    BrowserLoadReport,
+    EvidenceStateName,
+    RenderKind,
+)
 
 
 class FakeClient:
@@ -130,6 +136,15 @@ def test_verify_realspace_service_finds_scene_and_layers():
 
 def test_evidence_chain_merges_registry_live_and_browser_states():
     now = datetime(2026, 7, 22, tzinfo=timezone.utc)
+    record = BrowserLoadEvidenceRecord(
+        case_id="resistivity",
+        result_id="RHO_KRIG_FINAL_20M_40",
+        service_url="http://iserver.test/iserver/services/3D-WorkSpace/rest/realspace",
+        success=True,
+        render_kind=RenderKind.ISERVER_SCENE,
+        validated_count=4388,
+        reported_at=now,
+    )
     chain = build_publish_evidence_chain(
         result_id="RHO_KRIG_FINAL_20M_40",
         registry_states={
@@ -141,13 +156,30 @@ def test_evidence_chain_merges_registry_live_and_browser_states():
             "iserver_published": (True, "services reachable"),
             "service_metadata_verified": (True, "metadata matches"),
         },
-        browser_reported_at=now,
+        browser_record=record,
     )
     states = chain.state_map()
     assert states[EvidenceStateName.MODEL_SUCCEEDED].ok is True
     assert states[EvidenceStateName.ISERVER_PUBLISHED].source.value == "live_probe"
-    assert states[EvidenceStateName.BROWSER_LOADED].ok is True
-    assert states[EvidenceStateName.MANUAL_VISUAL_CHECKED].ok is True
+    browser_state = states[EvidenceStateName.BROWSER_LOADED]
+    assert browser_state.ok is True
+    assert browser_state.checked_at == record.received_at
+    assert "iserver_scene" in browser_state.detail
+
+
+def test_evidence_chain_without_valid_browser_record_stays_grey():
+    chain = build_publish_evidence_chain(
+        result_id="RHO_KRIG_FINAL_20M_40",
+        registry_states={"model_succeeded": (True, "status=succeeded")},
+        live_states={
+            "iserver_published": (True, "reachable"),
+            "service_metadata_verified": (True, "matches"),
+        },
+        browser_record=None,
+    )
+    browser_state = chain.state_map()[EvidenceStateName.BROWSER_LOADED]
+    assert browser_state.ok is False
+    assert "do not count" in browser_state.detail
 
 
 def test_evidence_chain_iserver_down_keeps_model_state():
@@ -172,6 +204,9 @@ def test_browser_load_store_roundtrip(tmp_path):
         service_url="http://iserver.test/iserver/services/3D-WorkSpace/rest",
         scene_name="RHO_三维全值域",
         layer_count=1,
+        success=True,
+        render_kind=RenderKind.ISERVER_SCENE,
+        validated_count=4388,
     )
     record_browser_load(report, tmp_path)
     record_browser_load(report, tmp_path)
@@ -180,6 +215,70 @@ def test_browser_load_store_roundtrip(tmp_path):
     lines = (tmp_path / BROWSER_LOADS_FILENAME).read_text(encoding="utf-8").strip().splitlines()
     assert len(lines) == 2
     assert latest_browser_load("resistivity", "OTHER", tmp_path) is None
+
+
+VALID_KINDS = {RenderKind.ISERVER_SCENE.value, RenderKind.S3M_VOXEL_CACHE.value}
+VALID_PREFIXES = ("http://iserver.test/iserver/services/3D-WorkSpace/",)
+
+
+def _write_report(tmp_path, **overrides):
+    payload = {
+        "case_id": "resistivity",
+        "result_id": "RHO_KRIG_FINAL_20M_40",
+        "service_url": "http://iserver.test/iserver/services/3D-WorkSpace/rest/realspace",
+        "success": True,
+        "render_kind": "iserver_scene",
+        "validated_count": 4388,
+    }
+    payload.update(overrides)
+    record_browser_load(BrowserLoadReport(**payload), tmp_path)
+
+
+def test_latest_valid_browser_load_accepts_valid_report(tmp_path):
+    _write_report(tmp_path)
+    record = latest_valid_browser_load(
+        "resistivity", "RHO_KRIG_FINAL_20M_40", tmp_path,
+        allowed_kinds=VALID_KINDS, allowed_service_prefixes=VALID_PREFIXES,
+    )
+    assert record is not None
+    assert record.validated_count == 4388
+
+
+def test_latest_valid_browser_load_rejects_failed_scene(tmp_path):
+    _write_report(tmp_path, success=False)
+    record = latest_valid_browser_load(
+        "resistivity", "RHO_KRIG_FINAL_20M_40", tmp_path,
+        allowed_kinds=VALID_KINDS, allowed_service_prefixes=VALID_PREFIXES,
+    )
+    assert record is None
+
+
+def test_latest_valid_browser_load_rejects_fallback_points(tmp_path):
+    _write_report(tmp_path, render_kind="fallback_points")
+    record = latest_valid_browser_load(
+        "resistivity", "RHO_KRIG_FINAL_20M_40", tmp_path,
+        allowed_kinds=VALID_KINDS, allowed_service_prefixes=VALID_PREFIXES,
+    )
+    assert record is None
+
+
+def test_latest_valid_browser_load_rejects_wrong_result_or_service(tmp_path):
+    _write_report(tmp_path, result_id="OTHER_DATASET")
+    _write_report(tmp_path, service_url="http://evil.example/fake/rest")
+    record = latest_valid_browser_load(
+        "resistivity", "RHO_KRIG_FINAL_20M_40", tmp_path,
+        allowed_kinds=VALID_KINDS, allowed_service_prefixes=VALID_PREFIXES,
+    )
+    assert record is None
+
+
+def test_latest_valid_browser_load_rejects_zero_count(tmp_path):
+    _write_report(tmp_path, validated_count=0)
+    record = latest_valid_browser_load(
+        "resistivity", "RHO_KRIG_FINAL_20M_40", tmp_path,
+        allowed_kinds=VALID_KINDS, allowed_service_prefixes=VALID_PREFIXES,
+    )
+    assert record is None
 
 
 # ------------------------------------------------------------------ client

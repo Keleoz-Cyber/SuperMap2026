@@ -294,6 +294,9 @@ async function loadVoxelCells() {
       service_url: data.service_url,
       scene_name: vol.scene_name,
       layer_count: 1,
+      success: true,
+      render_kind: 's3m_voxel_cache',
+      validated_count: data.count,
       note: `S3M 体元缓存浏览器渲染：${data.count} 格 / ${data.tile_files} 个 s3mb 瓦片经 iServer 服务获取并解析（${data.fetched_bytes} B）；值域 ${data.value_range[0].toFixed(2)}–${data.value_range[1].toFixed(2)}；范围 x[${data.x_range}] y[${data.y_range}] z[${data.z_range}]`,
     }).catch((e) => console.warn('体元缓存回执上报失败：', e))
   } catch (e) {
@@ -335,21 +338,18 @@ function maybeReportBrowserLoad() {
   if (reportSent || !pointsRendered || !sceneOpenSettled) return
   reportSent = true
   const ok = sceneOpenState.value === 'ok'
-  const volumeNote =
-    volumeState.value === 'ok'
-      ? '；S3M 体渲染场景已加载'
-      : volumeState.value === 'failed'
-        ? '；S3M 体渲染场景未加载'
-        : ''
   postBrowserLoad({
     case_id: 'resistivity',
     result_id: RESULT_ID,
     service_url: SCENE_URL,
     scene_name: SCENE_NAME,
     layer_count: ok ? sceneLayerCount.value : 0,
+    success: ok,
+    render_kind: ok ? 'iserver_scene' : 'fallback_points',
+    validated_count: ok ? renderedCount.value : 0,
     note: ok
-      ? `浏览器渲染完成：iServer 场景 ${sceneLayerCount.value} 个图层 + RHO 点云 ${renderedCount.value} 点（decimate=${decimate.value}）${volumeNote}`
-      : `iServer 场景打开失败，layer_count 记 0；RHO 点云已独立渲染${volumeNote}`,
+      ? `浏览器渲染完成：iServer 场景 ${sceneLayerCount.value} 个图层 + RHO 点云 ${renderedCount.value} 点（decimate=${decimate.value}）`
+      : 'iServer 场景打开失败；仅点云独立渲染（fallback_points，不进入发布证据）',
   }).catch((e) => console.warn('浏览器加载回执上报失败：', e))
 }
 

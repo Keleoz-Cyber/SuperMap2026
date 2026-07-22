@@ -280,5 +280,8 @@ export interface BrowserLoadReport {
   service_url: string
   scene_name: string
   layer_count: number
+  success: boolean
+  render_kind: 'iserver_scene' | 's3m_voxel_cache' | 'fallback_points'
+  validated_count: number
   note: string
 }

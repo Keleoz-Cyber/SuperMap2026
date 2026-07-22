@@ -213,9 +213,12 @@ def test_browser_load_report_flips_evidence_state(tmp_path):
         json={
             "case_id": "resistivity",
             "result_id": "RHO_KRIG_FINAL_20M_40",
-            "service_url": "http://iserver.test/iserver/services/3D-WorkSpace/rest",
+            "service_url": "http://iserver.test/iserver/services/3D-WorkSpace/rest/realspace",
             "scene_name": "RHO_三维全值域",
             "layer_count": 1,
+            "success": True,
+            "render_kind": "iserver_scene",
+            "validated_count": 4388,
         },
     )
     assert resp.status_code == 201
@@ -224,6 +227,48 @@ def test_browser_load_report_flips_evidence_state(tmp_path):
     states = {s["state"]: s for s in after["evidence_chain"]["states"]}
     assert states["browser_loaded"]["ok"] is True
     assert states["browser_loaded"]["source"] == "browser_report"
+    assert "iserver_scene" in states["browser_loaded"]["detail"]
+
+
+def test_browser_load_fallback_report_never_flips_evidence(tmp_path):
+    client = make_client(tmp_path)
+    resp = client.post(
+        "/api/evidence/browser-load",
+        json={
+            "case_id": "resistivity",
+            "result_id": "RHO_KRIG_FINAL_20M_40",
+            "service_url": "http://iserver.test/iserver/services/3D-WorkSpace/rest/realspace",
+            "success": False,
+            "render_kind": "fallback_points",
+            "validated_count": 0,
+            "note": "iServer 场景打开失败，仅点云渲染",
+        },
+    )
+    assert resp.status_code == 201
+
+    body = client.get("/api/cases/resistivity/publish-status").json()
+    states = {s["state"]: s for s in body["evidence_chain"]["states"]}
+    assert states["browser_loaded"]["ok"] is False
+
+
+def test_browser_load_rejects_wrong_service_identity(tmp_path):
+    client = make_client(tmp_path)
+    resp = client.post(
+        "/api/evidence/browser-load",
+        json={
+            "case_id": "resistivity",
+            "result_id": "RHO_KRIG_FINAL_20M_40",
+            "service_url": "http://evil.example/iserver/services/3D-Fake/rest/realspace",
+            "success": True,
+            "render_kind": "iserver_scene",
+            "validated_count": 100,
+        },
+    )
+    assert resp.status_code == 201
+
+    body = client.get("/api/cases/resistivity/publish-status").json()
+    states = {s["state"]: s for s in body["evidence_chain"]["states"]}
+    assert states["browser_loaded"]["ok"] is False
 
 
 def test_points_endpoint_uses_fixture_csv(tmp_path):

@@ -18,11 +18,19 @@ from geomodeling.issues import current_issues
 from geomodeling.publishing import (
     IServerClient,
     build_publish_evidence_chain,
-    latest_browser_load,
     probe_iserver,
     verify_data_service,
     verify_realspace_service,
 )
+from geomodeling.publishing.cache_contract import CacheContract, contract_from_config, formal_result
+from geomodeling.publishing.cache_manifest import (
+    CacheManifest,
+    compute_manifest_digest,
+    load_manifest,
+    verify_manifest_digest,
+    verify_tile_set,
+)
+from geomodeling.publishing.evidence import latest_valid_browser_load
 from geomodeling.publishing.probe import (
     DATA_SERVICE_NAME,
     MAP_SERVICE_NAME,
@@ -33,7 +41,14 @@ from geomodeling.publishing.probe import (
     VOLUME_SCENE_NAME,
     VOLUME_SERVICE_NAME,
 )
-from geomodeling.publishing.s3mb import dedupe_cells, parse_s3mb_bytes
+from geomodeling.publishing.s3mb import (
+    S3MBContractError,
+    dedupe_cells,
+    parse_s3mb_bytes,
+    validate_cache_scp,
+    validate_cells,
+)
+from geomodeling.publishing.schemas import RenderKind
 
 # iDesktopX 体元栅格生成缓存（S3M 2.0）的默认输出位置；可用
 # GEOMODELING_VOXEL_CACHE_DIR 覆盖。瓦片字节一律经 iServer REST 获取，
@@ -211,7 +226,16 @@ def publish_status(config: AppConfig, client: IServerClient, evidence_dir: Path)
     volume_available = bool(volume_check and volume_check.reachable)
     volume_layers = (volume_check.detail.get("layers") or []) if volume_check else []
 
-    browser_latest = latest_browser_load(CASE_RESISTIVITY, result_id, evidence_dir)
+    browser_record = latest_valid_browser_load(
+        CASE_RESISTIVITY,
+        result_id,
+        evidence_dir,
+        allowed_kinds={RenderKind.ISERVER_SCENE.value, RenderKind.S3M_VOXEL_CACHE.value},
+        allowed_service_prefixes=(
+            f"{client.base_url}/services/{REALSPACE_SERVICE_NAME}/",
+            f"{client.base_url}/services/{VOLUME_SERVICE_NAME}/",
+        ),
+    )
     manual_notes = formal.get("manual_evidence") or []
     chain = build_publish_evidence_chain(
         result_id=result_id,
@@ -230,7 +254,7 @@ def publish_status(config: AppConfig, client: IServerClient, evidence_dir: Path)
             ),
         },
         live_states=live_states,
-        browser_reported_at=browser_latest,
+        browser_record=browser_record,
     )
 
     failed_results = [
@@ -309,18 +333,25 @@ def _read_points_cached(csv_path: str) -> dict[str, Any]:
 
 
 @lru_cache(maxsize=4)
-def _voxel_cells_cached(cache_dir: str, service_url: str, timeout: float) -> dict[str, Any]:
+def _voxel_cells_cached(
+    cache_dir: str,
+    service_url: str,
+    contract: CacheContract,
+    manifest: CacheManifest,
+    timeout: float,
+) -> dict[str, Any]:
     """Fetch every cache tile via iServer REST and parse voxel cells.
 
     Tile bytes always come from the published iServer 3D cache service; the
     local cache directory is only used to enumerate relative tile paths.
-    Cache/scp/tiles are validated fail-closed against the targeted
-    S3M 2.0 voxel-cache contract before any data leaves the API.
+    The remote tile set and byte content must reproduce the pinned manifest,
+    and cache/scp/tiles are validated fail-closed against the
+    registry-derived ``contract`` before any data leaves the API.
     """
 
     import os
 
-    from geomodeling.publishing import IServerClient, validate_cache_scp, validate_cells
+    from geomodeling.publishing import IServerClient
 
     root = Path(cache_dir)
     if not root.exists():
@@ -330,12 +361,14 @@ def _voxel_cells_cached(cache_dir: str, service_url: str, timeout: float) -> dic
     )
     if not rel_paths:
         raise FileNotFoundError(f"no .s3mb tiles under {cache_dir}")
+    verify_tile_set(rel_paths, manifest)
 
     client = IServerClient(
         base_url=os.environ.get("GEOMODELING_ISERVER_URL", "http://localhost:8090/iserver").rstrip("/"),
         timeout=timeout,
     )
     tiles = []
+    fetched: list[tuple[str, bytes]] = []
     fetched_bytes = 0
     try:
         scp_resp = client.get_json(
@@ -343,7 +376,12 @@ def _voxel_cells_cached(cache_dir: str, service_url: str, timeout: float) -> dic
         )
         if not scp_resp.ok:
             raise ConnectionError(f"iServer 缓存配置获取失败：{scp_resp.error}")
-        contract_scp = validate_cache_scp(scp_resp.data)
+        try:
+            contract_scp = validate_cache_scp(scp_resp.data, contract)
+        except S3MBContractError:
+            raise
+        except Exception as exc:  # malformed scp structure → contract error
+            raise S3MBContractError(f"scp 结构畸形：{exc}") from exc
 
         for rel in rel_paths:
             resp = client.get_bytes(
@@ -352,16 +390,14 @@ def _voxel_cells_cached(cache_dir: str, service_url: str, timeout: float) -> dic
             if not resp.ok:
                 raise ConnectionError(f"iServer tile fetch failed for {rel}: {resp.error}")
             fetched_bytes += len(resp.data)
-            tiles.append(parse_s3mb_bytes(Path(rel).stem, resp.data))
+            fetched.append((rel, resp.data))
     finally:
         client.close()
 
+    manifest_digest = verify_manifest_digest(fetched, manifest)
+    tiles = [parse_s3mb_bytes(Path(rel).stem, data, contract) for rel, data in fetched]
     cells = dedupe_cells(tiles)
-    contract_cells = validate_cells(
-        cells,
-        envelope={"x": (-160.0, -40.0), "y": (220.0, 660.0), "z": (-840.0, 0.0)},
-        expected_count=6762,
-    )
+    contract_cells = validate_cells(cells, contract)
     summary = {
         "x_range": contract_cells["bbox"]["x"],
         "y_range": contract_cells["bbox"]["y"],
@@ -374,7 +410,15 @@ def _voxel_cells_cached(cache_dir: str, service_url: str, timeout: float) -> dic
         "fetched_bytes": fetched_bytes,
         "service_url": service_url,
         "summary": summary,
-        "contract": {"scp": contract_scp, "cells": contract_cells},
+        "contract": {
+            "scp": contract_scp,
+            "cells": contract_cells,
+            "manifest": {
+                "tile_count": manifest.tile_count,
+                "digest_sha256": manifest_digest,
+                "pinned": True,
+            },
+        },
     }
 
 
@@ -391,14 +435,24 @@ def voxel_cells(config: AppConfig, client: IServerClient, cache_dir: Path | None
     if not cache_root.is_absolute():
         cache_root = (config.resolve_path(str(cache_root)) or cache_root)
     service_url = f"{client.base_url}/services/{VOLUME_SERVICE_NAME}/rest/realspace"
+
+    csv_path = config.resolve_path(config.paths.get("standardized"))
+    if csv_path is None or not csv_path.exists():
+        raise FileNotFoundError("standardized CSV not available for contract xy envelope")
+    points_data = _read_points_cached(str(csv_path))
+    contract = contract_from_config(
+        config,
+        xy_extent=(tuple(points_data["x_range"]), tuple(points_data["y_range"])),
+    )
+    from geomodeling.config import PROJECT_ROOT
+    from geomodeling.publishing.cache_manifest import DEFAULT_MANIFEST_PATH
+
+    manifest = load_manifest(PROJECT_ROOT / DEFAULT_MANIFEST_PATH)
     if refresh:
         _voxel_cells_cached.cache_clear()
-    data = _voxel_cells_cached(str(cache_root), service_url, 30.0)
+    data = _voxel_cells_cached(str(cache_root), service_url, contract, manifest, 30.0)
     cells = data["cells"]
-    formal = next(
-        (r for r in config.supermap.get("results", []) if r.get("result_category") == "formal"),
-        {},
-    )
+    formal = formal_result(config)
     return {
         "case_id": CASE_RESISTIVITY,
         "result_id": formal.get("dataset", RHO_FORMAL_DATASET),

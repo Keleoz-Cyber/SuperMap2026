@@ -94,12 +94,22 @@ class IServerStatus(BaseModel):
     error: str | None = None
 
 
-class BrowserLoadReport(BaseModel):
-    """Browser-side report that a scene/service actually rendered.
+class RenderKind(str, Enum):
+    """What the browser actually rendered for a browser-load report."""
 
-    The frontend posts this after ``scene.open`` resolves and at least one
-    frame has rendered, so ``browser_loaded`` is backed by a real event and
-    not by "a request was sent".
+    ISERVER_SCENE = "iserver_scene"
+    S3M_VOXEL_CACHE = "s3m_voxel_cache"
+    FALLBACK_POINTS = "fallback_points"
+
+
+class BrowserLoadReport(BaseModel):
+    """Browser-side report of an attempted render.
+
+    Only reports with ``success=True``, a non-fallback ``render_kind`` and a
+    positive ``validated_count`` may move the publish evidence chain's
+    ``browser_loaded`` state; anything else is diagnostic-only. The
+    authoritative evidence time is the server receive time, not the
+    client-reported clock.
     """
 
     case_id: str
@@ -107,6 +117,9 @@ class BrowserLoadReport(BaseModel):
     service_url: str
     scene_name: str | None = None
     layer_count: int | None = None
+    success: bool = False
+    render_kind: RenderKind = RenderKind.FALLBACK_POINTS
+    validated_count: int = 0
     client: str = "web"
     note: str = ""
     reported_at: datetime | None = None
@@ -120,6 +133,9 @@ class BrowserLoadEvidenceRecord(BaseModel):
     service_url: str
     scene_name: str | None = None
     layer_count: int | None = None
+    success: bool = False
+    render_kind: RenderKind = RenderKind.FALLBACK_POINTS
+    validated_count: int = 0
     client: str = "web"
     note: str = ""
     reported_at: datetime

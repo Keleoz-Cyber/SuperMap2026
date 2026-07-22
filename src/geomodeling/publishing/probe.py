@@ -200,15 +200,15 @@ def build_publish_evidence_chain(
     result_id: str,
     registry_states: dict[str, tuple[bool, str]],
     live_states: dict[str, tuple[bool, str]] | None = None,
-    browser_reported_at: datetime | None = None,
+    browser_record: "BrowserLoadEvidenceRecord | None" = None,
 ) -> EvidenceChain:
     """Merge registry/config evidence with live probe evidence.
 
     ``registry_states`` maps state name -> (ok, detail) from platform
     registries (e.g. model_succeeded). ``live_states`` maps state name ->
-    (ok, detail) from the live iServer probe. Live probe failures never
-    downgrade an already-true registry state; they only affect the
-    iServer-side states they own.
+    (ok, detail) from the live iServer probe. ``browser_record`` is the
+    newest identity-validated browser render report; anything without one
+    keeps ``browser_loaded`` grey (diagnostics never turn it green).
     """
 
     live_states = live_states or {}
@@ -235,19 +235,30 @@ def build_publish_evidence_chain(
             EvidenceState(state=state_name, ok=ok, source=source, checked_at=now, detail=detail)
         )
 
-    chain.states.append(
-        EvidenceState(
-            state=EvidenceStateName.BROWSER_LOADED,
-            ok=browser_reported_at is not None,
-            source=EvidenceSource.BROWSER_REPORT if browser_reported_at else EvidenceSource.NONE,
-            checked_at=browser_reported_at,
-            detail=(
-                f"browser reported render at {browser_reported_at.isoformat()}"
-                if browser_reported_at
-                else "no browser load report yet"
-            ),
+    if browser_record is not None:
+        browser_detail = (
+            f"{browser_record.render_kind.value} 渲染回执：{browser_record.validated_count} 个有效单元，"
+            f"服务器接收于 {browser_record.received_at.isoformat()}"
         )
-    )
+        chain.states.append(
+            EvidenceState(
+                state=EvidenceStateName.BROWSER_LOADED,
+                ok=True,
+                source=EvidenceSource.BROWSER_REPORT,
+                checked_at=browser_record.received_at,
+                detail=browser_detail,
+            )
+        )
+    else:
+        chain.states.append(
+            EvidenceState(
+                state=EvidenceStateName.BROWSER_LOADED,
+                ok=False,
+                source=EvidenceSource.NONE,
+                checked_at=None,
+                detail="no valid browser render report (diagnostics do not count)",
+            )
+        )
     manual_ok, manual_detail = registry_states.get(
         EvidenceStateName.MANUAL_VISUAL_CHECKED.value, (False, "no manual evidence")
     )
