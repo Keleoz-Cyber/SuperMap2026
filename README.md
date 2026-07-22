@@ -6,7 +6,7 @@
 
 ## 项目目标
 
-建设面向超图杯答辩的浏览器建模平台：用户上传 CSV、Excel 或受支持的专业文本数据，完成字段映射、质量校验、二维/三维插值调参、空间验证、成果展示和报告导出。第一版（v0.1.0）已打通地下电阻率从标准数据到 SuperMap 三维成果的闭环；当前 `main` 还包含微震 v0.2a 数据审计底座。
+建设面向超图杯答辩的浏览器建模平台：用户上传 CSV、Excel 或受支持的专业文本数据，完成字段映射、质量校验、二维/三维插值调参、空间验证、成果展示和报告导出。第一版（v0.1.0）已打通地下电阻率从标准数据到 SuperMap 三维成果的闭环；当前代码还包含微震 v0.2a 数据审计底座。
 
 电阻率、微震、瓦斯及后续新增属性作为**独立案例**复用平台能力。没有共同坐标依据时不得空间叠加，不做无证据的多源融合。
 
@@ -18,13 +18,15 @@
 - 微震数据审计（v0.2a）：22 个 DAT 清单与哈希、2,006 条源记录标准化、三张标准表、一维累计距离、契约验证、问题清单和审计报告。
 - 便携测试（CI）与本地真实数据回归测试分层。
 
+仓库外已有两组人工派生证据，但尚未代码化：微震2,005条有限样本经3σ剔除80条后保留1,925条，并已在iDesktopX复现；瓦斯已形成58条三维候选样本，但体元加载会触发iDesktopX原生崩溃，暂缓作为正式案例。以[当前状态](docs/status/current-status.md)为准，不得把这些人工结果描述成仓库功能。
+
 ## 下一阶段方向
 
 - 浏览器界面 + Python FastAPI 建模后端 + SuperMap iServer 发布的混合架构。
 - 通用 CSV/XLSX 上传、二维/三维字段映射和独立案例管理。
 - IDW、普通 Kriging 的手动调参和网格搜索，使用空间隔离验证生成模型排行榜。
 - 二维地图、三维体元、切片和阈值过滤展示，保留完整数据与参数证据链。
-- 微震局部坐标、深度和有效值规则已形成设计输入，但当前代码尚未实现二维/三维坐标重建与插值。
+- 第一个开发里程碑用现有电阻率成果打通“iServer发布 → FastAPI状态接口 → 浏览器加载”的纵向闭环；微震作为第二案例，瓦斯暂缓。
 
 完整目标、边界和分期见 [docs/product-blueprint.md](docs/product-blueprint.md)。当前实现状态与未来设计必须分开陈述。
 
@@ -81,9 +83,12 @@ geomodeling microseismic run-audit --help
 - [docs/data/contracts.md](docs/data/contracts.md)：数据契约
 - [docs/data/resistivity.md](docs/data/resistivity.md)：电阻率数据与成果事实
 - [docs/data/microseismic.md](docs/data/microseismic.md)：微震审计事实与冲突
+- [docs/data/gas.md](docs/data/gas.md)：瓦斯三维候选数据、坐标约定和崩溃边界
+- [docs/supermap-integration.md](docs/supermap-integration.md)：iServer、iClient3D和iDesktopX集成边界
 - [docs/status/current-status.md](docs/status/current-status.md)：当前开发状态与下一阶段门槛
 - [docs/decisions/0001-technology-stack.md](docs/decisions/0001-technology-stack.md)：技术栈 ADR
 - [docs/decisions/0002-supermap-evidence-levels.md](docs/decisions/0002-supermap-evidence-levels.md)：SuperMap 证据等级 ADR
+- [docs/decisions/0003-browser-platform-and-iserver.md](docs/decisions/0003-browser-platform-and-iserver.md)：浏览器平台与iServer纵向闭环ADR
 - [tests/fixtures/README.md](tests/fixtures/README.md)：便携测试样本说明
 
 ## SuperMap iServer
@@ -92,7 +97,15 @@ geomodeling microseismic run-audit --help
 - 最新官方帮助：<https://help.supermap.com/iServer/1201/zh/>
 - 默认管理入口：<http://localhost:8090/iserver/admin-ui/home/>
 
-本机根目录构建标识为`12.1.0.0`。网址路径中的`1201`不作为文档过期或版本不匹配的判据；接口开发以该最新官方帮助和本机运行时探测为准。详细环境说明见[docs/product-blueprint.md](docs/product-blueprint.md#8-supermap-iserver-环境)。
+本机根目录构建标识为`12.1.0.0-260626-9297`。网址路径中的`1201`不作为文档过期或版本不匹配的判据。2026-07-22核对时8090端口未监听，且产品包内的iClient示例页只是“不包含iClient”的占位提示；接口开发以官方帮助和本机运行时探测为准。详细阅读顺序见[docs/supermap-integration.md](docs/supermap-integration.md)。
+
+## 开发 Agent 入口
+
+开始开发前按顺序阅读：`README.md` → [当前状态](docs/status/current-status.md) → [产品蓝图](docs/product-blueprint.md) → [SuperMap集成说明](docs/supermap-integration.md) → 对应案例数据文档。论文只作来源证据，不能覆盖这些已确认规则。
+
+可直接交给Kimi的简短启动提示词：
+
+> 在 `D:\study\Contest\Supermap\GeoModelingPlatform` 开始 v0.3 纵向闭环开发。以 README、当前状态、产品蓝图和 SuperMap 集成说明为事实入口；保留现有CLI和80项测试。先验证本机iServer、官方SDK和发布链路，再用电阻率打通 iServer → FastAPI → 浏览器 SuperMap 成果展示；微震为第二案例，瓦斯因体元加载崩溃暂缓。前端框架可自行选择，但要优先保证答辩效果和可复现证据。创建功能分支和PR，不直接合并，并提交测试、运行说明、截图和剩余边界。
 
 ## 原始资料保护
 

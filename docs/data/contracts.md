@@ -116,6 +116,14 @@ x,y,z,value,i,j,k,is_observed,is_valid,source_point_id,method,model_id
 - 未知或不适用的 `sequence_on_line`、`cumulative_s_m`、`x_local_m`、`y_local_m` 保持空值，不得写成 0。
 - W28 只作冲突登记，不进入正式 L3、累计距离、样本、清洗集合或模型。
 
+微震局部三维和3σ派生契约尚未由当前代码实现，但已经确认如下：
+
+- 2,005条有限记录逐条保留`sample_id/point_id/line_id/source_file/source_line/raw_token`，并派生`x_local_m/y_local_m/depth_m/z_local_m/vx_km_s`和规则版本；
+- `depth_m = wl_half_km × 1000`且向下为正，`z_local_m = -depth_m`且向上为正；
+- 对深度和Vx分别计算标准分数，任一绝对值大于3的记录进入剔除表；当前固定回归口径为剔除80条（深度72、速度8）、保留1,925条；
+- 剔除表必须包含`depth_zscore/vx_zscore/filter_status/filter_reason`，候选表不得覆盖2,006条源记录标准表；
+- 论文3.59%只作冲突来源，程序以实际输入分母和记录数计算比例。
+
 ## 6. 无效值、NoData 与空值语义
 
 - **无效值**：无法解析为有限数值的内容（如 `1.#QNAN0`、文本、Infinity）。保留原 token 和溯源信息，不计入有限统计。
@@ -129,7 +137,7 @@ x,y,z,value,i,j,k,is_observed,is_valid,source_point_id,method,model_id
 3. 电阻率使用 `local_engineering` 局部坐标，EPSG 未确认。
 4. 微震绝对坐标、EPSG和绝对方位角仍未知；独立案例使用W16为原点的局部XY、确认的深度换算和Vx进行建模，不得与其他案例空间叠加。
 5. RHO物理单位在界面中显示为“电阻率（单位待来源确认）”；微震Vx单位为`km/s`。
-6. 煤层瓦斯（76 条样品、29 组坐标）在“80系”基准、投影/中央经线/分带、坐标轴顺序、孔口高程和采样止深基准确认前只允许属性统计，不得进入可信三维融合；`BH001`—`BH029` 是标准化生成的坐标组 ID，不是原始孔号。
+6. 煤层瓦斯当前工作约定为西安1980、6°分带、第20带、中央经线117°，带号坐标按EPSG:2334处理；现有DEM派生表提供`SURF_Z`，样本Z按`SURF_Z-(END_DEPTH-THICKNESS/2)`生成。该规则近似竖直孔，只允许独立实验案例，不得描述成已核实钻孔轨迹或与其他案例融合。当前58条合格样本、28个位置的具体契约见[gas.md](gas.md)。
 
 ## 8. 模型任务与成果登记
 
@@ -173,7 +181,7 @@ x,y,z,value,i,j,k,is_observed,is_valid,source_point_id,method,model_id
 - 不用派生数据覆盖标准化源数据。
 - 不把 `-9999` 当作真实电阻率参与统计、着色或插值。
 - 不把相对测线坐标描述为真实绝对地理坐标。
-- 不在瓦斯 CRS 和孔口高程未确认时进行可信三维叠加。
+- 不把瓦斯DEM候选高程、竖直孔近似或体元生成成功描述成已核实地质三维成果。
 - 不将失败任务、空数据集或未验证推断登记为正式成果。
 - 不把按钮点击或文件生成视为任务成功。
 

@@ -4,7 +4,7 @@
 
 The project builds a browser-based modeling platform for independent underground-property cases. The target workflow is upload, field mapping, validation, interpolation tuning, spatial validation, formal modeling, visualization, and evidence export. The approved product design is [product-blueprint.md](product-blueprint.md).
 
-Current implementation is still the Python CLI foundation: v0.1.0 connects standardized `X,Y,Z,RHO` data, train/validation splits, existing SuperMap prediction exports, quality metrics, model/task state, and SuperMap result registration. Current `main` additionally contains the merged microseismic v0.2a audit foundation. FastAPI, the browser UI, generic upload, tuning execution, iServer publishing, microseismic geometry/interpolation, and gas modeling are target capabilities, not implemented capabilities.
+Current implementation is still the Python CLI foundation: v0.1.0 connects standardized `X,Y,Z,RHO` data, train/validation splits, existing SuperMap prediction exports, quality metrics, model/task state, and SuperMap result registration. The current code additionally contains the merged microseismic v0.2a audit foundation. FastAPI, the browser UI, generic upload, tuning execution, iServer publishing, microseismic geometry/3σ/interpolation, and gas modeling are target capabilities, not implemented capabilities. External microseismic and gas CSVs plus iDesktopX experiments are manual evidence, not delivered modules.
 
 ## Constraints
 
@@ -14,7 +14,7 @@ Current implementation is still the Python CLI foundation: v0.1.0 connects stand
 - Empty or failed SuperMap outputs must not be marked as successful formal results.
 - IDW and ordinary Kriging must not be renamed as DSI.
 - Different research cases retain independent coordinate systems. They may share software and algorithms but must not be spatially overlaid without control points and a proven transformation.
-- Coalbed methane and DSI-like capabilities are interfaces only; microseismic has an implemented audit layer but no implemented 2D/3D geometry or interpolation.
+- Coalbed methane and DSI-like capabilities are interfaces only; microseismic has an implemented audit layer but no implemented 2D/3D geometry, 3σ filtering, or interpolation.
 
 ## Current and target stack
 
@@ -108,7 +108,7 @@ Provides the analysis entry for registering data, validating contracts, importin
 
 ### Future interfaces (not implemented)
 
-- Coalbed methane: first as an independent 2D borehole-property case; 3D remains blocked until collar elevation and borehole trajectory are confirmed.
+- Coalbed methane: an independent experimental 3D case using Xi'an 1980 zone 20 candidate coordinates, DEM-derived surface elevations, and a vertical-borehole midpoint approximation. The current 58-point table is external evidence; volume rendering is parked because loading the generated voxel crashes iDesktopX.
 - DSI-like/GOCAD: external backends emitting unified XYZV/regular-grid nodes plus model metadata; DSI results must not be re-interpolated with IDW/Kriging inside SuperMap.
 - Microseismic local geometry and data rules are now design inputs recorded in `docs/data/microseismic.md`; code/config implementation and regression validation remain pending.
 
@@ -132,6 +132,11 @@ Provides the analysis entry for registering data, validating contracts, importin
   -> 1D cumulative distance
   -> contract validation + issue list
   -> JSON/Markdown reports + audit log
+
+External derived microseismic/gas CSVs (read-only evidence)
+  -> fingerprint + contract import (target)
+  -> provenance and rule validation (target)
+  -> experiment input without overwriting source/audit tables (target)
 ```
 
 ## Error Handling
@@ -140,7 +145,7 @@ Provides the analysis entry for registering data, validating contracts, importin
 - Task success requires state, output existence, nonzero/expected records or objects, and readable content.
 - External tool errors are stored as raw evidence text and mark the task failed.
 - Warnings are allowed for known limitations such as coverage below 100%, metric disagreement between models, boundary-touching anomalies, and unverified vertical slices.
-- Microseismic audit validation passing does not clear downstream geometry, cleaning, or interpolation gates; those are driven by the registered issue flags.
+- Microseismic audit validation passing does not clear the current code's downstream gates. External rule confirmation and manual CSV generation are recorded separately until schema, config, implementation, and regression tests reproduce them.
 
 ## Testing Strategy
 
@@ -157,4 +162,4 @@ Provides the analysis entry for registering data, validating contracts, importin
 
 The project does not automate iDesktopX controls. It records and checks SuperMap outputs through configuration and evidence. Evidence is split into `declared`, `file_verified`, `dataset_verified`, and `manual_evidence` (see `docs/decisions/0002-supermap-evidence-levels.md`). Formal candidate `RHO_KRIG_FINAL_20M_40` is registered with method, resolution, neighbor count, dimensions, value range, slice settings, threshold settings, and status. Failed datasets `RHO_ISO_77_K40` and `RHO_ISO_HIGH_P95_K40` are registered only as failed/empty evidence. Because the current `dataset_api` is `none`, code may verify the UDBX file but must not claim internal dataset verification.
 
-The target iServer adapter does not weaken this boundary. Installation, process startup, license availability, REST reachability, publishing success, and browser rendering are separate evidence states. Local environment details and version links are in [product-blueprint.md](product-blueprint.md#8-supermap-iserver-环境).
+The target iServer adapter does not weaken this boundary. Installation, process startup, license availability, REST reachability, publishing success, and browser rendering are separate evidence states. Local environment details, the missing bundled iClient SDK boundary, and official documentation order are in [supermap-integration.md](supermap-integration.md).
