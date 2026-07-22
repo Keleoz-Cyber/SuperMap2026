@@ -132,7 +132,7 @@ onMounted(loadAll)
           title="iServer 当前不可用：服务发布与元数据验证处于可恢复的未验证状态；模型与数据不受影响"
         />
         <h2 class="panel-title">三维场景 · RHO 点云 + iServer 体元场景</h2>
-        <RhoScene3D />
+        <RhoScene3D :volume="publishStatus?.planned_services?.volume" />
       </section>
 
       <aside v-if="!rightCollapsed" class="panel panel-right">

@@ -30,6 +30,8 @@ from geomodeling.publishing.probe import (
     RHO_DATASOURCE,
     RHO_FORMAL_DATASET,
     RHO_SCENE_NAME,
+    VOLUME_SCENE_NAME,
+    VOLUME_SERVICE_NAME,
 )
 
 CASE_RESISTIVITY = "resistivity"
@@ -164,6 +166,7 @@ def publish_status(config: AppConfig, client: IServerClient, evidence_dir: Path)
 
     data_check = None
     realspace_check = None
+    volume_check = None
     live_states: dict[str, tuple[bool, str]] = {}
     if iserver.reachable:
         expected_meta = {
@@ -177,6 +180,9 @@ def publish_status(config: AppConfig, client: IServerClient, evidence_dir: Path)
             client, datasource=RHO_DATASOURCE, dataset=result_id, expected=expected_meta
         )
         realspace_check = verify_realspace_service(client, scene_name=RHO_SCENE_NAME)
+        volume_check = verify_realspace_service(
+            client, scene_name=VOLUME_SCENE_NAME, service_name=VOLUME_SERVICE_NAME
+        )
 
         live_states["iserver_published"] = (
             data_check.reachable and realspace_check.reachable,
@@ -194,6 +200,9 @@ def publish_status(config: AppConfig, client: IServerClient, evidence_dir: Path)
     else:
         live_states["iserver_published"] = (False, f"iServer unreachable: {iserver.error}")
         live_states["service_metadata_verified"] = (False, "iServer unreachable")
+
+    volume_available = bool(volume_check and volume_check.reachable)
+    volume_layers = (volume_check.detail.get("layers") or []) if volume_check else []
 
     browser_latest = latest_browser_load(CASE_RESISTIVITY, result_id, evidence_dir)
     manual_notes = formal.get("manual_evidence") or []
@@ -235,6 +244,7 @@ def publish_status(config: AppConfig, client: IServerClient, evidence_dir: Path)
         "service_checks": [
             *( [data_check.model_dump(mode="json")] if data_check else [] ),
             *( [realspace_check.model_dump(mode="json")] if realspace_check else [] ),
+            *( [volume_check.model_dump(mode="json")] if volume_check else [] ),
         ],
         "evidence_chain": chain.model_dump(mode="json"),
         "failed_results": failed_results,
@@ -243,7 +253,16 @@ def publish_status(config: AppConfig, client: IServerClient, evidence_dir: Path)
             "map": f"{client.base_url}/services/{MAP_SERVICE_NAME}/rest",
             "realspace": f"{client.base_url}/services/{REALSPACE_SERVICE_NAME}/rest",
             "scene_name": RHO_SCENE_NAME,
-            "s3m_volume_cache": "待 iDesktopX 生成体元三维缓存后发布（见运行说明）",
+            "volume": {
+                "url": f"{client.base_url}/services/{VOLUME_SERVICE_NAME}/rest/realspace",
+                "service_name": VOLUME_SERVICE_NAME,
+                "scene_name": VOLUME_SCENE_NAME,
+                "available": volume_available,
+                "layers": volume_layers,
+                "note": "iDesktopX「体元栅格生成缓存」(S3M 2.0) 发布后可用的体渲染服务"
+                if volume_available
+                else "待 iDesktopX 生成体元三维缓存后发布（见运行说明 §8）",
+            },
         },
         "iserver_available": iserver.reachable,
     }

@@ -32,6 +32,13 @@ RHO_DATASOURCE = "expore1"
 RHO_FORMAL_DATASET = "RHO_KRIG_FINAL_20M_40"
 RHO_SCENE_NAME = "RHO_三维全值域"
 
+# Volume rendering path: iDesktopX「体元栅格生成缓存」(S3M 2.0) published
+# as a 3D tile service. Default name follows the iServer naming scheme for
+# local 3D caches; override with GEOMODELING_VOLUME_SERVICE when the actual
+# published name differs.
+VOLUME_SERVICE_NAME = "3D-local3DCache-RHO_KRIG_FINAL_20M_40_vol"
+VOLUME_SCENE_NAME = "默认场景"
+
 
 def _service_url(base_url: str, name: str, rest: str = "rest") -> str:
     return f"{base_url}/services/{name}/{rest}"

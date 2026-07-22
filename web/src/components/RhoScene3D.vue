@@ -3,7 +3,9 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Loading, Refresh, RefreshRight } from '@element-plus/icons-vue'
 import { fetchRhoPoints, postBrowserLoad } from '../api/client'
-import type { RhoPoints } from '../api/types'
+import type { RhoPoints, VolumeServicePlan } from '../api/types'
+
+const props = defineProps<{ volume?: VolumeServicePlan }>()
 
 const SCENE_URL = 'http://localhost:8090/iserver/services/3D-WorkSpace/rest/realspace'
 const SCENE_NAME = 'RHO_三维全值域'
@@ -49,6 +51,18 @@ const threshold = ref(77)
 
 const sceneOpenState = ref<'pending' | 'ok' | 'failed'>('pending')
 const sceneLayerCount = ref(0)
+
+// S3M 体渲染场景（iDesktopX 体元栅格生成缓存发布的服务；available 时才打开）
+const volumeState = ref<'none' | 'loading' | 'ok' | 'failed'>('none')
+const displayMode = ref<'points' | 'volume' | 'both'>('points')
+const volumeBadgeText = computed(() => {
+  if (volumeState.value === 'ok') return '体渲染已加载'
+  if (volumeState.value === 'failed') return '体渲染加载失败'
+  if (volumeState.value === 'loading') return '体渲染加载中…'
+  return ''
+})
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let volumeLayer: any = null
 
 const fullMin = computed(() => points.value?.value_range[0] ?? 1)
 const fullMax = computed(() => points.value?.value_range[1] ?? 150)
@@ -227,7 +241,101 @@ function settleSceneOpen(ok: boolean, layerCount: number) {
   // scene.open 会恢复 iServer 场景保存的相机，且恢复发生在回调之后的渲染帧；
   // 延迟一拍再把相机拉回本平台默认视角，避免被场景相机覆盖
   setTimeout(() => resetView(), 800)
+  openVolumeScene()
   maybeReportBrowserLoad()
+}
+
+function applyDisplayMode() {
+  const mode = displayMode.value
+  if (pointCollection) pointCollection.show = mode !== 'volume'
+  if (volumeLayer) {
+    const showVolume = mode !== 'points'
+    try {
+      volumeLayer.visible = showVolume
+    } catch {
+      /* noop */
+    }
+    try {
+      volumeLayer.show = showVolume
+    } catch {
+      /* noop */
+    }
+  }
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function buildVolumeColorTable(layer: any) {
+  // 沿用官方 S3M_Volume 示例的颜色表路径：layer._fMinValue/_fMaxValue + ColorTable
+  try {
+    if (typeof layer._fMinValue !== 'number' || typeof layer._fMaxValue !== 'number') return
+    const lo = layer._fMinValue
+    const hi = layer._fMaxValue
+    if (!(hi > lo)) return
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const table = new (Cesium as any).ColorTable()
+    for (const [t, rgb] of COLOR_STOPS) {
+      table.insert(lo + t * (hi - lo), new Cesium.Color(rgb[0] / 255, rgb[1] / 255, rgb[2] / 255, 1))
+    }
+    layer.colorTable = table
+  } catch (e) {
+    console.warn('体元颜色表设置失败：', e)
+  }
+}
+
+function openVolumeScene() {
+  const vol = props.volume
+  if (!vol || !vol.available || !viewer || typeof viewer.scene.open !== 'function') return
+  volumeState.value = 'loading'
+  let settled = false
+  const finish = (ok: boolean) => {
+    if (settled) return
+    settled = true
+    if (!ok) {
+      volumeState.value = 'failed'
+      console.warn('S3M 体渲染场景打开失败（点云不受影响）')
+      return
+    }
+    try {
+      const sc = viewer.scene
+      let layer = null
+      if (sc.layers && typeof sc.layers.find === 'function') {
+        for (const info of vol.layers || []) {
+          if (!layer && info.name) layer = sc.layers.find(info.name)
+        }
+      }
+      volumeLayer = layer
+      if (volumeLayer) buildVolumeColorTable(volumeLayer)
+      volumeState.value = 'ok'
+      displayMode.value = 'both'
+      applyDisplayMode()
+      ElMessage.success('S3M 体渲染场景加载成功')
+      postBrowserLoad({
+        case_id: 'resistivity',
+        result_id: RESULT_ID,
+        service_url: vol.url,
+        scene_name: vol.scene_name,
+        layer_count: 1,
+        note: 'S3M 体渲染场景加载成功（iDesktopX 体元栅格生成缓存服务）',
+      }).catch((e) => console.warn('体渲染回执上报失败：', e))
+      setTimeout(() => resetView(), 400)
+    } catch (e) {
+      volumeState.value = 'failed'
+      console.warn('S3M 体渲染图层处理失败：', e)
+    }
+  }
+  try {
+    const promise = viewer.scene.open(vol.url, vol.scene_name)
+    setTimeout(() => finish(false), SCENE_OPEN_TIMEOUT_MS)
+    if (typeof Cesium.when === 'function') {
+      Cesium.when(promise, () => finish(true), () => finish(false))
+    } else if (promise && typeof promise.then === 'function') {
+      promise.then(() => finish(true), () => finish(false))
+    } else {
+      finish(false)
+    }
+  } catch {
+    finish(false)
+  }
 }
 
 function openIsServerScene() {
@@ -263,6 +371,12 @@ function maybeReportBrowserLoad() {
   if (reportSent || !pointsRendered || !sceneOpenSettled) return
   reportSent = true
   const ok = sceneOpenState.value === 'ok'
+  const volumeNote =
+    volumeState.value === 'ok'
+      ? '；S3M 体渲染场景已加载'
+      : volumeState.value === 'failed'
+        ? '；S3M 体渲染场景未加载'
+        : ''
   postBrowserLoad({
     case_id: 'resistivity',
     result_id: RESULT_ID,
@@ -270,8 +384,8 @@ function maybeReportBrowserLoad() {
     scene_name: SCENE_NAME,
     layer_count: ok ? sceneLayerCount.value : 0,
     note: ok
-      ? `浏览器渲染完成：iServer 场景 ${sceneLayerCount.value} 个图层 + RHO 点云 ${renderedCount.value} 点（decimate=${decimate.value}）`
-      : 'iServer 场景打开失败，layer_count 记 0；RHO 点云已独立渲染',
+      ? `浏览器渲染完成：iServer 场景 ${sceneLayerCount.value} 个图层 + RHO 点云 ${renderedCount.value} 点（decimate=${decimate.value}）${volumeNote}`
+      : `iServer 场景打开失败，layer_count 记 0；RHO 点云已独立渲染${volumeNote}`,
   }).catch((e) => console.warn('浏览器加载回执上报失败：', e))
 }
 
@@ -371,6 +485,14 @@ onBeforeUnmount(() => {
     <div ref="containerRef" class="scene-container"></div>
 
     <div v-if="points && !errorMsg" class="scene-toolbar">
+      <div v-if="volumeState === 'ok'" class="toolbar-row">
+        <span class="toolbar-label">显示内容</span>
+        <el-radio-group v-model="displayMode" size="small" @change="applyDisplayMode">
+          <el-radio-button value="points">点云</el-radio-button>
+          <el-radio-button value="volume">体元</el-radio-button>
+          <el-radio-button value="both">叠加</el-radio-button>
+        </el-radio-group>
+      </div>
       <div class="toolbar-row">
         <span class="toolbar-label">色带值域（RHO）</span>
         <el-slider
@@ -444,6 +566,13 @@ onBeforeUnmount(() => {
           :class="sceneOpenState === 'ok' ? 'ok' : sceneOpenState === 'failed' ? 'bad' : 'pending'"
         ></span>
         {{ sceneOpenText }}
+      </span>
+      <span v-if="volumeBadgeText" class="status-item">
+        <span
+          class="dot"
+          :class="volumeState === 'ok' ? 'ok' : volumeState === 'failed' ? 'bad' : 'pending'"
+        ></span>
+        {{ volumeBadgeText }}
       </span>
     </div>
 

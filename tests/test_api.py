@@ -69,6 +69,15 @@ LIVE_RESPONSES = {
     ],
 }
 
+VOLUME_RESPONSES = {
+    "services/3D-local3DCache-RHO_KRIG_FINAL_20M_40_vol/rest/realspace/scenes.rjson": [
+        {"name": "默认场景"}
+    ],
+    "services/3D-local3DCache-RHO_KRIG_FINAL_20M_40_vol/rest/realspace/scenes/%E9%BB%98%E8%AE%A4%E5%9C%BA%E6%99%AF/layers.rjson": [
+        {"name": "RHO_KRIG_FINAL_20M_40_vol", "layer3DType": "OSGBLayer", "visible": True}
+    ],
+}
+
 
 def make_config(standardized: Path | None = None) -> AppConfig:
     raw = yaml.safe_load(Path("config/default.yaml").read_text(encoding="utf-8"))
@@ -154,6 +163,31 @@ def test_publish_status_live_evidence_chain(tmp_path):
     assert states["service_metadata_verified"]["ok"] is True
     assert states["browser_loaded"]["ok"] is False
     assert states["manual_visual_checked"]["ok"] is True
+
+
+def test_publish_status_volume_service_pending_by_default(tmp_path):
+    client = make_client(tmp_path)
+    body = client.get("/api/cases/resistivity/publish-status").json()
+    volume = body["planned_services"]["volume"]
+    assert volume["available"] is False
+    assert volume["scene_name"] == "默认场景"
+    assert "待 iDesktopX" in volume["note"]
+
+
+def test_publish_status_volume_service_available_when_published(tmp_path):
+    responses = dict(LIVE_RESPONSES)
+    responses.update(VOLUME_RESPONSES)
+    responses["services.rjson"] = LIVE_RESPONSES["services.rjson"] + [
+        {
+            "name": "3D-local3DCache-RHO_KRIG_FINAL_20M_40_vol/rest",
+            "url": "http://iserver.test/iserver/services/3D-local3DCache-RHO_KRIG_FINAL_20M_40_vol/rest",
+        }
+    ]
+    client = make_client(tmp_path, iserver=FakeIServer(responses))
+    body = client.get("/api/cases/resistivity/publish-status").json()
+    volume = body["planned_services"]["volume"]
+    assert volume["available"] is True
+    assert volume["layers"][0]["layer3DType"] == "OSGBLayer"
 
 
 def test_publish_status_iserver_down_keeps_model_state(tmp_path):

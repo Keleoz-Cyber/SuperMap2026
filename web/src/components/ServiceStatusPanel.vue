@@ -36,9 +36,9 @@ const hasImageFileLayer = computed(() =>
         <span class="mono">{{ publishStatus.planned_services.scene_name }}</span>
       </div>
     </div>
-    <el-alert type="info" :closable="false" class="s3m-tip">
+    <el-alert :type="publishStatus.planned_services.volume.available ? 'success' : 'info'" :closable="false" class="s3m-tip">
       <template #title>
-        <span class="s3m-text">S3M 体元缓存：{{ publishStatus.planned_services.s3m_volume_cache }}</span>
+        <span class="s3m-text">S3M 体元缓存：{{ publishStatus.planned_services.volume.note }}</span>
       </template>
     </el-alert>
 

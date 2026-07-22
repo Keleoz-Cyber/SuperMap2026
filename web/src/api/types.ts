@@ -215,8 +215,17 @@ export interface PublishStatus {
     map: string
     realspace: string
     scene_name: string
-    s3m_volume_cache: string
+    volume: VolumeServicePlan
   }
+}
+
+export interface VolumeServicePlan {
+  url: string
+  service_name: string
+  scene_name: string
+  available: boolean
+  layers: Array<{ name: string | null; layer3DType: string | null; visible: boolean | null }>
+  note: string
 }
 
 export interface RhoPoints {
