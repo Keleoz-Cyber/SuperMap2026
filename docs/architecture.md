@@ -111,7 +111,7 @@ Provides the analysis entry for registering data, validating contracts, importin
 - `client`: non-throwing iServer REST client (optional admin token via environment variables only); every call degrades gracefully when iServer is down.
 - `probe`: runtime probing (services list, VOLUME dataset metadata comparison, realspace scenes/layers) and the six-state publish evidence chain (`model_succeeded` … `manual_visual_checked`); live probe failures never rewrite modeling state.
 - `evidence`: browser-load report store (JSONL under ignored `outputs/`).
-- `s3mb`: **targeted** S3M 2.0 voxel point-cloud tile parser (zlib header, float32 vertex/weight blocks, LOD dedupe) with fail-closed contract validation (header magic, scp version, file type, finite wDescript range vs registry, finite cells, sane count, envelope bbox). Only guaranteed for the local iDesktopX 2026 voxel cache; not a general S3MB parser.
+- `s3mb`: **targeted** S3M 2.0 voxel point-cloud tile parser (zlib header, float32 vertex/weight blocks, cross-tile coordinate deduplication with conflicting weights rejected) with fail-closed contract validation (header magic, scp version, file type, finite wDescript range vs registry, finite cells, sane count, envelope bbox). Only guaranteed for the local iDesktopX 2026 voxel cache; not a general S3MB parser.
 
 ### `geomodeling.api` (implemented in v0.3)
 
