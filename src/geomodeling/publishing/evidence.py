@@ -84,18 +84,28 @@ def latest_browser_load(case_id: str, result_id: str, store_dir: str | Path) -> 
     return latest
 
 
+def _normalize_url(url: str) -> str:
+    """Normalize a service URL for exact comparison (trailing slashes off)."""
+
+    return url.strip().rstrip("/")
+
+
 def _report_identity_ok(
     row: dict,
     *,
     scene: SceneIdentity,
     voxel: VoxelCacheIdentity,
 ) -> bool:
-    """Kind-specific identity validation for a browser-load report row."""
+    """Kind-specific identity validation for a browser-load report row.
+
+    Service identity requires an exact (normalized) URL match — a correct
+    prefix with a forged suffix is rejected just like any other mismatch.
+    """
 
     kind = row.get("render_kind")
-    url = str(row.get("service_url") or "")
+    url = _normalize_url(str(row.get("service_url") or ""))
     if kind == RenderKind.ISERVER_SCENE.value:
-        if not url.startswith(scene.service_prefix):
+        if url != _normalize_url(scene.service_url):
             return False
         if row.get("scene_name") != scene.scene_name:
             return False
@@ -104,7 +114,7 @@ def _report_identity_ok(
             return False
         return row.get("validated_count") == layer_count
     if kind == RenderKind.S3M_VOXEL_CACHE.value:
-        if not url.startswith(voxel.service_prefix):
+        if url != _normalize_url(voxel.service_url):
             return False
         if f"3D-local3DCache-{voxel.cache_data_name}" not in url:
             return False

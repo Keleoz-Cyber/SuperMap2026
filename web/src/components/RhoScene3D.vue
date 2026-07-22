@@ -315,7 +315,9 @@ function openIsServerScene() {
     sceneOpenTimer = setTimeout(() => settleSceneOpen(false, 0), SCENE_OPEN_TIMEOUT_MS)
     const promise = viewer.scene.open(SCENE_URL, SCENE_NAME)
     const onOk = (layers: unknown) => {
-      settleSceneOpen(true, Array.isArray(layers) ? layers.length : 0)
+      // 只有实际返回图层（>0）才算场景打开成功；空数组/非数组按失败处理
+      const n = Array.isArray(layers) ? layers.length : 0
+      settleSceneOpen(n > 0, n)
     }
     const onFail = (err: unknown) => {
       console.warn('scene.open 回调失败：', err)

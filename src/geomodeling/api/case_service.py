@@ -230,11 +230,11 @@ def publish_status(config: AppConfig, client: IServerClient, evidence_dir: Path)
         result_id,
         evidence_dir,
         scene=SceneIdentity(
-            service_prefix=f"{client.base_url}/services/{REALSPACE_SERVICE_NAME}/",
+            service_url=f"{client.base_url}/services/{REALSPACE_SERVICE_NAME}/rest/realspace",
             scene_name=RHO_SCENE_NAME,
         ),
         voxel=VoxelCacheIdentity(
-            service_prefix=f"{client.base_url}/services/{VOLUME_SERVICE_NAME}/",
+            service_url=f"{client.base_url}/services/{VOLUME_SERVICE_NAME}/rest/realspace",
             cache_data_name=VOLUME_CACHE_DATA_NAME,
         ),
     )

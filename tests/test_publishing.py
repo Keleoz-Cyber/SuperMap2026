@@ -220,11 +220,11 @@ def test_browser_load_store_roundtrip(tmp_path):
 
 
 SCENE_ID = SceneIdentity(
-    service_prefix="http://iserver.test/iserver/services/3D-WorkSpace/",
+    service_url="http://iserver.test/iserver/services/3D-WorkSpace/rest/realspace",
     scene_name="RHO_三维全值域",
 )
 VOXEL_ID = VoxelCacheIdentity(
-    service_prefix="http://iserver.test/iserver/services/3D-local3DCache-RHO_KRIG_FINAL_20M_40_VOL_S3M2/",
+    service_url="http://iserver.test/iserver/services/3D-local3DCache-RHO_KRIG_FINAL_20M_40_VOL_S3M2/rest/realspace",
     cache_data_name="RHO_KRIG_FINAL_20M_40_VOL_S3M2",
 )
 
@@ -326,6 +326,24 @@ def test_latest_valid_browser_load_rejects_wrong_cache_data_name(tmp_path):
         validated_count=7056,
     )
     assert _latest(tmp_path) is None
+
+
+def test_latest_valid_browser_load_rejects_prefix_with_forged_suffix(tmp_path):
+    # 正确前缀 + 伪造后缀（规范化后仍不相等，必须拒绝）
+    _write_report(
+        tmp_path,
+        service_url="http://iserver.test/iserver/services/3D-WorkSpace/rest/realspace/forged",
+    )
+    assert _latest(tmp_path) is None
+
+
+def test_latest_valid_browser_load_accepts_trailing_slash_variant(tmp_path):
+    # 仅尾部斜杠差异视为同一地址（规范化后相等）
+    _write_report(
+        tmp_path,
+        service_url="http://iserver.test/iserver/services/3D-WorkSpace/rest/realspace/",
+    )
+    assert _latest(tmp_path) is not None
 
 
 def test_latest_valid_browser_load_rejects_wrong_result_id(tmp_path):
