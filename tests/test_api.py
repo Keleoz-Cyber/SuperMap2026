@@ -70,10 +70,10 @@ LIVE_RESPONSES = {
 }
 
 VOLUME_RESPONSES = {
-    "services/3D-local3DCache-RHO_KRIG_FINAL_20M_40_vol/rest/realspace/scenes.rjson": [
+    "services/3D-local3DCache-RHO_KRIG_FINAL_20M_40_VOL_S3M2/rest/realspace/scenes.rjson": [
         {"name": "默认场景"}
     ],
-    "services/3D-local3DCache-RHO_KRIG_FINAL_20M_40_vol/rest/realspace/scenes/%E9%BB%98%E8%AE%A4%E5%9C%BA%E6%99%AF/layers.rjson": [
+    "services/3D-local3DCache-RHO_KRIG_FINAL_20M_40_VOL_S3M2/rest/realspace/scenes/%E9%BB%98%E8%AE%A4%E5%9C%BA%E6%99%AF/layers.rjson": [
         {"name": "RHO_KRIG_FINAL_20M_40_vol", "layer3DType": "OSGBLayer", "visible": True}
     ],
 }
@@ -103,6 +103,7 @@ def make_client(
         metrics_json=metrics_json,
         evidence_dir=tmp_path / "evidence",
         frontend_dist=None,
+        voxel_cache_dir=None,
     )
     app = create_app()
     app.dependency_overrides[get_settings] = lambda: settings
@@ -179,8 +180,8 @@ def test_publish_status_volume_service_available_when_published(tmp_path):
     responses.update(VOLUME_RESPONSES)
     responses["services.rjson"] = LIVE_RESPONSES["services.rjson"] + [
         {
-            "name": "3D-local3DCache-RHO_KRIG_FINAL_20M_40_vol/rest",
-            "url": "http://iserver.test/iserver/services/3D-local3DCache-RHO_KRIG_FINAL_20M_40_vol/rest",
+            "name": "3D-local3DCache-RHO_KRIG_FINAL_20M_40_VOL_S3M2/rest",
+            "url": "http://iserver.test/iserver/services/3D-local3DCache-RHO_KRIG_FINAL_20M_40_VOL_S3M2/rest",
         }
     ]
     client = make_client(tmp_path, iserver=FakeIServer(responses))

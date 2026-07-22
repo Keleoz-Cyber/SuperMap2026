@@ -228,6 +228,32 @@ export interface VolumeServicePlan {
   note: string
 }
 
+export interface VoxelCells {
+  case_id: string
+  result_id: string
+  source: string
+  cache_dir: string
+  service_url: string
+  tile_files: number
+  fetched_bytes: number
+  count: number
+  value_field: string
+  unit_note: string
+  x: number[]
+  y: number[]
+  z: number[]
+  values: number[]
+  x_range: [number, number]
+  y_range: [number, number]
+  z_range: [number, number]
+  value_range: [number, number]
+  registry_facts: {
+    rows_columns_bands: Array<number | null>
+    cell_exact_value_range: Array<number | null>
+    note: string
+  }
+}
+
 export interface RhoPoints {
   case_id: string
   source: string

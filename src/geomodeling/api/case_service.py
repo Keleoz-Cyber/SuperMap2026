@@ -33,6 +33,13 @@ from geomodeling.publishing.probe import (
     VOLUME_SCENE_NAME,
     VOLUME_SERVICE_NAME,
 )
+from geomodeling.publishing.s3mb import dedupe_cells, parse_s3mb_bytes
+
+# iDesktopX 体元栅格生成缓存（S3M 2.0）的默认输出位置；可用
+# GEOMODELING_VOXEL_CACHE_DIR 覆盖。瓦片字节一律经 iServer REST 获取，
+# 本地路径仅用于枚举瓦片相对路径，不作为数据来源。
+VOLUME_CACHE_DATA_NAME = "RHO_KRIG_FINAL_20M_40_VOL_S3M2"
+DEFAULT_VOXEL_CACHE_DIR = "../Project/cache/RHO_KRIG_FINAL_20M_40_VOL_S3M2"
 
 CASE_RESISTIVITY = "resistivity"
 CASE_MICROSEISMIC = "microseismic"
@@ -298,6 +305,103 @@ def _read_points_cached(csv_path: str) -> dict[str, Any]:
         "x_range": [float(frame["X"].min()), float(frame["X"].max())],
         "y_range": [float(frame["Y"].min()), float(frame["Y"].max())],
         "z_range": [float(frame["Z"].min()), float(frame["Z"].max())],
+    }
+
+
+@lru_cache(maxsize=4)
+def _voxel_cells_cached(cache_dir: str, service_url: str, timeout: float) -> dict[str, Any]:
+    """Fetch every cache tile via iServer REST and parse voxel cells.
+
+    Tile bytes always come from the published iServer 3D cache service; the
+    local cache directory is only used to enumerate relative tile paths.
+    """
+
+    import os
+
+    from geomodeling.publishing import IServerClient
+
+    root = Path(cache_dir)
+    if not root.exists():
+        raise FileNotFoundError(f"voxel cache directory not found: {cache_dir}")
+    rel_paths = sorted(
+        p.relative_to(root).as_posix() for p in root.rglob("*.s3mb")
+    )
+    if not rel_paths:
+        raise FileNotFoundError(f"no .s3mb tiles under {cache_dir}")
+
+    client = IServerClient(
+        base_url=os.environ.get("GEOMODELING_ISERVER_URL", "http://localhost:8090/iserver").rstrip("/"),
+        timeout=timeout,
+    )
+    tiles = []
+    fetched_bytes = 0
+    try:
+        for rel in rel_paths:
+            resp = client.get_bytes(
+                f"services/{VOLUME_SERVICE_NAME}/rest/realspace/datas/{VOLUME_CACHE_DATA_NAME}/data/path/{rel}"
+            )
+            if not resp.ok:
+                raise ConnectionError(f"iServer tile fetch failed for {rel}: {resp.error}")
+            fetched_bytes += len(resp.data)
+            tiles.append(parse_s3mb_bytes(Path(rel).stem, resp.data))
+    finally:
+        client.close()
+
+    cells = dedupe_cells(tiles)
+    summary = {
+        "x_range": [min(c.x for c in cells), max(c.x for c in cells)],
+        "y_range": [min(c.y for c in cells), max(c.y for c in cells)],
+        "z_range": [min(c.z for c in cells), max(c.z for c in cells)],
+        "value_range": [min(c.weight for c in cells), max(c.weight for c in cells)],
+    }
+    return {
+        "cells": cells,
+        "tile_files": len(rel_paths),
+        "fetched_bytes": fetched_bytes,
+        "service_url": service_url,
+        "summary": summary,
+    }
+
+
+def voxel_cells(config: AppConfig, client: IServerClient, cache_dir: Path | None) -> dict[str, Any]:
+    """Voxel cells from the published S3M cache, for custom browser rendering.
+
+    The S3M cache is SuperMap's renderable sampling of the formal voxel
+    (not a cell-exact export); the cell-exact metadata stays with the data
+    service VOLUME dataset (see publish-status).
+    """
+
+    cache_root = cache_dir or Path(DEFAULT_VOXEL_CACHE_DIR)
+    if not cache_root.is_absolute():
+        cache_root = (config.resolve_path(str(cache_root)) or cache_root)
+    service_url = f"{client.base_url}/services/{VOLUME_SERVICE_NAME}/rest/realspace"
+    data = _voxel_cells_cached(str(cache_root), service_url, 30.0)
+    cells = data["cells"]
+    formal = next(
+        (r for r in config.supermap.get("results", []) if r.get("result_category") == "formal"),
+        {},
+    )
+    return {
+        "case_id": CASE_RESISTIVITY,
+        "result_id": formal.get("dataset", RHO_FORMAL_DATASET),
+        "source": "iserver_s3m_cache",
+        "cache_dir": str(cache_root),
+        "service_url": service_url,
+        "tile_files": data["tile_files"],
+        "fetched_bytes": data["fetched_bytes"],
+        "count": len(cells),
+        "value_field": "RHO",
+        "unit_note": "RHO 单位待来源确认",
+        "x": [round(c.x, 3) for c in cells],
+        "y": [round(c.y, 3) for c in cells],
+        "z": [round(c.z, 3) for c in cells],
+        "values": [round(c.weight, 4) for c in cells],
+        **data["summary"],
+        "registry_facts": {
+            "rows_columns_bands": [formal.get("rows"), formal.get("columns"), formal.get("bands")],
+            "cell_exact_value_range": [formal.get("value_min"), formal.get("value_max")],
+            "note": "S3M 缓存为 SuperMap 体渲染采样（非逐格导出）；单元精确元数据以数据服务 VOLUME 数据集为准",
+        },
     }
 
 

@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Loading, Refresh, RefreshRight } from '@element-plus/icons-vue'
-import { fetchRhoPoints, postBrowserLoad } from '../api/client'
-import type { RhoPoints, VolumeServicePlan } from '../api/types'
+import { fetchRhoPoints, fetchVoxelCells, postBrowserLoad } from '../api/client'
+import type { RhoPoints, VolumeServicePlan, VoxelCells } from '../api/types'
 
 const props = defineProps<{ volume?: VolumeServicePlan }>()
 
@@ -52,17 +52,18 @@ const threshold = ref(77)
 const sceneOpenState = ref<'pending' | 'ok' | 'failed'>('pending')
 const sceneLayerCount = ref(0)
 
-// S3M 体渲染场景（iDesktopX 体元栅格生成缓存发布的服务；available 时才打开）
+// S3M 体元缓存渲染（FastAPI 经 iServer 取瓦片解析后的体元格点；available 时才加载）
 const volumeState = ref<'none' | 'loading' | 'ok' | 'failed'>('none')
 const displayMode = ref<'points' | 'volume' | 'both'>('points')
+const voxelCells = ref<VoxelCells | null>(null)
 const volumeBadgeText = computed(() => {
-  if (volumeState.value === 'ok') return '体渲染已加载'
-  if (volumeState.value === 'failed') return '体渲染加载失败'
-  if (volumeState.value === 'loading') return '体渲染加载中…'
+  if (volumeState.value === 'ok') return `体元缓存已加载（${voxelCells.value?.count.toLocaleString() ?? 0} 格）`
+  if (volumeState.value === 'failed') return '体元缓存加载失败'
+  if (volumeState.value === 'loading') return '体元缓存加载中…'
   return ''
 })
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-let volumeLayer: any = null
+let voxelCollection: any = null
 
 const fullMin = computed(() => points.value?.value_range[0] ?? 1)
 const fullMax = computed(() => points.value?.value_range[1] ?? 150)
@@ -201,7 +202,25 @@ function rebuildSceneContent() {
     n += 1
   }
   renderedCount.value = n
+  rebuildVoxelContent(zf, useThreshold, th)
   rebuildBox(zf)
+}
+
+// S3M 体元格点：与测点同一套色带/阈值/Z 夸张交互
+function rebuildVoxelContent(zf: number, useThreshold: boolean, th: number) {
+  if (!viewer || !voxelCollection || !voxelCells.value) return
+  const data = voxelCells.value
+  voxelCollection.removeAll()
+  for (let i = 0; i < data.count; i += 1) {
+    const v = data.values[i]
+    if (useThreshold && v < th) continue
+    voxelCollection.add({
+      position: toScenePosition(data.x[i], data.y[i], data.z[i] * zf),
+      color: colorFor(v),
+      pixelSize: Math.max(3, pointSize.value - 1),
+      disableDepthTestDistance: Number.POSITIVE_INFINITY,
+    })
+  }
 }
 
 async function loadPoints() {
@@ -241,100 +260,45 @@ function settleSceneOpen(ok: boolean, layerCount: number) {
   // scene.open 会恢复 iServer 场景保存的相机，且恢复发生在回调之后的渲染帧；
   // 延迟一拍再把相机拉回本平台默认视角，避免被场景相机覆盖
   setTimeout(() => resetView(), 800)
-  openVolumeScene()
+  void loadVoxelCells()
   maybeReportBrowserLoad()
 }
 
 function applyDisplayMode() {
   const mode = displayMode.value
   if (pointCollection) pointCollection.show = mode !== 'volume'
-  if (volumeLayer) {
-    const showVolume = mode !== 'points'
-    try {
-      volumeLayer.visible = showVolume
-    } catch {
-      /* noop */
-    }
-    try {
-      volumeLayer.show = showVolume
-    } catch {
-      /* noop */
-    }
-  }
+  if (voxelCollection) voxelCollection.show = mode !== 'points'
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function buildVolumeColorTable(layer: any) {
-  // 沿用官方 S3M_Volume 示例的颜色表路径：layer._fMinValue/_fMaxValue + ColorTable
-  try {
-    if (typeof layer._fMinValue !== 'number' || typeof layer._fMaxValue !== 'number') return
-    const lo = layer._fMinValue
-    const hi = layer._fMaxValue
-    if (!(hi > lo)) return
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const table = new (Cesium as any).ColorTable()
-    for (const [t, rgb] of COLOR_STOPS) {
-      table.insert(lo + t * (hi - lo), new Cesium.Color(rgb[0] / 255, rgb[1] / 255, rgb[2] / 255, 1))
-    }
-    layer.colorTable = table
-  } catch (e) {
-    console.warn('体元颜色表设置失败：', e)
-  }
-}
-
-function openVolumeScene() {
+// 经 FastAPI（iServer S3M 瓦片）加载体元格点并自定义渲染
+async function loadVoxelCells() {
   const vol = props.volume
-  if (!vol || !vol.available || !viewer || typeof viewer.scene.open !== 'function') return
+  if (!vol || !vol.available || !viewer || volumeState.value !== 'none') return
   volumeState.value = 'loading'
-  let settled = false
-  const finish = (ok: boolean) => {
-    if (settled) return
-    settled = true
-    if (!ok) {
-      volumeState.value = 'failed'
-      console.warn('S3M 体渲染场景打开失败（点云不受影响）')
-      return
-    }
-    try {
-      const sc = viewer.scene
-      let layer = null
-      if (sc.layers && typeof sc.layers.find === 'function') {
-        for (const info of vol.layers || []) {
-          if (!layer && info.name) layer = sc.layers.find(info.name)
-        }
-      }
-      volumeLayer = layer
-      if (volumeLayer) buildVolumeColorTable(volumeLayer)
-      volumeState.value = 'ok'
-      displayMode.value = 'both'
-      applyDisplayMode()
-      ElMessage.success('S3M 体渲染场景加载成功')
-      postBrowserLoad({
-        case_id: 'resistivity',
-        result_id: RESULT_ID,
-        service_url: vol.url,
-        scene_name: vol.scene_name,
-        layer_count: 1,
-        note: 'S3M 体渲染场景加载成功（iDesktopX 体元栅格生成缓存服务）',
-      }).catch((e) => console.warn('体渲染回执上报失败：', e))
-      setTimeout(() => resetView(), 400)
-    } catch (e) {
-      volumeState.value = 'failed'
-      console.warn('S3M 体渲染图层处理失败：', e)
-    }
-  }
   try {
-    const promise = viewer.scene.open(vol.url, vol.scene_name)
-    setTimeout(() => finish(false), SCENE_OPEN_TIMEOUT_MS)
-    if (typeof Cesium.when === 'function') {
-      Cesium.when(promise, () => finish(true), () => finish(false))
-    } else if (promise && typeof promise.then === 'function') {
-      promise.then(() => finish(true), () => finish(false))
-    } else {
-      finish(false)
+    const data = await fetchVoxelCells()
+    voxelCells.value = data
+    if (!voxelCollection) {
+      voxelCollection = new Cesium.PointPrimitiveCollection()
+      viewer.scene.primitives.add(voxelCollection)
     }
-  } catch {
-    finish(false)
+    rebuildSceneContent()
+    applyDisplayMode()
+    volumeState.value = 'ok'
+    displayMode.value = 'both'
+    applyDisplayMode()
+    ElMessage.success(`S3M 体元缓存加载成功（${data.count.toLocaleString()} 格 / ${data.tile_files} 瓦片，经 iServer 服务）`)
+    postBrowserLoad({
+      case_id: 'resistivity',
+      result_id: RESULT_ID,
+      service_url: data.service_url,
+      scene_name: vol.scene_name,
+      layer_count: 1,
+      note: `S3M 体元缓存浏览器渲染：${data.count} 格 / ${data.tile_files} 个 s3mb 瓦片经 iServer 服务获取并解析（${data.fetched_bytes} B）；值域 ${data.value_range[0].toFixed(2)}–${data.value_range[1].toFixed(2)}；范围 x[${data.x_range}] y[${data.y_range}] z[${data.z_range}]`,
+    }).catch((e) => console.warn('体元缓存回执上报失败：', e))
+  } catch (e) {
+    volumeState.value = 'failed'
+    console.warn('S3M 体元缓存加载失败（点云不受影响）：', e)
   }
 }
 
@@ -469,6 +433,15 @@ onMounted(() => {
   openIsServerScene()
 })
 
+// publish-status 可能晚于场景就绪返回；volume 变为可用时补一次加载
+watch(
+  () => props.volume?.available,
+  (avail) => {
+    if (avail && volumeState.value === 'none' && viewer) void loadVoxelCells()
+  },
+  { immediate: true },
+)
+
 onBeforeUnmount(() => {
   if (sceneOpenTimer !== null) clearTimeout(sceneOpenTimer)
   if (viewer && typeof viewer.isDestroyed === 'function' && !viewer.isDestroyed()) {
@@ -476,6 +449,7 @@ onBeforeUnmount(() => {
   }
   viewer = null
   pointCollection = null
+  voxelCollection = null
   boxEntities = []
 })
 </script>

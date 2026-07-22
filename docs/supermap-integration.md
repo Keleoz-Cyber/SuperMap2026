@@ -97,7 +97,7 @@ manual_visual_checked
 - ~~iClient3D SDK未随本机包提供~~（已通过官方 npm 包获取并验证 scene.open，见第 2 节）；
 - 电阻率垂直切片未正式验证，原生等值面为空；
 - 瓦斯体元在iDesktopX加载阶段触发`setSliceCoordinate`原生崩溃；
-- **iServer 发布的三维服务中，UDBX 体元以 ImageFileLayer（二维影像）而非 S3M 体渲染提供**；「生成三维缓存」（模型缓存）从体元产出的 S3M 为 PointCloudFile 且烘成球面坐标，浏览器无法定位渲染（2026-07-22 实测，含元数据修复尝试）；正确路径是 iDesktopX「体元栅格生成缓存」（S3M 2.0）+ 三维服务发布；
+- **iServer 发布的三维服务中，UDBX 体元以 ImageFileLayer（二维影像）提供；「体元栅格生成缓存」（S3M 2.0）产出点云瓦片（PointCloudFile 为正常形态，值域在 `wDescript`），但 SCP 把平面米制坐标写成球面，且旧版 iClient3D（1.67 系）无法遍历其瓦片树（根瓦片可下载、子瓦片不请求、图层无包围盒）；v0.3 落地路径为 FastAPI 经 iServer REST 取瓦片自研解析 + 浏览器自定义渲染**（见 v0.3 运行说明 3.4/4.1）；
 - `workspaces` REST 程序化发布在本机构建上 500，发布目前依赖管理 UI 人工步骤；
 - 局部工程坐标案例需要平面场景和明确的单位/原点说明，不能伪装成全球地理坐标；
 - 试用许可 2026-09-20 到期，答辩环境需在此之前复核。

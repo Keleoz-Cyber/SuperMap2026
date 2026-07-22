@@ -18,6 +18,7 @@ ENV_CONFIG = "GEOMODELING_CONFIG"
 ENV_METRICS = "GEOMODELING_METRICS_JSON"
 ENV_EVIDENCE_DIR = "GEOMODELING_EVIDENCE_DIR"
 ENV_FRONTEND_DIST = "GEOMODELING_FRONTEND_DIST"
+ENV_VOXEL_CACHE_DIR = "GEOMODELING_VOXEL_CACHE_DIR"
 
 DEFAULT_CONFIG = "config/default.yaml"
 DEFAULT_METRICS_CANDIDATES = [
@@ -26,6 +27,7 @@ DEFAULT_METRICS_CANDIDATES = [
 ]
 DEFAULT_EVIDENCE_DIR = "outputs/api_evidence"
 DEFAULT_FRONTEND_DIST = "web/dist"
+DEFAULT_VOXEL_CACHE_DIR = "../Project/cache/RHO_KRIG_FINAL_20M_40_VOL_S3M2"
 
 PROJECT_VERSION = "0.3.0"
 
@@ -36,6 +38,7 @@ class ApiSettings:
     metrics_json: Path | None
     evidence_dir: Path
     frontend_dist: Path | None
+    voxel_cache_dir: Path | None
 
 
 @lru_cache(maxsize=1)
@@ -58,11 +61,15 @@ def get_settings() -> ApiSettings:
     dist = Path(dist_env) if dist_env else Path(DEFAULT_FRONTEND_DIST)
     frontend_dist = dist if (dist / "index.html").exists() else None
 
+    voxel_env = os.environ.get(ENV_VOXEL_CACHE_DIR)
+    voxel_cache_dir = Path(voxel_env) if voxel_env else None
+
     return ApiSettings(
         config_path=config_path,
         metrics_json=metrics_json,
         evidence_dir=evidence_dir,
         frontend_dist=frontend_dist,
+        voxel_cache_dir=voxel_cache_dir,
     )
 
 

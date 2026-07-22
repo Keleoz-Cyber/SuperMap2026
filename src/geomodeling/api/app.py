@@ -102,6 +102,21 @@ def create_app() -> FastAPI:
         except FileNotFoundError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
 
+    @app.get("/api/cases/resistivity/voxel-cells")
+    def resistivity_voxel_cells(
+        settings: ApiSettings = Depends(get_settings),
+        config=Depends(get_app_config),
+        client: IServerClient = Depends(get_iserver_client),
+    ) -> dict:
+        try:
+            return case_service.voxel_cells(config, client, settings.voxel_cache_dir)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=503, detail=f"voxel cache not generated: {exc}") from exc
+        except ConnectionError as exc:
+            raise HTTPException(status_code=503, detail=f"iServer tile fetch failed: {exc}") from exc
+        finally:
+            client.close()
+
     # ----------------------------------------------------------- evidence
     @app.post("/api/evidence/browser-load", status_code=201)
     def browser_load(

@@ -5,6 +5,7 @@ import type {
   PublishStatus,
   RhoCaseDetail,
   RhoPoints,
+  VoxelCells,
 } from './types'
 
 const BASE = '/api'
@@ -35,6 +36,10 @@ export function fetchRhoPublishStatus(): Promise<PublishStatus> {
 
 export function fetchRhoPoints(decimate = 4): Promise<RhoPoints> {
   return getJson<RhoPoints>(`/cases/resistivity/points?decimate=${decimate}`)
+}
+
+export function fetchVoxelCells(): Promise<VoxelCells> {
+  return getJson<VoxelCells>('/cases/resistivity/voxel-cells')
 }
 
 export async function postBrowserLoad(report: BrowserLoadReport): Promise<void> {

@@ -121,6 +121,18 @@ class IServerClient:
         except ValueError:
             return ClientResponse(False, resp.status_code, error="invalid JSON body")
 
+    def get_bytes(self, path: str) -> ClientResponse:
+        """GET ``{base_url}/{path}`` returning raw bytes without raising."""
+
+        url = f"{self.base_url}/{path.lstrip('/')}"
+        try:
+            resp = self.http.get(url)
+        except httpx.HTTPError as exc:
+            return ClientResponse(False, None, error=f"{type(exc).__name__}: {exc}")
+        if resp.status_code != 200:
+            return ClientResponse(False, resp.status_code, error=resp.text[:300])
+        return ClientResponse(True, resp.status_code, data=resp.content)
+
 
 def encode_segment(value: str) -> str:
     """URL-encode one path segment (dataset/scene names contain Chinese)."""
