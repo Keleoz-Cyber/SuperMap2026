@@ -48,3 +48,13 @@ data/private/
 *.udbx
 *.sdb
 *.sdd
+
+# SuperMap iClient3D SDK (44MB, fetched via scripts/fetch_iclient3d.py)
+vendor/
+web/public/Cesium/
+
+# Playwright/browser evidence artifacts
+.playwright-mcp/
+*.png
+!docs/**/*.png
+!web/src/**/*.png

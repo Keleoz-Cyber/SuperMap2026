@@ -1,6 +1,6 @@
 # 当前开发状态
 
-> 更新时间：2026-07-22。本文是开发人员和开发 Agent 判断“现在做到哪一步”的唯一状态入口。数据细节见 [电阻率](../data/resistivity.md)、[微震](../data/microseismic.md)、[瓦斯](../data/gas.md) 和 [数据契约](../data/contracts.md)；目标产品见 [产品蓝图](../product-blueprint.md)。
+> 更新时间：2026-07-22（v0.3 分支更新）。本文是开发人员和开发 Agent 判断“现在做到哪一步”的唯一状态入口。数据细节见 [电阻率](../data/resistivity.md)、[微震](../data/microseismic.md)、[瓦斯](../data/gas.md) 和 [数据契约](../data/contracts.md)；目标产品见 [产品蓝图](../product-blueprint.md)。
 
 ## 1. 状态分层
 
@@ -15,14 +15,19 @@
 - **v0.1.0 电阻率基线**：17,549 / 15,827 / 1,722 行，训练/验证空间柱重叠0；五模型各1,481 valid、241 NoData、XY mismatch 0；`baseline_passed=True`。
 - `RHO_KRIG_FINAL_20M_40` 是唯一登记为正式的 SuperMap 体元成果；`dataset_verified=False`，目前只有配置、文件和人工证据。
 - **微震 v0.2a 审计底座**：22个DAT、2,006条源记录、2,005条有限值和1条无效值；三张标准表、一维累计距离、问题清单、审计报告及CLI已经合并。
-- 当前全量自动测试基线：`80 passed`（2026-07-22 本机复核）。
-- 当前仓库仍然只有Python CLI；没有FastAPI、浏览器前端、通用上传、插值执行、调参任务或iServer发布适配器。
+- **v0.3 iServer 纵向闭环（本分支）**：
+  - `geomodeling.publishing`：iServer 客户端（Token、非异常化探测）、运行时探测（服务列表/数据服务 VOLUME 元数据比对/三维场景与图层）、六级发布证据链、浏览器加载回执存储。
+  - `geomodeling.api`（FastAPI）：`/api/health`、`/api/iserver/status`、`/api/cases`、`/api/cases/resistivity`（排行榜=配置+指标产物）、`/api/cases/resistivity/publish-status`（实时证据链）、`/api/cases/resistivity/points`（17,549 点云，`source=platform_csv`，含 SHA-256）、`/api/evidence/browser-load`；iServer 凭据只走环境变量，浏览器不持有。
+  - `web/`（Vue 3 + Vite + TS + Element Plus + iClient3D for Cesium）：案例首页、电阻率三维工作台（模型排行榜、RHO 点云三维场景、阈值/色带/抽稀/Z夸张交互、体元包围盒、发布证据链、服务检查、失败与问题清单、数据血统）。
+  - 测试基线：`102 passed`（80 基线 + 22 新增便携测试；API 与发布适配均不依赖本机 iServer 或真实数据）。
+  - 运行说明与实测证据：[../v0.3-iserver-loop.md](../v0.3-iserver-loop.md)。
+- 当前仓库仍无通用上传、插值执行、调参任务、微震三维接入；瓦斯保持暂缓。
 
 ## 3. 外部派生与人工验证（尚未代码化）
 
 | 案例 | 已有证据 | 当前边界 |
 |---|---|---|
-| 电阻率 | 已在iDesktopX复现完整体元、水平薄切片和阈值过滤 | 垂直切片未正式验证；原生等值面失败；RHO单位和绝对EPSG未知 |
+| 电阻率 | 已在iDesktopX复现完整体元、水平薄切片和阈值过滤；`WorkSpace.smwu` 已发布 iServer 三服务（人工 UI 步骤） | 垂直切片未正式验证；原生等值面失败；RHO单位和绝对EPSG未知；体元在三维服务中仅 ImageFileLayer，S3M 体渲染待缓存 |
 | 微震 | 已生成2,005条局部三维点；按3σ规则剔除80条后形成1,925条候选点，并已在SuperMap人工复现 | 生成脚本、规则配置、回归测试和插值评价尚未进入仓库 |
 | 瓦斯 | 已生成58条合格三维候选样本（28个位置），三维点可在平面场景显示，并生成过IDW体元 | 体元加入三维场景会导致iDesktopX原生崩溃，当前暂缓作为正式演示案例 |
 
@@ -44,8 +49,10 @@
 ## 4. SuperMap/iServer环境
 
 - 本机iServer目录存在，构建标识为`12.1.0.0-260626-9297`；
-- 2026-07-22核对时端口8090未监听，尚未完成启动、许可、管理员初始化和发布验证；
-- 产品包中的`iClient/for3D/webgl/examples/examples.html`只是“产品包不含iClient”的占位提示，不能据此声称前端SDK已就绪；
+- **2026-07-22 v0.3 实测**：8090 已启动监听；管理员已初始化（凭据为本机密钥，不入库）；试用许可有效至 2026-09-20；`WorkSpace.smwu` 已通过管理 UI 发布 data/map/3D 三服务，`RHO_KRIG_FINAL_20M_40` 的 VOLUME 元数据与平台登记一致；
+- 已知环境问题：全局 `CATALINA_*` 变量指向其他 Tomcat 会致 iServer 启动异常，须先清理（见 [v0.3 运行说明](../v0.3-iserver-loop.md) 3.1）；
+- `workspaces` REST 快速发布在本机 500（管理 UI 正常），列为 ISSUE-V03-01；
+- 产品包中的`iClient/for3D/webgl/examples/examples.html`只是“产品包不含iClient”的占位提示；v0.3 前端 SDK 来自官方 npm 包 `@supermap/iclient3d-vue-for-webgl`（`scripts/fetch_iclient3d.py` 获取，不入库）；
 - REST、管理OpenAPI、三维缓存发布和iClient3D阅读顺序见[SuperMap集成说明](../supermap-integration.md)。
 
 ## 5. 当前开发主线
@@ -60,16 +67,18 @@
 → 浏览器加载SuperMap成果并显示参数、指标和证据
 ```
 
+**v0.3 已打通该闭环**（运行证据见 [v0.3 运行说明](../v0.3-iserver-loop.md)）：iServer 启动与许可验证、`WorkSpace.smwu` 三服务发布、FastAPI 实时证据链接口、浏览器 iClient3D 三维场景与浏览器加载回执。遗留边界：体元真体渲染（S3M 缓存）、垂直切片 Web 验证、workspaces REST 程序化发布。
+
 完成纵向闭环后，再依次加入通用CSV/XLSX上传、字段映射、IDW/Kriging计算、手动调参、网格搜索和空间验证。微震是第二个正式案例；瓦斯保留接口和数据证据，待平台主干完成后再处理体元兼容问题。
 
 ## 6. 明确未实现
 
-- FastAPI服务、浏览器前端、任务队列、WebSocket进度；
+- 任务队列、WebSocket进度；
 - 通用CSV/XLSX上传、字段映射和数据版本管理；
 - Python二维/三维IDW、普通Kriging与网格搜索执行器；
-- 微震局部三维和3σ规则的仓库内可复现实现；
-- iServer健康检查、鉴权、服务发布、服务URL登记和浏览器加载验证；
-- 瓦斯体元稳定显示、垂直切片、原生等值面、DSI-like/GOCAD后端；
+- 微震局部三维和3σ规则的仓库内可复现实现、微震三维场景接入；
+- iServer 程序化发布（REST workspaces POST，ISSUE-V03-01）、S3M 体元缓存发布与体渲染、垂直切片 Web 验证；
+- 瓦斯体元稳定显示、原生等值面、DSI-like/GOCAD后端；
 - 自动成矿概率、储量或地质结论。
 
 ## 7. 给开发 Agent 的判定规则

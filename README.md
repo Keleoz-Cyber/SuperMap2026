@@ -16,7 +16,8 @@
 - 五种模型预测导入与公共有效点指标复算：每个模型 1,481 valid、241 NoData、XY mismatch 0，`baseline_passed=True`。
 - 模型任务、SuperMap 成果登记与证据等级管理：`RHO_KRIG_FINAL_20M_40` 为唯一正式成果，`dataset_verified=False`。
 - 微震数据审计（v0.2a）：22 个 DAT 清单与哈希、2,006 条源记录标准化、三张标准表、一维累计距离、契约验证、问题清单和审计报告。
-- 便携测试（CI）与本地真实数据回归测试分层。
+- 便携测试（CI）与本地真实数据回归测试分层（当前 `102 passed`）。
+- **v0.3 iServer 纵向闭环（本分支）**：FastAPI 案例/成果/发布证据链接口 + 浏览器三维工作台（模型排行榜、RHO 点云、阈值过滤、证据链、服务检查）。闭环含义、运行方式与实测证据见 [docs/v0.3-iserver-loop.md](docs/v0.3-iserver-loop.md)。
 
 仓库外已有两组人工派生证据，但尚未代码化：微震2,005条有限样本经3σ剔除80条后保留1,925条，并已在iDesktopX复现；瓦斯已形成58条三维候选样本，但体元加载会触发iDesktopX原生崩溃，暂缓作为正式案例。以[当前状态](docs/status/current-status.md)为准，不得把这些人工结果描述成仓库功能。
 
@@ -34,6 +35,9 @@
 
 ```powershell
 python -m pip install -e ".[test]"
+# 浏览器平台（v0.3）需要：
+python -m pip install -e ".[api,test]"
+python scripts/fetch_iclient3d.py
 ```
 
 ## 快速验证
@@ -45,6 +49,14 @@ python -m pytest -q -m local_data
 geomodeling run-all -o outputs/release_verify
 geomodeling verify-supermap -o outputs/release_verify
 geomodeling microseismic run-audit --config config/microseismic.yaml -o outputs/microseismic_verify
+```
+
+v0.3 浏览器闭环（iServer 已启动时）：
+
+```powershell
+cd web; npm install; npm run build; cd ..
+python -m uvicorn geomodeling.api.app:app --host 127.0.0.1 --port 8000
+# 浏览器打开 http://127.0.0.1:8000/
 ```
 
 便携测试只使用 `tests/fixtures/` 中的人工小样本，可在 GitHub Actions 中运行；`local_data` 测试依赖相邻只读资料目录，资料不存在时会明确 skip。详细验收口径见 [docs/acceptance.md](docs/acceptance.md)。
@@ -78,6 +90,7 @@ geomodeling microseismic run-audit --help
 ## 文档导航
 
 - [docs/product-blueprint.md](docs/product-blueprint.md)：浏览器建模平台的唯一产品与开发蓝图
+- [docs/v0.3-iserver-loop.md](docs/v0.3-iserver-loop.md)：v0.3 iServer 纵向闭环运行说明与实测证据
 - [docs/architecture.md](docs/architecture.md)：系统架构与模块边界
 - [docs/acceptance.md](docs/acceptance.md)：验收命令与证据口径
 - [docs/data/contracts.md](docs/data/contracts.md)：数据契约
@@ -97,7 +110,7 @@ geomodeling microseismic run-audit --help
 - 最新官方帮助：<https://help.supermap.com/iServer/1201/zh/>
 - 默认管理入口：<http://localhost:8090/iserver/admin-ui/home/>
 
-本机根目录构建标识为`12.1.0.0-260626-9297`。网址路径中的`1201`不作为文档过期或版本不匹配的判据。2026-07-22核对时8090端口未监听，且产品包内的iClient示例页只是“不包含iClient”的占位提示；接口开发以官方帮助和本机运行时探测为准。详细阅读顺序见[docs/supermap-integration.md](docs/supermap-integration.md)。
+本机根目录构建标识为`12.1.0.0-260626-9297`。网址路径中的`1201`不作为文档过期或版本不匹配的判据。**2026-07-22 v0.3 实测**：iServer 已启动并完成初始化（试用许可至 2026-09-20），`WorkSpace.smwu` 已发布 data/map/3D 三服务；全局 `CATALINA_*` 环境变量污染会导致启动异常，须先清理。产品包内的iClient示例页只是“不包含iClient”的占位提示；v0.3 前端 SDK 经 `scripts/fetch_iclient3d.py` 从官方 npm 包获取。详细事实与已知问题见[docs/supermap-integration.md](docs/supermap-integration.md) 与 [docs/v0.3-iserver-loop.md](docs/v0.3-iserver-loop.md)。
 
 ## 开发 Agent 入口
 

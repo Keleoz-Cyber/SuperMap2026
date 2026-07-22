@@ -1,11 +1,11 @@
 # Acceptance Notes
 
-适用对象：当前代码基线（v0.1.0 电阻率基线 + 已合并的微震 v0.2a 审计底座）。
+适用对象：当前代码基线（v0.1.0 电阻率基线 + 已合并的微震 v0.2a 审计底座 + v0.3 iServer 纵向闭环）。
 
 ## 验收命令
 
 ```powershell
-python -m pip install -e ".[test]"
+python -m pip install -e ".[api,test]"
 python -m pytest -q
 python -m pytest -q -m "not local_data"
 python -m pytest -q -m local_data
@@ -14,7 +14,19 @@ geomodeling microseismic run-audit --config config/microseismic.yaml -o outputs/
 geomodeling verify-supermap -o outputs/release_verify
 ```
 
-当前基线：全量 80 passed；便携 57 passed / 23 deselected；本地真实数据 23 passed / 57 deselected。测试数量只允许因真实新增测试而增加，任何减少或失败都必须调查。
+当前基线：全量 `102 passed`（80 项 v0.1/v0.2a 基线 + 22 项 v0.3 API/发布适配新增）；便携 79 passed / 23 deselected；本地真实数据 23 passed / 79 deselected。测试数量只允许因真实新增测试而增加，任何减少或失败都必须调查。
+
+v0.3 浏览器闭环验收（需本机 iServer 已启动且 `WorkSpace.smwu` 已发布，见 [v0.3 运行说明](v0.3-iserver-loop.md)）：
+
+```powershell
+python scripts/fetch_iclient3d.py
+cd web; npm install; npm run build; npm run type-check; cd ..
+python -m uvicorn geomodeling.api.app:app --host 127.0.0.1 --port 8000
+# GET /api/health → {"status":"ok","version":"0.3.x"}
+# GET /api/cases/resistivity/publish-status → evidence_chain 中
+#   model_succeeded/artifact_exported/iserver_published/service_metadata_verified=True，
+#   浏览器打开 http://127.0.0.1:8000/ 完成一次场景渲染后 browser_loaded 亦转 True
+```
 
 ## 电阻率验收口径
 

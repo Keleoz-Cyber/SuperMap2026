@@ -21,8 +21,15 @@ D:\supermap\supermap-iserver-2026-windows-x64-deploy\supermap-iserver-2026-windo
 - 构建标识：`iServer-Version: 12.1.0.0-260626-9297`；
 - 启动/停止脚本：`bin/startup.bat`、`bin/shutdown.bat`；
 - 默认服务入口：`http://localhost:8090/iserver/`；
-- 2026-07-22检查时8090未监听，启动、许可和管理员初始化均未验证；
-- 本机`iClient`目录仅含占位页，页面明确提示产品包不含iClient，不能当作可直接引用的SDK。
+- **2026-07-22 v0.3 实测更新**：
+  - 8090 已启动监听；首次初始化完成（管理员已创建，凭据本机保管不入库）；试用许可有效至 2026-09-20（`licenseStatus=true`）；
+  - 环境坑：全局 `CATALINA_BASE/CATALINA_HOME/CATALINA_TMPDIR` 指向其他 Tomcat 会让 iServer 以错误 `catalina.base` 启动（8090 不监听、无日志），须先清理再启动；
+  - `WorkSpace.smwu`（电阻率）已发布 `data-WorkSpace`、`map-WorkSpace`、`3D-WorkSpace` 三服务；`Project\电阻率.smwu` 实为瓦斯数据源（gas2d/gas3d），名称误导，误发布的服务已删除；
+  - `POST /iserver/manager/workspaces.rjson` 程序化快速发布在本机 500（`String cannot be cast to PublishServiceParameter`），管理 UI 发布正常；列为未解决问题（管理 UI 走加密 tunnel 通道）；
+  - 数据服务 VOLUME 数据集元数据可查（type/尺寸/值域/平面坐标），但单元值经 `features` 读取返回 500；三维场景中体元图层以 `ImageFileLayer`（二维影像瓦片）发布，**不等于** S3M 体渲染，浏览器真体渲染须先在 iDesktopX 生成三维缓存（.scp）再发布；
+  - iClient3D SDK 已获取：官方 npm 包 `@supermap/iclient3d-vue-for-webgl@1.2.2` 内嵌 `public/Cesium`（Cesium 1.67 + SuperMap 插件，44MB，经 `scripts/fetch_iclient3d.py` 安装，不入库）；实测可 `scene.open` 本机三维服务；
+  - 本机`iClient`目录仅含占位页，页面明确提示产品包不含iClient，不能当作可直接引用的SDK；
+  - 本机 iDesktopX 2026 位于 `D:\supermap\supermap-idesktopx-2026-windows-x64-bin`（人工操作用途）。
 
 项目代码不得硬编码上述路径。使用环境变量或不入库的本地配置；密钥、管理员凭据和Token不得提交Git。
 
@@ -86,9 +93,11 @@ manual_visual_checked
 
 ## 6. 当前已知风险
 
-- 本机iServer尚未启动验证，许可证和可用模块未知；
-- iClient3D SDK未随本机包提供；
+- ~~本机iServer尚未启动验证，许可证和可用模块未知~~（2026-07-22 已启动验证，试用许可至 2026-09-20）；
+- ~~iClient3D SDK未随本机包提供~~（已通过官方 npm 包获取并验证 scene.open，见第 2 节）；
 - 电阻率垂直切片未正式验证，原生等值面为空；
 - 瓦斯体元在iDesktopX加载阶段触发`setSliceCoordinate`原生崩溃；
-- iServer可发布的三维缓存格式与当前UDBX体元之间仍需转换/发布实验；
-- 局部工程坐标案例需要平面场景和明确的单位/原点说明，不能伪装成全球地理坐标。
+- **iServer 发布的三维服务中，UDBX 体元以 ImageFileLayer（二维影像）而非 S3M 体渲染提供**；真体渲染需 iDesktopX 生成三维缓存（.scp）后单独发布，已列入 v0.3 未解决问题；
+- `workspaces` REST 程序化发布在本机构建上 500，发布目前依赖管理 UI 人工步骤；
+- 局部工程坐标案例需要平面场景和明确的单位/原点说明，不能伪装成全球地理坐标；
+- 试用许可 2026-09-20 到期，答辩环境需在此之前复核。

@@ -1,0 +1,212 @@
+"""Portable tests for the v0.3 FastAPI layer (no live iServer, no real data)."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+import yaml
+from fastapi.testclient import TestClient
+
+from geomodeling.api.app import create_app
+from geomodeling.api.deps import ApiSettings, get_app_config, get_iserver_client, get_settings
+from geomodeling.config import AppConfig
+
+FIXTURE_DIR = Path(__file__).parent / "fixtures"
+
+
+class FakeIServer:
+    """Scripted iServer stand-in with the IServerClient surface used by routes."""
+
+    def __init__(self, responses=None, base_url="http://iserver.test/iserver"):
+        self.responses = responses or {}
+        self.base_url = base_url
+        self.closed = False
+
+    class _Resp:
+        def __init__(self, ok, data=None, error=None, status=200):
+            self.ok = ok
+            self.data = data
+            self.error = error
+            self.status_code = status
+
+    def get_json(self, path: str, *, use_token: bool = False):
+        key = path.lstrip("/")
+        value = self.responses.get(key)
+        if value is None:
+            return self._Resp(False, error="not scripted", status=None)
+        return self._Resp(True, data=value)
+
+    def close(self):
+        self.closed = True
+
+
+LIVE_RESPONSES = {
+    "services.rjson": [
+        {"name": "data-WorkSpace/rest", "url": "http://iserver.test/iserver/services/data-WorkSpace/rest"},
+        {"name": "map-WorkSpace/rest", "url": "http://iserver.test/iserver/services/map-WorkSpace/rest"},
+        {"name": "3D-WorkSpace/rest", "url": "http://iserver.test/iserver/services/3D-WorkSpace/rest"},
+    ],
+    "services/data-WorkSpace/rest/data/datasources.rjson": {"datasourceNames": ["expore1"]},
+    "services/data-WorkSpace/rest/data/datasources/expore1/datasets.rjson": {
+        "datasetNames": ["RHO_KRIG_FINAL_20M_40"]
+    },
+    "services/data-WorkSpace/rest/data/datasources/expore1/datasets/RHO_KRIG_FINAL_20M_40.rjson": {
+        "datasetInfo": {
+            "type": "VOLUME",
+            "width": 7,
+            "height": 23,
+            "minValue": 1.4182828664779663,
+            "maxValue": 133.1461944580078,
+            "bounds": {"left": -160, "right": -40, "top": 660, "bottom": 220},
+            "prjCoordSys": {"type": "PCS_NON_EARTH"},
+        }
+    },
+    "services/3D-WorkSpace/rest/realspace/scenes.rjson": [{"name": "RHO_三维全值域"}],
+    "services/3D-WorkSpace/rest/realspace/scenes/RHO_%E4%B8%89%E7%BB%B4%E5%85%A8%E5%80%BC%E5%9F%9F/layers.rjson": [
+        {"name": "RHO_KRIG_FINAL_20M_40@expore1", "layer3DType": "ImageFileLayer", "visible": True}
+    ],
+}
+
+
+def make_config(standardized: Path | None = None) -> AppConfig:
+    raw = yaml.safe_load(Path("config/default.yaml").read_text(encoding="utf-8"))
+    if standardized is not None:
+        raw["paths"]["standardized"] = str(standardized)
+    return AppConfig.model_validate(raw)
+
+
+def make_client(
+    tmp_path: Path,
+    *,
+    iserver: FakeIServer | None = None,
+    config: AppConfig | None = None,
+    metrics_doc: dict | None = None,
+) -> TestClient:
+    metrics_json = None
+    if metrics_doc is not None:
+        metrics_json = tmp_path / "metric_summaries.json"
+        metrics_json.write_text(json.dumps(metrics_doc, ensure_ascii=False), encoding="utf-8")
+
+    settings = ApiSettings(
+        config_path=Path("config/default.yaml"),
+        metrics_json=metrics_json,
+        evidence_dir=tmp_path / "evidence",
+        frontend_dist=None,
+    )
+    app = create_app()
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[get_app_config] = lambda: (config or make_config())
+    fake = iserver if iserver is not None else FakeIServer(LIVE_RESPONSES)
+    app.dependency_overrides[get_iserver_client] = lambda: fake
+    return TestClient(app)
+
+
+def test_health(tmp_path):
+    client = make_client(tmp_path)
+    body = client.get("/api/health").json()
+    assert body["status"] == "ok"
+    assert body["version"].startswith("0.3")
+
+
+def test_cases_cards(tmp_path):
+    client = make_client(tmp_path)
+    body = client.get("/api/cases").json()
+    by_id = {c["case_id"]: c for c in body["cases"]}
+    assert by_id["resistivity"]["status"] == "active"
+    assert by_id["microseismic"]["status"] == "audit_only"
+    assert by_id["gas"]["status"] == "parked"
+
+
+def test_resistivity_detail_leaderboard_uses_metric_summaries(tmp_path):
+    metrics_doc = {
+        "summaries": {
+            "Kriging 20m/40点": {"mae": 3.222594, "rmse": 5.841043, "r2": 0.93, "n_valid": 1481, "n_nodata": 241}
+        },
+        "baseline_comparison": {"baseline_passed": True},
+    }
+    client = make_client(tmp_path, metrics_doc=metrics_doc)
+    body = client.get("/api/cases/resistivity").json()
+    assert body["metric_source"] != "config_only"
+    by_name = {m["display_name"]: m for m in body["models"]}
+    assert by_name["Kriging 20m/40点"]["metrics"]["n_valid"] == 1481
+    assert by_name["IDW 20m/25点"]["metrics"] is None
+    assert body["datasets"][0]["rows"] == 17549
+    assert any(r["result_category"] == "formal" for r in body["supermap"]["results"])
+    assert any(r["status"] == "failed" for r in body["supermap"]["results"])
+
+
+def test_resistivity_detail_degrades_to_config_only(tmp_path):
+    client = make_client(tmp_path)
+    body = client.get("/api/cases/resistivity").json()
+    assert body["metric_source"] == "config_only"
+    assert all(m["metrics"] is None for m in body["models"])
+
+
+def test_publish_status_live_evidence_chain(tmp_path):
+    client = make_client(tmp_path)
+    body = client.get("/api/cases/resistivity/publish-status").json()
+    assert body["iserver_available"] is True
+    states = {s["state"]: s for s in body["evidence_chain"]["states"]}
+    assert states["model_succeeded"]["ok"] is True
+    assert states["iserver_published"]["ok"] is True
+    assert states["service_metadata_verified"]["ok"] is True
+    assert states["browser_loaded"]["ok"] is False
+    assert states["manual_visual_checked"]["ok"] is True
+
+
+def test_publish_status_iserver_down_keeps_model_state(tmp_path):
+    down = FakeIServer({})
+    client = make_client(tmp_path, iserver=down)
+    body = client.get("/api/cases/resistivity/publish-status").json()
+    assert body["iserver_available"] is False
+    states = {s["state"]: s for s in body["evidence_chain"]["states"]}
+    assert states["model_succeeded"]["ok"] is True
+    assert states["iserver_published"]["ok"] is False
+    assert states["service_metadata_verified"]["ok"] is False
+
+
+def test_browser_load_report_flips_evidence_state(tmp_path):
+    client = make_client(tmp_path)
+    before = client.get("/api/cases/resistivity/publish-status").json()
+    states = {s["state"]: s for s in before["evidence_chain"]["states"]}
+    assert states["browser_loaded"]["ok"] is False
+
+    resp = client.post(
+        "/api/evidence/browser-load",
+        json={
+            "case_id": "resistivity",
+            "result_id": "RHO_KRIG_FINAL_20M_40",
+            "service_url": "http://iserver.test/iserver/services/3D-WorkSpace/rest",
+            "scene_name": "RHO_三维全值域",
+            "layer_count": 1,
+        },
+    )
+    assert resp.status_code == 201
+
+    after = client.get("/api/cases/resistivity/publish-status").json()
+    states = {s["state"]: s for s in after["evidence_chain"]["states"]}
+    assert states["browser_loaded"]["ok"] is True
+    assert states["browser_loaded"]["source"] == "browser_report"
+
+
+def test_points_endpoint_uses_fixture_csv(tmp_path):
+    config = make_config(standardized=FIXTURE_DIR / "rho_tiny_validation.csv")
+    client = make_client(tmp_path, config=config)
+    body = client.get("/api/cases/resistivity/points").json()
+    assert body["source"] == "platform_csv"
+    assert body["count"] == 3
+    assert body["served"] == 3
+    assert body["values"] == [10.0, 20.0, 30.0]
+    assert len(body["sha256"]) == 64
+
+    body2 = client.get("/api/cases/resistivity/points?decimate=2").json()
+    assert body2["served"] == 2
+
+
+def test_points_endpoint_missing_csv_is_503(tmp_path):
+    config = make_config(standardized=Path("does/not/exist.csv"))
+    client = make_client(tmp_path, config=config)
+    resp = client.get("/api/cases/resistivity/points")
+    assert resp.status_code == 503
