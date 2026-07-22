@@ -29,6 +29,7 @@ from geomodeling.api.deps import (
 from geomodeling.publishing import (
     IServerClient,
     BrowserLoadReport,
+    S3MBContractError,
     probe_iserver,
     record_browser_load,
 )
@@ -104,14 +105,17 @@ def create_app() -> FastAPI:
 
     @app.get("/api/cases/resistivity/voxel-cells")
     def resistivity_voxel_cells(
+        refresh: bool = Query(default=False),
         settings: ApiSettings = Depends(get_settings),
         config=Depends(get_app_config),
         client: IServerClient = Depends(get_iserver_client),
     ) -> dict:
         try:
-            return case_service.voxel_cells(config, client, settings.voxel_cache_dir)
+            return case_service.voxel_cells(config, client, settings.voxel_cache_dir, refresh=refresh)
         except FileNotFoundError as exc:
             raise HTTPException(status_code=503, detail=f"voxel cache not generated: {exc}") from exc
+        except S3MBContractError as exc:
+            raise HTTPException(status_code=503, detail=f"S3M 缓存契约校验失败：{exc}") from exc
         except ConnectionError as exc:
             raise HTTPException(status_code=503, detail=f"iServer tile fetch failed: {exc}") from exc
         finally:

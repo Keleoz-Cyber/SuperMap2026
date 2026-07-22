@@ -13,6 +13,14 @@ from .probe import (
     verify_data_service,
     verify_realspace_service,
 )
+from .s3mb import (
+    S3MBContractError,
+    dedupe_cells,
+    parse_s3mb,
+    parse_s3mb_bytes,
+    validate_cache_scp,
+    validate_cells,
+)
 from .schemas import (
     BrowserLoadReport,
     EvidenceChain,
@@ -31,6 +39,12 @@ __all__ = [
     "probe_iserver",
     "verify_data_service",
     "verify_realspace_service",
+    "S3MBContractError",
+    "dedupe_cells",
+    "parse_s3mb",
+    "parse_s3mb_bytes",
+    "validate_cache_scp",
+    "validate_cells",
     "BrowserLoadReport",
     "EvidenceChain",
     "EvidenceSource",

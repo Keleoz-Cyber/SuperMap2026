@@ -14,7 +14,7 @@ geomodeling microseismic run-audit --config config/microseismic.yaml -o outputs/
 geomodeling verify-supermap -o outputs/release_verify
 ```
 
-当前基线：全量 `102 passed`（80 项 v0.1/v0.2a 基线 + 22 项 v0.3 API/发布适配新增）；便携 79 passed / 23 deselected；本地真实数据 23 passed / 79 deselected。测试数量只允许因真实新增测试而增加，任何减少或失败都必须调查。
+当前基线：全量 `126 passed`（80 项 v0.1/v0.2a 基线 + 46 项 v0.3 新增）；便携 103 passed / 23 deselected；本地真实数据 23 passed / 103 deselected。测试数量只允许因真实新增测试而增加，任何减少或失败都必须调查。
 
 v0.3 浏览器闭环验收（需本机 iServer 已启动且 `WorkSpace.smwu` 已发布，见 [v0.3 运行说明](v0.3-iserver-loop.md)）：
 

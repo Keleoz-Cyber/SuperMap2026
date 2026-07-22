@@ -314,11 +314,13 @@ def _voxel_cells_cached(cache_dir: str, service_url: str, timeout: float) -> dic
 
     Tile bytes always come from the published iServer 3D cache service; the
     local cache directory is only used to enumerate relative tile paths.
+    Cache/scp/tiles are validated fail-closed against the targeted
+    S3M 2.0 voxel-cache contract before any data leaves the API.
     """
 
     import os
 
-    from geomodeling.publishing import IServerClient
+    from geomodeling.publishing import IServerClient, validate_cache_scp, validate_cells
 
     root = Path(cache_dir)
     if not root.exists():
@@ -336,6 +338,13 @@ def _voxel_cells_cached(cache_dir: str, service_url: str, timeout: float) -> dic
     tiles = []
     fetched_bytes = 0
     try:
+        scp_resp = client.get_json(
+            f"services/{VOLUME_SERVICE_NAME}/rest/realspace/datas/{VOLUME_CACHE_DATA_NAME}/config"
+        )
+        if not scp_resp.ok:
+            raise ConnectionError(f"iServer 缓存配置获取失败：{scp_resp.error}")
+        contract_scp = validate_cache_scp(scp_resp.data)
+
         for rel in rel_paths:
             resp = client.get_bytes(
                 f"services/{VOLUME_SERVICE_NAME}/rest/realspace/datas/{VOLUME_CACHE_DATA_NAME}/data/path/{rel}"
@@ -348,10 +357,15 @@ def _voxel_cells_cached(cache_dir: str, service_url: str, timeout: float) -> dic
         client.close()
 
     cells = dedupe_cells(tiles)
+    contract_cells = validate_cells(
+        cells,
+        envelope={"x": (-160.0, -40.0), "y": (220.0, 660.0), "z": (-840.0, 0.0)},
+        expected_count=6762,
+    )
     summary = {
-        "x_range": [min(c.x for c in cells), max(c.x for c in cells)],
-        "y_range": [min(c.y for c in cells), max(c.y for c in cells)],
-        "z_range": [min(c.z for c in cells), max(c.z for c in cells)],
+        "x_range": contract_cells["bbox"]["x"],
+        "y_range": contract_cells["bbox"]["y"],
+        "z_range": contract_cells["bbox"]["z"],
         "value_range": [min(c.weight for c in cells), max(c.weight for c in cells)],
     }
     return {
@@ -360,21 +374,25 @@ def _voxel_cells_cached(cache_dir: str, service_url: str, timeout: float) -> dic
         "fetched_bytes": fetched_bytes,
         "service_url": service_url,
         "summary": summary,
+        "contract": {"scp": contract_scp, "cells": contract_cells},
     }
 
 
-def voxel_cells(config: AppConfig, client: IServerClient, cache_dir: Path | None) -> dict[str, Any]:
+def voxel_cells(config: AppConfig, client: IServerClient, cache_dir: Path | None, refresh: bool = False) -> dict[str, Any]:
     """Voxel cells from the published S3M cache, for custom browser rendering.
 
     The S3M cache is SuperMap's renderable sampling of the formal voxel
     (not a cell-exact export); the cell-exact metadata stays with the data
-    service VOLUME dataset (see publish-status).
+    service VOLUME dataset (see publish-status). ``refresh=True`` bypasses
+    the process-level cache (use after regenerating/republishing the cache).
     """
 
     cache_root = cache_dir or Path(DEFAULT_VOXEL_CACHE_DIR)
     if not cache_root.is_absolute():
         cache_root = (config.resolve_path(str(cache_root)) or cache_root)
     service_url = f"{client.base_url}/services/{VOLUME_SERVICE_NAME}/rest/realspace"
+    if refresh:
+        _voxel_cells_cached.cache_clear()
     data = _voxel_cells_cached(str(cache_root), service_url, 30.0)
     cells = data["cells"]
     formal = next(
@@ -397,6 +415,8 @@ def voxel_cells(config: AppConfig, client: IServerClient, cache_dir: Path | None
         "z": [round(c.z, 3) for c in cells],
         "values": [round(c.weight, 4) for c in cells],
         **data["summary"],
+        "contract": data["contract"],
+        "parser_scope": "仅保证兼容本机 iDesktopX 2026 体元栅格生成缓存（S3M 2.0 点云瓦片），不宣称通用 S3MB 解析",
         "registry_facts": {
             "rows_columns_bands": [formal.get("rows"), formal.get("columns"), formal.get("bands")],
             "cell_exact_value_range": [formal.get("value_min"), formal.get("value_max")],

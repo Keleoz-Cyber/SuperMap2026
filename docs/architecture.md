@@ -106,6 +106,17 @@ Provides the analysis entry for registering data, validating contracts, importin
 - `reports`: standard tables (`survey_lines.csv`, `survey_points.csv`, `velocity_samples.csv`), `source_manifest.json`, validation JSON, issue lists, data quality/data dictionary/audit summary Markdown.
 - `service` + `cli`: orchestration (`build_audit`, `export_all`, `run_full_audit`) and the `inventory/parse/validate/export-reports/run-audit` command group; blockers return a non-zero exit code while still writing diagnostic reports.
 
+### `geomodeling.publishing` (implemented in v0.3)
+
+- `client`: non-throwing iServer REST client (optional admin token via environment variables only); every call degrades gracefully when iServer is down.
+- `probe`: runtime probing (services list, VOLUME dataset metadata comparison, realspace scenes/layers) and the six-state publish evidence chain (`model_succeeded` … `manual_visual_checked`); live probe failures never rewrite modeling state.
+- `evidence`: browser-load report store (JSONL under ignored `outputs/`).
+- `s3mb`: **targeted** S3M 2.0 voxel point-cloud tile parser (zlib header, float32 vertex/weight blocks, LOD dedupe) with fail-closed contract validation (header magic, scp version, file type, finite wDescript range vs registry, finite cells, sane count, envelope bbox). Only guaranteed for the local iDesktopX 2026 voxel cache; not a general S3MB parser.
+
+### `geomodeling.api` (implemented in v0.3)
+
+FastAPI layer: `/api/health`, `/api/iserver/status`, `/api/cases`, `/api/cases/resistivity` (leaderboard from config + metric artifacts), `/publish-status` (live evidence chain), `/points` (standardized CSV point cloud with SHA-256), `/voxel-cells` (S3M cache cells fetched via iServer REST, contract-validated, `?refresh=true` bypass), `/api/evidence/browser-load`. Serves `web/dist` when built; browser never holds iServer admin credentials.
+
 ### Future interfaces (not implemented)
 
 - Coalbed methane: an independent experimental 3D case using Xi'an 1980 zone 20 candidate coordinates, DEM-derived surface elevations, and a vertical-borehole midpoint approximation. The current 58-point table is external evidence; volume rendering is parked because loading the generated voxel crashes iDesktopX.
