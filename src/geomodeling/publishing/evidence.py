@@ -11,7 +11,13 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .schemas import BrowserLoadEvidenceRecord, BrowserLoadReport
+from .schemas import (
+    BrowserLoadEvidenceRecord,
+    BrowserLoadReport,
+    RenderKind,
+    SceneIdentity,
+    VoxelCacheIdentity,
+)
 
 BROWSER_LOADS_FILENAME = "browser_loads.jsonl"
 
@@ -78,19 +84,48 @@ def latest_browser_load(case_id: str, result_id: str, store_dir: str | Path) -> 
     return latest
 
 
+def _report_identity_ok(
+    row: dict,
+    *,
+    scene: SceneIdentity,
+    voxel: VoxelCacheIdentity,
+) -> bool:
+    """Kind-specific identity validation for a browser-load report row."""
+
+    kind = row.get("render_kind")
+    url = str(row.get("service_url") or "")
+    if kind == RenderKind.ISERVER_SCENE.value:
+        if not url.startswith(scene.service_prefix):
+            return False
+        if row.get("scene_name") != scene.scene_name:
+            return False
+        layer_count = row.get("layer_count")
+        if not (isinstance(layer_count, int) and layer_count > 0):
+            return False
+        return row.get("validated_count") == layer_count
+    if kind == RenderKind.S3M_VOXEL_CACHE.value:
+        if not url.startswith(voxel.service_prefix):
+            return False
+        if f"3D-local3DCache-{voxel.cache_data_name}" not in url:
+            return False
+        return (row.get("validated_count") or 0) > 0
+    return False
+
+
 def latest_valid_browser_load(
     case_id: str,
     result_id: str,
     store_dir: str | Path,
     *,
-    allowed_kinds: set[str],
-    allowed_service_prefixes: tuple[str, ...],
+    scene: SceneIdentity,
+    voxel: VoxelCacheIdentity,
 ) -> BrowserLoadEvidenceRecord | None:
     """Newest report that may move ``browser_loaded`` in the evidence chain.
 
     A report qualifies only when it succeeds, renders a non-fallback kind,
-    validates a positive count, targets the exact ``result_id``, and points
-    at one of the expected iServer services for that result.
+    passes the kind-specific identity checks (scene service + scene name +
+    actual layer count, or voxel service + cache data name), validates a
+    positive count, and targets the exact ``result_id``.
     """
 
     latest: BrowserLoadEvidenceRecord | None = None
@@ -99,12 +134,7 @@ def latest_valid_browser_load(
             continue
         if not row.get("success"):
             continue
-        if row.get("render_kind") not in allowed_kinds:
-            continue
-        if not (row.get("validated_count") or 0) > 0:
-            continue
-        service_url = str(row.get("service_url") or "")
-        if not any(service_url.startswith(prefix) for prefix in allowed_service_prefixes):
+        if not _report_identity_ok(row, scene=scene, voxel=voxel):
             continue
         try:
             record = BrowserLoadEvidenceRecord.model_validate(row)

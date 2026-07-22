@@ -18,6 +18,20 @@ def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+class SceneIdentity(BaseModel):
+    """Expected identity of the iServer realspace scene for a result."""
+
+    service_prefix: str
+    scene_name: str
+
+
+class VoxelCacheIdentity(BaseModel):
+    """Expected identity of the published S3M voxel cache for a result."""
+
+    service_prefix: str
+    cache_data_name: str
+
+
 class EvidenceStateName(str, Enum):
     """Ordered publish evidence states from docs/supermap-integration.md §5."""
 

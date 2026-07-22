@@ -232,7 +232,9 @@ export interface VoxelCells {
   case_id: string
   result_id: string
   source: string
-  cache_dir: string
+  local_cache_dir: string
+  local_cache_present: boolean
+  local_cache_note: string
   service_url: string
   tile_files: number
   fetched_bytes: number

@@ -28,7 +28,6 @@ from geomodeling.publishing.cache_manifest import (
     compute_manifest_digest,
     load_manifest,
     verify_manifest_digest,
-    verify_tile_set,
 )
 from geomodeling.publishing.evidence import latest_valid_browser_load
 from geomodeling.publishing.probe import (
@@ -48,7 +47,7 @@ from geomodeling.publishing.s3mb import (
     validate_cache_scp,
     validate_cells,
 )
-from geomodeling.publishing.schemas import RenderKind
+from geomodeling.publishing.schemas import RenderKind, SceneIdentity, VoxelCacheIdentity
 
 # iDesktopX 体元栅格生成缓存（S3M 2.0）的默认输出位置；可用
 # GEOMODELING_VOXEL_CACHE_DIR 覆盖。瓦片字节一律经 iServer REST 获取，
@@ -230,10 +229,13 @@ def publish_status(config: AppConfig, client: IServerClient, evidence_dir: Path)
         CASE_RESISTIVITY,
         result_id,
         evidence_dir,
-        allowed_kinds={RenderKind.ISERVER_SCENE.value, RenderKind.S3M_VOXEL_CACHE.value},
-        allowed_service_prefixes=(
-            f"{client.base_url}/services/{REALSPACE_SERVICE_NAME}/",
-            f"{client.base_url}/services/{VOLUME_SERVICE_NAME}/",
+        scene=SceneIdentity(
+            service_prefix=f"{client.base_url}/services/{REALSPACE_SERVICE_NAME}/",
+            scene_name=RHO_SCENE_NAME,
+        ),
+        voxel=VoxelCacheIdentity(
+            service_prefix=f"{client.base_url}/services/{VOLUME_SERVICE_NAME}/",
+            cache_data_name=VOLUME_CACHE_DATA_NAME,
         ),
     )
     manual_notes = formal.get("manual_evidence") or []
@@ -334,40 +336,34 @@ def _read_points_cached(csv_path: str) -> dict[str, Any]:
 
 @lru_cache(maxsize=4)
 def _voxel_cells_cached(
-    cache_dir: str,
     service_url: str,
     contract: CacheContract,
     manifest: CacheManifest,
     timeout: float,
 ) -> dict[str, Any]:
-    """Fetch every cache tile via iServer REST and parse voxel cells.
+    """Fetch every manifest-pinned cache tile via iServer REST and parse.
 
-    Tile bytes always come from the published iServer 3D cache service; the
-    local cache directory is only used to enumerate relative tile paths.
-    The remote tile set and byte content must reproduce the pinned manifest,
-    and cache/scp/tiles are validated fail-closed against the
-    registry-derived ``contract`` before any data leaves the API.
+    The tile set comes exclusively from ``manifest.tiles`` (never from a
+    local directory scan); a local cache directory may exist for operator
+    diagnostics but plays no role in the request path. Cache/scp/tiles are
+    validated fail-closed against the registry-derived ``contract`` before
+    any data leaves the API.
     """
 
     import os
 
     from geomodeling.publishing import IServerClient
 
-    root = Path(cache_dir)
-    if not root.exists():
-        raise FileNotFoundError(f"voxel cache directory not found: {cache_dir}")
-    rel_paths = sorted(
-        p.relative_to(root).as_posix() for p in root.rglob("*.s3mb")
-    )
-    if not rel_paths:
-        raise FileNotFoundError(f"no .s3mb tiles under {cache_dir}")
-    verify_tile_set(rel_paths, manifest)
+    if manifest.cache_data_name != VOLUME_CACHE_DATA_NAME:
+        raise S3MBContractError(
+            f"manifest.cache_data_name 不符：{manifest.cache_data_name!r}，"
+            f"期望 {VOLUME_CACHE_DATA_NAME!r}（清单与缓存不匹配）"
+        )
 
     client = IServerClient(
         base_url=os.environ.get("GEOMODELING_ISERVER_URL", "http://localhost:8090/iserver").rstrip("/"),
         timeout=timeout,
     )
-    tiles = []
     fetched: list[tuple[str, bytes]] = []
     fetched_bytes = 0
     try:
@@ -383,7 +379,7 @@ def _voxel_cells_cached(
         except Exception as exc:  # malformed scp structure → contract error
             raise S3MBContractError(f"scp 结构畸形：{exc}") from exc
 
-        for rel in rel_paths:
+        for rel in manifest.tiles:
             resp = client.get_bytes(
                 f"services/{VOLUME_SERVICE_NAME}/rest/realspace/datas/{VOLUME_CACHE_DATA_NAME}/data/path/{rel}"
             )
@@ -406,7 +402,7 @@ def _voxel_cells_cached(
     }
     return {
         "cells": cells,
-        "tile_files": len(rel_paths),
+        "tile_files": len(manifest.tiles),
         "fetched_bytes": fetched_bytes,
         "service_url": service_url,
         "summary": summary,
@@ -436,6 +432,10 @@ def voxel_cells(config: AppConfig, client: IServerClient, cache_dir: Path | None
         cache_root = (config.resolve_path(str(cache_root)) or cache_root)
     service_url = f"{client.base_url}/services/{VOLUME_SERVICE_NAME}/rest/realspace"
 
+    if refresh:
+        _voxel_cells_cached.cache_clear()
+        _read_points_cached.cache_clear()
+
     csv_path = config.resolve_path(config.paths.get("standardized"))
     if csv_path is None or not csv_path.exists():
         raise FileNotFoundError("standardized CSV not available for contract xy envelope")
@@ -448,16 +448,23 @@ def voxel_cells(config: AppConfig, client: IServerClient, cache_dir: Path | None
     from geomodeling.publishing.cache_manifest import DEFAULT_MANIFEST_PATH
 
     manifest = load_manifest(PROJECT_ROOT / DEFAULT_MANIFEST_PATH)
-    if refresh:
-        _voxel_cells_cached.cache_clear()
-    data = _voxel_cells_cached(str(cache_root), service_url, contract, manifest, 30.0)
+    data = _voxel_cells_cached(service_url, contract, manifest, 30.0)
     cells = data["cells"]
     formal = formal_result(config)
+
+    # 本地缓存目录仅作诊断信息，不参与取数路径
+    cache_root = cache_dir or Path(DEFAULT_VOXEL_CACHE_DIR)
+    if not cache_root.is_absolute():
+        cache_root = (config.resolve_path(str(cache_root)) or cache_root)
+    local_cache_present = cache_root.exists() and any(cache_root.rglob("*.s3mb"))
+
     return {
         "case_id": CASE_RESISTIVITY,
         "result_id": formal.get("dataset", RHO_FORMAL_DATASET),
         "source": "iserver_s3m_cache",
-        "cache_dir": str(cache_root),
+        "local_cache_dir": str(cache_root),
+        "local_cache_present": local_cache_present,
+        "local_cache_note": "本地缓存目录仅用于诊断；瓦片清单与字节一律来自 iServer 服务 + 固定 manifest",
         "service_url": service_url,
         "tile_files": data["tile_files"],
         "fetched_bytes": data["fetched_bytes"],

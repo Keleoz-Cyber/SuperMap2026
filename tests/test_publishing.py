@@ -23,6 +23,8 @@ from geomodeling.publishing.schemas import (
     BrowserLoadReport,
     EvidenceStateName,
     RenderKind,
+    SceneIdentity,
+    VoxelCacheIdentity,
 )
 
 
@@ -217,8 +219,14 @@ def test_browser_load_store_roundtrip(tmp_path):
     assert latest_browser_load("resistivity", "OTHER", tmp_path) is None
 
 
-VALID_KINDS = {RenderKind.ISERVER_SCENE.value, RenderKind.S3M_VOXEL_CACHE.value}
-VALID_PREFIXES = ("http://iserver.test/iserver/services/3D-WorkSpace/",)
+SCENE_ID = SceneIdentity(
+    service_prefix="http://iserver.test/iserver/services/3D-WorkSpace/",
+    scene_name="RHO_三维全值域",
+)
+VOXEL_ID = VoxelCacheIdentity(
+    service_prefix="http://iserver.test/iserver/services/3D-local3DCache-RHO_KRIG_FINAL_20M_40_VOL_S3M2/",
+    cache_data_name="RHO_KRIG_FINAL_20M_40_VOL_S3M2",
+)
 
 
 def _write_report(tmp_path, **overrides):
@@ -226,59 +234,103 @@ def _write_report(tmp_path, **overrides):
         "case_id": "resistivity",
         "result_id": "RHO_KRIG_FINAL_20M_40",
         "service_url": "http://iserver.test/iserver/services/3D-WorkSpace/rest/realspace",
+        "scene_name": "RHO_三维全值域",
         "success": True,
         "render_kind": "iserver_scene",
-        "validated_count": 4388,
+        "layer_count": 1,
+        "validated_count": 1,
     }
     payload.update(overrides)
     record_browser_load(BrowserLoadReport(**payload), tmp_path)
 
 
-def test_latest_valid_browser_load_accepts_valid_report(tmp_path):
-    _write_report(tmp_path)
-    record = latest_valid_browser_load(
+def _latest(tmp_path):
+    return latest_valid_browser_load(
         "resistivity", "RHO_KRIG_FINAL_20M_40", tmp_path,
-        allowed_kinds=VALID_KINDS, allowed_service_prefixes=VALID_PREFIXES,
+        scene=SCENE_ID, voxel=VOXEL_ID,
     )
+
+
+def test_latest_valid_browser_load_accepts_valid_scene_report(tmp_path):
+    _write_report(tmp_path)
+    record = _latest(tmp_path)
     assert record is not None
-    assert record.validated_count == 4388
+    assert record.render_kind == RenderKind.ISERVER_SCENE
+    assert record.validated_count == 1
+
+
+def test_latest_valid_browser_load_accepts_valid_voxel_report(tmp_path):
+    _write_report(
+        tmp_path,
+        render_kind="s3m_voxel_cache",
+        service_url="http://iserver.test/iserver/services/3D-local3DCache-RHO_KRIG_FINAL_20M_40_VOL_S3M2/rest/realspace",
+        scene_name="默认场景",
+        layer_count=None,
+        validated_count=7056,
+    )
+    record = _latest(tmp_path)
+    assert record is not None
+    assert record.render_kind == RenderKind.S3M_VOXEL_CACHE
 
 
 def test_latest_valid_browser_load_rejects_failed_scene(tmp_path):
     _write_report(tmp_path, success=False)
-    record = latest_valid_browser_load(
-        "resistivity", "RHO_KRIG_FINAL_20M_40", tmp_path,
-        allowed_kinds=VALID_KINDS, allowed_service_prefixes=VALID_PREFIXES,
-    )
-    assert record is None
+    assert _latest(tmp_path) is None
 
 
 def test_latest_valid_browser_load_rejects_fallback_points(tmp_path):
-    _write_report(tmp_path, render_kind="fallback_points")
-    record = latest_valid_browser_load(
-        "resistivity", "RHO_KRIG_FINAL_20M_40", tmp_path,
-        allowed_kinds=VALID_KINDS, allowed_service_prefixes=VALID_PREFIXES,
+    _write_report(tmp_path, render_kind="fallback_points", validated_count=4000)
+    assert _latest(tmp_path) is None
+
+
+def test_latest_valid_browser_load_rejects_zero_layer_scene(tmp_path):
+    _write_report(tmp_path, layer_count=0, validated_count=0)
+    assert _latest(tmp_path) is None
+
+
+def test_latest_valid_browser_load_rejects_count_layer_mismatch(tmp_path):
+    _write_report(tmp_path, layer_count=1, validated_count=4388)
+    assert _latest(tmp_path) is None
+
+
+def test_latest_valid_browser_load_rejects_wrong_scene_name(tmp_path):
+    _write_report(tmp_path, scene_name="RHO_三维低值区_P25")
+    assert _latest(tmp_path) is None
+
+
+def test_latest_valid_browser_load_rejects_wrong_service(tmp_path):
+    _write_report(tmp_path, service_url="http://iserver.test/iserver/services/3D-OTHER/rest/realspace")
+    assert _latest(tmp_path) is None
+
+
+def test_latest_valid_browser_load_rejects_cross_forged_scene_kind(tmp_path):
+    # iserver_scene 种类指向体元服务（交叉伪造）
+    _write_report(
+        tmp_path,
+        service_url="http://iserver.test/iserver/services/3D-local3DCache-RHO_KRIG_FINAL_20M_40_VOL_S3M2/rest/realspace",
     )
-    assert record is None
+    assert _latest(tmp_path) is None
 
 
-def test_latest_valid_browser_load_rejects_wrong_result_or_service(tmp_path):
+def test_latest_valid_browser_load_rejects_cross_forged_voxel_kind(tmp_path):
+    # s3m_voxel_cache 种类指向场景服务（交叉伪造）
+    _write_report(tmp_path, render_kind="s3m_voxel_cache", validated_count=7056)
+    assert _latest(tmp_path) is None
+
+
+def test_latest_valid_browser_load_rejects_wrong_cache_data_name(tmp_path):
+    _write_report(
+        tmp_path,
+        render_kind="s3m_voxel_cache",
+        service_url="http://iserver.test/iserver/services/3D-local3DCache-OTHER_CACHE/rest/realspace",
+        validated_count=7056,
+    )
+    assert _latest(tmp_path) is None
+
+
+def test_latest_valid_browser_load_rejects_wrong_result_id(tmp_path):
     _write_report(tmp_path, result_id="OTHER_DATASET")
-    _write_report(tmp_path, service_url="http://evil.example/fake/rest")
-    record = latest_valid_browser_load(
-        "resistivity", "RHO_KRIG_FINAL_20M_40", tmp_path,
-        allowed_kinds=VALID_KINDS, allowed_service_prefixes=VALID_PREFIXES,
-    )
-    assert record is None
-
-
-def test_latest_valid_browser_load_rejects_zero_count(tmp_path):
-    _write_report(tmp_path, validated_count=0)
-    record = latest_valid_browser_load(
-        "resistivity", "RHO_KRIG_FINAL_20M_40", tmp_path,
-        allowed_kinds=VALID_KINDS, allowed_service_prefixes=VALID_PREFIXES,
-    )
-    assert record is None
+    assert _latest(tmp_path) is None
 
 
 # ------------------------------------------------------------------ client

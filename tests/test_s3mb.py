@@ -312,11 +312,28 @@ def _client(tmp_path: Path, config=None) -> TestClient:
     return TestClient(app)
 
 
-def test_voxel_cells_endpoint_503_when_cache_missing(tmp_path):
+def test_voxel_cells_endpoint_503_when_remote_unavailable(tmp_path, monkeypatch):
+    """远程服务不可达（全部取数失败）→ 503 且指明 iServer 取数失败。"""
+
+    class DeadRemote:
+        def __init__(self, base_url, timeout=10.0, **_kw):
+            self.base_url = base_url
+
+        def get_json(self, path, *, use_token=False):
+            return _Resp(False, error="connection refused")
+
+        def get_bytes(self, path):
+            return _Resp(False, error="connection refused")
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr("geomodeling.publishing.IServerClient", DeadRemote)
+    case_service._voxel_cells_cached.cache_clear()
     config = make_config(standardized=Path("tests/fixtures/rho_tiny_validation.csv"))
     resp = _client(tmp_path, config).get("/api/cases/resistivity/voxel-cells")
     assert resp.status_code == 503
-    assert "voxel cache" in resp.json()["detail"]
+    assert "iServer" in resp.json()["detail"]
 
 
 def test_voxel_cells_endpoint_parses_iserver_tiles(tmp_path, monkeypatch):
@@ -325,7 +342,7 @@ def test_voxel_cells_endpoint_parses_iserver_tiles(tmp_path, monkeypatch):
     tile_bytes = build_s3mb(CELLS, junk=b"\x00" * 96)
     (cache_dir / "Tile_1_0.s3mb").write_bytes(tile_bytes)
 
-    def fake_cached(cache_dir_arg, service_url, contract, manifest, timeout):
+    def fake_cached(service_url, contract, manifest, timeout):
         return {
             "cells": dedupe_cells([parse_s3mb_bytes("Tile_1_0", tile_bytes, CONTRACT)]),
             "tile_files": 1,
@@ -358,7 +375,7 @@ def test_voxel_cells_endpoint_parses_iserver_tiles(tmp_path, monkeypatch):
 
 
 def test_voxel_cells_endpoint_contract_failure_is_explicit(tmp_path, monkeypatch):
-    def raising_cached(cache_dir_arg, service_url, contract, manifest, timeout):
+    def raising_cached(service_url, contract, manifest, timeout):
         raise S3MBContractError("S3M 版本不支持：'1.0'（本解析器仅验证过 2.0）")
 
     monkeypatch.setattr(case_service, "_voxel_cells_cached", raising_cached)
@@ -368,3 +385,144 @@ def test_voxel_cells_endpoint_contract_failure_is_explicit(tmp_path, monkeypatch
     detail = resp.json()["detail"]
     assert "契约校验失败" in detail
     assert "版本不支持" in detail
+
+
+# ----------------------------------------------------- manifest-driven fetch
+
+
+def _envelope_csv(tmp_path: Path) -> Path:
+    csv = tmp_path / "standardized_envelope.csv"
+    csv.write_text(
+        "X,Y,Z,RHO\n-160,220,-10,5\n-40,660,-20,10\n-100,440,-30,15\n",
+        encoding="utf-8",
+    )
+    return csv
+
+
+def _synthetic_cells_per_tile(seed: int) -> list[tuple[float, float, float, float]]:
+    cells = []
+    for i in range(12):
+        for j in range(12):
+            x = -160.0 + seed * 4.0 + i * 0.05
+            y = 230.0 + (j % 21) * 20.0
+            z = -840.0 + ((i * 12 + j) % 48) * 17.0
+            w = 2.0 + ((seed * 31 + i * 13 + j * 7) % 120) + 0.5
+            cells.append((x, y, z, w))
+    return cells
+
+
+def _synthetic_manifest(tag: str = "it") -> tuple[CacheManifest, dict[str, bytes]]:
+    tiles: dict[str, bytes] = {}
+    for idx in range(26):
+        rel = f"Tile_{idx // 7 + 1}_0/Tile_{idx}_{tag}.s3mb"
+        tiles[rel] = build_s3mb(_synthetic_cells_per_tile(idx))
+    manifest = CacheManifest(
+        cache_data_name=case_service.VOLUME_CACHE_DATA_NAME,
+        tiles=tuple(sorted(tiles)),
+        digest_sha256=compute_manifest_digest(list(tiles.items())),
+    )
+    return manifest, tiles
+
+
+class _Resp:
+    def __init__(self, ok, data=None, error=None, status=200):
+        self.ok = ok
+        self.data = data
+        self.error = error
+        self.status_code = status
+
+
+def _fake_iserver_factory(tiles: dict[str, bytes], scp: dict):
+    class FakeRemote:
+        def __init__(self, base_url, timeout=10.0, **_kw):
+            self.base_url = base_url
+
+        def get_json(self, path, *, use_token=False):
+            if path.endswith("/config"):
+                return _Resp(True, data=scp)
+            return _Resp(False, error=f"unexpected json path {path}")
+
+        def get_bytes(self, path):
+            for rel, data in tiles.items():
+                if path.endswith(f"/data/path/{rel}"):
+                    return _Resp(True, data=data)
+            return _Resp(False, error=f"unexpected tile path {path}")
+
+        def close(self):
+            return None
+
+    return FakeRemote
+
+
+def test_voxel_cells_integration_remote_complete_without_local_cache(tmp_path, monkeypatch):
+    """没有本地缓存目录：只要远程服务 + manifest 完整，端点必须成功。"""
+
+    manifest, tiles = _synthetic_manifest("int")
+    monkeypatch.setattr("geomodeling.publishing.IServerClient", _fake_iserver_factory(tiles, VALID_SCP))
+    monkeypatch.setattr(case_service, "load_manifest", lambda _path=None: manifest)
+    case_service._voxel_cells_cached.cache_clear()
+
+    config = make_config(standardized=_envelope_csv(tmp_path))
+    settings = ApiSettings(
+        config_path=Path("config/default.yaml"),
+        metrics_json=None,
+        evidence_dir=tmp_path / "evidence",
+        frontend_dist=None,
+        voxel_cache_dir=tmp_path / "does-not-exist",
+    )
+    app = create_app()
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[get_app_config] = lambda: config
+    app.dependency_overrides[get_iserver_client] = lambda: FakeIServer({})
+    resp = TestClient(app).get("/api/cases/resistivity/voxel-cells")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["count"] > 3000
+    assert body["tile_files"] == 26
+    assert body["local_cache_present"] is False
+    assert body["contract"]["manifest"]["pinned"] is True
+
+
+def test_voxel_cells_integration_manifest_data_name_mismatch(tmp_path, monkeypatch):
+    manifest, tiles = _synthetic_manifest("mm")
+    bad = CacheManifest(
+        cache_data_name="OTHER_CACHE_NAME",
+        tiles=manifest.tiles,
+        digest_sha256=manifest.digest_sha256,
+    )
+    monkeypatch.setattr("geomodeling.publishing.IServerClient", _fake_iserver_factory(tiles, VALID_SCP))
+    monkeypatch.setattr(case_service, "load_manifest", lambda _path=None: bad)
+    case_service._voxel_cells_cached.cache_clear()
+
+    config = make_config(standardized=_envelope_csv(tmp_path))
+    resp = _client(tmp_path, config).get("/api/cases/resistivity/voxel-cells")
+    assert resp.status_code == 503
+    assert "cache_data_name 不符" in resp.json()["detail"]
+
+
+def test_voxel_cells_refresh_clears_both_caches(tmp_path, monkeypatch):
+    manifest, tiles = _synthetic_manifest("rf")
+    calls = {"bytes": 0}
+
+    class CountingRemote(_fake_iserver_factory(tiles, VALID_SCP)):
+        def get_bytes(self, path):
+            calls["bytes"] += 1
+            return super().get_bytes(path)
+
+    monkeypatch.setattr("geomodeling.publishing.IServerClient", CountingRemote)
+    monkeypatch.setattr(case_service, "load_manifest", lambda _path=None: manifest)
+    case_service._voxel_cells_cached.cache_clear()
+
+    config = make_config(standardized=_envelope_csv(tmp_path))
+    client = _client(tmp_path, config)
+    assert client.get("/api/cases/resistivity/voxel-cells").status_code == 200
+    first = calls["bytes"]
+    assert first == 26
+
+    # 第二次不带 refresh：命中缓存，不再取瓦片
+    assert client.get("/api/cases/resistivity/voxel-cells").status_code == 200
+    assert calls["bytes"] == first
+
+    # refresh=true：重新拉取
+    assert client.get("/api/cases/resistivity/voxel-cells?refresh=true").status_code == 200
+    assert calls["bytes"] == first * 2

@@ -20,7 +20,7 @@
   - `geomodeling.api`（FastAPI）：`/api/health`、`/api/iserver/status`、`/api/cases`、`/api/cases/resistivity`（排行榜=配置+指标产物）、`/api/cases/resistivity/publish-status`（实时证据链）、`/api/cases/resistivity/points`（17,549 点云，`source=platform_csv`，含 SHA-256）、`/api/evidence/browser-load`；iServer 凭据只走环境变量，浏览器不持有。
   - `web/`（Vue 3 + Vite + TS + Element Plus + iClient3D for Cesium）：案例首页、电阻率三维工作台（模型排行榜、RHO 点云三维场景、阈值/色带/抽稀/Z夸张交互、体元包围盒、发布证据链、服务检查、失败与问题清单、数据血统）。
   - **S3M 体元缓存浏览器渲染**：iDesktopX「体元栅格生成缓存」（S3M 2.0，26 瓦片）已发布为 iServer 三维瓦片服务；`/api/cases/resistivity/voxel-cells` 经 iServer REST 逐瓦片获取并解析（`geomodeling.publishing.s3mb`，fail-closed 契约校验：头部/版本/文件类型/wDescript/格点有限性/数量/包围盒），浏览器自定义渲染 7,056 格并支持点云/体元/叠加切换。解析器仅针对本缓存格式，不宣称通用 S3MB 解析；缓存刷新语义见运行说明 §4.2。
-  - 测试基线：`144 passed`（80 基线 + 64 新增便携测试；API/发布适配/S3M 解析契约均不依赖本机 iServer 或真实数据）。
+  - 测试基线：`155 passed`（80 基线 + 75 新增便携测试；API/发布适配/S3M 解析契约均不依赖本机 iServer 或真实数据）。
   - 运行说明与实测证据：[../v0.3-iserver-loop.md](../v0.3-iserver-loop.md)。
 - 当前仓库仍无通用上传、插值执行、调参任务、微震三维接入；瓦斯保持暂缓。
 

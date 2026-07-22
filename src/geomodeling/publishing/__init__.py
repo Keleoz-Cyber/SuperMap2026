@@ -37,7 +37,9 @@ from .schemas import (
     EvidenceStateName,
     IServerStatus,
     RenderKind,
+    SceneIdentity,
     ServiceCheck,
+    VoxelCacheIdentity,
 )
 
 __all__ = [
@@ -70,5 +72,7 @@ __all__ = [
     "EvidenceStateName",
     "IServerStatus",
     "RenderKind",
+    "SceneIdentity",
     "ServiceCheck",
+    "VoxelCacheIdentity",
 ]

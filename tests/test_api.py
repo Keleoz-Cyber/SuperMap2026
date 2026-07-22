@@ -218,7 +218,7 @@ def test_browser_load_report_flips_evidence_state(tmp_path):
             "layer_count": 1,
             "success": True,
             "render_kind": "iserver_scene",
-            "validated_count": 4388,
+            "validated_count": 1,
         },
     )
     assert resp.status_code == 201
@@ -259,9 +259,33 @@ def test_browser_load_rejects_wrong_service_identity(tmp_path):
             "case_id": "resistivity",
             "result_id": "RHO_KRIG_FINAL_20M_40",
             "service_url": "http://evil.example/iserver/services/3D-Fake/rest/realspace",
+            "scene_name": "RHO_三维全值域",
+            "layer_count": 2,
             "success": True,
             "render_kind": "iserver_scene",
-            "validated_count": 100,
+            "validated_count": 2,
+        },
+    )
+    assert resp.status_code == 201
+
+    body = client.get("/api/cases/resistivity/publish-status").json()
+    states = {s["state"]: s for s in body["evidence_chain"]["states"]}
+    assert states["browser_loaded"]["ok"] is False
+
+
+def test_browser_load_rejects_cross_forged_kind(tmp_path):
+    client = make_client(tmp_path)
+    resp = client.post(
+        "/api/evidence/browser-load",
+        json={
+            "case_id": "resistivity",
+            "result_id": "RHO_KRIG_FINAL_20M_40",
+            "service_url": "http://iserver.test/iserver/services/3D-WorkSpace/rest/realspace",
+            "scene_name": "默认场景",
+            "layer_count": 1,
+            "success": True,
+            "render_kind": "s3m_voxel_cache",
+            "validated_count": 7056,
         },
     )
     assert resp.status_code == 201

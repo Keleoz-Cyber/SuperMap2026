@@ -15,9 +15,9 @@ Verified layout for the targeted cache:
   followed by geometry blocks: ``N`` float32 (x, y, z) triplets and, after a
   small gap, ``N`` float32 weights (the voxel attribute, e.g. RHO).
 
-LOD handling: the cache contains several LOD levels; the deepest (leaf)
-tiles hold full-resolution cells. We collect every vertex and keep, for each
-unique (x, y, z), the weight from the deepest tile that contains it.
+Duplicate handling: tile names do not encode a reliable LOD order, so no
+"deepest LOD wins" preference is applied — identical duplicates merge once
+and conflicting duplicates fail closed (:func:`dedupe_cells`).
 """
 
 from __future__ import annotations

@@ -346,7 +346,7 @@ function maybeReportBrowserLoad() {
     layer_count: ok ? sceneLayerCount.value : 0,
     success: ok,
     render_kind: ok ? 'iserver_scene' : 'fallback_points',
-    validated_count: ok ? renderedCount.value : 0,
+    validated_count: ok ? sceneLayerCount.value : 0,
     note: ok
       ? `浏览器渲染完成：iServer 场景 ${sceneLayerCount.value} 个图层 + RHO 点云 ${renderedCount.value} 点（decimate=${decimate.value}）`
       : 'iServer 场景打开失败；仅点云独立渲染（fallback_points，不进入发布证据）',
