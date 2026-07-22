@@ -1,0 +1,138 @@
+/* GeoModelingPlatform 全局样式：深色专业 GIS 答辩风格 */
+
+:root {
+  --gmp-bg: #0b0f14;
+  --gmp-bg-soft: #0e141b;
+  --gmp-panel: #11181f;
+  --gmp-card: #141c25;
+  --gmp-card-hover: #18222d;
+  --gmp-border: #223041;
+  --gmp-border-soft: #1b2632;
+  --gmp-text: #d7dee8;
+  --gmp-text-dim: #8794a5;
+  --gmp-text-faint: #5d6a7a;
+  --gmp-accent: #4ea1ff;
+  --gmp-cyan: #35c4d8;
+  --gmp-gold: #e8c25a;
+  --gmp-green: #3fb96c;
+  --gmp-red: #e05c5c;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--gmp-bg);
+  color: var(--gmp-text);
+  font-family:
+    'Helvetica Neue',
+    'PingFang SC',
+    'Hiragino Sans GB',
+    'Microsoft YaHei',
+    Arial,
+    sans-serif;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Element Plus 暗色变量微调，贴近 #0b0f14 色系 */
+html.dark {
+  --el-bg-color: var(--gmp-card);
+  --el-bg-color-overlay: #17202b;
+  --el-bg-color-page: var(--gmp-bg);
+  --el-border-color: var(--gmp-border);
+  --el-border-color-light: var(--gmp-border-soft);
+  --el-border-color-lighter: #18222d;
+  --el-border-color-extra-light: #151e28;
+  --el-fill-color-blank: var(--gmp-card);
+  --el-fill-color: #1a242f;
+  --el-fill-color-light: #16202a;
+  --el-text-color-primary: var(--gmp-text);
+  --el-text-color-regular: #b7c1ce;
+  --el-text-color-secondary: var(--gmp-text-dim);
+  --el-color-primary: var(--gmp-accent);
+}
+
+/* 通用工具类 */
+.mono {
+  font-family: 'JetBrains Mono', 'Cascadia Code', Consolas, 'Courier New', monospace;
+  font-size: 12px;
+}
+
+.break-all {
+  word-break: break-all;
+}
+
+.dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.dot.ok {
+  background: var(--gmp-green);
+  box-shadow: 0 0 6px rgba(63, 185, 108, 0.7);
+}
+
+.dot.bad {
+  background: var(--gmp-red);
+  box-shadow: 0 0 6px rgba(224, 92, 92, 0.7);
+}
+
+.dot.pending {
+  background: var(--gmp-gold);
+}
+
+/* 面板小节标题 */
+.panel-title {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: var(--gmp-text);
+  margin: 0 0 10px;
+  padding-left: 9px;
+  border-left: 3px solid var(--gmp-accent);
+  line-height: 1.2;
+}
+
+.sub-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--gmp-text-dim);
+  margin: 14px 0 8px;
+  letter-spacing: 0.04em;
+}
+
+.panel-note {
+  font-size: 12px;
+  color: var(--gmp-text-dim);
+  line-height: 1.6;
+  margin: 8px 0 0;
+}
+
+/* 滚动条 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #26313f;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #314052;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}

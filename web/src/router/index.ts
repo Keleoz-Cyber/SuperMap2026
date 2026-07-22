@@ -1,0 +1,14 @@
+import { createRouter, createWebHashHistory } from 'vue-router'
+import HomeView from '../views/HomeView.vue'
+import RhoCaseView from '../views/RhoCaseView.vue'
+
+// 构建产物由 FastAPI StaticFiles 直接托管，hash 模式可避免刷新深链 404。
+const router = createRouter({
+  history: createWebHashHistory(),
+  routes: [
+    { path: '/', name: 'home', component: HomeView },
+    { path: '/case/resistivity', name: 'rho-case', component: RhoCaseView },
+  ],
+})
+
+export default router

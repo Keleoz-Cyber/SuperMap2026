@@ -1,11 +1,11 @@
 # Acceptance Notes
 
-适用对象：当前 `main`（v0.1.0 电阻率基线 + 已合并的微震 v0.2a 审计底座）。
+适用对象：当前代码基线（v0.1.0 电阻率基线 + 已合并的微震 v0.2a 审计底座 + v0.3 iServer 纵向闭环）。
 
 ## 验收命令
 
 ```powershell
-python -m pip install -e ".[test]"
+python -m pip install -e ".[api,test]"
 python -m pytest -q
 python -m pytest -q -m "not local_data"
 python -m pytest -q -m local_data
@@ -14,7 +14,19 @@ geomodeling microseismic run-audit --config config/microseismic.yaml -o outputs/
 geomodeling verify-supermap -o outputs/release_verify
 ```
 
-当前基线：全量 80 passed；便携 57 passed / 23 deselected；本地真实数据 23 passed / 57 deselected。测试数量只允许因真实新增测试而增加，任何减少或失败都必须调查。
+当前基线：全量 `157 passed`（80 项 v0.1/v0.2a 基线 + 77 项 v0.3 新增）；便携 134 passed / 23 deselected；本地真实数据 23 passed / 134 deselected。测试数量只允许因真实新增测试而增加，任何减少或失败都必须调查。
+
+v0.3 浏览器闭环验收（需本机 iServer 已启动且 `WorkSpace.smwu` 已发布，见 [v0.3 运行说明](v0.3-iserver-loop.md)）：
+
+```powershell
+python scripts/fetch_iclient3d.py
+cd web; npm install; npm run build; npm run type-check; cd ..
+python -m uvicorn geomodeling.api.app:app --host 127.0.0.1 --port 8000
+# GET /api/health → {"status":"ok","version":"0.3.x"}
+# GET /api/cases/resistivity/publish-status → evidence_chain 中
+#   model_succeeded/artifact_exported/iserver_published/service_metadata_verified=True，
+#   浏览器打开 http://127.0.0.1:8000/ 完成一次场景渲染后 browser_loaded 亦转 True
+```
 
 ## 电阻率验收口径
 
@@ -34,14 +46,22 @@ geomodeling verify-supermap -o outputs/release_verify
 
 ## 证据边界（必须保持显式）
 
-- 微震审计 `validation_passed=True` **不解除** downstream gates：`geometry_blocked`、`cleaning_blocked`、`interpolation_blocked` 仍为 True，不能把审计通过解释为可插值。
+- 当前v0.2a微震审计`validation_passed=True`**不会自动解除**运行时downstream gates。2026-07-20已经确认的局部坐标、深度、单位和有效值规则只有在schema、config、geometry、报告和回归测试全部升级后，才能修改对应gate；详见[data/microseismic.md](data/microseismic.md)。
 - `dataset_verified=False`：没有受支持的 SuperMap 数据集 API 适配器，只声明文件级验证。
 - 完整体元和水平切片为人工 iDesktopX 证据；垂直切片 `unverified`；原生等值面 `failed`，空数据集不进入正式成果。
 - `RHO >= 77` 仅为演示阈值；RHO 物理单位和 EPSG 未确认。
 
+## 仓库外派生与人工验收证据
+
+- 微震：2,005条有限记录经3σ规则剔除80条（深度72、速度8），保留1,925条（L1/L2/L3 = 792/783/350）；候选表SHA-256为`4F7A0886B54BB1776E9D7CA98299F8F86E67897BA19236FB151C3FC9E2AE1513`，已在iDesktopX人工复现。
+- 瓦斯：外部派生表含58条合格三维候选样本、28个位置，SHA-256为`FAB47D99926554255995BFB2D5FA299A389C14934D13B3F2D3BDB6E16EF5FC8F`；点图层能够显示，但`GAS_CH4_IDW_R1000_N12_P1`体元加入三维场景会触发iDesktopX原生崩溃。
+- 以上只证明文件和人工试验存在，不证明当前仓库能够生成、验证、发布或在浏览器显示这些成果。
+
 ## 未实现（当前 main）
 
-- 微震二维/三维坐标重建、正式清洗与空间插值。
-- 煤层瓦斯三维融合（CRS/高程/深度基准未确认前只允许属性统计）。
+- 微震局部三维坐标和3σ筛选的仓库内可复现实现、空间验证与插值。
+- 煤层瓦斯体元稳定显示、程序化数据契约和正式模型验收。
 - DSI-like 插值内核与 GOCAD 工程转换。
 - iDesktopX 控件自动化、Web 前端、账户体系、云部署和 iServer 发布。
+
+下一阶段浏览器建模平台的目标验收标准见[product-blueprint.md](product-blueprint.md#11-mvp验收标准)。该蓝图是未来验收目标，不得与本页当前代码基线混报。
