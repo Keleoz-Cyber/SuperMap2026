@@ -75,6 +75,7 @@ class DatasetVersion(Base):
     id: Mapped[str] = mapped_column(String(128), primary_key=True)
     case_id: Mapped[str] = mapped_column(ForeignKey("cases.id"))
     version: Mapped[int] = mapped_column()
+    status: Mapped[str] = mapped_column(String(32), default="uploaded")
     source_path: Mapped[str] = mapped_column(Text)
     standardized_path: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     profile_json: Mapped[str] = mapped_column(Text, default="{}")
@@ -109,6 +110,9 @@ class Run(Base):
     experiment_id: Mapped[str] = mapped_column(ForeignKey("experiments.id"))
     status: Mapped[str] = mapped_column(String(32), default=RunStatus.QUEUED.value)
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True, default=None)
+    retry_of_run_id: Mapped[str | None] = mapped_column(
+        String(128), ForeignKey("runs.id"), nullable=True, default=None
+    )
     metrics_json: Mapped[str] = mapped_column(Text, default="{}")
     created_at: Mapped[str] = mapped_column(Text, default=utc_now_iso)
     updated_at: Mapped[str] = mapped_column(Text, default=utc_now_iso, onupdate=utc_now_iso)
