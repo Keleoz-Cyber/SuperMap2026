@@ -186,20 +186,22 @@ function rebuildSceneContent() {
   if (!viewer || !pointCollection || !points.value) return
   const data = points.value
   const zf = zExaggeration.value
-  pointCollection.removeAll()
-  let n = 0
   const useThreshold = thresholdEnabled.value
   const th = threshold.value
-  for (let i = 0; i < data.served; i += 1) {
-    const v = data.values[i]
-    if (useThreshold && v < th) continue
-    pointCollection.add({
-      position: toScenePosition(data.x[i], data.y[i], data.z[i] * zf),
-      color: colorFor(v),
-      pixelSize: pointSize.value,
-      disableDepthTestDistance: Number.POSITIVE_INFINITY,
-    })
-    n += 1
+  pointCollection.removeAll()
+  let n = 0
+  if (displayMode.value !== 'volume') {
+    for (let i = 0; i < data.served; i += 1) {
+      const v = data.values[i]
+      if (useThreshold && v < th) continue
+      pointCollection.add({
+        position: toScenePosition(data.x[i], data.y[i], data.z[i] * zf),
+        color: colorFor(v),
+        pixelSize: pointSize.value,
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+      })
+      n += 1
+    }
   }
   renderedCount.value = n
   rebuildVoxelContent(zf, useThreshold, th)
@@ -211,6 +213,7 @@ function rebuildVoxelContent(zf: number, useThreshold: boolean, th: number) {
   if (!viewer || !voxelCollection || !voxelCells.value) return
   const data = voxelCells.value
   voxelCollection.removeAll()
+  if (displayMode.value === 'points') return
   for (let i = 0; i < data.count; i += 1) {
     const v = data.values[i]
     if (useThreshold && v < th) continue
@@ -264,10 +267,12 @@ function settleSceneOpen(ok: boolean, layerCount: number) {
   maybeReportBrowserLoad()
 }
 
+// 本构建（SuperMap 定制 Cesium 1.67）实测：PointPrimitiveCollection 的
+// show 不生效（设 false 仍渲染）；scene.primitives.remove() 后再 add() 也不再渲染。
+// 唯一可靠的可见性控制 = removeAll() 隐藏 / 从内存数据重建显示（2026-07-22 截图取证）。
 function applyDisplayMode() {
-  const mode = displayMode.value
-  if (pointCollection) pointCollection.show = mode !== 'volume'
-  if (voxelCollection) voxelCollection.show = mode !== 'points'
+  if (!viewer) return
+  rebuildSceneContent()
 }
 
 // 经 FastAPI（iServer S3M 瓦片）加载体元格点并自定义渲染
