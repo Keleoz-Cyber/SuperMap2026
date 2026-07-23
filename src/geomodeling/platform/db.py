@@ -76,9 +76,23 @@ class PlatformRuntime:
             cursor.execute(f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MS}")
             cursor.close()
 
-        Base.metadata.create_all(new_engine)
-        with new_engine.begin() as conn:
-            conn.exec_driver_sql(f"PRAGMA user_version={SCHEMA_VERSION}")
+        try:
+            with new_engine.begin() as conn:
+                existing = int(conn.exec_driver_sql("PRAGMA user_version").scalar_one())
+                if existing == 0:  # fresh database: create tables, then stamp
+                    Base.metadata.create_all(new_engine)
+                    conn.exec_driver_sql(f"PRAGMA user_version={SCHEMA_VERSION}")
+                elif existing < SCHEMA_VERSION:
+                    raise RuntimeError(
+                        f"database schema v{existing} needs migration to v{SCHEMA_VERSION}"
+                    )
+                elif existing > SCHEMA_VERSION:
+                    raise RuntimeError(
+                        f"database schema v{existing} is newer than code v{SCHEMA_VERSION}"
+                    )
+        except Exception:
+            new_engine.dispose()
+            raise
 
         self._engine = new_engine
         self._session_factory = sessionmaker(bind=new_engine, expire_on_commit=False)

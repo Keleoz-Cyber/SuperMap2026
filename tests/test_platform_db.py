@@ -7,12 +7,14 @@ or iServer endpoints are touched.
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 
 import pytest
 from sqlalchemy import inspect, text
 
 from geomodeling.platform import PlatformRuntime, PlatformSettings
+from geomodeling.platform import db as platform_db
 from geomodeling.platform.settings import DEFAULT_DATA_DIR, ENV_DATA_DIR
 from geomodeling.platform.tables import (
     ERROR_PROCESS_RESTARTED,
@@ -158,3 +160,60 @@ def test_structured_fields_roundtrip_as_canonical_json(tmp_path):
         ).scalar_one()
     assert raw == json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     assert loads_canonical(raw) == payload
+
+
+def test_recover_interrupted_runs_returns_count_and_is_idempotent(tmp_path):
+    runtime = initialized_runtime(tmp_path)
+    insert_run(runtime, status="queued")
+    insert_run(runtime, status="running")
+    insert_run(runtime, status="succeeded")
+
+    assert runtime.recover_interrupted_runs() == 2
+    assert runtime.recover_interrupted_runs() == 0
+
+
+def test_repeated_initialize_on_same_instance_is_idempotent(tmp_path):
+    runtime = PlatformRuntime(tmp_path / "runtime")
+    runtime.initialize()
+    runtime.initialize()
+
+    assert runtime.db_path.is_file()
+    assert runtime.schema_version() == 1
+    with runtime.engine.connect() as conn:
+        assert set(inspect(conn).get_table_names()) == EXPECTED_TABLES
+
+
+def test_operations_after_close_raise_runtime_error(tmp_path):
+    runtime = initialized_runtime(tmp_path)
+    runtime.close()
+
+    with pytest.raises(RuntimeError, match="not initialized"):
+        with runtime.session():
+            pass
+    with pytest.raises(RuntimeError, match="not initialized"):
+        runtime.schema_version()
+
+
+def test_initialize_rejects_schema_older_than_code(tmp_path, monkeypatch):
+    runtime = initialized_runtime(tmp_path)
+    runtime.close()
+
+    monkeypatch.setattr(platform_db, "SCHEMA_VERSION", platform_db.SCHEMA_VERSION + 1)
+    with pytest.raises(RuntimeError, match="migration"):
+        PlatformRuntime(tmp_path / "runtime").initialize()
+
+    # failed initialize leaves the file untouched: v1 still opens cleanly
+    monkeypatch.undo()
+    reopened = PlatformRuntime(tmp_path / "runtime")
+    reopened.initialize()
+    assert reopened.schema_version() == 1
+
+
+def test_initialize_rejects_schema_newer_than_code(tmp_path):
+    runtime = initialized_runtime(tmp_path)
+    runtime.close()
+    with sqlite3.connect(runtime.db_path) as conn:
+        conn.execute(f"PRAGMA user_version = {platform_db.SCHEMA_VERSION + 1}")
+
+    with pytest.raises(RuntimeError, match="newer than code"):
+        PlatformRuntime(tmp_path / "runtime").initialize()

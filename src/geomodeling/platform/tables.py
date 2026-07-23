@@ -22,6 +22,14 @@ def utc_now_iso() -> str:
 
 
 def dumps_canonical(value: Any) -> str:
+    """Serialize structured fields to canonical JSON text.
+
+    Python's ``json`` defaults to ``allow_nan=True``, which emits ``NaN`` /
+    ``Infinity`` literals that are invalid strict JSON. Callers (run metrics,
+    quality reports, manifests, ...) must sanitize non-finite floats before
+    persisting; this helper intentionally does not mask bad input.
+    """
+
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
