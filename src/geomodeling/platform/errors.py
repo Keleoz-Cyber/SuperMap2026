@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 import re
-from pathlib import Path
+from pathlib import PurePath
 from typing import Any
 
 logger = logging.getLogger("geomodeling.platform")
@@ -29,8 +29,11 @@ INVALID_STATUS_TRANSITION = "INVALID_STATUS_TRANSITION"
 RUN_NOT_RETRYABLE = "RUN_NOT_RETRYABLE"
 RUN_ALREADY_ACTIVE = "RUN_ALREADY_ACTIVE"
 CANDIDATE_NOT_SUCCEEDED = "CANDIDATE_NOT_SUCCEEDED"
+DATASET_VERSION_CONFLICT = "DATASET_VERSION_CONFLICT"
 
-_WINDOWS_ABS_RE = re.compile(r"^[A-Za-z]:[\\/]")
+# 绝对路径形态：POSIX ``/x``、根相对/UNC ``\x``/``\\srv``、Windows 盘符
+# （含 ``C:secret`` 这类盘符相对路径，同样可能泄露目录结构）。
+_ABS_PATH_TEXT_RE = re.compile(r"^(?:[\\/]|[A-Za-z]:)")
 
 
 class PlatformError(Exception):
@@ -60,17 +63,17 @@ class PlatformError(Exception):
 
 
 def _is_absolute_path_text(text: str) -> bool:
-    return (
-        text.startswith("/")
-        or text.startswith("\\\\")
-        or bool(_WINDOWS_ABS_RE.match(text))
-    )
+    return bool(_ABS_PATH_TEXT_RE.match(text))
 
 
 def sanitize_public_details(value: Any) -> Any:
-    """递归脱敏：``Path`` 对象与绝对路径文本替换为占位符，其余原样保留。"""
+    """递归脱敏：``PurePath`` 实例与绝对路径文本替换为占位符，其余原样保留。
 
-    if isinstance(value, Path):
+    ``PurePath`` 兜底覆盖非 ``Path`` 子类（如 ``PurePosixPath``），避免
+    不可 JSON 序列化的对象直达响应层造成 500。
+    """
+
+    if isinstance(value, PurePath):
         return REDACTED_PATH
     if isinstance(value, str):
         return REDACTED_PATH if _is_absolute_path_text(value) else value

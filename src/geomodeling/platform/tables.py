@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
-from sqlalchemy import ForeignKey, String, Text
+from sqlalchemy import ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -71,6 +71,10 @@ class Case(Base):
 
 class DatasetVersion(Base):
     __tablename__ = "dataset_versions"
+    __table_args__ = (
+        # 版本号按案例单调递增；唯一约束把并发分配竞争收敛为可处理的冲突
+        UniqueConstraint("case_id", "version", name="uq_dataset_versions_case_version"),
+    )
 
     id: Mapped[str] = mapped_column(String(128), primary_key=True)
     case_id: Mapped[str] = mapped_column(ForeignKey("cases.id"))

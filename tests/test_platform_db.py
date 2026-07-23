@@ -76,7 +76,7 @@ def test_database_creates_schema_and_is_reopenable(tmp_path):
     runtime = PlatformRuntime(tmp_path / "runtime")
     runtime.initialize()
     assert runtime.db_path.is_file()
-    assert runtime.schema_version() == 1
+    assert runtime.schema_version() == 2
     runtime.close()
     PlatformRuntime(tmp_path / "runtime").initialize()
 
@@ -178,7 +178,7 @@ def test_repeated_initialize_on_same_instance_is_idempotent(tmp_path):
     runtime.initialize()
 
     assert runtime.db_path.is_file()
-    assert runtime.schema_version() == 1
+    assert runtime.schema_version() == 2
     with runtime.engine.connect() as conn:
         assert set(inspect(conn).get_table_names()) == EXPECTED_TABLES
 
@@ -202,11 +202,23 @@ def test_initialize_rejects_schema_older_than_code(tmp_path, monkeypatch):
     with pytest.raises(RuntimeError, match="migration"):
         PlatformRuntime(tmp_path / "runtime").initialize()
 
-    # failed initialize leaves the file untouched: v1 still opens cleanly
+    # failed initialize leaves the file untouched: current schema still opens cleanly
     monkeypatch.undo()
     reopened = PlatformRuntime(tmp_path / "runtime")
     reopened.initialize()
-    assert reopened.schema_version() == 1
+    assert reopened.schema_version() == platform_db.SCHEMA_VERSION
+
+
+def test_initialize_rejects_v1_database_as_needing_migration(tmp_path):
+    """v1 开发库不做迁移：显式要求 greenfield 删除重建。"""
+
+    runtime = initialized_runtime(tmp_path)
+    runtime.close()
+    with sqlite3.connect(runtime.db_path) as conn:
+        conn.execute("PRAGMA user_version = 1")
+
+    with pytest.raises(RuntimeError, match="needs migration"):
+        PlatformRuntime(tmp_path / "runtime").initialize()
 
 
 def test_initialize_rejects_schema_newer_than_code(tmp_path):

@@ -14,6 +14,7 @@ import uuid
 from typing import Any, Iterable
 
 from sqlalchemy import func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from geomodeling.platform import tables
@@ -24,6 +25,7 @@ from geomodeling.platform.errors import (
     CASE_NOT_FOUND,
     DATASET_NOT_FOUND,
     DATASET_NOT_IN_CASE,
+    DATASET_VERSION_CONFLICT,
     EXPERIMENT_NOT_FOUND,
     EXPERIMENT_NOT_IN_CASE,
     INVALID_STATUS_TRANSITION,
@@ -197,26 +199,45 @@ class DatasetRepository:
     def __init__(self, session: Session) -> None:
         self._s = session
 
+    def _allocate_version(self, case_id: str) -> int:
+        current_max = self._s.scalar(
+            select(func.max(DatasetVersion.version)).where(DatasetVersion.case_id == case_id)
+        )
+        return (current_max or 0) + 1
+
     def create_version(
         self, case_id: str, *, source_path: str, profile: dict[str, Any] | None = None
     ) -> DatasetVersionRecord:
+        """分配下一个版本号并入库。
+
+        ``(case_id, version)`` 唯一约束兜底并发竞争：两个写者抢到同一
+        版本号时，后提交者得到 409（客户端可重试），而不是 500。
+        """
+
         if self._s.get(Case, case_id) is None:
             raise PlatformError(
                 CASE_NOT_FOUND, "案例不存在", {"case_id": case_id}, http_status=404
             )
-        current_max = self._s.scalar(
-            select(func.max(DatasetVersion.version)).where(DatasetVersion.case_id == case_id)
-        )
+        version = self._allocate_version(case_id)
         row = DatasetVersion(
             id=_new_id(),
             case_id=case_id,
-            version=(current_max or 0) + 1,
+            version=version,
             status=DatasetStatus.UPLOADED.value,
             source_path=source_path,
             profile_json=tables.dumps_canonical(profile or {}),
         )
         self._s.add(row)
-        self._s.commit()
+        try:
+            self._s.commit()
+        except IntegrityError:
+            self._s.rollback()
+            raise PlatformError(
+                DATASET_VERSION_CONFLICT,
+                "数据版本号分配冲突，请重试",
+                {"case_id": case_id, "version": version},
+                http_status=409,
+            ) from None
         return _dataset_record(row)
 
     def _get_row(self, dataset_id: str) -> DatasetVersion:
@@ -526,10 +547,22 @@ class FormalSelectionRepository:
         self._s = session
 
     def select(self, case_id: str, request: FormalSelectionRequest) -> FormalSelectionRecord:
-        """只有成功 run 产出的候选可以设为正式模型，且必须属于本案例。"""
+        """只有成功 run 产出的候选可以设为正式模型，且必须属于本案例。
+
+        ownership（404）先于 run 状态（409）检查：跨案例探测候选时
+        一律得到 404，不泄露候选存在性及其任务状态。
+        """
 
         candidate = CandidateRepository(self._s)._get_row(request.candidate_result_id)
         run = RunRepository(self._s)._get_row(candidate.run_id)
+        experiment = ExperimentRepository(self._s)._get_row(run.experiment_id)
+        if experiment.case_id != case_id:
+            raise PlatformError(
+                CANDIDATE_NOT_IN_CASE,
+                "候选结果不属于该案例",
+                {"candidate_result_id": candidate.id, "case_id": case_id},
+                http_status=404,
+            )
         if run.status != RunStatus.SUCCEEDED.value:
             raise PlatformError(
                 CANDIDATE_NOT_SUCCEEDED,
@@ -540,14 +573,6 @@ class FormalSelectionRepository:
                     "run_status": run.status,
                 },
                 http_status=409,
-            )
-        experiment = ExperimentRepository(self._s)._get_row(run.experiment_id)
-        if experiment.case_id != case_id:
-            raise PlatformError(
-                CANDIDATE_NOT_IN_CASE,
-                "候选结果不属于该案例",
-                {"candidate_result_id": candidate.id, "case_id": case_id},
-                http_status=404,
             )
         row = FormalSelection(
             id=_new_id(),

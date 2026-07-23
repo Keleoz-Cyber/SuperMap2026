@@ -10,10 +10,11 @@ import json
 import logging
 import re
 import sqlite3
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 import pytest
 from pydantic import BaseModel, ValidationError
+from sqlalchemy.exc import IntegrityError
 
 from geomodeling.platform import PlatformRuntime
 from geomodeling.platform.errors import (
@@ -22,6 +23,7 @@ from geomodeling.platform.errors import (
     CASE_NOT_FOUND,
     DATASET_NOT_FOUND,
     DATASET_NOT_IN_CASE,
+    DATASET_VERSION_CONFLICT,
     EXPERIMENT_NOT_IN_CASE,
     INVALID_STATUS_TRANSITION,
     RUN_ALREADY_ACTIVE,
@@ -52,7 +54,7 @@ from geomodeling.platform.schemas import (
     GridSpec,
     SpatialValidationSpec,
 )
-from geomodeling.platform.tables import RunStatus
+from geomodeling.platform.tables import DatasetVersion, RunStatus
 
 UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 
@@ -378,6 +380,49 @@ class TestCasesAndOwnership:
 
 
 # ---------------------------------------------------------------------------
+# Dataset version allocation
+# ---------------------------------------------------------------------------
+
+
+class TestVersionAllocation:
+    def test_case_version_pair_has_unique_constraint(self, runtime):
+        case_id = create_case(runtime)
+        create_dataset(runtime, case_id)  # v1
+        with runtime.session() as session:
+            session.add(
+                DatasetVersion(
+                    id="00000000-0000-0000-0000-0000000000dd",
+                    case_id=case_id,
+                    version=1,
+                    source_path="u/x.csv",
+                )
+            )
+            with pytest.raises(IntegrityError):
+                session.commit()
+
+    def test_duplicate_allocation_gets_409_not_500(self, runtime, monkeypatch):
+        """并发抢号：唯一约束兜底，后提交写者得到可重试的 409。"""
+
+        case_id = create_case(runtime)
+        create_dataset(runtime, case_id)  # v1
+        with runtime.session() as session:
+            repo = DatasetRepository(session)
+            # 模拟并发写者拿着过期快照分配到同一版本号（仅作用于本实例）
+            monkeypatch.setattr(repo, "_allocate_version", lambda cid: 1)
+            with pytest.raises(PlatformError) as excinfo:
+                repo.create_version(case_id, source_path="u/dup.csv")
+        assert excinfo.value.code == DATASET_VERSION_CONFLICT
+        assert excinfo.value.http_status == 409
+        assert excinfo.value.details == {"case_id": case_id, "version": 1}
+        # 冲突已回滚，会话与库均可继续正常分配
+        with runtime.session() as session:
+            record = DatasetRepository(session).create_version(
+                case_id, source_path="u/ok.csv"
+            )
+        assert record.version == 2
+
+
+# ---------------------------------------------------------------------------
 # Dataset status transitions
 # ---------------------------------------------------------------------------
 
@@ -641,6 +686,23 @@ class TestFormalSelection:
                 )
         assert excinfo.value.code == CANDIDATE_NOT_IN_CASE
 
+    def test_ownership_is_checked_before_run_status(self, runtime):
+        """跨案例探测失败任务的候选：一律 404，不泄露候选存在性与 run 状态。"""
+
+        owner = create_case(runtime, name="owner")
+        other = create_case(runtime, name="other")
+        experiment_id = create_experiment(runtime, owner)
+        run_id = create_run(runtime, experiment_id)
+        drive_run_to(runtime, run_id, "failed")
+        with runtime.session() as session:
+            candidate_id = CandidateRepository(session).create(run_id, metrics={}).id
+            with pytest.raises(PlatformError) as excinfo:
+                FormalSelectionRepository(session).select(
+                    other, FormalSelectionRequest(candidate_result_id=candidate_id, note="探测")
+                )
+        assert excinfo.value.code == CANDIDATE_NOT_IN_CASE
+        assert excinfo.value.http_status == 404
+
     def test_formal_selection_requires_a_reason(self, runtime):
         with pytest.raises(ValidationError):
             FormalSelectionRequest(candidate_result_id="cand", note="")
@@ -693,6 +755,29 @@ class TestSafePlatformErrors:
         assert clean["nested"] == [{"inner": "<redacted-path>"}]
         assert clean["count"] == 3
         assert clean["flag"] is None
+
+    def test_sanitize_covers_root_relative_and_drive_relative_forms(self):
+        details = {
+            "root_relative": "\\Windows\\System32\\x.dll",
+            "drive_relative": "C:secret.txt",
+            "safe_filename": "data.csv",
+            "safe_crs": "EPSG:4547",
+        }
+        clean = sanitize_public_details(details)
+        assert clean["root_relative"] == "<redacted-path>"
+        assert clean["drive_relative"] == "<redacted-path>"
+        assert clean["safe_filename"] == "data.csv"
+        assert clean["safe_crs"] == "EPSG:4547"
+
+    def test_sanitize_pure_path_fallback_stays_json_serializable(self):
+        details = {
+            "pure_posix": PurePosixPath("/etc/secret.conf"),
+            "pure_windows": PureWindowsPath("D:/data/secret.parquet"),
+        }
+        clean = sanitize_public_details(details)
+        assert clean == {"pure_posix": "<redacted-path>", "pure_windows": "<redacted-path>"}
+        # 脱敏结果必须可直接 JSON 序列化，不会在响应层 500
+        json.dumps(clean)
 
     def test_handler_returns_sanitized_payload_and_logs_full_details(self, caplog):
         fastapi = pytest.importorskip("fastapi")

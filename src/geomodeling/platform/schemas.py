@@ -3,6 +3,10 @@
 API routes, the local worker, and the repositories all import these
 models; field meanings are defined exactly once here instead of being
 duplicated as ad-hoc dictionaries. All models forbid unknown keys.
+
+记录模型可能携带服务端内部路径字段（``source_path``、
+``standardized_path``、``grid_path``）。公共 API 出口必须经白名单 DTO
+或脱敏序列化，不得把记录模型原样回传浏览器（责任落点为 API 层）。
 """
 
 from __future__ import annotations
@@ -199,6 +203,10 @@ class RunRecord(ContractModel):
 
 
 class CandidateResultRecord(ContractModel):
+    """候选结果记录。``grid_path`` 为服务端内部路径，公共 API 序列化时
+
+    必须脱敏，不得原样回传浏览器。"""
+
     id: str
     run_id: str
     category: str
