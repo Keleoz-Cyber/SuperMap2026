@@ -38,6 +38,7 @@ outputs/
 cache/
 logs/
 tmp/
+var/geomodeling/
 *.log
 
 # Large/local spatial data and database files

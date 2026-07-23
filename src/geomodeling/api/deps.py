@@ -11,7 +11,10 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
+from fastapi import Request
+
 from geomodeling.config import AppConfig, load_config
+from geomodeling.platform import PlatformRuntime
 from geomodeling.publishing import IServerClient
 
 ENV_CONFIG = "GEOMODELING_CONFIG"
@@ -82,3 +85,16 @@ def get_iserver_client() -> IServerClient:
     """Fresh short-lived client per call; iServer state is probed live."""
 
     return IServerClient.from_env(timeout=10.0)
+
+
+def get_platform_runtime(request: Request) -> PlatformRuntime:
+    """v0.4 runtime attached to ``app.state`` by the lifespan (Task 10).
+
+    Declared here so routes and tests can depend on it without touching the
+    legacy settings above; tests override it via ``dependency_overrides``.
+    """
+
+    runtime = getattr(request.app.state, "platform_runtime", None)
+    if runtime is None:
+        raise RuntimeError("platform runtime is not attached to the application")
+    return runtime
