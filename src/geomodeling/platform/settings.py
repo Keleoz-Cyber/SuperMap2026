@@ -18,10 +18,17 @@ DEFAULT_DATA_DIR = "var/geomodeling"
 
 DB_FILENAME = "platform.sqlite3"
 
+# 上传硬上限：50 MiB、500,000 数据行。构造 PlatformSettings 时可覆盖，
+# inspection 响应会把实际生效值回传给前端展示。
+DEFAULT_MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+DEFAULT_MAX_UPLOAD_ROWS = 500_000
+
 
 @dataclass(frozen=True)
 class PlatformSettings:
     data_dir: Path
+    max_upload_bytes: int = DEFAULT_MAX_UPLOAD_BYTES
+    max_upload_rows: int = DEFAULT_MAX_UPLOAD_ROWS
 
     @classmethod
     def resolve(cls) -> "PlatformSettings":
