@@ -4,6 +4,7 @@ import RhoCaseView from '../views/RhoCaseView.vue'
 import CaseCreateView from '../views/CaseCreateView.vue'
 import DatasetWizardView from '../views/DatasetWizardView.vue'
 import ExperimentView from '../views/ExperimentView.vue'
+import ResultWorkbenchView from '../views/ResultWorkbenchView.vue'
 
 // 构建产物由 FastAPI StaticFiles 直接托管，hash 模式可避免刷新深链 404。
 const router = createRouter({
@@ -26,6 +27,11 @@ const router = createRouter({
       path: '/experiments/:experimentId',
       name: 'experiment-detail',
       component: ExperimentView,
+    },
+    {
+      path: '/results/:resultId',
+      name: 'result-workbench',
+      component: ResultWorkbenchView,
     },
   ],
 })

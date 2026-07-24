@@ -31,6 +31,44 @@ def get_dataset(
     return record.model_dump(mode="json")
 
 
+@router.get("/{dataset_id}/points")
+def dataset_points(
+    dataset_id: str,
+    decimate: int = Query(default=1, ge=1, le=100),
+    runtime: PlatformRuntime = Depends(get_platform_runtime),
+) -> dict[str, Any]:
+    """标准化点数据（实测点叠加层用）；只读，始终来自标准化工件。"""
+
+    record, profile = _load_quality_context(runtime, dataset_id)
+    standardized = record.standardized_path or profile.get("standardized_path")
+    if record.status == DatasetStatus.UPLOADED or not standardized:
+        raise PlatformError(
+            DATASET_NOT_MAPPED,
+            "数据集尚未完成字段映射，没有标准化点数据",
+            {"dataset_id": dataset_id, "status": record.status},
+            http_status=409,
+        )
+    frame = pd.read_parquet(Path(standardized))
+    valid = frame.loc[frame["is_numeric_valid"]].reset_index(drop=True)
+    dimension = "3d" if profile.get("dimension") == "3d" else "2d"
+    step = max(1, int(decimate))
+    sliced = valid.iloc[::step]
+    return {
+        "dataset_id": dataset_id,
+        "dimension": dimension,
+        "count": len(valid),
+        "served": len(sliced),
+        "decimate": step,
+        "x": sliced["x"].round(6).tolist(),
+        "y": sliced["y"].round(6).tolist(),
+        "z": sliced["z"].round(6).tolist() if dimension == "3d" else None,
+        "values": sliced["value"].round(6).tolist(),
+        "value_range": [float(valid["value"].min()), float(valid["value"].max())] if len(valid) else None,
+        "value_name": (profile.get("mapping") or {}).get("value_name"),
+        "source_sha256": profile.get("source_sha256"),
+    }
+
+
 @router.get("/{dataset_id}/inspection")
 def inspect_dataset(
     dataset_id: str,

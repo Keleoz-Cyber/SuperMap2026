@@ -476,3 +476,102 @@ export interface CandidatesResponse {
 export interface CaseDatasetsResponse {
   datasets: DatasetVersionRecord[]
 }
+
+// ---------------- v0.4 成果 / 切片 / 选择 / 导出 / 发布契约 ----------------
+
+export interface ResultMetadata {
+  result_id: string
+  run_id: string
+  experiment_id: string
+  algorithm: string
+  parameters: Record<string, unknown>
+  dimension: '2d' | '3d'
+  shape: number[]
+  cell_count: number
+  bounds: Array<[number, number]>
+  resolution: number[]
+  value_range: [number | null, number | null]
+  nodata_count: number
+  grid_sha256: string
+  source_sha256: string | null
+  standardized_sha256: string | null
+  fingerprint: string
+  validation: Record<string, unknown> | null
+  created_at: string
+}
+
+export interface ResultPreview {
+  result_id: string
+  dimension: '2d' | '3d'
+  original_cell_count: number
+  served_cell_count: number
+  stride: number
+  x: number[]
+  y: number[]
+  z: number[] | null
+  values: number[]
+  is_nodata: boolean[]
+  value_range: [number | null, number | null]
+}
+
+export interface SliceResponse {
+  result_id: string
+  fixed_axis: 'x' | 'y' | 'z'
+  fixed_coordinate: number
+  axes_names: string[]
+  axes: number[][]
+  matrix: Array<Array<number | null>>
+  nodata_mask: boolean[][]
+  value_range: [number | null, number | null]
+}
+
+export interface FormalSelectionRecord {
+  id: string
+  case_id: string
+  candidate_result_id: string
+  selected_by: string | null
+  note: string
+  created_at: string
+}
+
+export interface FormalSelectionsResponse {
+  case_id: string
+  selections: FormalSelectionRecord[]
+}
+
+export interface ExportRecord {
+  id: string
+  candidate_result_id: string
+  case_id: string
+  package_sha256: string
+  file_count: number
+  files: string[]
+  manifest: Record<string, unknown>
+}
+
+export interface PublicationRecord {
+  id: string
+  export_id: string
+  status: 'manual_required' | 'queued' | 'published' | 'failed' | 'not_requested' | string
+  evidence: {
+    export_id: string
+    package: string
+    manual_instruction: string
+    iserver_rest_publish_status: string
+  }
+}
+
+export interface DatasetPoints {
+  dataset_id: string
+  dimension: '2d' | '3d'
+  count: number
+  served: number
+  decimate: number
+  x: number[]
+  y: number[]
+  z: number[] | null
+  values: number[]
+  value_range: [number, number] | null
+  value_name: string | null
+  source_sha256: string | null
+}

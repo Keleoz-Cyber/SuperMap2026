@@ -10,12 +10,20 @@ import type {
   FieldMappingPayload,
   HealthResponse,
   InspectionResult,
+  DatasetPoints,
+  ExportRecord,
+  FormalSelectionRecord,
+  FormalSelectionsResponse,
   PlatformCaseRecord,
+  PublicationRecord,
   PublishStatus,
   QualityReport,
+  ResultMetadata,
+  ResultPreview,
   RhoCaseDetail,
   RhoPoints,
   RunRecord,
+  SliceResponse,
   VoxelCells,
 } from './types'
 
@@ -191,4 +199,45 @@ export function retryRun(runId: string): Promise<RunRecord> {
 
 export function fetchCandidates(experimentId: string): Promise<CandidatesResponse> {
   return getJson<CandidatesResponse>(`/experiments/${experimentId}/candidates`)
+}
+
+// ---------------------------------------------------------- v0.4 results
+
+export function fetchResult(resultId: string): Promise<ResultMetadata> {
+  return getJson<ResultMetadata>(`/results/${resultId}`)
+}
+
+export function fetchResultPreview(resultId: string): Promise<ResultPreview> {
+  return getJson<ResultPreview>(`/results/${resultId}/preview`)
+}
+
+export function fetchResultSlice(resultId: string, axis: string, index: number): Promise<SliceResponse> {
+  return getJson<SliceResponse>(`/results/${resultId}/slices?axis=${axis}&index=${index}`)
+}
+
+export function selectFormal(
+  resultId: string,
+  note: string,
+  selectedBy?: string,
+): Promise<FormalSelectionRecord> {
+  return postJson<FormalSelectionRecord>(`/results/${resultId}/select-formal`, {
+    note,
+    selected_by: selectedBy ?? null,
+  })
+}
+
+export function fetchFormalSelections(caseId: string): Promise<FormalSelectionsResponse> {
+  return getJson<FormalSelectionsResponse>(`/cases/${caseId}/formal-selections`)
+}
+
+export function createExport(resultId: string): Promise<ExportRecord> {
+  return requestJson<ExportRecord>(`/results/${resultId}/exports`, { method: 'POST' })
+}
+
+export function createPublication(resultId: string): Promise<PublicationRecord> {
+  return requestJson<PublicationRecord>(`/results/${resultId}/publications`, { method: 'POST' })
+}
+
+export function fetchDatasetPoints(datasetId: string, decimate = 1): Promise<DatasetPoints> {
+  return getJson<DatasetPoints>(`/datasets/${datasetId}/points?decimate=${decimate}`)
 }

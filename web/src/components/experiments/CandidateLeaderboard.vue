@@ -72,7 +72,12 @@ function paramsPreview(parameters: Record<string, unknown>): string {
           <td>{{ fmt(candidate.metrics.bias) }}</td>
           <td>{{ percent(candidate.metrics.coverage) }}</td>
           <td>
-            <span v-if="candidate.status === 'succeeded'" class="status ok">成功</span>
+            <span v-if="candidate.status === 'succeeded'" class="status ok">
+              成功
+              <router-link class="open-result" :to="`/results/${candidate.id}`" data-test="open-result">
+                成果
+              </router-link>
+            </span>
             <span v-else class="status bad" :title="candidate.error?.message">
               失败 · {{ candidate.error?.code ?? 'UNKNOWN' }}
             </span>
@@ -141,6 +146,12 @@ tr.failed {
 
 .status.ok {
   color: #7fd6a4;
+}
+
+.open-result {
+  margin-left: 8px;
+  color: var(--gmp-accent);
+  text-decoration: none;
 }
 
 .status.bad {
