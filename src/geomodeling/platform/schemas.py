@@ -153,6 +153,13 @@ class FormalSelectionRequest(ContractModel):
     selected_by: str | None = Field(default=None, max_length=128)
 
 
+class FormalSelectionBody(ContractModel):
+    """select-formal 端点请求体；成果身份取自 URL 路径，不允许体内伪造。"""
+
+    note: str = Field(min_length=1, max_length=2000)
+    selected_by: str | None = Field(default=None, max_length=128)
+
+
 # ---------------------------------------------------------------------------
 # Response records (repositories return these, never ORM rows)
 # ---------------------------------------------------------------------------
