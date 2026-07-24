@@ -21,7 +21,7 @@ const warnings = computed(() => props.report?.issues.filter((i) => i.kind === 'w
 const qualityReady = computed(
   () =>
     props.report !== null &&
-    (props.report.status === 'ready' || (props.report.status === 'warnings' && props.report.confirmed)),
+    (props.report.status === 'passed' || (props.report.status === 'warnings' && props.report.confirmed)),
 )
 
 const banner = computed(() => {

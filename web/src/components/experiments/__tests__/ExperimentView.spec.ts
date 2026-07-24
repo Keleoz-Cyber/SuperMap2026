@@ -170,7 +170,7 @@ describe('ExperimentView 创建模式', () => {
     await flushPromises()
 
     const payload = vi.mocked(client.createExperiment).mock.calls[0][0]
-    expect(payload.algorithm).toBe('kriging')
+    expect(payload.algorithm).toBe('ordinary_kriging')
     expect(payload.parameters).toMatchObject({
       variogram_model: 'spherical',
       variogram_mode: 'auto',

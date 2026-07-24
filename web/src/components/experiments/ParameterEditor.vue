@@ -4,7 +4,7 @@ import type { GridSpecPayload, ValidationSpecPayload } from '../../api/types'
 import { combinationCount, parseNumberList, searchSpaceState } from './searchSpace'
 
 export interface ParameterSubmit {
-  algorithm: 'idw' | 'kriging'
+  algorithm: 'idw' | 'ordinary_kriging'
   search_mode: 'manual' | 'grid'
   parameters: Record<string, unknown>
   validation: ValidationSpecPayload
@@ -20,7 +20,7 @@ const emit = defineEmits<{
   (e: 'submit', payload: ParameterSubmit): void
 }>()
 
-const algorithm = ref<'idw' | 'kriging'>('idw')
+const algorithm = ref<'idw' | 'ordinary_kriging'>('idw')
 const searchMode = ref<'manual' | 'grid'>('manual')
 
 // IDW 手动参数
@@ -75,7 +75,7 @@ const countState = computed(() => searchSpaceState(candidateCount.value))
 
 const manualKrigingInvalid = computed(
   () =>
-    algorithm.value === 'kriging' &&
+    algorithm.value === 'ordinary_kriging' &&
     krigingMode.value === 'manual' &&
     !(krigingSill.value > 0 && krigingRange.value > 0 && krigingNugget.value >= 0 && krigingSill.value > krigingNugget.value),
 )
@@ -156,8 +156,8 @@ const AXES = ['x', 'y', 'z'] as const
           type="radio"
           name="algo"
           data-test="algo-kriging"
-          :checked="algorithm === 'kriging'"
-          @change="algorithm = 'kriging'"
+          :checked="algorithm === 'ordinary_kriging'"
+          @change="algorithm = 'ordinary_kriging'"
         />
         普通克里金
       </label>

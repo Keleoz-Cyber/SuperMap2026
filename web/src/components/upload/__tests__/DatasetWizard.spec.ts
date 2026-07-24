@@ -64,7 +64,7 @@ const INSPECTION: InspectionResult = {
 
 function makeQuality(status: QualityReport['status']): QualityReport {
   const issues =
-    status === 'ready'
+    status === 'passed'
       ? []
       : status === 'blocked'
         ? [{ code: 'MISSING_NUMERIC', kind: 'blocker' as const, message: '必填字段无法解析', details: {} }]
@@ -87,7 +87,7 @@ function makeQuality(status: QualityReport['status']): QualityReport {
     row_count: 6,
     source_sha256: SHA,
     standardized_sha256: SHA,
-    confirmed: status === 'ready',
+    confirmed: status === 'passed',
     confirmed_issue_codes: [],
   }
 }
@@ -165,7 +165,7 @@ describe('DatasetWizardView', () => {
     const mapped = makeDataset('mapped')
     mapped.profile = { ...mapped.profile, valid_row_count: 5, invalid_row_count: 1, row_count: 6 }
     vi.mocked(client.postMapping).mockResolvedValue(mapped)
-    const quality = makeQuality('ready')
+    const quality = makeQuality('passed')
     vi.mocked(client.validateDataset).mockResolvedValue(quality)
 
     const { wrapper } = await mountWizard(makeDataset('uploaded'), null)
@@ -220,7 +220,7 @@ describe('DatasetWizardView', () => {
   })
 
   it('restores ready state from the server after reload', async () => {
-    const { wrapper } = await mountWizard(makeDataset('validated'), makeQuality('ready'))
+    const { wrapper } = await mountWizard(makeDataset('validated'), makeQuality('passed'))
     expect(client.fetchQuality).toHaveBeenCalledWith('ds1')
     expect(wrapper.find('[data-test="step-quality"]').exists()).toBe(true)
     const start = wrapper.find('[data-test="start-experiment"]')
@@ -228,7 +228,7 @@ describe('DatasetWizardView', () => {
   })
 
   it('navigates to experiment creation when quality is ready', async () => {
-    const { wrapper, router } = await mountWizard(makeDataset('validated'), makeQuality('ready'))
+    const { wrapper, router } = await mountWizard(makeDataset('validated'), makeQuality('passed'))
     await wrapper.find('[data-test="start-experiment"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.path).toBe('/cases/c1/experiments/new')

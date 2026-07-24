@@ -369,7 +369,7 @@ export interface QualityCheck {
 }
 
 export interface QualityReport {
-  status: 'ready' | 'warnings' | 'blocked'
+  status: 'passed' | 'warnings' | 'blocked'
   checks: QualityCheck[]
   issues: QualityIssue[]
   statistics: {
@@ -429,7 +429,7 @@ export interface GridSpecPayload {
 export interface ExperimentCreatePayload {
   case_id: string
   name: string
-  algorithm: 'idw' | 'kriging'
+  algorithm: 'idw' | 'ordinary_kriging'
   dataset_version_id: string
   search_mode: 'manual' | 'grid'
   parameters: Record<string, unknown>
