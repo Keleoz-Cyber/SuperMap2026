@@ -1,0 +1,33 @@
+{
+  "purpose": "普通 Kriging 技术验证门：固定容差与实测值（2026-07-23 首次通过时回填 measured）",
+  "seed": 20260723,
+  "python": "3.12.3",
+  "cases": {
+    "constant_2d": {
+      "tolerance_mae": 1e-09,
+      "measured_mae": 1.7763568394002505e-15
+    },
+    "plane_2d": {
+      "tolerance_mae": 0.05,
+      "measured_mae": 0.0016453903570278576,
+      "variogram": {
+        "model": "spherical",
+        "nugget": 7.528834720767456e-20,
+        "partial_sill": 11.568770768708706,
+        "range": 874.1344925760058
+      }
+    },
+    "smooth_3d": {
+      "tolerance_mae": 0.35,
+      "measured_mae": 0.004579158360497111,
+      "variogram": {
+        "model": "spherical",
+        "nugget": 7.708953972850713e-16,
+        "partial_sill": 1.0302351693326357,
+        "range": 1652.575581583548
+      }
+    }
+  },
+  "numpy": "1.26.4",
+  "scipy": "1.17.0"
+}
