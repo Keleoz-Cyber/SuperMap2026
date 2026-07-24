@@ -108,6 +108,7 @@ def create_experiment(
     dataset_id = dataset_id or create_dataset(runtime, case_id)
     with runtime.session() as session:
         request = ExperimentCreateRequest(
+            case_id=case_id,
             name=name,
             algorithm=Algorithm.IDW,
             dataset_version_id=dataset_id,
@@ -343,7 +344,10 @@ class TestCasesAndOwnership:
         foreign_dataset = create_dataset(runtime, other)
         with runtime.session() as session:
             request = ExperimentCreateRequest(
-                name="exp", algorithm=Algorithm.ORDINARY_KRIGING, dataset_version_id=foreign_dataset
+                case_id=owner,
+                name="exp",
+                algorithm=Algorithm.ORDINARY_KRIGING,
+                dataset_version_id=foreign_dataset,
             )
             with pytest.raises(PlatformError) as excinfo:
                 ExperimentRepository(session).create(owner, request)
