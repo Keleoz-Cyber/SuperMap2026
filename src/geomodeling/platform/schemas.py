@@ -135,12 +135,14 @@ class CaseCreateRequest(ContractModel):
 
 
 class ExperimentCreateRequest(ContractModel):
+    case_id: str = Field(min_length=1, max_length=128)
     name: str = Field(min_length=1, max_length=256)
     algorithm: Algorithm
     dataset_version_id: str = Field(min_length=1, max_length=128)
+    search_mode: Literal["manual", "grid"] = "manual"
+    parameters: dict[str, Any] | list[dict[str, Any]] = Field(default_factory=dict)
     validation: SpatialValidationSpec = Field(default_factory=SpatialValidationSpec)
     grid: GridSpec | None = None
-    parameters: dict[str, Any] = Field(default_factory=dict)
 
 
 class FormalSelectionRequest(ContractModel):

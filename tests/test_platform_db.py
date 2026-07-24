@@ -76,7 +76,7 @@ def test_database_creates_schema_and_is_reopenable(tmp_path):
     runtime = PlatformRuntime(tmp_path / "runtime")
     runtime.initialize()
     assert runtime.db_path.is_file()
-    assert runtime.schema_version() == 2
+    assert runtime.schema_version() == 3
     runtime.close()
     PlatformRuntime(tmp_path / "runtime").initialize()
 
@@ -178,7 +178,7 @@ def test_repeated_initialize_on_same_instance_is_idempotent(tmp_path):
     runtime.initialize()
 
     assert runtime.db_path.is_file()
-    assert runtime.schema_version() == 2
+    assert runtime.schema_version() == 3
     with runtime.engine.connect() as conn:
         assert set(inspect(conn).get_table_names()) == EXPECTED_TABLES
 

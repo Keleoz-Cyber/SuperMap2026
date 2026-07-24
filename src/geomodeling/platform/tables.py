@@ -130,8 +130,13 @@ class CandidateResult(Base):
     id: Mapped[str] = mapped_column(String(128), primary_key=True)
     run_id: Mapped[str] = mapped_column(ForeignKey("runs.id"))
     category: Mapped[str] = mapped_column(String(32), default="preview")
-    grid_path: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    fingerprint: Mapped[str] = mapped_column(String(64), default="")
+    status: Mapped[str] = mapped_column(String(32), default="queued")
+    params_json: Mapped[str] = mapped_column(Text, default="{}")
     metrics_json: Mapped[str] = mapped_column(Text, default="{}")
+    error_json: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    predictions_path: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    grid_path: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     created_at: Mapped[str] = mapped_column(Text, default=utc_now_iso)
 
 

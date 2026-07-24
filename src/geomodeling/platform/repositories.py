@@ -306,6 +306,13 @@ class ExperimentRepository:
         self._s = session
 
     def create(self, case_id: str, request: ExperimentCreateRequest) -> ExperimentRecord:
+        if request.case_id != case_id:
+            raise PlatformError(
+                EXPERIMENT_NOT_IN_CASE,
+                "实验案例与路径案例不一致",
+                {"case_id": case_id, "request_case_id": request.case_id},
+                http_status=404,
+            )
         if self._s.get(Case, case_id) is None:
             raise PlatformError(
                 CASE_NOT_FOUND, "案例不存在", {"case_id": case_id}, http_status=404
@@ -315,6 +322,7 @@ class ExperimentRepository:
         params = {
             "algorithm": request.algorithm,
             "dataset_version_id": request.dataset_version_id,
+            "search_mode": request.search_mode,
             "validation": request.validation.model_dump(mode="json"),
             "grid": request.grid.model_dump(mode="json") if request.grid is not None else None,
             "parameters": request.parameters,

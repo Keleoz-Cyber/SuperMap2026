@@ -27,7 +27,7 @@ from geomodeling.platform.tables import (
 
 # v2: dataset_versions 增加 status 列与 (case_id, version) 唯一约束，
 # runs 增加 retry_of_run_id 列。v1 开发库按 greenfield 删除重建，不做迁移。
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3  # v3: candidate_results 增加 fingerprint/status/params/error/predictions 列
 
 _BUSY_TIMEOUT_MS = 30000
 

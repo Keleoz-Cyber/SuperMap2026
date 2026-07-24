@@ -100,7 +100,8 @@ class _IDWFitted:
             weights[~finite_mask] = 0.0
             totals = weights.sum(axis=1)
             usable = weighted & (totals > 0)
-            gathered = self.values[indices]
+            # 半径搜索下缺失邻居的索引为 tree.n（越界哨兵），取数前先裁剪为合法下标
+            gathered = self.values[np.where(finite_mask, indices, 0)]
             estimates = (weights * gathered).sum(axis=1) / totals
             values[usable] = estimates[usable]
         is_nodata = ~np.isfinite(values)
