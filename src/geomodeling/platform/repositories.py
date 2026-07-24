@@ -194,6 +194,10 @@ class CaseRepository:
             )
         return _case_record(row)
 
+    def list_all(self) -> list[CaseRecord]:
+        rows = self._s.query(Case).order_by(Case.created_at.asc()).all()
+        return [_case_record(row) for row in rows]
+
 
 class DatasetRepository:
     def __init__(self, session: Session) -> None:

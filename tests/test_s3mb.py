@@ -333,7 +333,7 @@ def test_voxel_cells_endpoint_503_when_remote_unavailable(tmp_path, monkeypatch)
     config = make_config(standardized=Path("tests/fixtures/rho_tiny_validation.csv"))
     resp = _client(tmp_path, config).get("/api/cases/resistivity/voxel-cells")
     assert resp.status_code == 503
-    assert "iServer" in resp.json()["detail"]
+    assert "iServer" in resp.json()["error"]["message"]
 
 
 def test_voxel_cells_endpoint_parses_iserver_tiles(tmp_path, monkeypatch):
@@ -382,7 +382,7 @@ def test_voxel_cells_endpoint_contract_failure_is_explicit(tmp_path, monkeypatch
     config = make_config(standardized=Path("tests/fixtures/rho_tiny_validation.csv"))
     resp = _client(tmp_path, config).get("/api/cases/resistivity/voxel-cells")
     assert resp.status_code == 503
-    detail = resp.json()["detail"]
+    detail = resp.json()["error"]["message"]
     assert "契约校验失败" in detail
     assert "版本不支持" in detail
 
@@ -497,7 +497,7 @@ def test_voxel_cells_integration_manifest_data_name_mismatch(tmp_path, monkeypat
     config = make_config(standardized=_envelope_csv(tmp_path))
     resp = _client(tmp_path, config).get("/api/cases/resistivity/voxel-cells")
     assert resp.status_code == 503
-    assert "cache_data_name 不符" in resp.json()["detail"]
+    assert "cache_data_name 不符" in resp.json()["error"]["message"]
 
 
 def test_voxel_cells_refresh_clears_both_caches(tmp_path, monkeypatch):
