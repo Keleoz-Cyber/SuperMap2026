@@ -32,7 +32,7 @@ DEFAULT_EVIDENCE_DIR = "outputs/api_evidence"
 DEFAULT_FRONTEND_DIST = "web/dist"
 DEFAULT_VOXEL_CACHE_DIR = "../Project/cache/RHO_KRIG_FINAL_20M_40_VOL_S3M2"
 
-PROJECT_VERSION = "0.4.0-dev"
+PROJECT_VERSION = "0.4.0"
 
 
 @dataclass(frozen=True)

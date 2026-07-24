@@ -12,12 +12,13 @@
 
 ## 当前能力
 
+- **v0.4 通用建模平台**：CSV/XLSX 上传（50 MiB / 50 万行上限）、字段映射（2D/3D）、质量门禁（阻断/警告+显式确认）、IDW 与普通克里金调参（手动 + ≤50 组合有限网格搜索）、空间折分验证、公共有效掩膜排行榜、SQLite 持久化任务（取消/重试/重启恢复）、成果完整场与 X/Y/Z 切片、附理由的正式选择、证据 ZIP 导出、发布登记（manual_required）。运行说明见 [docs/v0.4-generic-modeling-loop.md](docs/v0.4-generic-modeling-loop.md)。
+- **v0.3.1 内置电阻率案例（只读保留）**：FastAPI 案例/成果/发布证据链接口 + 浏览器三维工作台（模型排行榜、RHO 点云、S3M 体元缓存自定义渲染、阈值过滤、证据链、服务检查）。闭环含义、运行方式与实测证据见 [docs/v0.3-iserver-loop.md](docs/v0.3-iserver-loop.md)。
 - 电阻率数据登记与契约校验：17,549 / 15,827 / 1,722 行，训练/验证空间柱重叠 0。
 - 五种模型预测导入与公共有效点指标复算：每个模型 1,481 valid、241 NoData、XY mismatch 0，`baseline_passed=True`。
 - 模型任务、SuperMap 成果登记与证据等级管理：`RHO_KRIG_FINAL_20M_40` 为唯一正式成果，`dataset_verified=False`。
-- 微震数据审计（v0.2a）：22 个 DAT 清单与哈希、2,006 条源记录标准化、三张标准表、一维累计距离、契约验证、问题清单和审计报告。
-- 便携测试（CI）与本地真实数据回归测试分层（当前 `102 passed`）。
-- **v0.3 iServer 纵向闭环（本分支）**：FastAPI 案例/成果/发布证据链接口 + 浏览器三维工作台（模型排行榜、RHO 点云、阈值过滤、证据链、服务检查）。闭环含义、运行方式与实测证据见 [docs/v0.3-iserver-loop.md](docs/v0.3-iserver-loop.md)。
+- 微震数据审计（v0.2a）：22 个 DAT 清单与哈希、2,006 条源记录标准化、三张标准表、一维累计距离、契约验证、问题清单和审计报告；v0.4 以 `upload_required` 预设接入（`config/presets/microseismic.json`）。
+- 测试分层：后端便携测试（CI）+ 本机真实数据回归（`local_data`）+ 前端 vitest + Playwright mock 冒烟。
 
 仓库外已有两组人工派生证据，但尚未代码化：微震2,005条有限样本经3σ剔除80条后保留1,925条，并已在iDesktopX复现；瓦斯已形成58条三维候选样本，但体元加载会触发iDesktopX原生崩溃，暂缓作为正式案例。以[当前状态](docs/status/current-status.md)为准，不得把这些人工结果描述成仓库功能。
 
@@ -35,7 +36,7 @@
 
 ```powershell
 python -m pip install -e ".[test]"
-# 浏览器平台（v0.3）需要：
+# 浏览器平台（v0.4）需要：
 python -m pip install -e ".[api,test]"
 python scripts/fetch_iclient3d.py
 ```
@@ -46,16 +47,21 @@ python scripts/fetch_iclient3d.py
 python -m pytest -q
 python -m pytest -q -m "not local_data"
 python -m pytest -q -m local_data
+npm --prefix web ci
+npm --prefix web run test:unit
+npm --prefix web run type-check
+npm --prefix web run build
+npm --prefix web run test:e2e
 geomodeling run-all -o outputs/release_verify
 geomodeling verify-supermap -o outputs/release_verify
 geomodeling microseismic run-audit --config config/microseismic.yaml -o outputs/microseismic_verify
 ```
 
-v0.3 浏览器闭环（iServer 已启动时）：
+v0.4 浏览器平台（iServer 可选，通用建模不依赖它）：
 
 ```powershell
 cd web; npm install; npm run build; cd ..
-python -m uvicorn geomodeling.api.app:app --host 127.0.0.1 --port 8000
+python -m uvicorn geomodeling.api.app:app --host 127.0.0.1 --port 8000 --workers 1
 # 浏览器打开 http://127.0.0.1:8000/
 ```
 
@@ -90,6 +96,7 @@ geomodeling microseismic run-audit --help
 ## 文档导航
 
 - [docs/product-blueprint.md](docs/product-blueprint.md)：浏览器建模平台的唯一产品与开发蓝图
+- [docs/v0.4-generic-modeling-loop.md](docs/v0.4-generic-modeling-loop.md)：v0.4 通用建模运行说明（上传/门禁/调参/成果/导出）
 - [docs/v0.3-iserver-loop.md](docs/v0.3-iserver-loop.md)：v0.3 iServer 纵向闭环运行说明与实测证据
 - [docs/architecture.md](docs/architecture.md)：系统架构与模块边界
 - [docs/acceptance.md](docs/acceptance.md)：验收命令与证据口径

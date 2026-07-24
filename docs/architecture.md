@@ -117,6 +117,26 @@ Provides the analysis entry for registering data, validating contracts, importin
 
 FastAPI layer: `/api/health`, `/api/iserver/status`, `/api/cases`, `/api/cases/resistivity` (leaderboard from config + metric artifacts), `/publish-status` (live evidence chain), `/points` (standardized CSV point cloud with SHA-256), `/voxel-cells` (S3M cache cells fetched via iServer REST, contract-validated, `?refresh=true` bypass), `/api/evidence/browser-load`. Serves `web/dist` when built; browser never holds iServer admin credentials.
 
+### `geomodeling.platform` (implemented in v0.4)
+
+- `settings`/`db`/`tables`: `PlatformRuntime` owning the SQLite store (WAL, busy-timeout, `user_version` schema guard) under `GEOMODELING_DATA_DIR` (default `var/geomodeling`, gitignored); restart recovery marks inflight runs `interrupted + PROCESS_RESTARTED` without requeueing.
+- `schemas`/`errors`: pydantic contracts for all v0.4 requests/records; `PlatformError` carries stable codes and sanitizes absolute paths from public payloads; every route error uses the `{"error": {code, message, details}}` envelope.
+- `uploads`/`ingest`/`quality`: bounded streaming upload (50 MiB / 500k rows), CSV/XLSX inspection and standardization to parquet, and the quality gate (`passed|warnings|blocked`) with exact-set warning confirmation.
+- `experiments`/`jobs`/`worker`: manual and bounded grid search (≤50 combinations, stable candidate fingerprints), persisted jobs, and a single-thread `JobWorker` with cooperative cancellation and explicit retry.
+- `results`/`exports`/`publications`: idempotent grid materialization (atomic tmp-dir replace), decimated preview (≤50k cells), Z/X/Y orthogonal slices with real coordinates, lineage ZIP exports, and publication records that resolve to `manual_required` without claiming iServer success.
+- `legacy_adapter`/`presets`: read-only merge of the immutable v0.3.1 resistivity card (`source_kind="builtin_legacy"`, never writes SQLite) and declarative case presets (`config/presets/`, validated, no absolute paths, no auto-import).
+
+### `geomodeling.modeling` (implemented in v0.4)
+
+- `contracts`/`grid`/`splits`/`metrics`: interpolator protocol, default/user rule grids (cell-count guard), spatial-column k-fold/holdout splits, and common-valid-mask metrics (coverage reported per candidate, never traded for rank).
+- `idw`/`kriging`/`variogram`: 2D/3D adapters; ordinary Kriging with per-fold auto variogram fitting (no validation-row leakage) or validated manual nugget/sill/range; technical gate in `docs/evidence/v0.4/kriging-technical-gate.md`.
+- `runner`: fold-isolated candidate evaluation with progress persistence, per-candidate failure evidence, and cancellation checks between candidates.
+- `slices`: orthogonal X/Y/Z slice extraction over persisted grids (NoData preserved).
+
+### `geomodeling.api.routes` + `web/` (implemented in v0.4)
+
+v0.4 routers (`cases`, `datasets`, `experiments`, `runs`, `results`) registered after the legacy exact routes so `/api/cases/resistivity` can never be swallowed by `/api/cases/{case_id}`; lifespan owns one runtime + one worker. Vue views: case list + upload wizard (`CaseCreateView`, `DatasetWizardView`), tuning lab (`ExperimentView` with parameter editor, persistent progress, honest leaderboard), and result workbench (`ResultWorkbenchView` with ECharts 2D heatmap, Cesium 3D point field using the proven `removeAll()`/rebuild visibility strategy, three-direction slice panel, formal selection, export/publication panels).
+
 ### Future interfaces (not implemented)
 
 - Coalbed methane: an independent experimental 3D case using Xi'an 1980 zone 20 candidate coordinates, DEM-derived surface elevations, and a vertical-borehole midpoint approximation. The current 58-point table is external evidence; volume rendering is parked because loading the generated voxel crashes iDesktopX.
