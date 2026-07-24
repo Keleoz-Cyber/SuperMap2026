@@ -266,6 +266,15 @@ class DatasetRepository:
             )
         return _dataset_record(row)
 
+    def list_for_case(self, case_id: str) -> list[DatasetVersionRecord]:
+        rows = (
+            self._s.query(DatasetVersion)
+            .filter(DatasetVersion.case_id == case_id)
+            .order_by(DatasetVersion.version.asc())
+            .all()
+        )
+        return [_dataset_record(row) for row in rows]
+
     def transition_status(
         self, dataset_id: str, target: DatasetStatus | str
     ) -> DatasetVersionRecord:

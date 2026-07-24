@@ -70,7 +70,7 @@ function meta(c: CaseSummary): CaseMeta {
 
 function enter(c: CaseSummary) {
   if (c.source_kind === 'upload') {
-    void router.push(`/cases/${c.case_id}`)
+    void router.push(`/cases/${c.case_id}/experiments/new`)
     return
   }
   if (c.case_id === 'resistivity') {

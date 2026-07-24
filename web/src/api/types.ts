@@ -386,3 +386,93 @@ export interface QualityReport {
   confirmed: boolean
   confirmed_issue_codes: string[]
 }
+
+// ---------------- v0.4 实验 / 运行 / 候选契约 ----------------
+
+export type RunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'canceled' | 'interrupted'
+
+export interface RunMetrics {
+  current_candidate?: number | null
+  completed?: number
+  total?: number
+  failed?: number
+  cancel_requested?: boolean
+  public_metrics?: Record<string, number>
+}
+
+export interface RunRecord {
+  id: string
+  experiment_id: string
+  status: RunStatus
+  error_code: string | null
+  metrics: RunMetrics
+  retry_of_run_id: string | null
+  created_at: string
+  updated_at: string
+  started_at: string | null
+  finished_at: string | null
+}
+
+export interface ValidationSpecPayload {
+  method: 'spatial_kfold' | 'spatial_holdout'
+  folds: number
+  seed: number
+  holdout_fraction: number
+}
+
+export interface GridSpecPayload {
+  bounds: Array<[number, number]>
+  resolution: number[]
+  max_cells?: number
+}
+
+export interface ExperimentCreatePayload {
+  case_id: string
+  name: string
+  algorithm: 'idw' | 'kriging'
+  dataset_version_id: string
+  search_mode: 'manual' | 'grid'
+  parameters: Record<string, unknown>
+  validation: ValidationSpecPayload
+  grid?: GridSpecPayload | null
+}
+
+export interface ExperimentRecord {
+  id: string
+  case_id: string
+  name: string
+  params: ExperimentCreatePayload
+  created_at: string
+  updated_at: string
+}
+
+export interface CandidateMetrics {
+  n_total?: number
+  n_valid?: number
+  n_nodata?: number
+  coverage?: number
+  mae?: number
+  rmse?: number
+  r2?: number
+  bias?: number
+}
+
+export interface CandidateRecord {
+  id: string
+  fingerprint: string
+  status: 'succeeded' | 'failed' | string
+  parameters: Record<string, unknown>
+  metrics: CandidateMetrics
+  error: { code: string; message: string } | null
+}
+
+export interface CandidatesResponse {
+  experiment_id: string
+  candidates: CandidateRecord[]
+  public_metrics: Record<string, number>
+  latest_run: RunRecord | null
+}
+
+export interface CaseDatasetsResponse {
+  datasets: DatasetVersionRecord[]
+}

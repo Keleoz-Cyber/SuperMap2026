@@ -1,8 +1,12 @@
 import type {
   ApiErrorBody,
   BrowserLoadReport,
+  CandidatesResponse,
+  CaseDatasetsResponse,
   CasesResponse,
   DatasetVersionRecord,
+  ExperimentCreatePayload,
+  ExperimentRecord,
   FieldMappingPayload,
   HealthResponse,
   InspectionResult,
@@ -11,6 +15,7 @@ import type {
   QualityReport,
   RhoCaseDetail,
   RhoPoints,
+  RunRecord,
   VoxelCells,
 } from './types'
 
@@ -152,4 +157,38 @@ export function confirmWarnings(datasetId: string, issueCodes: string[]): Promis
   return postJson<QualityReport>(`/datasets/${datasetId}/quality/confirm-warnings`, {
     issue_codes: issueCodes,
   })
+}
+
+// ---------------------------------------------------------- v0.4 experiments
+
+export function fetchCaseDatasets(caseId: string): Promise<CaseDatasetsResponse> {
+  return getJson<CaseDatasetsResponse>(`/cases/${caseId}/datasets`)
+}
+
+export function createExperiment(payload: ExperimentCreatePayload): Promise<ExperimentRecord> {
+  return postJson<ExperimentRecord>('/experiments', payload)
+}
+
+export function fetchExperiment(experimentId: string): Promise<ExperimentRecord> {
+  return getJson<ExperimentRecord>(`/experiments/${experimentId}`)
+}
+
+export function startRun(experimentId: string): Promise<RunRecord> {
+  return requestJson<RunRecord>(`/experiments/${experimentId}/runs`, { method: 'POST' })
+}
+
+export function fetchRun(runId: string): Promise<RunRecord> {
+  return getJson<RunRecord>(`/runs/${runId}`)
+}
+
+export function cancelRun(runId: string): Promise<RunRecord> {
+  return requestJson<RunRecord>(`/runs/${runId}/cancel`, { method: 'POST' })
+}
+
+export function retryRun(runId: string): Promise<RunRecord> {
+  return requestJson<RunRecord>(`/runs/${runId}/retry`, { method: 'POST' })
+}
+
+export function fetchCandidates(experimentId: string): Promise<CandidatesResponse> {
+  return getJson<CandidatesResponse>(`/experiments/${experimentId}/candidates`)
 }

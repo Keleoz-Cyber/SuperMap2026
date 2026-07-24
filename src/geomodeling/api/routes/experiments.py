@@ -28,6 +28,15 @@ def create_experiment(
         return ExperimentRepository(session).create(request.case_id, request)
 
 
+@router.get("/{experiment_id}")
+def get_experiment(
+    experiment_id: str,
+    runtime: PlatformRuntime = Depends(get_platform_runtime),
+) -> ExperimentRecord:
+    with runtime.session() as session:
+        return ExperimentRepository(session).get(experiment_id)
+
+
 @router.post("/{experiment_id}/runs", status_code=201)
 def create_run(
     experiment_id: str,
@@ -97,4 +106,12 @@ def list_candidates(
             c["metrics"].get("rmse") if c["metrics"].get("rmse") is not None else float("inf"),
         )
     )
-    return {"experiment_id": experiment_id, "candidates": candidates, "public_metrics": public_metrics}
+    latest_run = None
+    if latest is not None:
+        latest_run = RunRepository(session).get(latest.id).model_dump(mode="json")
+    return {
+        "experiment_id": experiment_id,
+        "candidates": candidates,
+        "public_metrics": public_metrics,
+        "latest_run": latest_run,
+    }

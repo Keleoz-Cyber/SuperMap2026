@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, Depends, UploadFile
 
 from geomodeling.api.deps import get_platform_runtime
@@ -33,6 +35,17 @@ def get_case(
 ) -> CaseRecord:
     with runtime.session() as session:
         return CaseRepository(session).get(case_id)
+
+
+@router.get("/{case_id}/datasets")
+def list_case_datasets(
+    case_id: str,
+    runtime: PlatformRuntime = Depends(get_platform_runtime),
+) -> dict[str, Any]:
+    with runtime.session() as session:
+        CaseRepository(session).get(case_id)
+        records = DatasetRepository(session).list_for_case(case_id)
+    return {"datasets": [record.model_dump(mode="json") for record in records]}
 
 
 @router.post("/{case_id}/datasets/uploads", status_code=201)

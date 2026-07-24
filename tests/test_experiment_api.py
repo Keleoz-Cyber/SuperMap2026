@@ -253,3 +253,84 @@ def test_interrupted_run_visible_and_retryable(tmp_path):
     retry_id = resp.json()["id"]
     body = wait_run(client, retry_id, {"succeeded", "failed"})
     assert body["status"] == "succeeded"
+
+
+def test_get_experiment_by_id(tmp_path):
+    """Task 12: 前端调参实验室刷新后按路由 ID 重建，需要按 ID 读实验定义。"""
+    client, _ = make_client(tmp_path)
+    case_id, dataset_id = prepare_dataset(client)
+    assert client.post(f"/api/datasets/{dataset_id}/validate").status_code == 200
+
+    created = client.post("/api/experiments", json={
+        "case_id": case_id,
+        "name": "按ID读取",
+        "algorithm": "idw",
+        "dataset_version_id": dataset_id,
+        "search_mode": "manual",
+        "parameters": {"power": 2.0},
+        "validation": {"method": "spatial_kfold", "folds": 3, "seed": 1, "holdout_fraction": 0.2},
+    })
+    assert created.status_code == 201, created.text
+    experiment_id = created.json()["id"]
+
+    resp = client.get(f"/api/experiments/{experiment_id}")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["id"] == experiment_id
+    assert body["name"] == "按ID读取"
+    assert body["params"]["algorithm"] == "idw"
+    assert body["params"]["dataset_version_id"] == dataset_id
+
+    missing = client.get("/api/experiments/00000000-0000-0000-0000-000000000000")
+    assert missing.status_code == 404
+    assert missing.json()["error"]["code"] == "EXPERIMENT_NOT_FOUND"
+
+
+def test_list_case_datasets(tmp_path):
+    """Task 12: 案例工作台需要列出本案例的数据集版本以选择建模输入。"""
+    client, _ = make_client(tmp_path)
+    case_id, dataset_id = prepare_dataset(client)
+
+    resp = client.get(f"/api/cases/{case_id}/datasets")
+    assert resp.status_code == 200, resp.text
+    datasets = resp.json()["datasets"]
+    assert [d["id"] for d in datasets] == [dataset_id]
+    assert datasets[0]["status"] == "mapped"
+    assert datasets[0]["profile"]["dimension"] == "2d"
+
+    other = client.post("/api/cases", json={"name": "空案例"})
+    empty = client.get(f"/api/cases/{other.json()['id']}/datasets")
+    assert empty.status_code == 200
+    assert empty.json()["datasets"] == []
+
+    missing = client.get("/api/cases/00000000-0000-0000-0000-000000000000/datasets")
+    assert missing.status_code == 404
+    assert missing.json()["error"]["code"] == "CASE_NOT_FOUND"
+
+
+def test_candidates_response_includes_latest_run(tmp_path):
+    """Task 12: 前端按实验 ID 刷新页面时必须能拿到最新 run 的状态与身份。"""
+    client, _ = make_client(tmp_path)
+    case_id, dataset_id = prepare_dataset(client)
+    assert client.post(f"/api/datasets/{dataset_id}/validate").status_code == 200
+    experiment = client.post("/api/experiments", json={
+        "case_id": case_id,
+        "name": "最新run",
+        "algorithm": "idw",
+        "dataset_version_id": dataset_id,
+        "search_mode": "manual",
+        "parameters": {"power": 2.0, "neighbor_count": 4},
+        "validation": {"method": "spatial_kfold", "folds": 3, "seed": 1, "holdout_fraction": 0.2},
+    })
+    experiment_id = experiment.json()["id"]
+
+    before = client.get(f"/api/experiments/{experiment_id}/candidates").json()
+    assert before["latest_run"] is None
+
+    run_id = client.post(f"/api/experiments/{experiment_id}/runs").json()["id"]
+    wait_run(client, run_id, {"succeeded", "failed"})
+
+    after = client.get(f"/api/experiments/{experiment_id}/candidates").json()
+    assert after["latest_run"]["id"] == run_id
+    assert after["latest_run"]["status"] in ("queued", "running", "succeeded", "failed")
+    assert after["latest_run"]["experiment_id"] == experiment_id
