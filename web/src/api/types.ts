@@ -9,11 +9,16 @@ export interface HealthResponse {
 export interface CaseSummary {
   case_id: string
   title: string
-  data_form: string
+  // legacy 卡片专有字段；上传案例卡片不携带
+  data_form?: string
   status: string
-  coordinate: string
-  unit_note: string
-  v03_stage: string
+  coordinate?: string
+  unit_note?: string
+  v03_stage?: string
+  // v0.4：builtin_legacy（内置电阻率等）或 upload（持久化上传案例）
+  source_kind?: 'builtin_legacy' | 'upload'
+  case_type?: string
+  created_at?: string
   links: {
     detail: string | null
     publish_status: string | null
@@ -286,4 +291,98 @@ export interface BrowserLoadReport {
   render_kind: 'iserver_scene' | 's3m_voxel_cache' | 'fallback_points'
   validated_count: number
   note: string
+}
+
+// ---------------- v0.4 通用建模平台契约（与后端 schemas 一一对应） ----------------
+
+export interface ApiErrorBody {
+  error: {
+    code: string
+    message: string
+    details: Record<string, unknown>
+  }
+}
+
+export type DatasetStatus = 'uploaded' | 'mapped' | 'validated' | 'blocked'
+
+export interface PlatformCaseRecord {
+  id: string
+  name: string
+  case_type: string
+  config: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export interface DatasetVersionRecord {
+  id: string
+  case_id: string
+  version: number
+  status: DatasetStatus
+  source_path: string
+  standardized_path: string | null
+  profile: Record<string, unknown>
+  created_at: string
+}
+
+export interface InspectionColumn {
+  name: string
+  inferred_type: string
+}
+
+export interface InspectionResult {
+  dataset_id: string
+  case_id: string
+  suffix: string
+  sheet: string | null
+  sheets?: string[]
+  columns: InspectionColumn[]
+  preview_rows: Record<string, unknown>[]
+  row_count: number
+  candidate_mapping: Partial<Record<'x' | 'y' | 'z' | 'value' | 'value_name', string>>
+  limits: { max_upload_bytes: number; max_upload_rows: number }
+  profile: Record<string, unknown>
+}
+
+export interface FieldMappingPayload {
+  dimension: '2d' | '3d'
+  x: string
+  y: string
+  z?: string | null
+  value: string
+  value_name: string
+  value_unit?: string | null
+  coordinate_kind: 'local_linear' | 'projected' | 'geographic'
+}
+
+export interface QualityIssue {
+  code: string
+  kind: 'blocker' | 'warning'
+  message: string
+  details: Record<string, unknown>
+}
+
+export interface QualityCheck {
+  code: string
+  kind: string
+  passed: boolean
+}
+
+export interface QualityReport {
+  status: 'ready' | 'warnings' | 'blocked'
+  checks: QualityCheck[]
+  issues: QualityIssue[]
+  statistics: {
+    ranges: Record<string, [number, number] | null>
+    unique_coordinate_count: number
+    duplicate_count: number
+    conflict_count: number
+  }
+  valid_row_count: number
+  invalid_row_count: number
+  row_count: number
+  source_sha256: string
+  standardized_sha256: string
+  confirmed: boolean
+  confirmed_issue_codes: string[]
 }
