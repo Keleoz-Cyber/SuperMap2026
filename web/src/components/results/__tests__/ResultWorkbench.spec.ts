@@ -288,3 +288,15 @@ describe('导航', () => {
     expect(router.currentRoute.value.name).toBe('home')
   })
 })
+
+describe('导出下载', () => {
+  it('下载链接使用返回的 export id 而非 result id', async () => {
+    vi.mocked(client.createExport).mockResolvedValue(EXPORT)
+    const wrapper = await mountWorkbench(makeMetadata('2d'))
+    await wrapper.find('[data-test="export-button"]').trigger('click')
+    await flushPromises()
+    const link = wrapper.get('[data-test="export-download"]')
+    expect(link.attributes('href')).toBe(`/api/exports/${EXPORT.id}/download`)
+    expect(link.attributes('href')).not.toContain('/r1/')
+  })
+})

@@ -29,8 +29,8 @@ export default defineConfig({
   plugins: [vue()],
   test: {
     environment: 'jsdom',
-    // e2e 为 Playwright 规格，不属于 vitest
-    exclude: ['e2e/**', 'node_modules/**', 'dist/**'],
+    // e2e / e2e-live 为 Playwright 规格，不属于 vitest
+    exclude: ['e2e/**', 'e2e-live/**', 'node_modules/**', 'dist/**'],
   },
   server: {
     proxy: {
