@@ -7,6 +7,7 @@ import typer
 from ..audit import AuditLogger
 from ..io import write_json
 from .config import load_microseismic_config
+from .platform_adapter import DEFAULT_CASE_NAME
 from .reports import export_manifest, export_validation_json, export_velocity_samples
 from .service import _derive_result, build_audit, derive_from_directory, export_all, export_derivation
 
@@ -152,6 +153,48 @@ def derive(
         for check in failed:
             typer.echo(f"FAILED {check.name}: {check.evidence}")
         raise typer.Exit(code=1)
+
+
+@microseismic_app.command("import-case")
+def import_case(
+    source_dir: Path = typer.Option(..., "--source-dir", help="Directory holding the DAT files."),
+    data_dir: Path = typer.Option(..., "--data-dir", help="Platform data directory (the GEOMODELING_DATA_DIR layout)."),
+    case_name: str = typer.Option(DEFAULT_CASE_NAME, "--case-name", help="Display name of the created case."),
+    config: Path = typer.Option(Path("config/microseismic.yaml"), "--config", "-c"),
+) -> None:
+    """Atomically import a DAT bundle as a mapped platform dataset (case_type=microseismic)."""
+    from ..platform.db import PlatformRuntime
+    from ..platform.errors import PlatformError
+    from ..platform.settings import PlatformSettings
+    from .platform_adapter import MicroseismicImportBundle, create_microseismic_case, import_microseismic_dataset
+
+    app_config = load_microseismic_config(config)
+    runtime = PlatformRuntime(settings=PlatformSettings(data_dir=data_dir.resolve()))
+    runtime.initialize()
+    try:
+        case = create_microseismic_case(runtime, name=case_name)
+        bundle = MicroseismicImportBundle(config=app_config, source_dir=source_dir.resolve())
+        record = import_microseismic_dataset(runtime, case.id, bundle)
+        profile = record.profile
+        counts = profile["layer_counts"]
+        typer.echo(f"case_id={case.id}")
+        typer.echo(f"dataset_id={record.id}")
+        typer.echo(
+            f"source_records={counts['source_records']} finite={counts['finite_records']} invalid={counts['invalid_records']} "
+            f"rejected_3sigma={counts['rejected_3sigma']} accepted_modeling={counts['accepted_modeling']} "
+            f"modeling_nodes={counts['aggregated_nodes']}"
+        )
+        typer.echo(f"rule_version={profile['rule_version']}")
+        typer.echo(f"golden_passed={profile['golden']['passed']}")
+        typer.echo(f"validation_passed=True status={record.status}")
+    except PlatformError as exc:
+        typer.echo(f"FAILED {exc.code}: {exc.message}")
+        for check in exc.details.get("failed_checks", []):
+            typer.echo(f"FAILED {check['name']}: {check['evidence']}")
+        typer.echo("validation_passed=False")
+        raise typer.Exit(code=1)
+    finally:
+        runtime.close()
 
 
 @microseismic_app.command("run-audit")
