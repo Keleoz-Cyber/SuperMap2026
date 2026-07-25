@@ -159,7 +159,7 @@ onMounted(loadAll)
           </div>
           <div class="kv">
             <span>源文件</span>
-            <span class="mono break-all">{{ lineage.source_path }}</span>
+            <span class="mono break-all">{{ lineage.source_label }}</span>
           </div>
           <div class="kv">
             <span>SHA-256</span>

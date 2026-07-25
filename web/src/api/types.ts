@@ -237,7 +237,7 @@ export interface VoxelCells {
   case_id: string
   result_id: string
   source: string
-  local_cache_dir: string
+  local_cache_label: string
   local_cache_present: boolean
   local_cache_note: string
   service_url: string
@@ -264,7 +264,7 @@ export interface VoxelCells {
 export interface RhoPoints {
   case_id: string
   source: string
-  source_path: string
+  source_label: string
   sha256: string
   decimate: number
   count: number

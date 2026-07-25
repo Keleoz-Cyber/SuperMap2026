@@ -115,3 +115,72 @@ def test_export_and_publication_responses_have_no_internal_paths(tmp_path):
     # 发布证据只能给资源 ID 或下载 URL，不给服务器文件路径
     assert body["evidence"]["download_url"] == f"/api/exports/{body['export_id']}/download"
     assert "package" not in body["evidence"]
+
+
+def test_legacy_resistivity_responses_have_no_absolute_paths(tmp_path, monkeypatch):
+    """Merge-blocker 4: legacy points/detail/voxel 响应也不得含本机绝对路径。"""
+
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from geomodeling.api.app import create_app
+    from geomodeling.api.deps import ApiSettings, get_app_config, get_iserver_client, get_settings
+    from geomodeling.api import case_service
+    from test_api import FakeIServer, make_config
+
+    fixture_csv = Path("tests/fixtures/rho_tiny_validation.csv").resolve()
+    config = make_config(standardized=fixture_csv)
+
+    settings = ApiSettings(
+        config_path=Path("config/default.yaml"),
+        metrics_json=(tmp_path / "m.json"),
+        evidence_dir=tmp_path / "evidence",
+        frontend_dist=None,
+        voxel_cache_dir=tmp_path / "cache",
+    )
+    (tmp_path / "m.json").write_text('{"summaries": {}}', encoding="utf-8")
+
+    # voxel 取数路径 mock 掉（契约细节由 test_s3mb 覆盖），这里只查路径泄露
+    monkeypatch.setattr(
+        case_service,
+        "_voxel_cells_cached",
+        lambda service_url, contract, manifest, timeout: {
+            "cells": [],
+            "tile_files": 0,
+            "fetched_bytes": 0,
+            "service_url": service_url,
+            "summary": {"x_range": [0, 1], "y_range": [0, 1], "z_range": [0, 1], "value_range": [0, 1]},
+            "contract": {"scp": {}, "cells": {}, "manifest": {}},
+        },
+    )
+
+    app = create_app()
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[get_app_config] = lambda: config
+    app.dependency_overrides[get_iserver_client] = lambda: FakeIServer({})
+    from geomodeling.platform import PlatformRuntime
+
+    runtime = PlatformRuntime(tmp_path / "data")
+    runtime.initialize()
+    app.state.platform_runtime = runtime
+    client = TestClient(app)
+
+    points = client.get("/api/cases/resistivity/points")
+    assert points.status_code == 200, points.text
+    body = points.json()
+    assert "source_path" not in body
+    assert body["source_label"] == fixture_csv.name
+    assert_no_path_leak(body, "$.legacy_points")
+
+    detail = client.get("/api/cases/resistivity")
+    assert detail.status_code == 200
+    assert_no_path_leak(detail.json(), "$.legacy_detail")
+
+    voxel = client.get("/api/cases/resistivity/voxel-cells")
+    assert voxel.status_code == 200, voxel.text
+    voxel_body = voxel.json()
+    assert "local_cache_dir" not in voxel_body
+    assert_no_path_leak(voxel_body, "$.legacy_voxel")
+
+    created = client.post("/api/cases", json={"name": "DTO 案例"})
+    assert created.status_code == 201
+    assert_no_path_leak(created.json(), "$.create_case")
