@@ -153,6 +153,7 @@ def build_export(runtime: PlatformRuntime, result_id: str) -> dict[str, Any]:
                 tables.Export(
                     id=export_id,
                     case_id=experiment.case_id,
+                    candidate_result_id=result_id,
                     package_path=str(package_path),
                     manifest_json=tables.dumps_canonical(manifest),
                 )

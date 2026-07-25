@@ -34,9 +34,10 @@ def request_publication(runtime: PlatformRuntime, result_id: str) -> dict[str, A
             raise PlatformError("CANDIDATE_NOT_FOUND", "成果不存在", {"result_id": result_id}, http_status=404)
         run = session.get(tables.Run, candidate.run_id)
         experiment = session.get(tables.Experiment, run.experiment_id)
+        # 只复用本成果自己的导出；绝不能用 case 维度复用其他成果的包
         existing_export = (
             session.query(tables.Export)
-            .filter(tables.Export.case_id == experiment.case_id)
+            .filter(tables.Export.candidate_result_id == result_id)
             .order_by(tables.Export.created_at.desc())
             .first()
         )
