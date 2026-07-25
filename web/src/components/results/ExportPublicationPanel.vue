@@ -55,6 +55,14 @@ async function doPublish() {
           <ul class="file-list">
             <li v-for="file in exportRecord.files" :key="file" data-test="export-file">{{ file }}</li>
           </ul>
+          <a
+            class="gmp-btn download"
+            data-test="export-download"
+            :href="`/api/exports/${exportRecord.id}/download`"
+            download="result-package.zip"
+          >
+            下载证据包
+          </a>
         </template>
         <p v-else class="empty">尚未导出（包含清单、元数据、指标、质量报告、选择历史与完整网格）</p>
       </div>
@@ -181,5 +189,13 @@ async function doPublish() {
 .gmp-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+.gmp-btn.download {
+  display: inline-block;
+  margin-top: 10px;
+  text-decoration: none;
+  color: var(--gmp-accent);
+  border-color: var(--gmp-accent);
 }
 </style>

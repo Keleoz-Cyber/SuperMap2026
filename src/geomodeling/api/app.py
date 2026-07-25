@@ -41,7 +41,7 @@ from geomodeling.api.deps import (
     get_iserver_client,
     get_settings,
 )
-from geomodeling.api.routes import cases, datasets, experiments, results, runs
+from geomodeling.api.routes import cases, datasets, demo, experiments, results, runs
 from geomodeling.platform import PlatformRuntime
 from geomodeling.platform.errors import (
     REDACTED_PATH,
@@ -205,6 +205,7 @@ def create_app() -> FastAPI:
     # ----------------------------------------------------- v0.4 platform
     # 必须在 legacy 精确路由之后注册，/api/cases/resistivity 才不会被
     # 动态路由 /api/cases/{case_id} 吞掉。
+    app.include_router(demo.router)
     app.include_router(cases.router)
     app.include_router(datasets.router)
     app.include_router(experiments.router)

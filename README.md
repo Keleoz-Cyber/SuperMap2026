@@ -65,6 +65,16 @@ python -m uvicorn geomodeling.api.app:app --host 127.0.0.1 --port 8000 --workers
 # 浏览器打开 http://127.0.0.1:8000/
 ```
 
+## v0.4.1 答辩演示
+
+```powershell
+geomodeling demo-check                 # 启动前检查（阻断/警告分级）
+scripts/start_demo.ps1 -CheckOnly -NoBrowser   # 只检查不启动
+scripts/start_demo.ps1                 # 检查 + 单进程启动 + 打开浏览器
+```
+
+演示数据为唯一权威样例 `demo/platform_demo_3d.csv`（SHA-256 固定，首页「下载演示数据」获取）。完整演示流程、双路线与故障恢复见 [docs/v0.4.1-demo-runbook.md](docs/v0.4.1-demo-runbook.md)。
+
 便携测试只使用 `tests/fixtures/` 中的人工小样本，可在 GitHub Actions 中运行；`local_data` 测试依赖相邻只读资料目录，资料不存在时会明确 skip。详细验收口径见 [docs/acceptance.md](docs/acceptance.md)。
 
 ## CLI 入口
@@ -123,9 +133,7 @@ geomodeling microseismic run-audit --help
 
 开始开发前按顺序阅读：`README.md` → [当前状态](docs/status/current-status.md) → [产品蓝图](docs/product-blueprint.md) → [SuperMap集成说明](docs/supermap-integration.md) → 对应案例数据文档。论文只作来源证据，不能覆盖这些已确认规则。
 
-可直接交给Kimi的简短启动提示词：
-
-> 在 `D:\study\Contest\Supermap\GeoModelingPlatform` 开始 v0.3 纵向闭环开发。以 README、当前状态、产品蓝图和 SuperMap 集成说明为事实入口；保留现有CLI和80项测试。先验证本机iServer、官方SDK和发布链路，再用电阻率打通 iServer → FastAPI → 浏览器 SuperMap 成果展示；微震为第二案例，瓦斯因体元加载崩溃暂缓。前端框架可自行选择，但要优先保证答辩效果和可复现证据。创建功能分支和PR，不直接合并，并提交测试、运行说明、截图和剩余边界。
+发布基线：v0.4.0 已发布（tag `v0.4.0`，merge `b95f12b`）；v0.4.1 演示加固见 [运行手册](docs/v0.4.1-demo-runbook.md) 与 [通用建模契约](docs/v0.4-generic-modeling-loop.md)。
 
 ## 原始资料保护
 

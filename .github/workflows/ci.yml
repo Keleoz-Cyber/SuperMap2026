@@ -7,6 +7,9 @@ on:
 jobs:
   portable-tests:
     runs-on: windows-latest
+    env:
+      # Windows runner 默认 cp1252 控制台，中文 CLI 帮助会触发 UnicodeEncodeError
+      PYTHONUTF8: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -17,7 +20,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install package
-        run: python -m pip install -e ".[test]"
+        run: python -m pip install -e ".[api,test]"
 
       - name: CLI help smoke
         run: python -m geomodeling.cli --help
@@ -64,3 +67,50 @@ jobs:
 
       - name: Browser smoke (mock API, no iServer)
         run: npm --prefix web run test:e2e
+
+  browser-live:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Allocate isolated live runtime
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP "geomodeling-live-${{ github.run_id }}-${{ github.run_attempt }}"
+          "GEOMODELING_DATA_DIR=$dir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package
+        run: python -m pip install -e ".[api,test]"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install frontend dependencies
+        run: npm --prefix web ci
+
+      - name: Frontend build
+        run: npm --prefix web run build
+
+      - name: Install Chromium for Playwright
+        run: npx --prefix web playwright install chromium
+
+      - name: Live E2E (real FastAPI + isolated SQLite)
+        run: npm --prefix web run test:e2e:live
+
+      - name: Upload live failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-live-evidence
+          path: |
+            web/test-results
+            web/playwright-report
+          retention-days: 7

@@ -94,6 +94,7 @@ function makeTestRouter() {
   return createRouter({
     history: createMemoryHistory(),
     routes: [
+      { path: '/', name: 'home', component: { template: '<div />' } },
       { path: '/cases/new', name: 'case-create', component: CaseCreateView },
       {
         path: '/cases/:caseId/datasets/:datasetId/prepare',
@@ -263,5 +264,21 @@ describe('CaseCreateView', () => {
     expect(client.uploadDataset).toHaveBeenCalledTimes(1)
     expect(vi.mocked(client.uploadDataset).mock.calls[0][0]).toBe('c9')
     expect(router.currentRoute.value.path).toBe('/cases/c9/datasets/ds1/prepare')
+  })
+})
+
+describe('导航', () => {
+  it('数据集加载失败时仍能返回首页', async () => {
+    vi.mocked(client.fetchDataset).mockRejectedValue(new client.ApiError('DATASET_NOT_FOUND', '不存在', 404))
+    vi.mocked(client.fetchInspection).mockRejectedValue(new client.ApiError('DATASET_NOT_FOUND', '不存在', 404))
+    const router = makeTestRouter()
+    await router.push('/cases/c1/datasets/ds-missing/prepare')
+    const wrapper = mount(DatasetWizardView, { global: { plugins: [router, ElementPlus] } })
+    await flushPromises()
+    expect(wrapper.text()).toContain('加载失败')
+    const navHome = wrapper.get('[data-test="nav-home"]')
+    await navHome.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.name).toBe('home')
   })
 })

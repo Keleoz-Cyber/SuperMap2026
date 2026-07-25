@@ -13,6 +13,7 @@ import Field3D from '../components/results/Field3D.vue'
 import SlicePanel from '../components/results/SlicePanel.vue'
 import FormalSelectionPanel from '../components/results/FormalSelectionPanel.vue'
 import ExportPublicationPanel from '../components/results/ExportPublicationPanel.vue'
+import PageNavigation from '../components/navigation/PageNavigation.vue'
 
 const route = useRoute()
 const resultId = computed(() => String(route.params.resultId))
@@ -59,6 +60,7 @@ onMounted(async () => {
 
 <template>
   <div class="workbench-page">
+    <PageNavigation home :experiment-id="metadata?.experiment_id" />
     <el-result v-if="loadError" icon="error" title="成果加载失败" :sub-title="loadError" />
 
     <template v-else-if="metadata">
@@ -70,9 +72,6 @@ onMounted(async () => {
           {{ metadata.dimension === '3d' ? '三维' : '二维' }} ·
           网格 {{ metadata.shape.join('×') }} ·
           值域 {{ metadata.value_range[0] }} ~ {{ metadata.value_range[1] }}
-          <router-link class="back-link" :to="`/experiments/${metadata.experiment_id}`">
-            返回实验
-          </router-link>
         </p>
       </header>
 

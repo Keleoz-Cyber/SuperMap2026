@@ -45,7 +45,7 @@ def test_health_reports_v04_dev_version(tmp_path, monkeypatch):
     app = make_integrated_app(tmp_path, monkeypatch)
     with TestClient(app) as client:
         body = client.get("/api/health").json()
-    assert body["version"] == "0.4.0"
+    assert body["version"] == "0.4.1"
 
 
 def test_cases_merges_legacy_card_and_upload_cases(tmp_path, monkeypatch):

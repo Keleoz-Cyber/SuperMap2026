@@ -137,6 +137,14 @@ FastAPI layer: `/api/health`, `/api/iserver/status`, `/api/cases`, `/api/cases/r
 
 v0.4 routers (`cases`, `datasets`, `experiments`, `runs`, `results`) registered after the legacy exact routes so `/api/cases/resistivity` can never be swallowed by `/api/cases/{case_id}`; lifespan owns one runtime + one worker. Vue views: case list + upload wizard (`CaseCreateView`, `DatasetWizardView`), tuning lab (`ExperimentView` with parameter editor, persistent progress, honest leaderboard), and result workbench (`ResultWorkbenchView` with ECharts 2D heatmap, Cesium 3D point field using the proven `removeAll()`/rebuild visibility strategy, three-direction slice panel, formal selection, export/publication panels).
 
+### Demo hardening (implemented in v0.4.1)
+
+- `demo_assets` + `api/routes/demo`: the single authoritative public demo CSV (`demo/platform_demo_3d.csv`) with a frozen SHA-256 contract (fail-closed on missing/modified asset) and a sanitized download endpoint.
+- `demo_check` + `cli demo-check`: preflight orchestration with injectable probes; blockers (imports/config/frontend build/demo asset/runtime dir/SQLite/port identity) fail with exit 1, iServer/S3M/credential absence stays warning-only; a verified current platform instance on the target port is reported reusable (exact health + OpenAPI title match).
+- `scripts/start_demo.ps1`: foreground single-process launcher; no installs, deletions, process kills, or stored secrets; check-only and no-browser switches.
+- `PageNavigation.vue`: bounded named-route navigation (`home`/`experiment-detail`/`experiment-create`) on every main page including load-error states; never `history.back()`, never cancels runs.
+- Browser test layers: Mock API Playwright (page contracts, navigation recovery) plus Live E2E (real FastAPI + isolated SQLite + real worker on port 5201, unique `GEOMODELING_DATA_DIR`, failure artifacts uploaded as CI `browser-live-evidence`).
+
 ### Future interfaces (not implemented)
 
 - Coalbed methane: an independent experimental 3D case using Xi'an 1980 zone 20 candidate coordinates, DEM-derived surface elevations, and a vertical-borehole midpoint approximation. The current 58-point table is external evidence; volume rendering is parked because loading the generated voxel crashes iDesktopX.

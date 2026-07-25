@@ -472,5 +472,42 @@ def run_all(
     _audit(app_config, dirs, "run-all", "succeeded", outputs=[dirs["reports"]])
 
 
+@app.command("demo-check")
+def demo_check(
+    json_output: bool = typer.Option(False, "--json", help="输出固定 JSON 契约"),
+    host: str = typer.Option("127.0.0.1", "--host", help="API 监听地址"),
+    port: int = typer.Option(8000, "--port", help="API 端口"),
+    data_dir: Path | None = typer.Option(None, "--data-dir", help="运行时数据目录"),
+    config: Path = typer.Option(Path("config/default.yaml"), "--config", help="平台配置文件"),
+    frontend_dist: Path | None = typer.Option(None, "--frontend-dist", help="前端构建产物目录"),
+) -> None:
+    """演示启动前只读检查：阻断项失败退出码 1，可选项仅警告。"""
+    import os
+
+    from .demo_check import run_demo_checks
+
+    resolved_data_dir = data_dir or Path(os.environ.get("GEOMODELING_DATA_DIR", "var/geomodeling"))
+    resolved_dist = frontend_dist or Path(os.environ.get("GEOMODELING_FRONTEND_DIST", "web/dist"))
+    report = run_demo_checks(
+        host=host,
+        port=port,
+        data_dir=resolved_data_dir,
+        config_path=config,
+        frontend_dist=resolved_dist,
+    )
+    if json_output:
+        typer.echo(json.dumps(report.to_dict(), ensure_ascii=False))
+    else:
+        tags = {"passed": "[PASSED]", "warning": "[WARNING]", "blocked": "[BLOCKED]"}
+        for item in report.checks:
+            line = f"{tags[item.status]} {item.id}: {item.message}"
+            if item.remediation:
+                line += f"（{item.remediation}）"
+            typer.echo(line)
+        typer.echo(f"status={report.status} exit_code={report.exit_code}")
+    # 打印完完整报告后再按聚合结果退出；不启动任何服务
+    raise typer.Exit(code=report.exit_code)
+
+
 if __name__ == "__main__":
     app()

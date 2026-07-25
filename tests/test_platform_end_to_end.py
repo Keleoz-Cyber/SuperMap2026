@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 from geomodeling.platform import PlatformRuntime
 from test_platform_results import make_client
 
-FIXTURE = Path("tests/fixtures/platform_demo_3d.csv")
+FIXTURE = Path("demo/platform_demo_3d.csv")
 
 MAPPING_3D = {
     "dimension": "3d",

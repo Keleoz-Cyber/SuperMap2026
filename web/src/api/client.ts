@@ -29,6 +29,9 @@ import type {
 
 const BASE = '/api'
 
+// 唯一权威演示数据的稳定下载地址（不暴露本机路径）
+export const PLATFORM_DEMO_3D_DOWNLOAD_URL = '/api/demo/datasets/platform-demo-3d'
+
 // 统一的后端错误封套解析：{"error": {"code", "message", "details"}}。
 // 任何非 2xx 响应都转 ApiError；成功判定由调用方检查资源状态字段，
 // 不能只看 HTTP 200。

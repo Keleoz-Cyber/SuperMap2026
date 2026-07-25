@@ -100,6 +100,7 @@ function makeTestRouter(): Router {
   return createRouter({
     history: createMemoryHistory(),
     routes: [
+      { path: '/', name: 'home', component: { template: '<div />' } },
       { path: '/cases/:caseId/experiments/new', name: 'experiment-create', component: ExperimentView },
       { path: '/experiments/:experimentId', name: 'experiment-detail', component: ExperimentView },
     ],
@@ -343,6 +344,47 @@ describe('ExperimentView 详情模式', () => {
     const { wrapper } = await mountAt('/experiments/exp1')
     expect(wrapper.text()).toContain('92.0%')
     expect(wrapper.text()).toContain('96')
+    wrapper.unmount()
+  })
+})
+
+describe('导航', () => {
+  it('创建模式显示 nav-home 且点击不调用取消接口', async () => {
+    vi.mocked(client.fetchDataset).mockResolvedValue(DATASET)
+    const { wrapper, router } = await mountAt('/cases/c1/experiments/new?dataset=ds1')
+    const navHome = wrapper.get('[data-test="nav-home"]')
+    await navHome.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.name).toBe('home')
+    expect(client.cancelRun).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('详情模式显示 nav-home 与 nav-new-experiment', async () => {
+    vi.mocked(client.fetchExperiment).mockResolvedValue(EXP)
+    vi.mocked(client.fetchCandidates).mockResolvedValue(
+      makeCandidates([], makeRun('succeeded', { completed: 1, total: 1 })),
+    )
+    const { wrapper, router } = await mountAt('/experiments/exp1')
+    expect(wrapper.get('[data-test="nav-home"]').text()).toContain('返回首页')
+    const navNew = wrapper.get('[data-test="nav-new-experiment"]')
+    await navNew.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value).toMatchObject({
+      name: 'experiment-create',
+      params: { caseId: 'c1' },
+    })
+    wrapper.unmount()
+  })
+
+  it('实验加载失败时仍能返回首页', async () => {
+    vi.mocked(client.fetchExperiment).mockRejectedValue(new client.ApiError('EXPERIMENT_NOT_FOUND', '不存在', 404))
+    vi.mocked(client.fetchCandidates).mockRejectedValue(new client.ApiError('EXPERIMENT_NOT_FOUND', '不存在', 404))
+    const { wrapper, router } = await mountAt('/experiments/exp-missing')
+    expect(wrapper.text()).toContain('加载失败')
+    await wrapper.get('[data-test="nav-home"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.name).toBe('home')
     wrapper.unmount()
   })
 })

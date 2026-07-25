@@ -2,6 +2,7 @@
 // 在浏览器侧拦截 /api/** 并按小型状态机应答，覆盖完整 v0.4 流程。
 
 import type { Page, Route } from '@playwright/test'
+import { WEB_VERSION } from '../version'
 
 const T = '2026-07-23T00:00:00Z'
 const SHA = 'ab'.repeat(32)
@@ -84,7 +85,7 @@ export async function installMockApi(page: Page): Promise<void> {
     const path = url.pathname.replace(/^\/api/, '')
     const method = route.request().method()
 
-    if (path === '/health') return json(route, { status: 'ok', version: '0.4.0-dev', time: T })
+    if (path === '/health') return json(route, { status: 'ok', version: WEB_VERSION, time: T })
     if (path === '/cases' && method === 'GET') {
       return json(route, {
         cases: [

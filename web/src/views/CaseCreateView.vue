@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ApiError, createCase, uploadDataset } from '../api/client'
+import PageNavigation from '../components/navigation/PageNavigation.vue'
 
 const router = useRouter()
 
@@ -73,9 +74,7 @@ async function submit() {
         <button class="gmp-btn primary" data-test="case-submit" :disabled="!canSubmit" @click="submit">
           {{ busy ? '创建并上传中…' : '创建并进入数据准备' }}
         </button>
-        <button class="gmp-btn" data-test="case-cancel" :disabled="busy" @click="router.push('/')">
-          返回首页
-        </button>
+        <PageNavigation home />
       </div>
     </div>
   </div>

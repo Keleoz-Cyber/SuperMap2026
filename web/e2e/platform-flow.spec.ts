@@ -9,7 +9,7 @@ test.describe('v0.4 通用建模流程（mock API）', () => {
 
     // 首页 → 新建案例
     await page.goto('/')
-    await expect(page.getByText('v0.4 建模平台')).toBeVisible()
+    await expect(page.getByText(/v\d+\.\d+\.\d+ 建模平台/)).toBeVisible()
     await page.getByTestId('create-case-card').click()
 
     // 创建案例 + 上传
@@ -60,5 +60,42 @@ test.describe('v0.4 通用建模流程（mock API）', () => {
     await expect(page.getByTestId('publication-status')).toContainText('未请求')
     await page.getByTestId('publish-button').click()
     await expect(page.getByTestId('publication-status')).toContainText('manual_required')
+
+    // 导航回归：成果 → 实验 → 首页，无死路
+    await page.getByTestId('nav-experiment').click()
+    await expect(page).toHaveURL(/#\/experiments\/exp-e2e/)
+    await expect(page.getByTestId('nav-new-experiment')).toBeVisible()
+    await page.getByTestId('nav-home').click()
+    await expect(page).toHaveURL(/#\/$/)
+    await expect(page.getByTestId('create-case-card')).toBeVisible()
+  })
+
+  test('深链加载失败时仍可从错误页返回首页', async ({ page }) => {
+    await installMockApi(page)
+    // 最后注册的路由优先生效：让实验详情接口 404
+    await page.route('**/api/experiments/exp-missing', (route) =>
+      route.fulfill({
+        status: 404,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          error: { code: 'EXPERIMENT_NOT_FOUND', message: '实验不存在', details: {} },
+        }),
+      }),
+    )
+    await page.route('**/api/experiments/exp-missing/candidates', (route) =>
+      route.fulfill({
+        status: 404,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          error: { code: 'EXPERIMENT_NOT_FOUND', message: '实验不存在', details: {} },
+        }),
+      }),
+    )
+
+    await page.goto('/#/experiments/exp-missing')
+    await expect(page.getByText('加载失败')).toBeVisible()
+    await page.getByTestId('nav-home').click()
+    await expect(page).toHaveURL(/#\/$/)
+    await expect(page.getByTestId('create-case-card')).toBeVisible()
   })
 })

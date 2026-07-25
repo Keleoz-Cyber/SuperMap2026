@@ -19,6 +19,7 @@ import type {
 import FileStep from '../components/upload/FileStep.vue'
 import MappingStep from '../components/upload/MappingStep.vue'
 import QualityStep from '../components/upload/QualityStep.vue'
+import PageNavigation from '../components/navigation/PageNavigation.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -145,6 +146,7 @@ function onStart() {
 
 <template>
   <div class="wizard-page">
+    <PageNavigation home />
     <header class="wizard-header">
       <h1>数据准备向导</h1>
       <p class="wizard-sub">

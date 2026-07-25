@@ -12,7 +12,8 @@ import {
   Odometer,
   Plus,
 } from '@element-plus/icons-vue'
-import { fetchCases, fetchRhoPublishStatus } from '../api/client'
+import { fetchCases, fetchRhoPublishStatus, PLATFORM_DEMO_3D_DOWNLOAD_URL } from '../api/client'
+import { WEB_VERSION } from '../version'
 import type { CaseSummary } from '../api/types'
 
 interface CaseMeta {
@@ -104,7 +105,7 @@ onMounted(async () => {
           <div class="brand-text">
             <h1>GeoModelingPlatform <span>地矿属性模拟与三维建模平台</span></h1>
           </div>
-          <el-tag type="primary" effect="dark" round>v0.4 建模平台</el-tag>
+          <el-tag type="primary" effect="dark" round>v{{ WEB_VERSION }} 建模平台</el-tag>
         </div>
         <p class="tagline">
           上传点数据即可完成二维/三维插值建模、空间验证与成果导出；内置电阻率案例保留 SuperMap iServer 发布证据链闭环。
@@ -175,6 +176,15 @@ onMounted(async () => {
               上传数据
               <el-icon style="margin-left: 4px"><ArrowRight /></el-icon>
             </el-button>
+            <a
+              class="demo-download"
+              data-test="download-demo-data"
+              :href="PLATFORM_DEMO_3D_DOWNLOAD_URL"
+              download
+              @click.stop
+            >
+              下载演示数据
+            </a>
           </div>
         </div>
       </div>
@@ -307,6 +317,18 @@ onMounted(async () => {
 .create-card {
   border-style: dashed;
   cursor: pointer;
+}
+
+.demo-download {
+  margin-left: 12px;
+  font-size: 12px;
+  color: var(--gmp-text-dim);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.demo-download:hover {
+  color: var(--gmp-accent);
 }
 
 .case-head {
