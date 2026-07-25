@@ -23,6 +23,7 @@ import ParameterEditor, { type ParameterSubmit } from '../components/experiments
 import SearchSummary from '../components/experiments/SearchSummary.vue'
 import RunProgress from '../components/experiments/RunProgress.vue'
 import CandidateLeaderboard from '../components/experiments/CandidateLeaderboard.vue'
+import PageNavigation from '../components/navigation/PageNavigation.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -212,6 +213,8 @@ onBeforeUnmount(stopPolling)
 
 <template>
   <div class="experiment-page">
+    <PageNavigation v-if="isCreate" home />
+    <PageNavigation v-else home :case-id="experiment?.case_id" new-experiment />
     <el-result v-if="loadError" icon="error" title="加载失败" :sub-title="loadError" />
 
     <template v-else-if="isCreate">
@@ -237,9 +240,6 @@ onBeforeUnmount(stopPolling)
         <h1>{{ experiment?.name ?? '实验详情' }}</h1>
         <p class="page-sub">
           实验 <span class="mono">{{ experimentId }}</span>
-          <router-link class="back-link" :to="`/cases/${experiment?.case_id}/experiments/new`">
-            新建实验
-          </router-link>
         </p>
       </header>
       <div v-if="actionError" class="action-error" data-test="action-error">{{ actionError }}</div>
