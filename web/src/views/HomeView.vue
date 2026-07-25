@@ -12,7 +12,7 @@ import {
   Odometer,
   Plus,
 } from '@element-plus/icons-vue'
-import { fetchCases, fetchRhoPublishStatus } from '../api/client'
+import { fetchCases, fetchRhoPublishStatus, PLATFORM_DEMO_3D_DOWNLOAD_URL } from '../api/client'
 import type { CaseSummary } from '../api/types'
 
 interface CaseMeta {
@@ -175,6 +175,15 @@ onMounted(async () => {
               上传数据
               <el-icon style="margin-left: 4px"><ArrowRight /></el-icon>
             </el-button>
+            <a
+              class="demo-download"
+              data-test="download-demo-data"
+              :href="PLATFORM_DEMO_3D_DOWNLOAD_URL"
+              download
+              @click.stop
+            >
+              下载演示数据
+            </a>
           </div>
         </div>
       </div>
@@ -307,6 +316,18 @@ onMounted(async () => {
 .create-card {
   border-style: dashed;
   cursor: pointer;
+}
+
+.demo-download {
+  margin-left: 12px;
+  font-size: 12px;
+  color: var(--gmp-text-dim);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.demo-download:hover {
+  color: var(--gmp-accent);
 }
 
 .case-head {
