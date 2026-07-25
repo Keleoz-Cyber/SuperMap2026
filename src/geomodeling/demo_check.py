@@ -63,7 +63,15 @@ class PortProbeResult(Enum):
 
 
 def probe_api_port(host: str, port: int) -> PortProbeResult:
-    """短超时探测：空闲 / 已是本平台健康实例（可复用）/ 未知占用。"""
+    """短超时探测：空闲 / 已是本平台健康实例（可复用）/ 未知占用。
+
+    可复用判定必须全部满足：HTTP 可达 + ``/api/health`` 为 ``status=ok`` +
+    健康版本与当前 ``PROJECT_VERSION`` **精确一致** + OpenAPI 标题精确等于
+    ``GeoModelingPlatform API``。旧版本（例如 v0.4.0）只能判为未知占用，
+    防止演示时误复用过期实例。
+    """
+
+    from geomodeling.api.deps import PROJECT_VERSION
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.settimeout(1.5)
@@ -82,6 +90,8 @@ def probe_api_port(host: str, port: int) -> PortProbeResult:
 
     health = _get_json("/api/health")
     if not health or health.get("status") != "ok":
+        return PortProbeResult.OCCUPIED_UNKNOWN
+    if health.get("version") != PROJECT_VERSION:
         return PortProbeResult.OCCUPIED_UNKNOWN
     openapi = _get_json("/openapi.json")
     title = (openapi or {}).get("info", {}).get("title")

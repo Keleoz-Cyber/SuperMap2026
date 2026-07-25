@@ -152,3 +152,86 @@ def test_optional_absence_never_blocks(tmp_path):
     for item in report.checks:
         if item.id in OPTIONAL_IDS:
             assert item.status == "warning"
+
+
+class _FakeSocket:
+    """模拟端口已被占用（connect_ex 返回 0）的假 socket。"""
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def settimeout(self, _t):
+        pass
+
+    def connect_ex(self, _addr):
+        return 0
+
+    def close(self):
+        pass
+
+
+def _patch_open_port(monkeypatch, dc):
+    monkeypatch.setattr(dc.socket, "socket", lambda *a, **k: _FakeSocket())
+
+
+def test_reusable_probe_rejects_mismatched_version(monkeypatch):
+    """相同标题 + status=ok 但 version 落后（如 v0.4.0）必须判为未知占用。"""
+
+    import json as _json
+    from geomodeling import demo_check as dc
+    from geomodeling.api.deps import PROJECT_VERSION
+
+    class _Resp:
+        def __init__(self, payload):
+            self._payload = payload
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return _json.dumps(self._payload).encode("utf-8")
+
+    def fake_urlopen(url, timeout=0):
+        if url.endswith("/api/health"):
+            return _Resp({"status": "ok", "version": "0.4.0", "time": "2026-07-25T00:00:00Z"})
+        if url.endswith("/openapi.json"):
+            return _Resp({"info": {"title": "GeoModelingPlatform API"}})
+        raise AssertionError(url)
+
+    monkeypatch.setattr(dc.urllib.request, "urlopen", fake_urlopen)
+    _patch_open_port(monkeypatch, dc)
+    assert PROJECT_VERSION != "0.4.0"  # 当前代码已高于 0.4.0
+    assert dc.probe_api_port("127.0.0.1", 8000) is dc.PortProbeResult.OCCUPIED_UNKNOWN
+
+
+def test_reusable_probe_accepts_exact_current_version(monkeypatch):
+    import json as _json
+    from geomodeling import demo_check as dc
+    from geomodeling.api.deps import PROJECT_VERSION
+
+    class _Resp:
+        def __init__(self, payload):
+            self._payload = payload
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return _json.dumps(self._payload).encode("utf-8")
+
+    def fake_urlopen(url, timeout=0):
+        if url.endswith("/api/health"):
+            return _Resp({"status": "ok", "version": PROJECT_VERSION, "time": "2026-07-25T00:00:00Z"})
+        if url.endswith("/openapi.json"):
+            return _Resp({"info": {"title": "GeoModelingPlatform API"}})
+        raise AssertionError(url)
+
+    monkeypatch.setattr(dc.urllib.request, "urlopen", fake_urlopen)
+    _patch_open_port(monkeypatch, dc)
+    assert dc.probe_api_port("127.0.0.1", 8000) is dc.PortProbeResult.REUSABLE
