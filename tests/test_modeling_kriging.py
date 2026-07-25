@@ -196,3 +196,141 @@ def test_predictions_are_deterministic():
     batch_a = fitted_a.predict(query, cancel=lambda: False)
     batch_b = fitted_b.predict(query, cancel=lambda: False)
     np.testing.assert_array_equal(batch_a.values, batch_b.values)
+
+
+# ---------------------------------------------------------------------------
+# Task 8: z_scale 距离缩放参数
+# ---------------------------------------------------------------------------
+
+
+def anisotropic_train_3d():
+    # XY 近/垂向远与 XY 远/垂向近的点混合，z_scale 改变邻域距离结构
+    coords = np.array(
+        [
+            [1.0, 0.0, 10.0],
+            [8.0, 0.0, 2.0],
+            [0.0, 9.0, 8.0],
+            [-6.0, -6.0, 0.0],
+        ]
+    )
+    values = np.array([100.0, 200.0, 150.0, 50.0])
+    return coords, values
+
+
+def test_z_scale_changes_3d_prediction_manual_mode():
+    from geomodeling.modeling.kriging import OrdinaryKrigingInterpolator
+
+    coords, values = anisotropic_train_3d()
+    interpolator = OrdinaryKrigingInterpolator()
+    base = {
+        "variogram_mode": "manual",
+        "variogram_model": "spherical",
+        "nugget": 0.0,
+        "sill": 1.0,
+        "range": 50.0,
+        "neighbor_count": 4,
+        "min_neighbors": 3,
+    }
+    weak = interpolator.validate_parameters({**base, "z_scale": 0.5}, "3d")
+    strong = interpolator.validate_parameters({**base, "z_scale": 2.0}, "3d")
+    query = np.array([[0.0, 0.0, 0.0]])
+    pred_weak = interpolator.fit(coords, values, weak).predict(query, cancel=lambda: False)
+    pred_strong = interpolator.fit(coords, values, strong).predict(query, cancel=lambda: False)
+    assert not pred_weak.is_nodata[0]
+    assert not pred_strong.is_nodata[0]
+    assert pred_weak.values[0] != pytest.approx(pred_strong.values[0])
+    assert pred_weak.diagnostics["z_scale"] == 0.5
+    assert pred_strong.diagnostics["z_scale"] == 2.0
+
+
+def test_z_scale_changes_auto_variogram_fit():
+    from geomodeling.modeling.kriging import OrdinaryKrigingInterpolator
+
+    coords, values = smooth_field_3d()
+    interpolator = OrdinaryKrigingInterpolator()
+    base = {"variogram_model": "spherical", "neighbor_count": 16}
+    weak = interpolator.validate_parameters({**base, "z_scale": 0.5}, "3d")
+    strong = interpolator.validate_parameters({**base, "z_scale": 2.0}, "3d")
+    # 查询点不能取训练点本身：Kriging 在样本点精确插值，与变异函数无关
+    rng = np.random.default_rng(77)
+    query = coords[:5] + rng.normal(0, 1.0, size=(5, 3))
+    batch_weak = interpolator.fit(coords, values, weak).predict(query, cancel=lambda: False)
+    batch_strong = interpolator.fit(coords, values, strong).predict(query, cancel=lambda: False)
+    # 变异函数在缩放后的训练坐标上拟合 → range 随 z_scale 改变
+    range_weak = batch_weak.diagnostics["variogram"]["range"]
+    range_strong = batch_strong.diagnostics["variogram"]["range"]
+    assert range_weak != pytest.approx(range_strong, rel=1e-3)
+    assert not np.array_equal(batch_weak.values, batch_strong.values)
+
+
+def test_z_scale_default_matches_explicit_one_bitwise():
+    from geomodeling.modeling.kriging import OrdinaryKrigingInterpolator
+
+    coords, values = smooth_field_3d()
+    interpolator = OrdinaryKrigingInterpolator()
+    base = {"variogram_model": "spherical", "neighbor_count": 16}
+    default_params = interpolator.validate_parameters(base, "3d")
+    explicit_one = interpolator.validate_parameters({**base, "z_scale": 1.0}, "3d")
+    # 非样本查询点，确保逐位比较经过完整的邻域与权重求解路径
+    rng = np.random.default_rng(77)
+    query = coords[:10] + rng.normal(0, 1.0, size=(10, 3))
+    batch_default = interpolator.fit(coords, values, default_params).predict(query, cancel=lambda: False)
+    batch_one = interpolator.fit(coords, values, explicit_one).predict(query, cancel=lambda: False)
+    np.testing.assert_array_equal(batch_default.values, batch_one.values)
+    np.testing.assert_array_equal(batch_default.is_nodata, batch_one.is_nodata)
+    assert batch_default.diagnostics["z_scale"] == 1.0
+
+
+def test_z_scale_ignored_in_2d():
+    from geomodeling.modeling.kriging import OrdinaryKrigingInterpolator
+
+    coords, values = plane_field_2d()
+    interpolator = OrdinaryKrigingInterpolator()
+    base = {"variogram_model": "spherical", "neighbor_count": 12}
+    weak = interpolator.validate_parameters({**base, "z_scale": 0.5}, "2d")
+    strong = interpolator.validate_parameters({**base, "z_scale": 2.0}, "2d")
+    query = np.column_stack(
+        [np.array([-150.0, -100.0, -50.0]), np.array([300.0, 440.0, 600.0])]
+    )
+    batch_weak = interpolator.fit(coords, values, weak).predict(query, cancel=lambda: False)
+    batch_strong = interpolator.fit(coords, values, strong).predict(query, cancel=lambda: False)
+    np.testing.assert_array_equal(batch_weak.values, batch_strong.values)
+    np.testing.assert_array_equal(batch_weak.is_nodata, batch_strong.is_nodata)
+
+
+def test_z_scale_does_not_mutate_training_or_query_coordinates():
+    from geomodeling.modeling.kriging import OrdinaryKrigingInterpolator
+
+    coords, values = anisotropic_train_3d()
+    coords_before = coords.copy()
+    interpolator = OrdinaryKrigingInterpolator()
+    params = interpolator.validate_parameters(
+        {
+            "variogram_mode": "manual",
+            "variogram_model": "spherical",
+            "nugget": 0.0,
+            "sill": 1.0,
+            "range": 50.0,
+            "neighbor_count": 4,
+            "min_neighbors": 3,
+            "z_scale": 2.0,
+        },
+        "3d",
+    )
+    fitted = interpolator.fit(coords, values, params)
+    query = np.array([[0.0, 0.0, 0.0]])
+    query_before = query.copy()
+    fitted.predict(query, cancel=lambda: False)
+    np.testing.assert_array_equal(coords, coords_before)
+    np.testing.assert_array_equal(query, query_before)
+
+
+def test_z_scale_parameter_bounds():
+    from geomodeling.modeling.kriging import OrdinaryKrigingInterpolator
+
+    interpolator = OrdinaryKrigingInterpolator()
+    for bad in (0.0, -1.0, 20.5, float("inf"), float("nan")):
+        with pytest.raises(Exception):
+            interpolator.validate_parameters({"z_scale": bad}, "3d")
+    ok = interpolator.validate_parameters({"z_scale": 20.0}, "3d")
+    assert ok.z_scale == 20.0
