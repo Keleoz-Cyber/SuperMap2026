@@ -1,14 +1,21 @@
 from collections import Counter
+from hashlib import sha256
 from pathlib import Path
 
 import pandas as pd
 import pytest
 
+from geomodeling.microseismic.aggregation import aggregate_exact_xyz
+from geomodeling.microseismic.canonical import accepted_csv_bytes, rejected_csv_bytes
 from geomodeling.microseismic.config import load_microseismic_config
 from geomodeling.microseismic.derivation import derive_local_samples
 from geomodeling.microseismic.filtering import filter_three_sigma
+from geomodeling.microseismic.golden import verify_golden
 from geomodeling.microseismic.inventory import snapshot_sha256
 from geomodeling.microseismic.service import build_audit, export_all
+
+EXPECTED_ACCEPTED = "4f7a0886b54bb1776e9d7ca98299f8f86e67897ba19236fb151c3fc9e2ae1513"
+EXPECTED_REJECTED = "3752b2f62de4e56121b7af66c205ccf3984270d332636335e559e7e2745872b1"
 
 pytestmark = [
     pytest.mark.local_data,
@@ -169,6 +176,27 @@ def test_filter_three_sigma_real_data_anchors(audit_result):
     assert [row.sample_id for row in filtered.accepted] == [
         row.sample_id for row in finite if row.sample_id in accepted_ids
     ]
+
+
+def test_golden_bytes_and_aggregation_real_data(audit_result):
+    result, _, _ = audit_result
+    config = load_microseismic_config()
+    finite, _ = derive_local_samples(config, result)
+    filtered = filter_three_sigma(
+        finite,
+        threshold=config.derivation.sigma_threshold,
+        ddof=config.derivation.sigma_ddof,
+    )
+    assert sha256(accepted_csv_bytes(filtered.accepted)).hexdigest() == EXPECTED_ACCEPTED
+    assert sha256(rejected_csv_bytes(filtered.rejected)).hexdigest() == EXPECTED_REJECTED
+    aggregation = aggregate_exact_xyz(filtered.accepted)
+    assert aggregation.conflict_group_count == 13
+    assert aggregation.conflict_row_count == 27
+    assert aggregation.collapsed_row_count == 14
+    assert len(aggregation.nodes) == 1911
+    assert aggregation.max_value_range == pytest.approx(0.913554)
+    golden = verify_golden(config, filtered, aggregation)
+    assert golden.passed is True
 
 
 def test_validation_passed(audit_result):

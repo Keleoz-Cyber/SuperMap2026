@@ -97,13 +97,12 @@ def write_fixture_config(base: Path, data_dir: Path, **overrides) -> Path:
             "expected_conflict_groups": 0,
             "expected_conflict_rows": 0,
             "expected_modeling_nodes": 6,
-            # Provisional fixture-only golden pins (sha256 of the fixture's
-            # accepted sample-id list and of its empty rejected set). Task 4/5
-            # must re-pin these to the computed canonical-byte hashes once the
-            # canonical CSV serializer exists.
+            # Fixture-only golden pins, re-pinned in Task 4: sha256 of the
+            # canonical UTF-8-BOM/CRLF CSV bytes of the fixture's accepted
+            # set (6 rows) and of its empty rejected set (header only).
             "golden": {
-                "accepted_sha256": "5ec0fdb46865423c165f570ed6314ce6935d519e57a2a3e93235e585b04b83dc",
-                "rejected_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "accepted_sha256": "063a98c5277a2c3ce557e166e30c6652765a207b68059a9eb3cdac14503e0316",
+                "rejected_sha256": "2ebb1f496b428d75d713e7e8bfe3dff78749be0155aa8395fa577fb2339e8738",
             },
         },
         "expected": expected,

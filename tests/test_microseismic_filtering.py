@@ -95,7 +95,7 @@ def test_both_reasons_serialize_as_joined_string():
     assert rejected.filter_reason == "深度;速度"
     dumped = rejected.model_dump(by_alias=True)
     assert dumped["FILTER_REASON"] == "深度;速度"
-    assert dumped["FILTER_STATUS"] == "rejected"
+    assert dumped["FILTER_STATUS"] == "剔除"
     assert "DEPTH_ZSCORE" in dumped
     assert "VX_ZSCORE" in dumped
 
@@ -132,7 +132,7 @@ def test_rejected_rows_keep_both_zscores_and_source_fields():
     assert rejected.depth_zscore == pytest.approx(expected_depth_z)
     # Constant vx has zero deviation, so its z-score is exactly zero.
     assert rejected.vx_zscore == 0.0
-    assert rejected.filter_status == "rejected"
+    assert rejected.filter_status == "剔除"
     assert rejected.filter_reason == "深度"
 
 

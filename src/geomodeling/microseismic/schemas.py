@@ -70,6 +70,10 @@ class DerivationContractError(ValueError):
     """A supposedly finite source sample is missing values required for derivation."""
 
 
+class AggregationContractError(ValueError):
+    """Exactly collocated rows disagree on point or line identity."""
+
+
 # Golden-compatible rule strings, kept byte-identical to the confirmed golden
 # derived table (microseismic_local_3d_v0.2b_confirmed_2026-07-20).
 DEPTH_RULE = "DEPTH_M=WL_HALF_KM*1000;down_positive"
@@ -169,7 +173,7 @@ class RejectedFilteredSample(DerivedVelocitySample):
         depth_zscore: float,
         vx_zscore: float,
         filter_reason: str,
-        filter_status: str = "rejected",
+        filter_status: str = "剔除",
     ) -> "RejectedFilteredSample":
         return cls(
             **row.model_dump(),
@@ -197,6 +201,45 @@ class ThreeSigmaResult(MicroseismicModel):
     vx_std: float
     accepted: list[DerivedVelocitySample]
     rejected: list[RejectedFilteredSample]
+
+
+class AggregatedModelingNode(MicroseismicModel):
+    """One unique modeling node produced by exact-XYZ aggregation.
+
+    vx_km_s is the arithmetic mean of the group's candidate Vx values; a
+    single-record group keeps its source value exactly. Provenance fields keep
+    every source sample id in source order, and vx_sample_std_km_s is null for
+    single-record groups and uses ddof=1 otherwise.
+    """
+
+    x_local_m: float
+    y_local_m: float
+    z_local_m: float
+    vx_km_s: float
+    point_id: str
+    line_id: str
+    source_sample_ids: list[str]
+    sample_count: int = Field(ge=1)
+    vx_min_km_s: float
+    vx_max_km_s: float
+    vx_sample_std_km_s: float | None
+
+
+class AggregationResult(MicroseismicModel):
+    """Immutable outcome of exact-XYZ aggregation over the accepted rows.
+
+    The accepted golden candidate set is never modified; aggregation only
+    produces this modeling-node collection. Conflict statistics describe the
+    groups whose sample_count is greater than one.
+    """
+
+    model_config = ConfigDict(extra="forbid", use_enum_values=True, frozen=True)
+
+    nodes: list[AggregatedModelingNode]
+    conflict_group_count: int = Field(ge=0)
+    conflict_row_count: int = Field(ge=0)
+    collapsed_row_count: int = Field(ge=0)
+    max_value_range: float = Field(ge=0)
 
 
 class InvalidDerivedSample(MicroseismicModel):

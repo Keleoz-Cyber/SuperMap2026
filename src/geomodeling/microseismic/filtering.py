@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from typing import Sequence
 
 import numpy as np
@@ -10,6 +11,24 @@ __all__ = ["filter_three_sigma"]
 
 REASON_DEPTH = "深度"
 REASON_VX = "速度"
+
+
+def _sample_statistics(values: np.ndarray, ddof: int) -> tuple[float, float]:
+    """Two-pass mean and standard deviation with naive sequential summation.
+
+    Sequential float64 accumulation (not numpy's pairwise summation) is the
+    golden table's exact arithmetic: only it reproduces the pinned rejected
+    table's z-score bytes. The two-pass form squares deviations around the
+    computed mean.
+    """
+    total = 0.0
+    for value in values:
+        total += value
+    mean = total / len(values)
+    squared = 0.0
+    for value in values:
+        squared += (value - mean) ** 2
+    return mean, math.sqrt(squared / (len(values) - ddof))
 
 
 def _zscores(values: np.ndarray, mean: float, std: float) -> np.ndarray:
@@ -38,8 +57,8 @@ def filter_three_sigma(
     """
     depth = np.asarray([row.depth_m for row in rows], dtype="float64")
     vx = np.asarray([row.vx_km_s for row in rows], dtype="float64")
-    depth_mean, vx_mean = float(depth.mean()), float(vx.mean())
-    depth_std, vx_std = float(depth.std(ddof=ddof)), float(vx.std(ddof=ddof))
+    depth_mean, depth_std = _sample_statistics(depth, ddof)
+    vx_mean, vx_std = _sample_statistics(vx, ddof)
     depth_z = _zscores(depth, depth_mean, depth_std)
     vx_z = _zscores(vx, vx_mean, vx_std)
     # Build accepted/rejected once from these arrays; never recompute.
