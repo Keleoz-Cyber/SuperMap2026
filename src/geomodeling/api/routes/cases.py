@@ -88,8 +88,9 @@ async def upload_dataset(
             return public_dataset(DatasetRepository(session).get(record.id))
     except BaseException:
         # 补偿事务：落盘/建档/序列化任何一步失败，删除可能残留的
-        # pending://upload 数据集行、final_path 成品文件与 .part 暂存；
-        # 补偿失败只记日志，不掩盖原始异常。
+        # pending://upload 数据集行、final_path 成品文件与 .part 暂存。
+        # 每一步清理各自 try/except：清理失败只记日志（含堆栈），
+        # 绝不允许清理异常覆盖最初的业务异常。
         if created_dataset_id is not None:
             try:
                 with runtime.session() as session:
@@ -98,8 +99,14 @@ async def upload_dataset(
                         session.delete(row)
                         session.commit()
             except Exception:  # noqa: BLE001
-                logger.error("upload compensation failed for %s", created_dataset_id)
+                logger.exception("upload compensation: row delete failed for %s", created_dataset_id)
         if final_path is not None:
-            final_path.unlink(missing_ok=True)
-        discard_upload(receipt)
+            try:
+                final_path.unlink(missing_ok=True)
+            except Exception:  # noqa: BLE001
+                logger.exception("upload compensation: finalized file cleanup failed: %s", final_path)
+        try:
+            discard_upload(receipt)
+        except Exception:  # noqa: BLE001
+            logger.exception("upload compensation: staged file cleanup failed: %s", receipt.part_path)
         raise
