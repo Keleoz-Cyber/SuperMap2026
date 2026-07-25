@@ -102,3 +102,33 @@ def test_cancel_on_missing_run_is_404(tmp_path):
     resp = client.post("/api/runs/00000000-0000-0000-0000-000000000000/cancel")
     assert resp.status_code == 404
     assert resp.json()["error"]["code"] == "RUN_NOT_FOUND"
+
+
+def test_interrupted_run_is_terminal_for_cancel(tmp_path):
+    """interrupted 属终态：取消返回 409，状态、metrics、时间戳均不变。"""
+
+    client, runtime = make_client(tmp_path)
+    experiment_id = _make_experiment(runtime)
+    with runtime.session() as session:
+        run = RunRepository(session).create(experiment_id)
+
+    # 重启恢复语义：queued → interrupted + PROCESS_RESTARTED
+    assert runtime.recover_interrupted_runs() == 1
+    with runtime.session() as session:
+        before = RunRepository(session).get(run.id)
+    assert before.status == "interrupted"
+    assert before.error_code == "PROCESS_RESTARTED"
+
+    resp = client.post(f"/api/runs/{run.id}/cancel")
+    assert resp.status_code == 409
+    assert resp.json()["error"]["code"] == "RUN_NOT_CANCELABLE"
+
+    worker = JobWorker(runtime)
+    worker.cancel(run.id)  # worker 直调同样不得变更
+
+    with runtime.session() as session:
+        after = RunRepository(session).get(run.id)
+    assert after.status == before.status
+    assert after.metrics == before.metrics
+    assert after.updated_at == before.updated_at
+    assert after.finished_at == before.finished_at

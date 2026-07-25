@@ -110,9 +110,45 @@ def test_v3_to_v4_migration_adds_index_and_export_column(tmp_path):
     export_cols = {row[1] for row in raw.execute("PRAGMA table_info('exports')")}
     assert "candidate_result_id" in export_cols
 
-    # 迁移后约束即刻生效：e1 已有一个 queued，不能再插 queued；canceled 不拦
+    # 迁移先把历史在途 run 转 interrupted：r1 不再占在途名额
+    rows = dict(raw.execute("SELECT id, status FROM runs").fetchall())
+    assert rows == {"r1": "interrupted", "r0": "canceled"}
+
+    # 迁移后约束即刻生效：可以再插一个 queued，但同一时刻仍只能一个在途
+    raw.execute("INSERT INTO runs (id, experiment_id, status) VALUES ('r2', 'e1', 'queued')")
     with pytest.raises(sqlite3.IntegrityError):
-        raw.execute("INSERT INTO runs (id, experiment_id, status) VALUES ('r2', 'e1', 'queued')")
-    raw.execute("INSERT INTO runs (id, experiment_id, status) VALUES ('r3', 'e1', 'canceled')")
+        raw.execute("INSERT INTO runs (id, experiment_id, status) VALUES ('r3', 'e1', 'queued')")
+    raw.execute("INSERT INTO runs (id, experiment_id, status) VALUES ('r4', 'e1', 'canceled')")
+    raw.close()
+    runtime.close()
+
+
+def test_v3_migration_flips_historical_inflight_before_index(tmp_path):
+    """v3 库中同一 experiment 的 queued+running 先按重启语义转 interrupted，再建索引。"""
+
+    db_path = tmp_path / "runtime" / "platform.sqlite3"
+    db_path.parent.mkdir(parents=True)
+    conn = sqlite3.connect(db_path)
+    conn.executescript(V3_DDL)
+    conn.execute("INSERT INTO runs (id, experiment_id, status) VALUES ('r-q', 'e1', 'queued')")
+    conn.execute("INSERT INTO runs (id, experiment_id, status) VALUES ('r-r', 'e1', 'running')")
+    conn.execute("PRAGMA user_version=3")
+    conn.commit()
+    conn.close()
+
+    runtime = PlatformRuntime(tmp_path / "runtime")
+    runtime.initialize()  # 迁移不得因既有双在途而失败
+    assert runtime.schema_version() == 4
+
+    raw = sqlite3.connect(db_path)
+    rows = dict(raw.execute("SELECT id, status FROM runs").fetchall())
+    assert rows == {"r-q": "interrupted", "r-r": "interrupted"}
+    codes = dict(raw.execute("SELECT id, error_code FROM runs").fetchall())
+    assert codes == {"r-q": "PROCESS_RESTARTED", "r-r": "PROCESS_RESTARTED"}
+
+    # 索引已建：迁移后可以创建新的 queued，但同一时刻仍只能一个在途
+    raw.execute("INSERT INTO runs (id, experiment_id, status) VALUES ('r-new', 'e1', 'queued')")
+    with pytest.raises(sqlite3.IntegrityError):
+        raw.execute("INSERT INTO runs (id, experiment_id, status) VALUES ('r-new2', 'e1', 'queued')")
     raw.close()
     runtime.close()

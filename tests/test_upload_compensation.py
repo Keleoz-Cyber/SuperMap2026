@@ -38,3 +38,30 @@ def test_finalize_failure_rolls_back_dataset_row(tmp_path, monkeypatch):
     runtime: PlatformRuntime = client.app.state.platform_runtime  # type: ignore[attr-defined]
     leftovers = list((runtime.settings.data_dir / "uploads").rglob("*")) if (runtime.settings.data_dir / "uploads").exists() else []
     assert [p for p in leftovers if p.is_file()] == []
+
+
+def test_post_finalize_failure_removes_row_final_file_and_part(tmp_path, monkeypatch):
+    """finalize 成功、随后 commit/序列化失败：行、final_path、.part 全清。"""
+
+    client, _ = make_client(tmp_path)
+    import geomodeling.api.routes.cases as cases_module
+
+    def failing_public_dataset(record):
+        raise RuntimeError("serialize boom (simulated)")
+
+    monkeypatch.setattr(cases_module, "public_dataset", failing_public_dataset)
+
+    case_id = client.post("/api/cases", json={"name": "后段失败案例"}).json()["id"]
+    with pytest.raises(RuntimeError, match="serialize boom"):
+        client.post(
+            f"/api/cases/{case_id}/datasets/uploads",
+            files={"file": ("data.csv", io.BytesIO(CSV_2D.encode()), "application/octet-stream")},
+        )
+
+    listing = client.get(f"/api/cases/{case_id}/datasets")
+    assert listing.json()["datasets"] == []
+
+    runtime = client.app.state.platform_runtime  # type: ignore[attr-defined]
+    uploads_root = runtime.settings.data_dir / "uploads"
+    leftovers = [p for p in uploads_root.rglob("*") if p.is_file()] if uploads_root.exists() else []
+    assert leftovers == [], f"残留上传文件：{leftovers}"

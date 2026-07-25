@@ -48,7 +48,12 @@ class RunStatus(str, Enum):
 
 RUN_INFLIGHT_STATUSES = frozenset({RunStatus.QUEUED.value, RunStatus.RUNNING.value})
 RUN_TERMINAL_STATUSES = frozenset(
-    {RunStatus.SUCCEEDED.value, RunStatus.FAILED.value, RunStatus.CANCELED.value}
+    {
+        RunStatus.SUCCEEDED.value,
+        RunStatus.FAILED.value,
+        RunStatus.CANCELED.value,
+        RunStatus.INTERRUPTED.value,
+    }
 )
 
 ERROR_PROCESS_RESTARTED = "PROCESS_RESTARTED"

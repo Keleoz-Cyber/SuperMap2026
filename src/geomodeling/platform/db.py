@@ -35,6 +35,11 @@ _BUSY_TIMEOUT_MS = 30000
 # 迁移完成后统一重打 user_version。比代码新的数据库仍然拒绝启动。
 _MIGRATIONS: dict[int, tuple[str, ...]] = {
     3: (
+        # 先按重启语义把历史在途 run 原子转 interrupted（v3 允许同一实验双在途），
+        # 否则部分唯一索引建不起来
+        "UPDATE runs SET status='interrupted', error_code='PROCESS_RESTARTED', "
+        "updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') "
+        "WHERE status IN ('queued', 'running')",
         "CREATE UNIQUE INDEX IF NOT EXISTS ux_runs_experiment_inflight "
         "ON runs(experiment_id) WHERE status IN ('queued', 'running')",
         "ALTER TABLE exports ADD COLUMN candidate_result_id "

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, UploadFile
@@ -27,9 +28,9 @@ router = APIRouter(prefix="/api/cases", tags=["v0.4-cases"])
 def create_case(
     request: CaseCreateRequest,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
-) -> CaseRecord:
+) -> dict[str, Any]:
     with runtime.session() as session:
-        return CaseRepository(session).create(request)
+        return public_case(CaseRepository(session).create(request))
 
 
 @router.get("/{case_id}")
@@ -61,6 +62,7 @@ async def upload_dataset(
     settings = runtime.settings
     receipt = store_upload_stream(settings, file.file, file.filename or "")
     created_dataset_id: str | None = None
+    final_path: Path | None = None
     try:
         with runtime.session() as session:
             record = DatasetRepository(session).create_version(
@@ -85,8 +87,9 @@ async def upload_dataset(
             session.commit()
             return public_dataset(DatasetRepository(session).get(record.id))
     except BaseException:
-        # 补偿事务：落盘/建档任何一步失败，删除可能残留的 pending://upload
-        # 数据集行并清理暂存文件；补偿失败只记日志，不掩盖原始异常。
+        # 补偿事务：落盘/建档/序列化任何一步失败，删除可能残留的
+        # pending://upload 数据集行、final_path 成品文件与 .part 暂存；
+        # 补偿失败只记日志，不掩盖原始异常。
         if created_dataset_id is not None:
             try:
                 with runtime.session() as session:
@@ -96,5 +99,7 @@ async def upload_dataset(
                         session.commit()
             except Exception:  # noqa: BLE001
                 logger.error("upload compensation failed for %s", created_dataset_id)
+        if final_path is not None:
+            final_path.unlink(missing_ok=True)
         discard_upload(receipt)
         raise
