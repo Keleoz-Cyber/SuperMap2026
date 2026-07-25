@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, Query
 from geomodeling.api.deps import get_platform_runtime
 from geomodeling.platform import PlatformRuntime, ingest, quality as quality_mod, tables
 from geomodeling.platform.errors import PlatformError
+from geomodeling.platform.public_dto import public_dataset, scrub_nested
 from geomodeling.platform.repositories import DatasetRepository
 from geomodeling.platform.schemas import DatasetStatus, FieldMapping
 
@@ -28,7 +29,7 @@ def get_dataset(
 ) -> dict[str, Any]:
     with runtime.session() as session:
         record = DatasetRepository(session).get(dataset_id)
-    return record.model_dump(mode="json")
+    return public_dataset(record)
 
 
 @router.get("/{dataset_id}/points")
@@ -84,7 +85,7 @@ def inspect_dataset(
     )
     result["dataset_id"] = dataset_id
     result["case_id"] = record.case_id
-    result["profile"] = profile
+    result["profile"] = scrub_nested(profile)
     return result
 
 
@@ -135,8 +136,8 @@ def map_dataset(
         row.profile_json = tables.dumps_canonical(profile)
         session.commit()
 
-    result = mapped.model_dump(mode="json")
-    result["profile"] = profile
+    result = public_dataset(mapped)
+    result["profile"] = scrub_nested(profile)
     return result
 
 

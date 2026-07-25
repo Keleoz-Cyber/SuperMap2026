@@ -44,15 +44,14 @@ def request_publication(runtime: PlatformRuntime, result_id: str) -> dict[str, A
     if existing_export is None:
         export = build_export(runtime, result_id)
         export_id = export["id"]
-        package_path = runtime.settings.export_package(export_id)
     else:
         export_id = existing_export.id
-        package_path = existing_export.package_path
 
     publication_id = str(uuid.uuid4())
     detail = {
         "export_id": export_id,
-        "package": str(package_path),
+        # 公开证据只给资源 ID 与下载 URL，绝不回传服务器文件路径
+        "download_url": f"/api/exports/{export_id}/download",
         "manual_instruction": (
             "本机 iServer 程序化发布不可用（workspaces REST 发布接口 500）。"
             "请通过 iServer 管理界面手动发布导出的成果包："

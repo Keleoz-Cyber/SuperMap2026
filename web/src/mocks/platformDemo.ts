@@ -111,8 +111,6 @@ export async function installMockApi(page: Page): Promise<void> {
         case_id: 'case-e2e',
         version: 1,
         status: 'uploaded',
-        source_path: 'var/geomodeling/uploads/case-e2e/ds-e2e/demo.csv',
-        standardized_path: null,
         profile: { original_filename: 'platform_demo_3d.csv', suffix: 'csv', size_bytes: 4096, source_sha256: SHA },
         created_at: T,
       }, 201)
@@ -123,8 +121,6 @@ export async function installMockApi(page: Page): Promise<void> {
         case_id: 'case-e2e',
         version: 1,
         status: 'uploaded',
-        source_path: 'var/x.csv',
-        standardized_path: null,
         profile: { original_filename: 'platform_demo_3d.csv', suffix: 'csv', size_bytes: 4096, source_sha256: SHA },
         created_at: T,
       })
@@ -154,8 +150,6 @@ export async function installMockApi(page: Page): Promise<void> {
         case_id: 'case-e2e',
         version: 1,
         status: 'mapped',
-        source_path: 'var/x.csv',
-        standardized_path: 'var/x.parquet',
         profile: { dimension: '3d', row_count: 144, valid_row_count: 144, invalid_row_count: 0 },
         created_at: T,
       })

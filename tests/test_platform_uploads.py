@@ -43,7 +43,16 @@ def make_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch | None = None) -
         return await call_next(request)
 
     app.state.platform_runtime = runtime
-    return TestClient(app)
+    client = TestClient(app)
+    client.platform_runtime = runtime  # type: ignore[attr-defined]
+    return client
+
+
+def read_standardized(client: TestClient, case_id: str, dataset_id: str) -> pd.DataFrame:
+    # Read the standardized parquet via runtime settings; the public API no
+    # longer returns internal paths.
+    runtime = client.platform_runtime  # type: ignore[attr-defined]
+    return pd.read_parquet(runtime.settings.standardized_dataset(case_id, dataset_id))
 
 
 def create_case(client: TestClient, name: str = "测试案例") -> str:
@@ -145,8 +154,7 @@ def test_csv_2d_full_sequence(tmp_path):
     assert profile["dimension"] == "2d"
     assert profile["mapping"]["x"] == "easting"
 
-    parquet_path = Path(result["profile"]["standardized_path"])
-    frame = pd.read_parquet(parquet_path)
+    frame = read_standardized(client, case_id, dataset_id)
     assert list(frame.columns) == ["source_row", "x", "y", "z", "value", "is_numeric_valid"]
     assert len(frame) == 12
     assert frame["z"].isna().all()
@@ -176,7 +184,7 @@ def test_csv_3d_full_sequence(tmp_path):
     result = resp.json()
     assert result["status"] == "mapped"
 
-    frame = pd.read_parquet(Path(result["profile"]["standardized_path"]))
+    frame = read_standardized(client, case_id, dataset_id)
     assert len(frame) == 24
     assert frame["z"].notna().all()
     assert frame["z"].min() == -40.0
@@ -207,7 +215,7 @@ def test_xlsx_single_sheet_full_sequence(tmp_path):
     }
     resp = client.post(f"/api/datasets/{dataset_id}/mapping", json=mapping)
     assert resp.status_code == 200, resp.text
-    frame = pd.read_parquet(Path(resp.json()["profile"]["standardized_path"]))
+    frame = read_standardized(client, case_id, dataset_id)
     assert len(frame) == 3
     assert frame["value"].tolist() == [10.0, 20.0, 30.0]
 
@@ -235,7 +243,7 @@ def test_invalid_rows_are_preserved_with_flags(tmp_path):
     assert profile["valid_row_count"] == 4
     assert profile["invalid_row_count"] == 4
 
-    frame = pd.read_parquet(Path(profile["standardized_path"]))
+    frame = read_standardized(client, case_id, dataset_id)
     # 无效行不被丢弃，逐行标记
     assert len(frame) == 8
     invalid_rows = frame.loc[~frame["is_numeric_valid"], "source_row"].tolist()

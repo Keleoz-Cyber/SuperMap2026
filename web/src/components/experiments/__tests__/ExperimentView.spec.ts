@@ -36,8 +36,6 @@ const DATASET: DatasetVersionRecord = {
   case_id: 'c1',
   version: 1,
   status: 'validated',
-  source_path: 'var/x.csv',
-  standardized_path: 'var/x.parquet',
   profile: { dimension: '3d', original_filename: 'borehole.csv' },
   created_at: T,
 }

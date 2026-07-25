@@ -315,12 +315,11 @@ export interface PlatformCaseRecord {
 }
 
 export interface DatasetVersionRecord {
+  // 白名单 DTO：内部路径（source/standardized/grid/package）一律不下发
   id: string
   case_id: string
   version: number
   status: DatasetStatus
-  source_path: string
-  standardized_path: string | null
   profile: Record<string, unknown>
   created_at: string
 }

@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, UploadFile
 
 from geomodeling.api.deps import get_platform_runtime
 from geomodeling.platform import PlatformRuntime, tables
+from geomodeling.platform.public_dto import public_case, public_dataset
 from geomodeling.platform.repositories import CaseRepository, DatasetRepository
 from geomodeling.platform.schemas import CaseCreateRequest, CaseRecord, DatasetVersionRecord
 from geomodeling.platform.uploads import (
@@ -32,9 +33,9 @@ def create_case(
 def get_case(
     case_id: str,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
-) -> CaseRecord:
+) -> dict[str, Any]:
     with runtime.session() as session:
-        return CaseRepository(session).get(case_id)
+        return public_case(CaseRepository(session).get(case_id))
 
 
 @router.get("/{case_id}/datasets")
@@ -45,7 +46,7 @@ def list_case_datasets(
     with runtime.session() as session:
         CaseRepository(session).get(case_id)
         records = DatasetRepository(session).list_for_case(case_id)
-    return {"datasets": [record.model_dump(mode="json") for record in records]}
+    return {"datasets": [public_dataset(record) for record in records]}
 
 
 @router.post("/{case_id}/datasets/uploads", status_code=201)
@@ -53,7 +54,7 @@ async def upload_dataset(
     case_id: str,
     file: UploadFile,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
-) -> DatasetVersionRecord:
+) -> dict[str, Any]:
     settings = runtime.settings
     receipt = store_upload_stream(settings, file.file, file.filename or "")
     try:
@@ -77,7 +78,7 @@ async def upload_dataset(
             )
             row.profile_json = tables.dumps_canonical(profile)
             session.commit()
-            return DatasetRepository(session).get(record.id)
+            return public_dataset(DatasetRepository(session).get(record.id))
     except BaseException:
         discard_upload(receipt)
         raise

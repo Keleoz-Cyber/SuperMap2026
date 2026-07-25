@@ -30,8 +30,6 @@ function makeDataset(status: DatasetVersionRecord['status']): DatasetVersionReco
     case_id: 'c1',
     version: 1,
     status,
-    source_path: 'var/geomodeling/uploads/c1/ds1/data.csv',
-    standardized_path: status === 'uploaded' ? null : 'var/geomodeling/datasets/c1/ds1.parquet',
     profile: {
       original_filename: 'borehole.csv',
       suffix: 'csv',
