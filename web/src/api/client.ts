@@ -14,6 +14,10 @@ import type {
   ExportRecord,
   FormalSelectionRecord,
   FormalSelectionsResponse,
+  MicroseismicDerivation,
+  MicroseismicImportResponse,
+  MicroseismicPointLayer,
+  MicroseismicPointLayerName,
   PlatformCaseRecord,
   PublicationRecord,
   PublishStatus,
@@ -243,4 +247,30 @@ export function createPublication(resultId: string): Promise<PublicationRecord> 
 
 export function fetchDatasetPoints(datasetId: string, decimate = 1): Promise<DatasetPoints> {
   return getJson<DatasetPoints>(`/datasets/${datasetId}/points?decimate=${decimate}`)
+}
+
+// ---------------------------------------------------------- v0.5 microseismic
+
+export function importMicroseismic(caseId: string, files: File[]): Promise<MicroseismicImportResponse> {
+  const form = new FormData()
+  for (const file of files) form.append('files', file, file.name)
+  // 不设置 Content-Type，由浏览器生成 multipart 边界
+  return requestJson<MicroseismicImportResponse>(`/cases/${caseId}/microseismic-imports`, {
+    method: 'POST',
+    body: form,
+  })
+}
+
+export function fetchMicroseismicDerivation(datasetId: string): Promise<MicroseismicDerivation> {
+  return getJson<MicroseismicDerivation>(`/datasets/${datasetId}/derivation`)
+}
+
+export function fetchMicroseismicDerivationPoints(
+  datasetId: string,
+  layer: MicroseismicPointLayerName,
+  decimate = 1,
+): Promise<MicroseismicPointLayer> {
+  return getJson<MicroseismicPointLayer>(
+    `/datasets/${datasetId}/derivation/points?layer=${layer}&decimate=${decimate}`,
+  )
 }
