@@ -9,7 +9,7 @@ test.describe('v0.4 通用建模流程（mock API）', () => {
 
     // 首页 → 新建案例
     await page.goto('/')
-    await expect(page.getByText('v0.4 建模平台')).toBeVisible()
+    await expect(page.getByText(/v\d+\.\d+\.\d+ 建模平台/)).toBeVisible()
     await page.getByTestId('create-case-card').click()
 
     // 创建案例 + 上传

@@ -28,7 +28,9 @@
   - 案例预设登记于 `config/presets/`（resistivity=builtin_legacy、microseismic=upload_required，预设不含绝对路径、不自动导入私有数据）。
   - 发布时测试基线（2026-07-25）：后端 `381 passed` + 前端 vitest `31 passed` + Playwright mock 冒烟 `1 passed`；`local_data 23 passed`（原始数据哈希不变）。
   - 真实浏览器验收（2026-07-24，本机 uvicorn 单进程）：上传 3D 夹具 → 质量校验通过（144/144）→ IDW 网格 4/4 候选成功（公共有效 144）→ 普通克里金 2/2 候选成功（球状 RMSE 0.749 / 指数 RMSE 0.783）→ 完整场点云（1,331 单元值域渐变可见）→ Z/X/Y 切片真实坐标标签 → 正式选择（理由落库）→ 导出 ZIP 七文件（SHA-256 清单 + 1,331 行 grid.csv）→ 发布登记 manual_required；iServer 离线时 legacy 页降级为「未验证但模型不受影响」，点云照常。截图：`docs/evidence/v0.4/v04-01..09*.png`。
-- **v0.4.1 演示加固（`feat/v0.4.1-demo-hardening` 分支，发布候选）**：页面导航死路消除（PageNavigation，加载失败页同样可返回首页）；唯一权威演示数据 `demo/platform_demo_3d.csv`（SHA-256 固定）+ 下载端点；`geomodeling demo-check` 启动前检查（阻断/警告分级）；`scripts/start_demo.ps1` 安全启动脚本；真实 FastAPI+SQLite Live E2E（CI `browser-live`）；答辩运行手册 `docs/v0.4.1-demo-runbook.md`。新鲜测试结果以本分支最新提交为准。
+- **v0.4.1 演示加固（`feat/v0.4.1-demo-hardening` 分支，发布候选）**：页面导航死路消除（PageNavigation，加载失败页同样可返回首页）；唯一权威演示数据 `demo/platform_demo_3d.csv`（SHA-256 固定）+ 下载端点；`geomodeling demo-check` 启动前检查（阻断/警告分级）；`scripts/start_demo.ps1` 安全启动脚本；真实 FastAPI+SQLite Live E2E（CI `browser-live`）；答辩运行手册 `docs/v0.4.1-demo-runbook.md`。
+  - 候选测试基线（2026-07-25，本分支）：后端 `420 passed`、前端 vitest `43 passed`、Mock E2E `2 passed`、Live E2E `1 passed`、`local_data 23 passed`（哈希不变）。
+  - 真实 Windows 彩排（2026-07-25，全新 `var/demo_v041`）：路线 A 全流程走通（IDW 与克里金各 1/1 成功，公共有效 144，导出 ZIP 七文件 1,331 行）；路线 B iServer 在线六级证据链全 `ok=True`（含 browser_report）；iServer 关闭后路线 B 如实降级、路线 A 不受影响；杀进程重启后案例/实验/成果全部恢复。截图与登记：`docs/evidence/v0.4.1/`。
 - 当前仓库仍无微震三维派生表代码化；瓦斯保持暂缓。
 
 ## 3. 外部派生与人工验证（尚未代码化）

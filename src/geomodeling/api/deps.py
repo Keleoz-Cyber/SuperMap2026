@@ -6,6 +6,7 @@ Everything here has a safe default for the local defense machine; secrets
 
 from __future__ import annotations
 
+import importlib.metadata
 import os
 from dataclasses import dataclass
 from functools import lru_cache
@@ -32,7 +33,21 @@ DEFAULT_EVIDENCE_DIR = "outputs/api_evidence"
 DEFAULT_FRONTEND_DIST = "web/dist"
 DEFAULT_VOXEL_CACHE_DIR = "../Project/cache/RHO_KRIG_FINAL_20M_40_VOL_S3M2"
 
-PROJECT_VERSION = "0.4.0"
+def _resolve_project_version() -> str:
+    """唯一版本源：已安装分发的元数据（pyproject.toml）。
+
+    源码诊断上下文（未安装包）下明确失败，而不是静默编造版本号。
+    """
+
+    try:
+        return importlib.metadata.version("geomodeling-platform")
+    except importlib.metadata.PackageNotFoundError as exc:
+        raise RuntimeError(
+            "geomodeling-platform 未安装，无法确定版本；请先 python -m pip install -e ."
+        ) from exc
+
+
+PROJECT_VERSION = _resolve_project_version()
 
 
 @dataclass(frozen=True)

@@ -13,6 +13,7 @@ import {
   Plus,
 } from '@element-plus/icons-vue'
 import { fetchCases, fetchRhoPublishStatus, PLATFORM_DEMO_3D_DOWNLOAD_URL } from '../api/client'
+import { WEB_VERSION } from '../version'
 import type { CaseSummary } from '../api/types'
 
 interface CaseMeta {
@@ -104,7 +105,7 @@ onMounted(async () => {
           <div class="brand-text">
             <h1>GeoModelingPlatform <span>地矿属性模拟与三维建模平台</span></h1>
           </div>
-          <el-tag type="primary" effect="dark" round>v0.4 建模平台</el-tag>
+          <el-tag type="primary" effect="dark" round>v{{ WEB_VERSION }} 建模平台</el-tag>
         </div>
         <p class="tagline">
           上传点数据即可完成二维/三维插值建模、空间验证与成果导出；内置电阻率案例保留 SuperMap iServer 发布证据链闭环。

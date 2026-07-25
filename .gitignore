@@ -63,3 +63,6 @@ web/public/Cesium/
 # Playwright 测试产物
 web/test-results/
 web/playwright-report/
+
+# v0.4.1 演示运行时目录
+var/demo_v041/
