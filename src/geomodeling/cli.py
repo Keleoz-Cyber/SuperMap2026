@@ -472,10 +472,6 @@ def run_all(
     _audit(app_config, dirs, "run-all", "succeeded", outputs=[dirs["reports"]])
 
 
-if __name__ == "__main__":
-    app()
-
-
 @app.command("demo-check")
 def demo_check(
     json_output: bool = typer.Option(False, "--json", help="输出固定 JSON 契约"),
@@ -511,3 +507,7 @@ def demo_check(
         typer.echo(f"status={report.status} exit_code={report.exit_code}")
     # 打印完完整报告后再按聚合结果退出；不启动任何服务
     raise typer.Exit(code=report.exit_code)
+
+
+if __name__ == "__main__":
+    app()
