@@ -163,7 +163,11 @@ async function mountWorkbench(metadata: ResultMetadata) {
   vi.mocked(client.fetchFormalSelections).mockResolvedValue({ case_id: 'c1', selections: [] })
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: '/results/:resultId', name: 'result-workbench', component: ResultWorkbenchView }],
+    routes: [
+      { path: '/', name: 'home', component: { template: '<div />' } },
+      { path: '/experiments/:experimentId', name: 'experiment-detail', component: { template: '<div />' } },
+      { path: '/results/:resultId', name: 'result-workbench', component: ResultWorkbenchView },
+    ],
   })
   await router.push('/results/r1')
   const wrapper = mount(ResultWorkbenchView, { global: { plugins: [router, ElementPlus] } })
@@ -229,5 +233,58 @@ describe('ResultWorkbenchView', () => {
     expect(client.createPublication).toHaveBeenCalledWith('r1')
     expect(wrapper.find('[data-test="publication-status"]').text()).toContain('manual_required')
     expect(wrapper.find('[data-test="publication-instruction"]').text()).toContain('手动发布')
+  })
+})
+
+describe('导航', () => {
+  it('成果页显示 nav-home 与 nav-experiment（精确实验 ID）', async () => {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/', name: 'home', component: { template: '<div />' } },
+        { path: '/experiments/:experimentId', name: 'experiment-detail', component: { template: '<div />' } },
+        { path: '/results/:resultId', name: 'result-workbench', component: ResultWorkbenchView },
+      ],
+    })
+    const metadata = makeMetadata('2d')
+    vi.mocked(client.fetchResult).mockResolvedValue(metadata)
+    vi.mocked(client.fetchExperiment).mockResolvedValue(EXP)
+    vi.mocked(client.fetchResultSlice).mockResolvedValue(SLICE_2D)
+    vi.mocked(client.fetchDatasetPoints).mockResolvedValue(POINTS)
+    vi.mocked(client.fetchFormalSelections).mockResolvedValue({ case_id: 'c1', selections: [] })
+    await router.push('/results/r1')
+    const wrapper = mount(ResultWorkbenchView, { global: { plugins: [router, ElementPlus] } })
+    await flushPromises()
+
+    await wrapper.get('[data-test="nav-experiment"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value).toMatchObject({
+      name: 'experiment-detail',
+      params: { experimentId: 'exp1' },
+    })
+
+    await router.push('/results/r1')
+    await flushPromises()
+    await wrapper.get('[data-test="nav-home"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.name).toBe('home')
+  })
+
+  it('成果加载失败时仍能返回首页', async () => {
+    vi.mocked(client.fetchResult).mockRejectedValue(new client.ApiError('CANDIDATE_NOT_FOUND', '不存在', 404))
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/', name: 'home', component: { template: '<div />' } },
+        { path: '/results/:resultId', name: 'result-workbench', component: ResultWorkbenchView },
+      ],
+    })
+    await router.push('/results/r-missing')
+    const wrapper = mount(ResultWorkbenchView, { global: { plugins: [router, ElementPlus] } })
+    await flushPromises()
+    expect(wrapper.text()).toContain('成果加载失败')
+    await wrapper.get('[data-test="nav-home"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.name).toBe('home')
   })
 })
