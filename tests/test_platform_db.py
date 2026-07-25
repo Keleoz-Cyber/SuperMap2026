@@ -76,7 +76,7 @@ def test_database_creates_schema_and_is_reopenable(tmp_path):
     runtime = PlatformRuntime(tmp_path / "runtime")
     runtime.initialize()
     assert runtime.db_path.is_file()
-    assert runtime.schema_version() == 3
+    assert runtime.schema_version() == platform_db.SCHEMA_VERSION
     runtime.close()
     PlatformRuntime(tmp_path / "runtime").initialize()
 
@@ -91,7 +91,7 @@ def test_startup_marks_inflight_runs_interrupted(tmp_path):
 def test_interrupted_run_records_error_code_and_terminal_runs_survive(tmp_path):
     runtime = initialized_runtime(tmp_path)
     for status in sorted(RUN_INFLIGHT_STATUSES):
-        insert_run(runtime, status=status)
+        insert_run(runtime, status=status, experiment_id=f"exp-{status}")
     for status in sorted(RUN_TERMINAL_STATUSES):
         insert_run(runtime, status=status)
 
@@ -165,7 +165,7 @@ def test_structured_fields_roundtrip_as_canonical_json(tmp_path):
 def test_recover_interrupted_runs_returns_count_and_is_idempotent(tmp_path):
     runtime = initialized_runtime(tmp_path)
     insert_run(runtime, status="queued")
-    insert_run(runtime, status="running")
+    insert_run(runtime, status="running", experiment_id="exp-2")
     insert_run(runtime, status="succeeded")
 
     assert runtime.recover_interrupted_runs() == 2
@@ -178,7 +178,7 @@ def test_repeated_initialize_on_same_instance_is_idempotent(tmp_path):
     runtime.initialize()
 
     assert runtime.db_path.is_file()
-    assert runtime.schema_version() == 3
+    assert runtime.schema_version() == platform_db.SCHEMA_VERSION
     with runtime.engine.connect() as conn:
         assert set(inspect(conn).get_table_names()) == EXPECTED_TABLES
 
@@ -217,7 +217,7 @@ def test_initialize_rejects_v1_database_as_needing_migration(tmp_path):
     with sqlite3.connect(runtime.db_path) as conn:
         conn.execute("PRAGMA user_version = 1")
 
-    with pytest.raises(RuntimeError, match="needs migration"):
+    with pytest.raises(RuntimeError, match="no migration path"):
         PlatformRuntime(tmp_path / "runtime").initialize()
 
 

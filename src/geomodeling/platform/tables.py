@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
-from sqlalchemy import ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import ForeignKey, Index, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -109,6 +109,16 @@ class Experiment(Base):
 
 class Run(Base):
     __tablename__ = "runs"
+    # 数据库层保证每个 experiment 最多一个 queued/running run（部分唯一索引）；
+    # 应用层的计数预检只是友好错误，竞态由本约束兜底。
+    __table_args__ = (
+        Index(
+            "ux_runs_experiment_inflight",
+            "experiment_id",
+            unique=True,
+            sqlite_where=text("status IN ('queued', 'running')"),
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(128), primary_key=True)
     experiment_id: Mapped[str] = mapped_column(ForeignKey("experiments.id"))
@@ -156,6 +166,10 @@ class Export(Base):
 
     id: Mapped[str] = mapped_column(String(128), primary_key=True)
     case_id: Mapped[str] = mapped_column(ForeignKey("cases.id"))
+    # v4 新增：导出必须归属具体成果；v3 既有行为 NULL（不可被发布复用）
+    candidate_result_id: Mapped[str | None] = mapped_column(
+        String(128), ForeignKey("candidate_results.id"), nullable=True, default=None
+    )
     package_path: Mapped[str] = mapped_column(Text)
     manifest_json: Mapped[str] = mapped_column(Text, default="{}")
     created_at: Mapped[str] = mapped_column(Text, default=utc_now_iso)

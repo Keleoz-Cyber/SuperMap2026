@@ -390,7 +390,17 @@ class RunRepository:
             )
         row = Run(id=_new_id(), experiment_id=experiment_id, status=RunStatus.QUEUED.value)
         self._s.add(row)
-        self._s.commit()
+        try:
+            self._s.commit()
+        except IntegrityError as exc:
+            self._s.rollback()
+            # 在途部分唯一索引兜底：并发创建撞约束 → 409
+            raise PlatformError(
+                RUN_ALREADY_ACTIVE,
+                "该实验已有排队或运行中的任务",
+                {"experiment_id": experiment_id},
+                http_status=409,
+            ) from exc
         return _run_record(row)
 
     def _get_row(self, run_id: str) -> Run:
@@ -517,7 +527,16 @@ class RunRepository:
             retry_of_run_id=row.id,
         )
         self._s.add(new_row)
-        self._s.commit()
+        try:
+            self._s.commit()
+        except IntegrityError as exc:
+            self._s.rollback()
+            raise PlatformError(
+                RUN_ALREADY_ACTIVE,
+                "该实验已有排队或运行中的任务，不能重复重试",
+                {"run_id": run_id, "experiment_id": row.experiment_id},
+                http_status=409,
+            ) from exc
         return _run_record(new_row)
 
 

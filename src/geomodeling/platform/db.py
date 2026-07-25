@@ -27,9 +27,20 @@ from geomodeling.platform.tables import (
 
 # v2: dataset_versions 增加 status 列与 (case_id, version) 唯一约束，
 # runs 增加 retry_of_run_id 列。v1 开发库按 greenfield 删除重建，不做迁移。
-SCHEMA_VERSION = 3  # v3: candidate_results 增加 fingerprint/status/params/error/predictions 列
+SCHEMA_VERSION = 4  # v3: candidate_results 成果列；v4: 在途 run 部分唯一索引 + exports.candidate_result_id
 
 _BUSY_TIMEOUT_MS = 30000
+
+# 逐版本迁移步骤：键为起始版本。每步必须在事务内幂等执行；
+# 迁移完成后统一重打 user_version。比代码新的数据库仍然拒绝启动。
+_MIGRATIONS: dict[int, tuple[str, ...]] = {
+    3: (
+        "CREATE UNIQUE INDEX IF NOT EXISTS ux_runs_experiment_inflight "
+        "ON runs(experiment_id) WHERE status IN ('queued', 'running')",
+        "ALTER TABLE exports ADD COLUMN candidate_result_id "
+        "VARCHAR(128) REFERENCES candidate_results(id)",
+    ),
+}
 
 
 class PlatformRuntime:
@@ -85,9 +96,17 @@ class PlatformRuntime:
                     Base.metadata.create_all(new_engine)
                     conn.exec_driver_sql(f"PRAGMA user_version={SCHEMA_VERSION}")
                 elif existing < SCHEMA_VERSION:
-                    raise RuntimeError(
-                        f"database schema v{existing} needs migration to v{SCHEMA_VERSION}"
-                    )
+                    missing = [v for v in range(existing, SCHEMA_VERSION) if v not in _MIGRATIONS]
+                    if missing:
+                        raise RuntimeError(
+                            f"database schema v{existing} has no migration path to "
+                            f"v{SCHEMA_VERSION} (missing steps: {missing}); "
+                            "recreate the development database"
+                        )
+                    for step_version in sorted(v for v in _MIGRATIONS if v >= existing):
+                        for statement in _MIGRATIONS[step_version]:
+                            conn.exec_driver_sql(statement)
+                    conn.exec_driver_sql(f"PRAGMA user_version={SCHEMA_VERSION}")
                 elif existing > SCHEMA_VERSION:
                     raise RuntimeError(
                         f"database schema v{existing} is newer than code v{SCHEMA_VERSION}"
