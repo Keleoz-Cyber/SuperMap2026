@@ -122,7 +122,7 @@ def _evaluate_candidate(
                 {
                     "fold": fold.index,
                     "rmse": float(np.sqrt(((batch.values[mask] - truth[mask]) ** 2).mean())),
-                    "n_valid": int(mask.sum()),
+                    "valid_count": int(mask.sum()),
                 }
             )
     runtime_seconds = time.perf_counter() - started
@@ -146,10 +146,23 @@ def _evaluate_candidate(
             "r2": summary.r2,
             "bias": summary.bias,
             "coverage": summary.coverage,
-            "n_valid": summary.n_valid,
+            "common_valid_count": summary.common_valid_count,
+            "candidate_valid_count": summary.candidate_valid_count,
+            "candidate_nodata_count": summary.candidate_nodata_count,
+            "total_count": summary.total_count,
         }
     else:
-        metrics = {"rmse": None, "mae": None, "r2": None, "bias": None, "coverage": 0.0, "n_valid": 0}
+        metrics = {
+            "rmse": None,
+            "mae": None,
+            "r2": None,
+            "bias": None,
+            "coverage": 0.0,
+            "common_valid_count": 0,
+            "candidate_valid_count": 0,
+            "candidate_nodata_count": int(own_mask.size),
+            "total_count": int(own_mask.size),
+        }
     metrics["runtime_seconds"] = runtime_seconds
     metrics["fold_metrics"] = fold_metrics
     return {"predictions": predictions, "metrics": metrics}
@@ -287,17 +300,21 @@ def execute_run(runtime, run_id: str, cancel: Event) -> RunOutcome:
         session.commit()
 
     common_mask = None
-    public: dict[str, Any] = {"n_valid": 0}
-    n_valid = 0
+    public: dict[str, Any] = {"common_valid_count": 0}
+    common_valid = 0
     if contributing:
         common_mask = common_valid_mask({fp: (p["prediction"].to_numpy(), p["is_nodata"].to_numpy()) for _id, p, _m, fp in contributing})
-        n_total = int(common_mask.size)
-        n_valid = int(common_mask.sum())
-        public = {"n_valid": n_valid, "n_total": n_total, "coverage": n_valid / n_total}
+        total_count = int(common_mask.size)
+        common_valid = int(common_mask.sum())
+        public = {
+            "common_valid_count": common_valid,
+            "total_count": total_count,
+            "coverage": common_valid / total_count,
+        }
 
         with runtime.session() as session:
             for result_id, predictions, metrics, fingerprint in contributing:
-                if n_valid == 0:
+                if common_valid == 0:
                     session.query(tables.CandidateResult).filter(
                         tables.CandidateResult.id == result_id
                     ).update(
@@ -325,15 +342,17 @@ def execute_run(runtime, run_id: str, cancel: Event) -> RunOutcome:
                         "r2": public_summary.r2,
                         "bias": public_summary.bias,
                         "coverage": public_summary.coverage,
-                        "n_valid": public_summary.n_valid,
-                        "n_nodata": public_summary.n_nodata,
+                        "common_valid_count": public_summary.common_valid_count,
+                        "candidate_valid_count": public_summary.candidate_valid_count,
+                        "candidate_nodata_count": public_summary.candidate_nodata_count,
+                        "total_count": public_summary.total_count,
                     }
                 )
                 session.query(tables.CandidateResult).filter(
                     tables.CandidateResult.id == result_id
                 ).update({"metrics_json": tables.dumps_canonical(metrics)})
             session.commit()
-    succeeded = contributing if (contributing and n_valid > 0) else []
+    succeeded = contributing if (contributing and common_valid > 0) else []
 
     final_failed = failed
     final_completed = completed

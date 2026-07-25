@@ -40,7 +40,7 @@ function paramsPreview(parameters: Record<string, unknown>): string {
     <div class="board-head">
       <h3>候选排行榜</h3>
       <span class="public" data-test="public-metrics">
-        公共有效点 {{ publicMetrics.n_valid ?? '—' }}（公共掩膜复算，NoData 不换排名优势）
+        公共有效点 {{ publicMetrics.common_valid_count ?? '—' }}（公共掩膜复算，NoData 不换排名优势）
       </span>
     </div>
 

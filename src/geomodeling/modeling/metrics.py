@@ -46,9 +46,9 @@ def compute_metrics(
     truth = np.asarray(truth, dtype="float64")
     prediction = np.asarray(prediction, dtype="float64")
     mask = np.asarray(mask, dtype=bool)
-    n_total = int(mask.size)
-    n_valid = int(mask.sum())
-    if n_valid == 0:
+    total_count = int(mask.size)
+    common_valid_count = int(mask.sum())
+    if common_valid_count == 0:
         raise PlatformError(METRICS_EMPTY_COMMON_VALID, "公共有效集合为空，无法复算指标")
 
     errors = prediction[mask] - truth[mask]
@@ -63,16 +63,16 @@ def compute_metrics(
     else:
         r2 = 1.0 - ss_res / ss_tot
     if is_nodata is not None:
-        own_valid = int((~np.asarray(is_nodata, dtype=bool)).sum())
-        coverage = own_valid / n_total
-        n_nodata = n_total - own_valid
+        candidate_valid_count = int((~np.asarray(is_nodata, dtype=bool)).sum())
     else:
-        coverage = n_valid / n_total
-        n_nodata = n_total - n_valid
+        candidate_valid_count = common_valid_count
+    candidate_nodata_count = total_count - candidate_valid_count
+    coverage = candidate_valid_count / total_count
     return MetricSummary(
-        n_total=n_total,
-        n_valid=n_valid,
-        n_nodata=n_nodata,
+        common_valid_count=common_valid_count,
+        candidate_valid_count=candidate_valid_count,
+        candidate_nodata_count=candidate_nodata_count,
+        total_count=total_count,
         coverage=coverage,
         mae=mae,
         rmse=rmse,

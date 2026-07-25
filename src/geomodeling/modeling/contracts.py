@@ -39,11 +39,18 @@ class Fold:
 
 @dataclass(frozen=True)
 class MetricSummary:
-    """公共有效集合上的指标复算结果。"""
+    """公共有效集合上的指标复算结果。
 
-    n_total: int
-    n_valid: int
-    n_nodata: int
+    计数口径自洽分离：``common_valid_count`` 是公共掩膜有效点数（所有
+    候选指标的计算口径）；``candidate_valid_count``/``candidate_nodata_count``
+    是候选自身有效/NoData 点数（覆盖率口径），二者之和恒等于
+    ``total_count``；``coverage = candidate_valid_count / total_count``。
+    """
+
+    common_valid_count: int
+    candidate_valid_count: int
+    candidate_nodata_count: int
+    total_count: int
     coverage: float
     mae: float
     rmse: float

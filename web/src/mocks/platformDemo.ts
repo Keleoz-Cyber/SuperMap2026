@@ -35,7 +35,7 @@ export async function installMockApi(page: Page): Promise<void> {
 
   const candidatesBody = (done: boolean) => ({
     experiment_id: 'exp-e2e',
-    public_metrics: { n_valid: 96 },
+    public_metrics: { common_valid_count: 96 },
     latest_run: done ? runBody('succeeded', 2) : runBody('queued', 0),
     candidates: done
       ? [
@@ -44,7 +44,7 @@ export async function installMockApi(page: Page): Promise<void> {
             fingerprint: 'fp-1',
             status: 'succeeded',
             parameters: { power: 1.5, neighbor_count: 8 },
-            metrics: { n_total: 100, n_valid: 96, n_nodata: 4, coverage: 0.95, mae: 0.9, rmse: 1.2, r2: 0.94, bias: 0.05 },
+            metrics: { total_count: 100, common_valid_count: 96, candidate_valid_count: 96, candidate_nodata_count: 4, coverage: 0.95, mae: 0.9, rmse: 1.2, r2: 0.94, bias: 0.05 },
             error: null,
           },
           {
@@ -52,7 +52,7 @@ export async function installMockApi(page: Page): Promise<void> {
             fingerprint: 'fp-2',
             status: 'succeeded',
             parameters: { power: 2, neighbor_count: 8 },
-            metrics: { n_total: 100, n_valid: 96, n_nodata: 4, coverage: 0.95, mae: 1.6, rmse: 2.4, r2: 0.88, bias: -0.1 },
+            metrics: { total_count: 100, common_valid_count: 96, candidate_valid_count: 96, candidate_nodata_count: 4, coverage: 0.95, mae: 1.6, rmse: 2.4, r2: 0.88, bias: -0.1 },
             error: null,
           },
         ]

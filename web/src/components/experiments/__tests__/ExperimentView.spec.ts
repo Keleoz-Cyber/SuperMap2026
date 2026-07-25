@@ -86,14 +86,14 @@ function makeCandidate(
     parameters: { power: 2 },
     metrics:
       status === 'succeeded'
-        ? { n_total: 100, n_valid: 96, n_nodata: 4, coverage: 0.92, mae: 1, rmse: rmse ?? 1, r2: 0.9, bias: 0.1 }
+        ? { total_count: 100, common_valid_count: 96, candidate_valid_count: 96, candidate_nodata_count: 4, coverage: 0.92, mae: 1, rmse: rmse ?? 1, r2: 0.9, bias: 0.1 }
         : {},
     error,
   }
 }
 
 function makeCandidates(candidates: CandidateRecord[], latestRun: RunRecord | null): CandidatesResponse {
-  return { experiment_id: 'exp1', candidates, public_metrics: { n_valid: 96 }, latest_run: latestRun }
+  return { experiment_id: 'exp1', candidates, public_metrics: { common_valid_count: 96 }, latest_run: latestRun }
 }
 
 function makeTestRouter(): Router {

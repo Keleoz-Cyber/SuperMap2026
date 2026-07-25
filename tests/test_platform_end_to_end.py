@@ -92,8 +92,8 @@ def test_portable_vertical_flow_and_restart_recovery(tmp_path):
     # ------------------------------------------------------ 公共有效指标
     idw_board = client.get(f"/api/experiments/{idw_exp}/candidates").json()
     krg_board = client.get(f"/api/experiments/{krg_exp}/candidates").json()
-    assert idw_board["public_metrics"]["n_valid"] > 0
-    assert krg_board["public_metrics"]["n_valid"] > 0
+    assert idw_board["public_metrics"]["common_valid_count"] > 0
+    assert krg_board["public_metrics"]["common_valid_count"] > 0
     idw_ok = [c for c in idw_board["candidates"] if c["status"] == "succeeded"]
     krg_ok = [c for c in krg_board["candidates"] if c["status"] == "succeeded"]
     assert len(idw_ok) == 2 and len(krg_ok) == 2

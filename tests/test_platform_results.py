@@ -259,7 +259,7 @@ def test_export_zip_contains_full_lineage(tmp_path):
     assert metadata["validation"]["folds"] == 3
 
     metrics = json.loads(bundle.read("metrics.json"))
-    assert metrics["public_metrics"]["n_valid"] > 0
+    assert metrics["public_metrics"]["common_valid_count"] > 0
     assert metrics["candidate"]["rmse"] is not None
 
     selections = json.loads(bundle.read("formal_selections.json"))

@@ -187,7 +187,7 @@ def test_run_lifecycle_via_api(tmp_path):
     assert len(candidates) == 4
     assert all(c["status"] == "succeeded" for c in candidates)
     assert all("rmse" in c["metrics"] and "coverage" in c["metrics"] for c in candidates)
-    assert resp.json()["public_metrics"]["n_valid"] > 0
+    assert resp.json()["public_metrics"]["common_valid_count"] > 0
 
 
 def test_cancel_and_retry_via_api(tmp_path):

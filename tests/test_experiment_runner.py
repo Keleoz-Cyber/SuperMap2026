@@ -167,7 +167,8 @@ def test_manual_idw_run_succeeds_with_predictions_and_metrics(tmp_path):
     assert metrics["rmse"] >= 0
     assert metrics["mae"] >= 0
     assert metrics["coverage"] > 0.9
-    assert metrics["n_valid"] > 0
+    assert metrics["common_valid_count"] > 0
+    assert metrics["candidate_valid_count"] + metrics["candidate_nodata_count"] == metrics["total_count"]
     assert metrics["runtime_seconds"] >= 0
     assert Path(candidate["predictions_path"]).exists()
     predictions = pd.read_parquet(candidate["predictions_path"])
@@ -256,13 +257,14 @@ def test_common_valid_mask_and_coverage_honesty(tmp_path):
     limited = by_radius[40.0]["metrics"]
     assert by_radius[None]["status"] == "succeeded"
     assert by_radius[40.0]["status"] == "succeeded"
-    # 公共掩膜上两者使用同一 n_valid；覆盖率独立呈现，小半径候选覆盖率更低
-    assert unlimited["n_valid"] == limited["n_valid"] == public["n_valid"]
-    assert 0 < limited["n_valid"] < 36
+    # 公共掩膜上两者使用同一 common_valid_count；覆盖率独立呈现，小半径候选覆盖率更低
+    assert unlimited["common_valid_count"] == limited["common_valid_count"] == public["common_valid_count"]
+    assert 0 < limited["candidate_valid_count"] < 36
+    assert limited["candidate_valid_count"] + limited["candidate_nodata_count"] == limited["total_count"]
     assert limited["coverage"] < 1.0
     assert unlimited["coverage"] == 1.0
     # 公共指标挂在 run 上，字段齐全
-    for key in ("rmse", "mae", "r2", "bias", "n_valid", "coverage"):
+    for key in ("rmse", "mae", "r2", "bias", "common_valid_count", "coverage"):
         assert key in public
 
 

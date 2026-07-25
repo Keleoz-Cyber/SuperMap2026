@@ -446,9 +446,12 @@ export interface ExperimentRecord {
 }
 
 export interface CandidateMetrics {
-  n_total?: number
-  n_valid?: number
-  n_nodata?: number
+  // 公共口径：所有候选在同一公共掩膜上复算（排名依据）
+  common_valid_count?: number
+  // 候选自身口径：覆盖率展示，报 NoData 不换排名优势
+  candidate_valid_count?: number
+  candidate_nodata_count?: number
+  total_count?: number
   coverage?: number
   mae?: number
   rmse?: number

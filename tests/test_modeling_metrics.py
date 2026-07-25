@@ -13,7 +13,11 @@ def test_compute_metrics_known_values():
     prediction = np.array([11.0, 19.0, 33.0, 37.0])
     mask = np.array([True, True, True, True])
     summary = compute_metrics(truth, prediction, mask)
-    assert summary.n_valid == 4
+    assert summary.common_valid_count == 4
+    assert summary.candidate_valid_count == 4
+    assert summary.candidate_nodata_count == 0
+    assert summary.total_count == 4
+    assert summary.coverage == 1.0
     errors = prediction - truth
     assert summary.mae == pytest.approx(np.abs(errors).mean())
     assert summary.rmse == pytest.approx(np.sqrt((errors**2).mean()))
@@ -30,7 +34,12 @@ def test_compute_metrics_respects_mask_and_nodata():
     prediction = np.array([11.0, 19.0, 33.0, 37.0])
     mask = np.array([True, False, True, True])
     summary = compute_metrics(truth, prediction, mask)
-    assert summary.n_valid == 3
+    assert summary.common_valid_count == 3
+    assert summary.total_count == 4
+    # 未提供候选自身 is_nodata 时，候选口径退化为公共口径
+    assert summary.candidate_valid_count == 3
+    assert summary.candidate_nodata_count == 1
+    assert summary.coverage == pytest.approx(0.75)
     assert summary.mae == pytest.approx((1.0 + 3.0 + 3.0) / 3)
 
 
