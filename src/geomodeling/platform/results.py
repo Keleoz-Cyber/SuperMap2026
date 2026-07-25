@@ -64,6 +64,8 @@ def _grid_spec_from_data(
 
 
 def _load_candidate(runtime, result_id: str):
+    """Resolve result → run → experiment, verifying every ownership link."""
+
     with runtime.session() as session:
         candidate = session.get(tables.CandidateResult, result_id)
         if candidate is None:
@@ -71,7 +73,21 @@ def _load_candidate(runtime, result_id: str):
                 "CANDIDATE_NOT_FOUND", "成果不存在", {"result_id": result_id}, http_status=404
             )
         run = session.get(tables.Run, candidate.run_id)
+        if run is None:
+            raise PlatformError(
+                "RUN_NOT_FOUND",
+                "成果所属运行缺失，归属链不完整",
+                {"result_id": result_id, "run_id": candidate.run_id},
+                http_status=409,
+            )
         experiment = session.get(tables.Experiment, run.experiment_id)
+        if experiment is None:
+            raise PlatformError(
+                "EXPERIMENT_NOT_FOUND",
+                "成果所属实验缺失，归属链不完整",
+                {"result_id": result_id, "experiment_id": run.experiment_id},
+                http_status=409,
+            )
         return candidate, run, experiment
 
 
@@ -86,15 +102,28 @@ def materialize(runtime: PlatformRuntime, result_id: str) -> dict[str, Any]:
             {"result_id": result_id, "status": candidate.status},
             http_status=409,
         )
+
+    # 归属链最后一环：result → run → experiment → dataset 全部核验后才返回。
+    params = tables.loads_canonical(experiment.params_json)
+    dataset_version_id = params["dataset_version_id"]
+    with runtime.session() as session:
+        dataset = session.get(tables.DatasetVersion, dataset_version_id)
+    if dataset is None:
+        raise PlatformError(
+            "DATASET_NOT_FOUND",
+            "成果所属数据版本缺失，归属链不完整",
+            {"result_id": result_id, "dataset_version_id": dataset_version_id},
+            http_status=409,
+        )
+
     grid_path = runtime.settings.result_grid(result_id)
     metadata_path = grid_path.parent / "metadata.json"
     if grid_path.exists() and metadata_path.exists():
-        return json.loads(metadata_path.read_text(encoding="utf-8"))
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        # 旧版落盘的 metadata 可能缺该字段，读取时补齐而不改写工件。
+        metadata.setdefault("dataset_version_id", dataset_version_id)
+        return metadata
 
-    params = tables.loads_canonical(experiment.params_json)
-    dataset = None
-    with runtime.session() as session:
-        dataset = session.get(tables.DatasetVersion, params["dataset_version_id"])
     profile = tables.loads_canonical(dataset.profile_json)
     mapping = profile.get("mapping", {})
     dimension = "3d" if mapping.get("dimension") == "3d" else "2d"
@@ -130,6 +159,7 @@ def materialize(runtime: PlatformRuntime, result_id: str) -> dict[str, Any]:
         "result_id": result_id,
         "run_id": run.id,
         "experiment_id": experiment.id,
+        "dataset_version_id": dataset_version_id,
         "algorithm": params["algorithm"],
         "parameters": candidate_params,
         "dimension": dimension,

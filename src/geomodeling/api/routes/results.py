@@ -67,7 +67,21 @@ def select_formal(
         if candidate is None:
             raise PlatformError("CANDIDATE_NOT_FOUND", "成果不存在", {"result_id": result_id}, http_status=404)
         run = session.get(tables.Run, candidate.run_id)
+        if run is None:
+            raise PlatformError(
+                "RUN_NOT_FOUND",
+                "成果所属运行缺失，归属链不完整",
+                {"result_id": result_id, "run_id": candidate.run_id},
+                http_status=409,
+            )
         experiment = session.get(tables.Experiment, run.experiment_id)
+        if experiment is None:
+            raise PlatformError(
+                "EXPERIMENT_NOT_FOUND",
+                "成果所属实验缺失，归属链不完整",
+                {"result_id": result_id, "experiment_id": run.experiment_id},
+                http_status=409,
+            )
         selection = FormalSelectionRepository(session).select(
             experiment.case_id,
             FormalSelectionRequest(
