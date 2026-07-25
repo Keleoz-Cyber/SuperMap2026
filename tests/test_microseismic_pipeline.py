@@ -123,11 +123,16 @@ def test_cumulative_distance(fixture_setup):
     assert points["W2"].interval_source
 
 
-def test_no_fabricated_coordinates_or_z(fixture_setup):
+def test_confirmed_local_coordinates(fixture_setup):
     config, _, _ = fixture_setup
     result = build_audit(config)
-    assert all(point.x_local_m is None and point.y_local_m is None for point in result.points)
-    assert all(point.coordinate_status == "unconfirmed" for point in result.points)
+    coordinates = config.coordinate_lookup()
+    formal = [point for point in result.points if point.included_in_formal_set]
+    assert all(point.coordinate_status == "confirmed_local" for point in formal)
+    assert all((point.x_local_m, point.y_local_m) == coordinates[point.point_id] for point in formal)
+    excluded = [point for point in result.points if not point.included_in_formal_set]
+    assert all(point.x_local_m is None and point.y_local_m is None for point in excluded)
+    assert all(point.coordinate_status == "unconfirmed" for point in excluded)
     assert all(sample.derived_depth_m is None and sample.derived_z_m is None for sample in result.samples)
     assert all(sample.depth_derivation_status == "unconfirmed" for sample in result.samples)
 
@@ -238,4 +243,4 @@ def test_cli_validate_lists_checks(fixture_setup):
     completed = runner.invoke(app, ["microseismic", "validate", "--config", str(config_path), "-o", str(out_dir)])
     assert completed.exit_code == 0
     assert "PASS formal_dat_file_count" in completed.output
-    assert "PASS no_fabricated_coordinates_or_z" in completed.output
+    assert "PASS confirmed_local_coordinates" in completed.output

@@ -1,9 +1,11 @@
+from collections import Counter
 from pathlib import Path
 
 import pandas as pd
 import pytest
 
 from geomodeling.microseismic.config import load_microseismic_config
+from geomodeling.microseismic.derivation import derive_local_samples
 from geomodeling.microseismic.inventory import snapshot_sha256
 from geomodeling.microseismic.service import build_audit, export_all
 
@@ -106,10 +108,43 @@ def test_source_sha256_unchanged(audit_result):
     assert result.validation.sha256_protection["unchanged"] is True
 
 
-def test_no_fabricated_xy_or_z(audit_result):
+def test_confirmed_local_coordinates(audit_result):
     result, _, _ = audit_result
-    assert all(point.x_local_m is None and point.y_local_m is None for point in result.points)
+    coordinates = load_microseismic_config().coordinate_lookup()
+    formal = [point for point in result.points if point.included_in_formal_set]
+    assert len(formal) == 22
+    for point in formal:
+        assert point.coordinate_status == "confirmed_local"
+        assert (point.x_local_m, point.y_local_m) == coordinates[point.point_id]
+    assert coordinates["W16"] == (0.0, 0.0)
+    assert coordinates["W5"] == (0.0, 220.0)
+    assert coordinates["W24"] == (960.0, 0.0)
+    w28 = next(point for point in result.points if point.point_id == "W28")
+    assert w28.x_local_m is None and w28.y_local_m is None
+    assert w28.coordinate_status == "unconfirmed"
     assert all(sample.derived_depth_m is None and sample.derived_z_m is None for sample in result.samples)
+
+
+def test_derive_local_samples_real_data(audit_result):
+    result, _, _ = audit_result
+    config = load_microseismic_config()
+    finite, invalid = derive_local_samples(config, result)
+    assert len(finite) == 2005
+    assert len(invalid) == 1
+    assert dict(Counter(item.line_id for item in finite)) == {"L1": 822, "L2": 819, "L3": 364}
+    rejected = invalid[0]
+    assert rejected.sample_id == "W8:2"
+    assert rejected.source_file == "W8.dat"
+    assert rejected.source_line == 2
+    assert rejected.vx_raw_token == "1.#QNAN0"
+    assert rejected.is_valid is False
+    row = next(item for item in finite if item.sample_id == "W1:2")
+    assert (row.x_local_m, row.y_local_m) == (400.0, 220.0)
+    assert row.depth_m == pytest.approx(row.wl_half_km * 1000)
+    assert row.z_local_m == pytest.approx(-row.depth_m)
+    assert row.coord_type == "local_engineering_m"
+    assert row.rule_version == "microseismic_local_3d_v0.2b_confirmed_2026-07-20"
+    assert {item.point_id for item in finite}.isdisjoint({"W28"})
 
 
 def test_validation_passed(audit_result):

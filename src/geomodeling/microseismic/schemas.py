@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any
+from typing import Any, ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -64,6 +64,117 @@ class VelocitySample(MicroseismicModel):
     derived_z_m: float | None = None
     depth_derivation_status: str = "unconfirmed"
     notes: str | None = None
+
+
+class DerivationContractError(ValueError):
+    """A supposedly finite source sample is missing values required for derivation."""
+
+
+# Golden-compatible rule strings, kept byte-identical to the confirmed golden
+# derived table (microseismic_local_3d_v0.2b_confirmed_2026-07-20).
+DEPTH_RULE = "DEPTH_M=WL_HALF_KM*1000;down_positive"
+Z_RULE = "Z_LOCAL_M=-DEPTH_M;up_positive"
+COORD_TYPE_LOCAL = "local_engineering_m"
+
+
+class DerivedVelocitySample(MicroseismicModel):
+    """v0.5 local-XYZ row derived from one finite v0.2a VelocitySample.
+
+    Field set mirrors the golden derived table columns in snake case. The Vx
+    unit is a fixed contract constant (the golden table has no unit column),
+    so vx_unit is exposed as a class attribute, not a serialized field.
+    """
+
+    vx_unit: ClassVar[str] = "km/s"
+
+    sample_id: str
+    point_id: str
+    line_id: str
+    x_local_m: float
+    y_local_m: float
+    depth_m: float
+    z_local_m: float
+    vx_km_s: float
+    wl_half_km: float
+    source_file: str
+    source_line: int
+    vx_raw_token: str
+    is_valid: bool = True
+    coord_type: str = COORD_TYPE_LOCAL
+    depth_rule: str
+    z_rule: str
+    rule_version: str
+
+    @classmethod
+    def from_source(
+        cls,
+        sample: VelocitySample,
+        *,
+        x: float,
+        y: float,
+        depth: float,
+        z: float,
+        rule_version: str,
+    ) -> "DerivedVelocitySample":
+        missing = [
+            name
+            for name, value in (
+                ("wl_half_km_value", sample.wl_half_km_value),
+                ("vx_value", sample.vx_value),
+                ("vx_raw_token", sample.vx_raw_token),
+            )
+            if value is None
+        ]
+        if missing:
+            raise DerivationContractError(
+                f"sample {sample.sample_id} is numeric-valid but missing {', '.join(missing)}"
+            )
+        return cls(
+            sample_id=sample.sample_id,
+            point_id=sample.point_id,
+            line_id=sample.line_id,
+            x_local_m=x,
+            y_local_m=y,
+            depth_m=depth,
+            z_local_m=z,
+            vx_km_s=sample.vx_value,
+            wl_half_km=sample.wl_half_km_value,
+            source_file=sample.source_file_name,
+            source_line=sample.source_line_number,
+            vx_raw_token=sample.vx_raw_token,
+            depth_rule=DEPTH_RULE,
+            z_rule=Z_RULE,
+            rule_version=rule_version,
+        )
+
+
+class InvalidDerivedSample(MicroseismicModel):
+    """Non-finite source record routed out of derivation with its raw trace."""
+
+    sample_id: str
+    point_id: str
+    line_id: str
+    source_file: str
+    source_line: int
+    wl_half_km_raw_token: str | None
+    vx_raw_token: str | None
+    invalid_reason: str | None
+    is_valid: bool = False
+    rule_version: str = ""
+
+    @classmethod
+    def from_source(cls, sample: VelocitySample, *, rule_version: str = "") -> "InvalidDerivedSample":
+        return cls(
+            sample_id=sample.sample_id,
+            point_id=sample.point_id,
+            line_id=sample.line_id,
+            source_file=sample.source_file_name,
+            source_line=sample.source_line_number,
+            wl_half_km_raw_token=sample.wl_half_km_raw_token,
+            vx_raw_token=sample.vx_raw_token,
+            invalid_reason=sample.invalid_reason,
+            rule_version=rule_version,
+        )
 
 
 class SurveyPoint(MicroseismicModel):
