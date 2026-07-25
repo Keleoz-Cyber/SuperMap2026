@@ -4,7 +4,9 @@ Presets describe expected dimension, semantic fields, value unit, coordinate
 kind, recommended parameter grids and demo copy. They are pure data (JSON in
 ``config/presets/``), never contain absolute paths, and never auto-import
 private data — an ``upload_required`` preset still needs the user to upload
-the derived standardized file and pass the current quality gates.
+the derived standardized file and pass the current quality gates, while a
+``domain_adapter`` preset names one whitelisted adapter (no plugin loading)
+that runs its own contract and golden gates.
 """
 
 from __future__ import annotations
@@ -25,7 +27,10 @@ PRESET_DIR = Path("config/presets")
 _EMBEDDED_ABS_PATH_RE = re.compile(r"[A-Za-z]:[\\/]|\\\\")
 _POSIX_ABS_START_RE = re.compile(r"^/")
 
-_ALLOWED_SOURCES = frozenset({"builtin_legacy", "upload_required"})
+_ALLOWED_SOURCES = frozenset({"builtin_legacy", "upload_required", "domain_adapter"})
+# domain_adapter 预设必须声明已登记的领域适配器；此处仅白名单校验，
+# 不做通用插件加载。
+_ALLOWED_DOMAIN_ADAPTERS = frozenset({"microseismic_dat_v05"})
 _ALLOWED_DIMENSIONS = frozenset({"2d", "3d"})
 # geographic 未投影不可建模（质量门禁一致）；预设不声明它
 _ALLOWED_COORDINATE_KINDS = frozenset({"local_linear", "projected"})
@@ -68,9 +73,9 @@ def _scan_absolute_paths(value: Any, trail: str = "$") -> str | None:
     return None
 
 
-def _combination_count(search: dict[str, Any]) -> int:
+def _combination_count(parameters: dict[str, Any]) -> int:
     count = 1
-    for value in (search.get("parameters") or {}).values():
+    for value in parameters.values():
         count *= len(value) if isinstance(value, list) else 1
     return count
 
@@ -101,6 +106,10 @@ def load_preset(source: str | Path) -> dict[str, Any]:
         _fail("预设缺少必填键", {"preset": name, "missing": missing})
     if preset["source"] not in _ALLOWED_SOURCES:
         _fail("预设 source 非法", {"preset": name, "source": preset["source"]})
+    if preset["source"] == "domain_adapter":
+        adapter_id = preset.get("adapter_id")
+        if adapter_id not in _ALLOWED_DOMAIN_ADAPTERS:
+            _fail("预设 adapter_id 未登记", {"preset": name, "adapter_id": adapter_id})
     if preset["dimension"] not in _ALLOWED_DIMENSIONS:
         _fail("预设 dimension 非法", {"preset": name, "dimension": preset["dimension"]})
     if preset["coordinate_kind"] not in _ALLOWED_COORDINATE_KINDS:
@@ -116,12 +125,34 @@ def load_preset(source: str | Path) -> dict[str, Any]:
         _fail("预设不得包含本机绝对路径", {"preset": name, "field": leaked})
 
     search = preset["recommended_search"]
-    count = _combination_count(search)
+    count = _combination_count(search.get("parameters") or {})
     if not 1 <= count <= MAX_PRESET_COMBINATIONS:
         _fail(
             "推荐搜索组合数超出上限",
             {"preset": name, "combinations": count, "max": MAX_PRESET_COMBINATIONS},
         )
+
+    search_grids = preset.get("search_grids")
+    if search_grids is not None:
+        if not isinstance(search_grids, dict) or not search_grids:
+            _fail("预设 search_grids 必须为非空映射", {"preset": name})
+        for algorithm, parameters in search_grids.items():
+            if not isinstance(parameters, dict):
+                _fail(
+                    "预设 search_grids 参数必须为映射",
+                    {"preset": name, "algorithm": algorithm},
+                )
+            grid_count = _combination_count(parameters)
+            if not 1 <= grid_count <= MAX_PRESET_COMBINATIONS:
+                _fail(
+                    "推荐搜索组合数超出上限",
+                    {
+                        "preset": name,
+                        "algorithm": algorithm,
+                        "combinations": grid_count,
+                        "max": MAX_PRESET_COMBINATIONS,
+                    },
+                )
     return preset
 
 

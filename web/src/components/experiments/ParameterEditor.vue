@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { GridSpecPayload, ValidationSpecPayload } from '../../api/types'
-import { combinationCount, parseNumberList, searchSpaceState } from './searchSpace'
+import {
+  combinationCount,
+  parseNumberList,
+  searchSpaceState,
+  Z_SCALE_HINT,
+  type ExperimentPreset,
+} from './searchSpace'
 
 export interface ParameterSubmit {
   algorithm: 'idw' | 'ordinary_kriging'
@@ -14,6 +20,7 @@ export interface ParameterSubmit {
 const props = defineProps<{
   dimension: '2d' | '3d'
   submitting: boolean
+  preset?: ExperimentPreset | null
 }>()
 
 const emit = defineEmits<{
@@ -36,10 +43,19 @@ const krigingRange = ref(100)
 const krigingNeighbors = ref(24)
 
 // 网格搜索离散候选（逗号分隔输入）
-const gridPower = ref('2')
-const gridNeighbors = ref('8, 16')
-const gridKrigingNeighbors = ref('16, 24')
-const gridModels = ref<Array<'spherical' | 'exponential' | 'gaussian'>>(['spherical'])
+const gridPower = ref(props.preset ? props.preset.idwGrid.power.join(', ') : '2')
+const gridNeighbors = ref(props.preset ? props.preset.idwGrid.neighborCount.join(', ') : '8, 16')
+const gridKrigingNeighbors = ref(
+  props.preset ? props.preset.krigingGrid.neighborCount.join(', ') : '16, 24',
+)
+const gridModels = ref<Array<'spherical' | 'exponential' | 'gaussian'>>(
+  props.preset ? [...props.preset.krigingGrid.models] : ['spherical'],
+)
+
+// z_scale 距离缩放实验参数（仅领域预设数据集显示；通用数据集不出现该控件）
+const zScaleHint = Z_SCALE_HINT
+const zScale = ref(props.preset?.zScaleManualDefault ?? 1)
+const gridZScale = ref(props.preset ? props.preset.idwGrid.zScale.join(', ') : '')
 
 // 空间验证
 const folds = ref(5)
@@ -56,15 +72,18 @@ const boundsText = ref<Array<{ min: number | null; max: number | null }>>([
 ])
 
 const gridParameters = computed<Record<string, unknown>>(() => {
+  const zScalePart = props.preset ? { z_scale: parseNumberList(gridZScale.value) ?? [] } : {}
   if (algorithm.value === 'idw') {
     return {
       power: parseNumberList(gridPower.value) ?? [],
       neighbor_count: parseNumberList(gridNeighbors.value) ?? [],
+      ...zScalePart,
     }
   }
   return {
     variogram_model: gridModels.value,
     neighbor_count: parseNumberList(gridKrigingNeighbors.value) ?? [],
+    ...zScalePart,
   }
 })
 
@@ -78,6 +97,12 @@ const manualKrigingInvalid = computed(
     algorithm.value === 'ordinary_kriging' &&
     krigingMode.value === 'manual' &&
     !(krigingSill.value > 0 && krigingRange.value > 0 && krigingNugget.value >= 0 && krigingSill.value > krigingNugget.value),
+)
+
+const manualZScaleInvalid = computed(
+  () =>
+    Boolean(props.preset) &&
+    !(typeof zScale.value === 'number' && zScale.value > 0 && zScale.value <= 20),
 )
 
 const customGridInvalid = computed(() => {
@@ -94,18 +119,21 @@ const canSubmit = computed(
     !props.submitting &&
     countState.value !== 'blocked' &&
     !manualKrigingInvalid.value &&
+    !manualZScaleInvalid.value &&
     !customGridInvalid.value,
 )
 
 function buildParameters(): Record<string, unknown> {
   if (searchMode.value === 'grid') return gridParameters.value
+  const zScalePart = props.preset ? { z_scale: zScale.value } : {}
   if (algorithm.value === 'idw') {
-    return { power: idwPower.value, neighbor_count: idwNeighbors.value }
+    return { power: idwPower.value, neighbor_count: idwNeighbors.value, ...zScalePart }
   }
   const params: Record<string, unknown> = {
     variogram_model: krigingModel.value,
     variogram_mode: krigingMode.value,
     neighbor_count: krigingNeighbors.value,
+    ...zScalePart,
   }
   if (krigingMode.value === 'manual') {
     params.nugget = krigingNugget.value
@@ -197,6 +225,10 @@ const AXES = ['x', 'y', 'z'] as const
           <span>邻域点数</span>
           <input v-model.number="idwNeighbors" type="number" step="1" min="1" max="128" class="gmp-input" data-test="idw-neighbors" />
         </label>
+        <label v-if="preset" class="field">
+          <span>垂向距离缩放 z_scale</span>
+          <input v-model.number="zScale" type="number" step="0.1" min="0.1" max="20" class="gmp-input" data-test="z-scale-manual" />
+        </label>
       </div>
       <div v-else class="editor-grid">
         <label class="field">
@@ -232,9 +264,17 @@ const AXES = ['x', 'y', 'z'] as const
           <span>邻域点数</span>
           <input v-model.number="krigingNeighbors" type="number" step="1" min="4" max="128" class="gmp-input" data-test="kriging-neighbors" />
         </label>
+        <label v-if="preset" class="field">
+          <span>垂向距离缩放 z_scale</span>
+          <input v-model.number="zScale" type="number" step="0.1" min="0.1" max="20" class="gmp-input" data-test="z-scale-manual" />
+        </label>
       </div>
+      <p v-if="preset" class="editor-hint" data-test="z-scale-hint">{{ zScaleHint }}</p>
       <p v-if="manualKrigingInvalid" class="editor-error" data-test="kriging-manual-invalid">
         手动变异函数要求 sill &gt; nugget ≥ 0 且 range &gt; 0
+      </p>
+      <p v-if="manualZScaleInvalid" class="editor-error" data-test="z-scale-invalid">
+        z_scale 需满足 0 &lt; z_scale ≤ 20
       </p>
     </template>
 
@@ -247,6 +287,10 @@ const AXES = ['x', 'y', 'z'] as const
         <label class="field wide">
           <span>邻域点数候选</span>
           <input v-model="gridNeighbors" class="gmp-input" data-test="grid-neighbors" placeholder="如：8, 16, 32" />
+        </label>
+        <label v-if="preset" class="field wide">
+          <span>z_scale 候选</span>
+          <input v-model="gridZScale" class="gmp-input" data-test="grid-z-scale" placeholder="如：0.5, 1, 2" />
         </label>
       </div>
       <div v-else class="editor-grid">
@@ -261,8 +305,13 @@ const AXES = ['x', 'y', 'z'] as const
           <span>邻域点数候选</span>
           <input v-model="gridKrigingNeighbors" class="gmp-input" data-test="grid-kriging-neighbors" placeholder="如：16, 24, 32" />
         </label>
+        <label v-if="preset" class="field wide">
+          <span>z_scale 候选</span>
+          <input v-model="gridZScale" class="gmp-input" data-test="grid-z-scale" placeholder="如：0.5, 1, 2" />
+        </label>
         <p class="editor-hint">网格搜索固定使用自动变异函数拟合（每折独立，防泄漏）。</p>
       </div>
+      <p v-if="preset" class="editor-hint" data-test="z-scale-hint">{{ zScaleHint }}</p>
 
       <div class="count-line" :class="countState" data-test="count-preview">
         预计 {{ candidateCount }} 个候选组合

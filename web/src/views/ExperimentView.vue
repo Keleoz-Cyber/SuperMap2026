@@ -20,6 +20,7 @@ import type {
   RunRecord,
 } from '../api/types'
 import ParameterEditor, { type ParameterSubmit } from '../components/experiments/ParameterEditor.vue'
+import { resolveDatasetPreset } from '../components/experiments/searchSpace'
 import SearchSummary from '../components/experiments/SearchSummary.vue'
 import RunProgress from '../components/experiments/RunProgress.vue'
 import CandidateLeaderboard from '../components/experiments/CandidateLeaderboard.vue'
@@ -67,6 +68,9 @@ function describeError(e: unknown): string {
 const dimension = computed<'2d' | '3d'>(() =>
   dataset.value?.profile?.dimension === '3d' ? '3d' : '2d',
 )
+
+// 领域适配器数据集（微震第二案例）提供调参预设；通用数据集为 null，保持现有默认
+const preset = computed(() => resolveDatasetPreset(dataset.value?.profile ?? null))
 
 // ----------------------------------------------------------- create flow
 async function resolveDataset() {
@@ -231,7 +235,7 @@ onBeforeUnmount(stopPolling)
         <span>实验名称</span>
         <input v-model="name" class="gmp-input" data-test="exp-name" maxlength="256" />
       </label>
-      <ParameterEditor v-if="dataset" :dimension="dimension" :submitting="submitting" @submit="submit" />
+      <ParameterEditor v-if="dataset" :dimension="dimension" :submitting="submitting" :preset="preset" @submit="submit" />
       <div v-else v-loading="true" class="page-loading" />
     </template>
 

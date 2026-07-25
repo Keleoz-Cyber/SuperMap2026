@@ -1,25 +1,41 @@
 {
   "preset_id": "microseismic",
   "title": "微震速度（第二案例）",
-  "source": "upload_required",
+  "source": "domain_adapter",
+  "adapter_id": "microseismic_dat_v05",
   "dimension": "3d",
-  "semantic_fields": { "x": "x_local_m", "y": "y_local_m", "z": "z_local_m", "value": "vx_km_s" },
+  "semantic_fields": { "x": "X_LOCAL_M", "y": "Y_LOCAL_M", "z": "Z_LOCAL_M", "value": "VX_KM_S" },
   "value_unit": "km/s",
   "coordinate_kind": "local_linear",
-  "accepted_formats": ["csv", "xlsx"],
+  "accepted_formats": ["dat"],
   "recommended_search": {
     "algorithm": "idw",
     "search_mode": "grid",
-    "parameters": { "power": [1.5, 2.0, 2.5], "neighbor_count": [8, 16] }
+    "parameters": { "power": [1, 2, 3], "neighbor_count": [8, 16, 24, 32], "z_scale": [0.5, 1, 2] }
+  },
+  "search_grids": {
+    "idw": { "power": [1, 2, 3], "neighbor_count": [8, 16, 24, 32], "z_scale": [0.5, 1, 2] },
+    "ordinary_kriging": {
+      "variogram_model": ["spherical", "exponential", "gaussian"],
+      "neighbor_count": [12, 24, 36],
+      "z_scale": [0.5, 1, 2]
+    }
+  },
+  "default_grid": {
+    "bounds": [[-750, 960], [-995, 1310], [-4086.538, -37.5]],
+    "resolution": [50, 50, 50],
+    "estimated_cells": 134890,
+    "max_cells": 1000000
   },
   "validation_hint": { "method": "spatial_kfold", "folds": 5, "seed": 20260723, "holdout_fraction": 0.2 },
-  "demo_copy": "上传派生标准化 CSV（如 3σ 候选集合），经质量门禁后进入调参与成果工作台。",
+  "demo_copy": "由领域适配器导入正式 DAT 集合，经派生合同与黄金门禁聚合为建模节点后，进入调参与成果工作台。",
   "boundaries": [
     "WL/2 当前直接按深度使用（depth_m = WL_half_km × 1000；Z 向上为负时另生成 z_local_m 并保留符号说明）",
     "Vx 单位 km/s；如派生 m/s 需乘 1000 且保留原始字段",
-    "派生 XY 为局部重建坐标（W16 原点），非绝对测量坐标，不做跨案例空间叠加",
-    "原始 DAT 只读保留；浏览器流程只接受派生标准化 CSV/XLSX，不读取 DAT",
+    "派生坐标为局部工程坐标（W16 原点重建），非 EPSG 绝对测量坐标，不做跨案例空间叠加",
+    "原始 DAT 只读保留；浏览器流程由领域适配器导入正式 DAT 集合，派生合同或黄金门禁未通过即阻断导入",
     "W8 的 1.#QNAN0 不进入插值：不改 0、不填补、保留原 token 与溯源",
-    "论文的清洗/计数叙述仅作低置信背景，不作为坐标或计数权威"
+    "论文的清洗/计数叙述仅作低置信背景，不作为坐标或计数权威",
+    "z_scale 是距离计算实验参数（Z × z_scale），由空间验证比较，不代表已确认的地质各向异性"
   ]
 }
