@@ -121,3 +121,33 @@ def test_default_grid_2d():
     assert grid.axes[0][-1] >= points[:, 0].max()
     assert grid.axes[1][0] <= points[:, 1].min()
     assert grid.axes[1][-1] >= points[:, 1].max()
+
+
+def test_non_divisible_resolution_still_covers_bounds_and_reports_actual():
+    """不可整除分辨率：轴必须覆盖声明上下界，metadata 记录实际分辨率。"""
+
+    from geomodeling.modeling.grid import derive_grid
+    from geomodeling.platform.schemas import GridSpec
+
+    points = make_points_2d()
+    # 10 / 3 不可整除：旧实现节点止于 9（丢失上界 10）
+    spec = GridSpec(bounds=[(0.0, 10.0), (0.0, 8.0)], resolution=[3.0, 2.0])
+    grid = derive_grid(points, "2d", spec)
+
+    assert grid.axes[0][0] == 0.0
+    assert grid.axes[0][-1] == 10.0  # 上界必须被覆盖
+    assert grid.axes[1][-1] == 8.0
+    # 实际分辨率与轴一致：4 节点均匀覆盖 [0,10] → 10/3
+    assert grid.resolution[0] == pytest.approx(10.0 / 3)
+    assert grid.resolution[1] == pytest.approx(2.0)  # 可整除时保持声明值
+    steps = [grid.axes[0][i + 1] - grid.axes[0][i] for i in range(len(grid.axes[0]) - 1)]
+    assert all(s == pytest.approx(grid.resolution[0]) for s in steps)
+
+    # 2D 结果 metadata 契约一致（materialize 使用同一 derive_grid）
+    spec2 = GridSpec(bounds=[(-150.0, -60.0), (260.0, 580.0)], resolution=[7.0, 25.0])
+    grid2 = derive_grid(points, "2d", spec2)
+    for axis, (lo, hi), res in zip(grid2.axes, spec2.bounds, grid2.resolution):
+        assert axis[0] == lo
+        assert axis[-1] == hi
+        if len(axis) > 1:
+            assert (axis[-1] - axis[0]) / (len(axis) - 1) == pytest.approx(res)

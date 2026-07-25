@@ -28,8 +28,19 @@ def _dimension_of(dimension: str | Dimension) -> str:
 
 
 def _axis_nodes(lower: float, upper: float, step: float) -> np.ndarray:
-    count = int(round((upper - lower) / step)) + 1
-    return lower + step * np.arange(count, dtype="float64")
+    """规则轴节点：覆盖声明上下界，节点间距均匀。
+
+    不可整除时按“最近节点数 + 实际分辨率回算”规则：节点数取
+    ``round((hi-lo)/step)+1``，实际分辨率为 ``(hi-lo)/(count-1)``，
+    保证首节点为下界、末节点恰为上界；实际分辨率以返回值属性为准。
+    """
+
+    count = max(2, int(round((upper - lower) / step)) + 1)
+    return np.linspace(lower, upper, count, dtype="float64")
+
+
+def _axis_resolution(axis: np.ndarray) -> float:
+    return float((axis[-1] - axis[0]) / (len(axis) - 1)) if len(axis) > 1 else 0.0
 
 
 def _check_cells(shape: tuple[int, ...], max_cells: int) -> None:
@@ -55,7 +66,8 @@ def _from_spec(spec: GridSpec, dimension: str) -> GridDefinition:
         dimension=dimension,
         axes=axes,
         bounds=tuple((float(lo), float(hi)) for lo, hi in spec.bounds),
-        resolution=tuple(float(s) for s in spec.resolution),
+        # metadata 记录实际分辨率（不可整除时与声明值不同，与轴严格一致）
+        resolution=tuple(_axis_resolution(a) for a in axes),
     )
 
 
