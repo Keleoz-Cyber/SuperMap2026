@@ -66,3 +66,6 @@ web/playwright-report/
 
 # v0.4.1 演示运行时目录
 var/demo_v041/
+
+# v0.5 微震彩排运行时目录
+var/demo_v05/
