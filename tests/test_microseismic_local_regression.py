@@ -6,6 +6,7 @@ import pytest
 
 from geomodeling.microseismic.config import load_microseismic_config
 from geomodeling.microseismic.derivation import derive_local_samples
+from geomodeling.microseismic.filtering import filter_three_sigma
 from geomodeling.microseismic.inventory import snapshot_sha256
 from geomodeling.microseismic.service import build_audit, export_all
 
@@ -145,6 +146,29 @@ def test_derive_local_samples_real_data(audit_result):
     assert row.coord_type == "local_engineering_m"
     assert row.rule_version == "microseismic_local_3d_v0.2b_confirmed_2026-07-20"
     assert {item.point_id for item in finite}.isdisjoint({"W28"})
+
+
+def test_filter_three_sigma_real_data_anchors(audit_result):
+    result, _, _ = audit_result
+    config = load_microseismic_config()
+    finite, _ = derive_local_samples(config, result)
+    filtered = filter_three_sigma(
+        finite,
+        threshold=config.derivation.sigma_threshold,
+        ddof=config.derivation.sigma_ddof,
+    )
+    assert filtered.depth_mean == pytest.approx(676.620332169576)
+    assert filtered.depth_std == pytest.approx(1138.5704399315825)
+    assert filtered.vx_mean == pytest.approx(0.9019579860349127)
+    assert filtered.vx_std == pytest.approx(0.7493428022868682)
+    assert len(filtered.rejected) == 80
+    assert Counter(row.filter_reason for row in filtered.rejected) == {"深度": 72, "速度": 8}
+    assert len(filtered.accepted) == 1925
+    # Accepted and rejected each preserve the derived source order.
+    accepted_ids = {row.sample_id for row in filtered.accepted}
+    assert [row.sample_id for row in filtered.accepted] == [
+        row.sample_id for row in finite if row.sample_id in accepted_ids
+    ]
 
 
 def test_validation_passed(audit_result):

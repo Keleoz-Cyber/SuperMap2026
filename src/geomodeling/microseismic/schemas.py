@@ -148,6 +148,57 @@ class DerivedVelocitySample(MicroseismicModel):
         )
 
 
+class RejectedFilteredSample(DerivedVelocitySample):
+    """Derived row rejected by the one-pass global 3σ filter.
+
+    Keeps every derived source field and adds both z-scores plus the filter
+    outcome. The four outcome fields serialize to the uppercase golden
+    columns; the source record is never deleted, interpolated, or backfilled.
+    """
+
+    depth_zscore: float = Field(serialization_alias="DEPTH_ZSCORE")
+    vx_zscore: float = Field(serialization_alias="VX_ZSCORE")
+    filter_status: str = Field(serialization_alias="FILTER_STATUS")
+    filter_reason: str = Field(serialization_alias="FILTER_REASON")
+
+    @classmethod
+    def from_derived(
+        cls,
+        row: DerivedVelocitySample,
+        *,
+        depth_zscore: float,
+        vx_zscore: float,
+        filter_reason: str,
+        filter_status: str = "rejected",
+    ) -> "RejectedFilteredSample":
+        return cls(
+            **row.model_dump(),
+            depth_zscore=depth_zscore,
+            vx_zscore=vx_zscore,
+            filter_status=filter_status,
+            filter_reason=filter_reason,
+        )
+
+
+class ThreeSigmaResult(MicroseismicModel):
+    """Immutable outcome of one global 3σ pass over all finite derived rows.
+
+    Statistics are computed exactly once from the full input (sample standard
+    deviation, ddof=1); accepted and rejected each preserve source order.
+    """
+
+    model_config = ConfigDict(extra="forbid", use_enum_values=True, frozen=True)
+
+    threshold: float
+    ddof: int
+    depth_mean: float
+    depth_std: float
+    vx_mean: float
+    vx_std: float
+    accepted: list[DerivedVelocitySample]
+    rejected: list[RejectedFilteredSample]
+
+
 class InvalidDerivedSample(MicroseismicModel):
     """Non-finite source record routed out of derivation with its raw trace."""
 
