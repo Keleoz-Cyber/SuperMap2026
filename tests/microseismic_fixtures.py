@@ -45,7 +45,7 @@ def write_fixture_config(base: Path, data_dir: Path, **overrides) -> Path:
             "interval_workbook": "点间距.xlsx",
             "paper_reference": "fixture-paper.pdf",
             "line_map_image": "fixture-lines.jpg",
-            "source_unit": "WL/2(km) verbatim; Vx unit pending source confirmation",
+            "source_unit": "WL/2(km); Vx km/s",
         },
         "lines": [
             {
@@ -75,6 +75,37 @@ def write_fixture_config(base: Path, data_dir: Path, **overrides) -> Path:
                 "issue_code": "L3_W28_SOURCE_CONFLICT",
             }
         ],
+        "local_coordinates": [
+            {"point_id": "W1", "x_local_m": 0, "y_local_m": 220},
+            {"point_id": "W2", "x_local_m": 100, "y_local_m": 220},
+            {"point_id": "WA", "x_local_m": 0, "y_local_m": 0},
+        ],
+        "derivation": {
+            "rule_version": "microseismic_local_3d_v0.2b_confirmed_2026-07-20",
+            "adapter_version": "0.5.0",
+            "depth_multiplier": 1000.0,
+            "z_multiplier": -1.0,
+            "vx_unit": "km/s",
+            "sigma_threshold": 3.0,
+            "sigma_ddof": 1,
+            "aggregation_method": "arithmetic_mean_exact_xyz",
+            # Fixture-specific contract: the fixture's 6 finite rows yield no
+            # 3-sigma rejections and no exact-xyz conflicts. Never copy the
+            # real 2006/1925/80/1911 counts into this portable fixture.
+            "expected_rejected": 0,
+            "expected_accepted": 6,
+            "expected_conflict_groups": 0,
+            "expected_conflict_rows": 0,
+            "expected_modeling_nodes": 6,
+            # Provisional fixture-only golden pins (sha256 of the fixture's
+            # accepted sample-id list and of its empty rejected set). Task 4/5
+            # must re-pin these to the computed canonical-byte hashes once the
+            # canonical CSV serializer exists.
+            "golden": {
+                "accepted_sha256": "5ec0fdb46865423c165f570ed6314ce6935d519e57a2a3e93235e585b04b83dc",
+                "rejected_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            },
+        },
         "expected": expected,
         "cleaning_conflicts": {
             "outlier_count_claim": 80,

@@ -7,7 +7,7 @@ source:
   interval_workbook: "点间距.xlsx"
   paper_reference: "../超图杯资料/参考资料/李含淼/2026-李含淼-基于微震测量数据的地下岩石结构三维重建研究.pdf"
   line_map_image: "../超图杯资料/参考资料/李含淼/2026-李含淼-微震测量与测线数据/三条测线 (压缩).jpg"
-  source_unit: "km (WL/2 field verbatim); Vx unit pending source confirmation"
+  source_unit: "WL/2(km); Vx km/s"
 
 lines:
   - line_id: "L1"
@@ -76,6 +76,48 @@ excluded_points:
     interval_from: "W27"
     reason: "W28 appears only in paper figures and interval material; excluded from the formal L3 set, cumulative distance, cleaning set, and models"
     issue_code: "L3_W28_SOURCE_CONFLICT"
+
+local_coordinates:
+  - {point_id: W1, x_local_m: 400, y_local_m: 220}
+  - {point_id: W2, x_local_m: 250, y_local_m: 220}
+  - {point_id: W3, x_local_m: 150, y_local_m: 220}
+  - {point_id: W4, x_local_m: 50, y_local_m: 220}
+  - {point_id: W5, x_local_m: 0, y_local_m: 220}
+  - {point_id: W6, x_local_m: -50, y_local_m: 220}
+  - {point_id: W7, x_local_m: -200, y_local_m: 220}
+  - {point_id: W8, x_local_m: -450, y_local_m: 220}
+  - {point_id: W9, x_local_m: -750, y_local_m: 220}
+  - {point_id: W12, x_local_m: 0, y_local_m: -995}
+  - {point_id: W13, x_local_m: 0, y_local_m: -720}
+  - {point_id: W14, x_local_m: 0, y_local_m: -445}
+  - {point_id: W15, x_local_m: 0, y_local_m: -195}
+  - {point_id: W16, x_local_m: 0, y_local_m: 0}
+  - {point_id: W17, x_local_m: 0, y_local_m: 110}
+  - {point_id: W18, x_local_m: 0, y_local_m: 710}
+  - {point_id: W19, x_local_m: 0, y_local_m: 1010}
+  - {point_id: W20, x_local_m: 0, y_local_m: 1310}
+  - {point_id: W24, x_local_m: 960, y_local_m: 0}
+  - {point_id: W25, x_local_m: 160, y_local_m: 0}
+  - {point_id: W26, x_local_m: -160, y_local_m: 0}
+  - {point_id: W27, x_local_m: -495, y_local_m: 0}
+
+derivation:
+  rule_version: "microseismic_local_3d_v0.2b_confirmed_2026-07-20"
+  adapter_version: "0.5.0"
+  depth_multiplier: 1000.0
+  z_multiplier: -1.0
+  vx_unit: "km/s"
+  sigma_threshold: 3.0
+  sigma_ddof: 1
+  aggregation_method: "arithmetic_mean_exact_xyz"
+  expected_rejected: 80
+  expected_accepted: 1925
+  expected_conflict_groups: 13
+  expected_conflict_rows: 27
+  expected_modeling_nodes: 1911
+  golden:
+    accepted_sha256: "4f7a0886b54bb1776e9d7ca98299f8f86e67897ba19236fb151c3fc9e2ae1513"
+    rejected_sha256: "3752b2f62de4e56121b7af66c205ccf3984270d332636335e559e7e2745872b1"
 
 expected:
   dat_file_count: 22
