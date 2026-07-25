@@ -19,10 +19,9 @@ EXPECTED_ISSUE_CODES = {
     "LINE_COUNT_CONFLICT",
     "L3_W28_SOURCE_CONFLICT",
     "L3_W28_INTERVAL_EXCLUDED",
-    "WL_HALF_MEANING_UNCONFIRMED",
-    "DEPTH_Z_DERIVATION_UNCONFIRMED",
+    "LOCAL_GEOMETRY_CONFIRMED",
+    "DEPTH_Z_VX_RULE_CONFIRMED",
     "ABSOLUTE_COORDINATES_UNAVAILABLE",
-    "LINE_AZIMUTH_UNCONFIRMED",
     "CLEANING_RATE_CONFLICT",
     "CLEANING_METHOD_CONFLICT",
 }
@@ -195,10 +194,18 @@ def test_audit_summary_separates_blockers_and_gates(fixture_setup):
     summary = (out_dir / "microseismic_audit_summary.md").read_text(encoding="utf-8")
     assert "## Downstream gates" in summary
     assert "## Validation blockers" in summary
-    assert "geometry_blocked: True" in summary
-    assert "cleaning_blocked: True" in summary
-    assert "interpolation_blocked: True" in summary
-    assert "ABSOLUTE_COORDINATES_UNAVAILABLE" in summary
+    # v0.5: local geometry, depth/Z, Vx and the 3-sigma cleaning rule are
+    # confirmed, so a passing audit no longer blocks the downstream gates.
+    assert "geometry_blocked: False" in summary
+    assert "cleaning_blocked: False" in summary
+    assert "interpolation_blocked: False" in summary
+    issues = json.loads((out_dir / "microseismic_issue_list.json").read_text(encoding="utf-8"))
+    absolute = next(issue for issue in issues if issue["code"] == "ABSOLUTE_COORDINATES_UNAVAILABLE")
+    # Absolute CRS is still unavailable but blocks only cross-case fusion,
+    # never the independent local modeling gates.
+    assert absolute["blocks_geometry"] is False
+    assert absolute["blocks_cleaning"] is False
+    assert absolute["blocks_interpolation"] is False
 
 
 def test_sha256_protection_check(fixture_setup):
