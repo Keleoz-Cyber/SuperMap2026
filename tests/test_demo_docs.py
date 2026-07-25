@@ -57,3 +57,54 @@ def test_runbook_has_no_drive_letter_paths_or_credential_literals():
     assert not re.search(r"[A-Za-z]:\\\\", text), "运行手册不得含盘符路径"
     assert "ADMIN_PASSWORD" not in text
     assert "BEGIN" not in text or "PRIVATE KEY" not in text
+
+
+# ---------------------------------------------------------- Task 9: stale-state guards
+STATUS_DOC = Path("docs/status/current-status.md")
+BLUEPRINT = Path("docs/product-blueprint.md")
+
+
+def test_status_has_no_stale_current_claims():
+    text = STATUS_DOC.read_text(encoding="utf-8")
+    assert "feat/v0.4-generic-platform` 分支，开发中" not in text
+    assert "feat/v0.4-generic-platform` 分支，v0.4.0 候选" not in text
+    assert "0.4.0-dev" not in text
+    for stale in ("仍无通用上传", "插值执行、调参任务", "通用上传、插值执行、调参任务、微震三维接入"):
+        assert stale not in text, f"状态文档仍把 v0.4 能力描述为未实现：{stale}"
+
+
+def test_status_records_v040_release_facts():
+    text = STATUS_DOC.read_text(encoding="utf-8")
+    assert "b95f12b" in text
+    assert "已发布" in text
+
+
+def test_blueprint_separates_current_from_future():
+    text = BLUEPRINT.read_text(encoding="utf-8")
+    assert "已实现" in text
+    assert "未来" in text
+
+
+_MD_LINK_RE = re.compile(r"(?<!\!)\[([^\]]+)\]\(([^)]+)\)")
+_SKIP_PREFIXES = ("http://", "https://", "mailto:", "#")
+
+
+def _markdown_files() -> list[Path]:
+    roots = [Path("README.md"), Path("docs/v0.4.1-demo-runbook.md"), STATUS_DOC, BLUEPRINT,
+             Path("docs/v0.4-generic-modeling-loop.md"), Path("docs/acceptance.md")]
+    return [p for p in roots if p.exists()]
+
+
+def test_internal_markdown_links_resolve():
+    failures: list[str] = []
+    for md in _markdown_files():
+        for _label, target in _MD_LINK_RE.findall(md.read_text(encoding="utf-8")):
+            target = target.split("#")[0].strip()
+            if not target or target.startswith(_SKIP_PREFIXES):
+                continue
+            if target.startswith("/"):
+                continue  # 运行时 API 链接，不是文件链接
+            resolved = (md.parent / target).resolve()
+            if not resolved.exists():
+                failures.append(f"{md}: 无法解析的链接 {target}")
+    assert not failures, "\n".join(failures)

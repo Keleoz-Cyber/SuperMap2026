@@ -154,7 +154,7 @@ D:\supermap\supermap-iserver-2026-windows-x64-deploy\supermap-iserver-2026-windo
 
 ## 10. 分阶段交付
 
-> **实现状态（2026-07-23）**：P0–P2 已由 v0.3.1 / v0.4 实现（v0.4 通用上传、IDW/普通克里金调参、空间验证、排行榜、切片成果与导出均已落地并有回归）；P3 的浏览器页面已实现，微震派生表代码化仍在 M5 边界内（当前以 `upload_required` 预设接入）；P4 未开始。以 [status/current-status.md](status/current-status.md) 为准。
+> **实现状态（2026-07-25）**：P0–P2 已实现并由 **v0.4.0 发布**（merge `b95f12b`，tag `v0.4.0`）；P3 的浏览器页面已实现，**v0.4.1 演示加固**（导航死路、演示数据、`demo-check`、启动脚本、Live E2E、运行手册）作为发布候选进行收尾；微震派生表代码化仍在 M5 边界内；P4 未开始。页面布局、主题与三维渲染的**未来视觉版**另行立项，不属于 v0.4.x 范围。以 [status/current-status.md](status/current-status.md) 为准。
 
 ### P0：运行时探测与SDK验证
 
