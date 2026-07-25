@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { createLogger, defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
@@ -26,6 +27,11 @@ export default defineConfig({
   base: './',
   customLogger: logger,
   plugins: [vue()],
+  test: {
+    environment: 'jsdom',
+    // e2e 为 Playwright 规格，不属于 vitest
+    exclude: ['e2e/**', 'node_modules/**', 'dist/**'],
+  },
   server: {
     proxy: {
       '/api': 'http://127.0.0.1:8000',

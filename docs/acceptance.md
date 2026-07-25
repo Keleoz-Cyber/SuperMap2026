@@ -1,6 +1,6 @@
 # Acceptance Notes
 
-适用对象：当前代码基线（v0.1.0 电阻率基线 + 已合并的微震 v0.2a 审计底座 + v0.3 iServer 纵向闭环）。
+适用对象：当前代码基线（v0.1.0 电阻率基线 + 微震 v0.2a 审计底座 + v0.3.1 iServer 纵向闭环 + v0.4 通用建模平台）。
 
 ## 验收命令
 
@@ -9,12 +9,23 @@ python -m pip install -e ".[api,test]"
 python -m pytest -q
 python -m pytest -q -m "not local_data"
 python -m pytest -q -m local_data
+npm --prefix web ci
+npm --prefix web run test:unit
+npm --prefix web run type-check
+npm --prefix web run build
+npm --prefix web run test:e2e
 geomodeling run-all -o outputs/release_verify
 geomodeling microseismic run-audit --config config/microseismic.yaml -o outputs/microseismic_verify
 geomodeling verify-supermap -o outputs/release_verify
 ```
 
-当前基线：全量 `157 passed`（80 项 v0.1/v0.2a 基线 + 77 项 v0.3 新增）；便携 134 passed / 23 deselected；本地真实数据 23 passed / 134 deselected。测试数量只允许因真实新增测试而增加，任何减少或失败都必须调查。
+当前基线：后端全量 `364 passed`（便携 341 / local_data 23 分层），前端 vitest `31 passed`，Playwright mock 冒烟 `1 passed`。测试数量只允许因真实新增测试而增加，任何减少或失败都必须调查。
+
+v0.4 通用建模验收（不依赖 iServer）：
+
+1. 便携端到端：`tests/test_platform_end_to_end.py` 一次跑通 创建案例 → 上传 3D 夹具 → 映射 → 质量门禁 → IDW + 普通克里金有限搜索 → 公共有效指标 → 正式选择 → Z/X/Y 切片 → ZIP 导出 → 运行时重启后全部资源仍可解析。
+2. 浏览器冒烟：`npm --prefix web run test:e2e` 用 mock API 在真实 Chromium 中走通同一流程（含切片坐标标签、理由必填、导出/发布状态分离）。
+3. 真实浏览器验收：启动单进程 uvicorn 后按 [v0.4 运行说明](v0.4-generic-modeling-loop.md) §1 操作，截图证据存 `docs/evidence/v0.4/`。
 
 v0.3 浏览器闭环验收（需本机 iServer 已启动且 `WorkSpace.smwu` 已发布，见 [v0.3 运行说明](v0.3-iserver-loop.md)）：
 

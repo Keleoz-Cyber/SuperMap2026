@@ -1,0 +1,38 @@
+{
+  "preset_id": "resistivity",
+  "title": "地下电阻率（内置 v0.3.1 稳定案例）",
+  "source": "builtin_legacy",
+  "dimension": "3d",
+  "semantic_fields": { "x": "X", "y": "Y", "z": "Z", "value": "RHO" },
+  "value_unit": "RHO 单位待来源确认",
+  "coordinate_kind": "local_linear",
+  "facts": {
+    "standardized_rows": 17549,
+    "training_rows": 15827,
+    "validation_rows": 1722,
+    "common_valid": 1481,
+    "common_nodata": 241,
+    "formal_result": "RHO_KRIG_FINAL_20M_40",
+    "s3m_cache": "RHO_KRIG_FINAL_20M_40_VOL_S3M2"
+  },
+  "evidence_levels": [
+    "model_succeeded",
+    "artifact_exported",
+    "iserver_published",
+    "service_metadata_verified",
+    "browser_loaded",
+    "manual_visual_checked"
+  ],
+  "recommended_search": {
+    "algorithm": "ordinary_kriging",
+    "search_mode": "grid",
+    "parameters": { "variogram_model": ["spherical"], "neighbor_count": [16, 24] }
+  },
+  "demo_copy": "内置只读案例：展示 iServer → FastAPI → 浏览器三维闭环与六级证据链，不经上传向导。",
+  "boundaries": [
+    "局部工程坐标，EPSG 未确认",
+    "RHO 单位待来源确认",
+    "S3M 缓存为 SuperMap 体渲染采样（非逐格导出），单元精确元数据以数据服务 VOLUME 数据集为准",
+    "内置案例不可变：不在 SQLite 中建行，不经通用建模流程改写"
+  ]
+}

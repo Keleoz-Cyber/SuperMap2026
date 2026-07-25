@@ -24,3 +24,43 @@ jobs:
 
       - name: Run portable tests
         run: python -m pytest -q -m "not local_data"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install frontend dependencies
+        run: npm --prefix web ci
+
+      - name: Frontend unit tests
+        run: npm --prefix web run test:unit
+
+      - name: Frontend type-check
+        run: npm --prefix web run type-check
+
+      - name: Frontend build
+        run: npm --prefix web run build
+
+  browser-smoke:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install frontend dependencies
+        run: npm --prefix web ci
+
+      - name: Frontend build
+        run: npm --prefix web run build
+
+      - name: Install Chromium for Playwright
+        run: npx --prefix web playwright install chromium
+
+      - name: Browser smoke (mock API, no iServer)
+        run: npm --prefix web run test:e2e

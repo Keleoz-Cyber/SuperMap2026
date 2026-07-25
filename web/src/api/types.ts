@@ -9,11 +9,16 @@ export interface HealthResponse {
 export interface CaseSummary {
   case_id: string
   title: string
-  data_form: string
+  // legacy 卡片专有字段；上传案例卡片不携带
+  data_form?: string
   status: string
-  coordinate: string
-  unit_note: string
-  v03_stage: string
+  coordinate?: string
+  unit_note?: string
+  v03_stage?: string
+  // v0.4：builtin_legacy（内置电阻率等）或 upload（持久化上传案例）
+  source_kind?: 'builtin_legacy' | 'upload'
+  case_type?: string
+  created_at?: string
   links: {
     detail: string | null
     publish_status: string | null
@@ -232,7 +237,7 @@ export interface VoxelCells {
   case_id: string
   result_id: string
   source: string
-  local_cache_dir: string
+  local_cache_label: string
   local_cache_present: boolean
   local_cache_note: string
   service_url: string
@@ -259,7 +264,7 @@ export interface VoxelCells {
 export interface RhoPoints {
   case_id: string
   source: string
-  source_path: string
+  source_label: string
   sha256: string
   decimate: number
   count: number
@@ -286,4 +291,289 @@ export interface BrowserLoadReport {
   render_kind: 'iserver_scene' | 's3m_voxel_cache' | 'fallback_points'
   validated_count: number
   note: string
+}
+
+// ---------------- v0.4 通用建模平台契约（与后端 schemas 一一对应） ----------------
+
+export interface ApiErrorBody {
+  error: {
+    code: string
+    message: string
+    details: Record<string, unknown>
+  }
+}
+
+export type DatasetStatus = 'uploaded' | 'mapped' | 'validated' | 'blocked'
+
+export interface PlatformCaseRecord {
+  id: string
+  name: string
+  case_type: string
+  config: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export interface DatasetVersionRecord {
+  // 白名单 DTO：内部路径（source/standardized/grid/package）一律不下发
+  id: string
+  case_id: string
+  version: number
+  status: DatasetStatus
+  profile: Record<string, unknown>
+  created_at: string
+}
+
+export interface InspectionColumn {
+  name: string
+  inferred_type: string
+}
+
+export interface InspectionResult {
+  dataset_id: string
+  case_id: string
+  suffix: string
+  sheet: string | null
+  sheets?: string[]
+  columns: InspectionColumn[]
+  preview_rows: Record<string, unknown>[]
+  row_count: number
+  candidate_mapping: Partial<Record<'x' | 'y' | 'z' | 'value' | 'value_name', string>>
+  limits: { max_upload_bytes: number; max_upload_rows: number }
+  profile: Record<string, unknown>
+}
+
+export interface FieldMappingPayload {
+  dimension: '2d' | '3d'
+  x: string
+  y: string
+  z?: string | null
+  value: string
+  value_name: string
+  value_unit?: string | null
+  coordinate_kind: 'local_linear' | 'projected' | 'geographic'
+}
+
+export interface QualityIssue {
+  code: string
+  kind: 'blocker' | 'warning'
+  message: string
+  details: Record<string, unknown>
+}
+
+export interface QualityCheck {
+  code: string
+  kind: string
+  passed: boolean
+}
+
+export interface QualityReport {
+  status: 'passed' | 'warnings' | 'blocked'
+  checks: QualityCheck[]
+  issues: QualityIssue[]
+  statistics: {
+    ranges: Record<string, [number, number] | null>
+    unique_coordinate_count: number
+    duplicate_count: number
+    conflict_count: number
+  }
+  valid_row_count: number
+  invalid_row_count: number
+  row_count: number
+  source_sha256: string
+  standardized_sha256: string
+  confirmed: boolean
+  confirmed_issue_codes: string[]
+}
+
+// ---------------- v0.4 实验 / 运行 / 候选契约 ----------------
+
+export type RunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'canceled' | 'interrupted'
+
+export interface RunMetrics {
+  current_candidate?: number | null
+  completed?: number
+  total?: number
+  failed?: number
+  cancel_requested?: boolean
+  public_metrics?: Record<string, number>
+}
+
+export interface RunRecord {
+  id: string
+  experiment_id: string
+  status: RunStatus
+  error_code: string | null
+  metrics: RunMetrics
+  retry_of_run_id: string | null
+  created_at: string
+  updated_at: string
+  started_at: string | null
+  finished_at: string | null
+}
+
+export interface ValidationSpecPayload {
+  method: 'spatial_kfold' | 'spatial_holdout'
+  folds: number
+  seed: number
+  holdout_fraction: number
+}
+
+export interface GridSpecPayload {
+  bounds: Array<[number, number]>
+  resolution: number[]
+  max_cells?: number
+}
+
+export interface ExperimentCreatePayload {
+  case_id: string
+  name: string
+  algorithm: 'idw' | 'ordinary_kriging'
+  dataset_version_id: string
+  search_mode: 'manual' | 'grid'
+  parameters: Record<string, unknown>
+  validation: ValidationSpecPayload
+  grid?: GridSpecPayload | null
+}
+
+export interface ExperimentRecord {
+  id: string
+  case_id: string
+  name: string
+  params: ExperimentCreatePayload
+  created_at: string
+  updated_at: string
+}
+
+export interface CandidateMetrics {
+  // 公共口径：所有候选在同一公共掩膜上复算（排名依据）
+  common_valid_count?: number
+  // 候选自身口径：覆盖率展示，报 NoData 不换排名优势
+  candidate_valid_count?: number
+  candidate_nodata_count?: number
+  total_count?: number
+  coverage?: number
+  mae?: number
+  rmse?: number
+  r2?: number
+  bias?: number
+}
+
+export interface CandidateRecord {
+  id: string
+  fingerprint: string
+  status: 'succeeded' | 'failed' | string
+  parameters: Record<string, unknown>
+  metrics: CandidateMetrics
+  error: { code: string; message: string } | null
+}
+
+export interface CandidatesResponse {
+  experiment_id: string
+  candidates: CandidateRecord[]
+  public_metrics: Record<string, number>
+  latest_run: RunRecord | null
+}
+
+export interface CaseDatasetsResponse {
+  datasets: DatasetVersionRecord[]
+}
+
+// ---------------- v0.4 成果 / 切片 / 选择 / 导出 / 发布契约 ----------------
+
+export interface ResultMetadata {
+  result_id: string
+  run_id: string
+  experiment_id: string
+  algorithm: string
+  parameters: Record<string, unknown>
+  dimension: '2d' | '3d'
+  shape: number[]
+  cell_count: number
+  bounds: Array<[number, number]>
+  resolution: number[]
+  value_range: [number | null, number | null]
+  nodata_count: number
+  grid_sha256: string
+  source_sha256: string | null
+  standardized_sha256: string | null
+  fingerprint: string
+  validation: Record<string, unknown> | null
+  created_at: string
+}
+
+export interface ResultPreview {
+  result_id: string
+  dimension: '2d' | '3d'
+  original_cell_count: number
+  served_cell_count: number
+  stride: number
+  x: number[]
+  y: number[]
+  z: number[] | null
+  values: number[]
+  is_nodata: boolean[]
+  value_range: [number | null, number | null]
+}
+
+export interface SliceResponse {
+  result_id: string
+  fixed_axis: 'x' | 'y' | 'z'
+  fixed_coordinate: number
+  axes_names: string[]
+  axes: number[][]
+  matrix: Array<Array<number | null>>
+  nodata_mask: boolean[][]
+  value_range: [number | null, number | null]
+}
+
+export interface FormalSelectionRecord {
+  id: string
+  case_id: string
+  candidate_result_id: string
+  selected_by: string | null
+  note: string
+  created_at: string
+}
+
+export interface FormalSelectionsResponse {
+  case_id: string
+  selections: FormalSelectionRecord[]
+}
+
+export interface ExportRecord {
+  id: string
+  candidate_result_id: string
+  case_id: string
+  package_sha256: string
+  file_count: number
+  files: string[]
+  manifest: Record<string, unknown>
+}
+
+export interface PublicationRecord {
+  id: string
+  export_id: string
+  status: 'manual_required' | 'queued' | 'published' | 'failed' | 'not_requested' | string
+  evidence: {
+    export_id: string
+    package: string
+    manual_instruction: string
+    iserver_rest_publish_status: string
+  }
+}
+
+export interface DatasetPoints {
+  dataset_id: string
+  dimension: '2d' | '3d'
+  count: number
+  served: number
+  decimate: number
+  x: number[]
+  y: number[]
+  z: number[] | null
+  values: number[]
+  value_range: [number, number] | null
+  value_name: string | null
+  source_sha256: string | null
 }

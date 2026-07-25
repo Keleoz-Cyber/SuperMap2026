@@ -154,6 +154,8 @@ D:\supermap\supermap-iserver-2026-windows-x64-deploy\supermap-iserver-2026-windo
 
 ## 10. 分阶段交付
 
+> **实现状态（2026-07-23）**：P0–P2 已由 v0.3.1 / v0.4 实现（v0.4 通用上传、IDW/普通克里金调参、空间验证、排行榜、切片成果与导出均已落地并有回归）；P3 的浏览器页面已实现，微震派生表代码化仍在 M5 边界内（当前以 `upload_required` 预设接入）；P4 未开始。以 [status/current-status.md](status/current-status.md) 为准。
+
 ### P0：运行时探测与SDK验证
 
 - 启动iServer，核对许可、管理员初始化、REST/OpenAPI和可发布能力；

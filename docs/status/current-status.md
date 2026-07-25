@@ -1,6 +1,6 @@
 # 当前开发状态
 
-> 更新时间：2026-07-22（v0.3 分支更新）。本文是开发人员和开发 Agent 判断“现在做到哪一步”的唯一状态入口。数据细节见 [电阻率](../data/resistivity.md)、[微震](../data/microseismic.md)、[瓦斯](../data/gas.md) 和 [数据契约](../data/contracts.md)；目标产品见 [产品蓝图](../product-blueprint.md)。
+> 更新时间：2026-07-24（v0.4 分支更新）。本文是开发人员和开发 Agent 判断“现在做到哪一步”的唯一状态入口。数据细节见 [电阻率](../data/resistivity.md)、[微震](../data/microseismic.md)、[瓦斯](../data/gas.md) 和 [数据契约](../data/contracts.md)；目标产品见 [产品蓝图](../product-blueprint.md)。
 
 ## 1. 状态分层
 
@@ -22,7 +22,13 @@
   - **S3M 体元缓存浏览器渲染**：iDesktopX「体元栅格生成缓存」（S3M 2.0，26 瓦片）已发布为 iServer 三维瓦片服务；`/api/cases/resistivity/voxel-cells` 经 iServer REST 逐瓦片获取并解析（`geomodeling.publishing.s3mb`，fail-closed 契约校验：头部/版本/文件类型/wDescript/格点有限性/数量/包围盒），浏览器自定义渲染 7,056 格并支持点云/体元/叠加切换。解析器仅针对本缓存格式，不宣称通用 S3MB 解析；缓存刷新语义见运行说明 §4.2。
   - 测试基线：`157 passed`（80 基线 + 77 新增便携测试；API/发布适配/S3M 解析契约均不依赖本机 iServer 或真实数据）。
   - 运行说明与实测证据：[../v0.3-iserver-loop.md](../v0.3-iserver-loop.md)。
-- 当前仓库仍无通用上传、插值执行、调参任务、微震三维接入；瓦斯保持暂缓。
+- **v0.4 通用建模平台（`feat/v0.4-generic-platform` 分支，v0.4.0 候选）**：
+  - 通用上传（CSV/XLSX）、字段映射、质量门禁、IDW/普通克里金调参（手动+有限网格搜索，50 组合硬上限）、空间折分验证、公共有效指标排行榜、SQLite 持久化任务（取消/重试/重启恢复）、成果工件与 X/Y/Z 切片、正式选择、证据导出与发布记录（manual_required）。
+  - v0.3.1 电阻率案例以 `builtin_legacy` 只读适配器保留，全部 legacy 路由与证据语义不变；统一错误封套且不回传本机路径。
+  - 案例预设登记于 `config/presets/`（resistivity=builtin_legacy、microseismic=upload_required，预设不含绝对路径、不自动导入私有数据）。
+  - 测试基线：后端 `364 passed` + 前端 vitest `31 passed` + Playwright mock 冒烟 `1 passed`；`local_data` 23 passed（原始数据哈希不变）。
+  - 真实浏览器验收（2026-07-24，本机 uvicorn 单进程）：上传 3D 夹具 → 质量校验通过（144/144）→ IDW 网格 4/4 候选成功（公共有效 144）→ 普通克里金 2/2 候选成功（球状 RMSE 0.749 / 指数 RMSE 0.783）→ 完整场点云（1,331 单元值域渐变可见）→ Z/X/Y 切片真实坐标标签 → 正式选择（理由落库）→ 导出 ZIP 七文件（SHA-256 清单 + 1,331 行 grid.csv）→ 发布登记 manual_required；iServer 离线时 legacy 页降级为「未验证但模型不受影响」，点云照常。截图：`docs/evidence/v0.4/v04-01..09*.png`。
+- 当前仓库仍无微震三维派生表代码化；瓦斯保持暂缓。
 
 ## 3. 外部派生与人工验证（尚未代码化）
 

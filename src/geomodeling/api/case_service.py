@@ -101,7 +101,8 @@ def _load_metric_summaries(metrics_json: Path | None) -> tuple[dict[str, Any] | 
     if metrics_json is None or not metrics_json.exists():
         return None, "config_only"
     with metrics_json.open("r", encoding="utf-8") as fh:
-        return json.load(fh), str(metrics_json)
+        # 公开响应只给文件名标签，不回传本机绝对路径
+        return json.load(fh), metrics_json.name
 
 
 def resistivity_detail(config: AppConfig, metrics_json: Path | None) -> dict[str, Any]:
@@ -462,9 +463,9 @@ def voxel_cells(config: AppConfig, client: IServerClient, cache_dir: Path | None
         "case_id": CASE_RESISTIVITY,
         "result_id": formal.get("dataset", RHO_FORMAL_DATASET),
         "source": "iserver_s3m_cache",
-        "local_cache_dir": str(cache_root),
+        "local_cache_label": cache_root.name,
         "local_cache_present": local_cache_present,
-        "local_cache_note": "本地缓存目录仅用于诊断；瓦片清单与字节一律来自 iServer 服务 + 固定 manifest",
+        "local_cache_note": "本地缓存目录仅用于诊断（绝对路径不下发浏览器）；瓦片清单与字节一律来自 iServer 服务 + 固定 manifest",
         "service_url": service_url,
         "tile_files": data["tile_files"],
         "fetched_bytes": data["fetched_bytes"],
@@ -502,7 +503,8 @@ def resistivity_points(config: AppConfig, decimate: int = 1) -> dict[str, Any]:
     payload = {
         "case_id": CASE_RESISTIVITY,
         "source": "platform_csv",
-        "source_path": str(csv_path),
+        # 数据血统：文件名标签 + SHA-256；本机绝对路径不下发浏览器
+        "source_label": csv_path.name,
         "sha256": _sha256(csv_path),
         "decimate": step,
         "count": data["count"],

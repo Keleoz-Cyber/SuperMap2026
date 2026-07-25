@@ -10,6 +10,7 @@ import {
   Lock,
   Monitor,
   Odometer,
+  Plus,
 } from '@element-plus/icons-vue'
 import { fetchCases, fetchRhoPublishStatus } from '../api/client'
 import type { CaseSummary } from '../api/types'
@@ -26,7 +27,7 @@ const CASE_META: Record<string, CaseMeta> = {
     icon: Odometer,
     enterable: true,
     badgeType: 'success',
-    badgeText: '进行中 · 可进入',
+    badgeText: '内置 v0.3.1 稳定案例',
   },
   microseismic: {
     icon: Bell,
@@ -40,6 +41,13 @@ const CASE_META: Record<string, CaseMeta> = {
     badgeType: 'info',
     badgeText: '暂缓',
   },
+}
+
+const UPLOAD_META: CaseMeta = {
+  icon: Cpu,
+  enterable: true,
+  badgeType: 'success',
+  badgeText: '上传案例 · 可建模',
 }
 
 const FALLBACK_META: CaseMeta = {
@@ -56,10 +64,15 @@ const loadError = ref<string | null>(null)
 const iserverOnline = ref<boolean | null>(null)
 
 function meta(c: CaseSummary): CaseMeta {
+  if (c.source_kind === 'upload') return UPLOAD_META
   return CASE_META[c.case_id] ?? { ...FALLBACK_META, badgeText: c.status }
 }
 
 function enter(c: CaseSummary) {
+  if (c.source_kind === 'upload') {
+    void router.push(`/cases/${c.case_id}/experiments/new`)
+    return
+  }
   if (c.case_id === 'resistivity') {
     void router.push('/case/resistivity')
   }
@@ -91,10 +104,10 @@ onMounted(async () => {
           <div class="brand-text">
             <h1>GeoModelingPlatform <span>地矿属性模拟与三维建模平台</span></h1>
           </div>
-          <el-tag type="primary" effect="dark" round>超图杯 v0.3</el-tag>
+          <el-tag type="primary" effect="dark" round>v0.4 建模平台</el-tag>
         </div>
         <p class="tagline">
-          以可复算流水线完成地矿属性三维建模，打通 SuperMap iDesktopX / iServer 的发布、验证与证据链闭环。
+          上传点数据即可完成二维/三维插值建模、空间验证与成果导出；内置电阻率案例保留 SuperMap iServer 发布证据链闭环。
         </p>
       </div>
     </header>
@@ -122,20 +135,46 @@ onMounted(async () => {
             </el-tag>
           </div>
           <div class="case-body">
-            <p><span>数据形态</span>{{ c.data_form }}</p>
-            <p><span>坐标</span>{{ c.coordinate }}</p>
-            <p><span>单位</span>{{ c.unit_note }}</p>
+            <template v-if="c.source_kind === 'upload'">
+              <p><span>案例类型</span>{{ c.case_type ?? 'generic' }}</p>
+              <p><span>创建时间</span>{{ (c.created_at ?? '').slice(0, 19).replace('T', ' ') }}</p>
+            </template>
+            <template v-else>
+              <p><span>数据形态</span>{{ c.data_form }}</p>
+              <p><span>坐标</span>{{ c.coordinate }}</p>
+              <p><span>单位</span>{{ c.unit_note }}</p>
+            </template>
           </div>
-          <div class="case-stage">{{ c.v03_stage }}</div>
+          <div v-if="c.v03_stage" class="case-stage">{{ c.v03_stage }}</div>
           <div class="case-foot">
             <el-button v-if="c.case_id === 'resistivity'" type="primary">
               进入三维工作台
+              <el-icon style="margin-left: 4px"><ArrowRight /></el-icon>
+            </el-button>
+            <el-button v-else-if="c.source_kind === 'upload'" type="primary">
+              进入调参实验室
               <el-icon style="margin-left: 4px"><ArrowRight /></el-icon>
             </el-button>
             <span v-else-if="c.case_id === 'gas'" class="enter-hint">
               体元加载触发 iDesktopX 崩溃，暂缓接入
             </span>
             <span v-else class="enter-hint">三维接入排期中</span>
+          </div>
+        </div>
+
+        <div class="case-card create-card" data-test="create-case-card" @click="router.push('/cases/new')">
+          <div class="case-head">
+            <el-icon :size="20" class="case-icon"><Plus /></el-icon>
+            <h2>新建建模案例</h2>
+          </div>
+          <div class="case-body">
+            <p>上传 CSV / XLSX 点数据，完成字段映射与质量校验后开始二维 / 三维插值调参。</p>
+          </div>
+          <div class="case-foot">
+            <el-button type="primary" plain>
+              上传数据
+              <el-icon style="margin-left: 4px"><ArrowRight /></el-icon>
+            </el-button>
           </div>
         </div>
       </div>
@@ -263,6 +302,11 @@ onMounted(async () => {
 
 .case-card.disabled {
   opacity: 0.55;
+}
+
+.create-card {
+  border-style: dashed;
+  cursor: pointer;
 }
 
 .case-head {

@@ -38,6 +38,7 @@ outputs/
 cache/
 logs/
 tmp/
+var/geomodeling/
 *.log
 
 # Large/local spatial data and database files
@@ -58,3 +59,7 @@ web/public/Cesium/
 *.png
 !docs/**/*.png
 !web/src/**/*.png
+
+# Playwright 测试产物
+web/test-results/
+web/playwright-report/

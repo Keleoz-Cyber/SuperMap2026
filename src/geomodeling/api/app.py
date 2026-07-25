@@ -1,4 +1,4 @@
-"""FastAPI application for the v0.3 browser platform.
+"""FastAPI application: v0.4 generic platform + v0.3.1 resistivity adapter.
 
 Run locally:
 
@@ -8,14 +8,29 @@ The browser talks only to this API; iServer admin credentials stay on the
 server side (environment variables), and iServer outages degrade to a
 recoverable "publish failed / unavailable" state without touching modeling
 evidence.
+
+Integration contract (Task 10):
+
+- one ``PlatformRuntime`` and one ``JobWorker`` are owned by the lifespan;
+- legacy exact routes (``/api/cases/resistivity*``) are registered *before*
+  the v0.4 routers so the dynamic ``/api/cases/{case_id}`` can never
+  swallow them;
+- ``GET /api/cases`` merges the immutable legacy cards with persisted
+  upload cases (the legacy adapter never writes to SQLite);
+- all route errors share the v0.4 envelope
+  ``{"error": {"code", "message", "details"}}`` and never leak local paths.
 """
 
 from __future__ import annotations
 
+import json
+import re
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from geomodeling.api import case_service
@@ -26,6 +41,16 @@ from geomodeling.api.deps import (
     get_iserver_client,
     get_settings,
 )
+from geomodeling.api.routes import cases, datasets, experiments, results, runs
+from geomodeling.platform import PlatformRuntime
+from geomodeling.platform.errors import (
+    REDACTED_PATH,
+    PlatformError,
+    platform_error_handler,
+)
+from geomodeling.platform.legacy_adapter import merged_case_cards
+from geomodeling.platform.repositories import CaseRepository
+from geomodeling.platform.worker import JobWorker
 from geomodeling.publishing import (
     IServerClient,
     BrowserLoadReport,
@@ -34,9 +59,50 @@ from geomodeling.publishing import (
     record_browser_load,
 )
 
+# 公开错误文本中的本机路径占位替换（盘符/UNC/用户目录），URL 不受影响。
+_LOCAL_PATH_RE = re.compile(r"(?:[A-Za-z]:[\\/]|\\\\|~[\\/])[^\s'\"]*")
+
+
+def _envelope(code: str, message: str) -> dict:
+    return {"error": {"code": code, "message": message, "details": {}}}
+
+
+async def http_error_handler(request: Request, exc: HTTPException) -> JSONResponse:
+    """Convert legacy HTTPException details into the v0.4 error envelope."""
+
+    detail = exc.detail
+    if not isinstance(detail, str):
+        detail = json.dumps(detail, ensure_ascii=False, default=str)
+    message = _LOCAL_PATH_RE.sub(REDACTED_PATH, detail)
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=_envelope(f"HTTP_{exc.status_code}", message),
+        headers=getattr(exc, "headers", None),
+    )
+
+
+@asynccontextmanager
+async def platform_lifespan(app: FastAPI):
+    """Own the v0.4 runtime and worker; shutdown stops work and closes DB."""
+
+    runtime = PlatformRuntime()
+    runtime.initialize()
+    runtime.recover_interrupted_runs()
+    worker = JobWorker(runtime)
+    app.state.platform_runtime = runtime
+    app.state.job_worker = worker
+    try:
+        yield
+    finally:
+        worker.shutdown(wait=True)
+        runtime.close()
+
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="GeoModelingPlatform API", version=PROJECT_VERSION)
+    app = FastAPI(title="GeoModelingPlatform API", version=PROJECT_VERSION, lifespan=platform_lifespan)
+
+    app.add_exception_handler(PlatformError, platform_error_handler)
+    app.add_exception_handler(HTTPException, http_error_handler)
 
     app.add_middleware(
         CORSMiddleware,
@@ -70,8 +136,14 @@ def create_app() -> FastAPI:
 
     # -------------------------------------------------------------- cases
     @app.get("/api/cases")
-    def cases() -> dict:
-        return {"cases": case_service.list_cases()}
+    def case_cards(request: Request) -> dict:
+        # 运行时缺失（如未进入 lifespan 的纯 legacy 测试）时只回 legacy 卡片
+        runtime = getattr(request.app.state, "platform_runtime", None)
+        records = []
+        if runtime is not None:
+            with runtime.session() as session:
+                records = CaseRepository(session).list_all()
+        return {"cases": merged_case_cards(records)}
 
     @app.get("/api/cases/resistivity")
     def resistivity(
@@ -129,6 +201,15 @@ def create_app() -> FastAPI:
     ) -> dict:
         record = record_browser_load(report, settings.evidence_dir)
         return {"recorded": True, "record": record.model_dump(mode="json")}
+
+    # ----------------------------------------------------- v0.4 platform
+    # 必须在 legacy 精确路由之后注册，/api/cases/resistivity 才不会被
+    # 动态路由 /api/cases/{case_id} 吞掉。
+    app.include_router(cases.router)
+    app.include_router(datasets.router)
+    app.include_router(experiments.router)
+    app.include_router(runs.router)
+    app.include_router(results.router)
 
     # -------------------------------------------------------- frontend
     settings = get_settings()

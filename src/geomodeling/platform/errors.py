@@ -1,0 +1,102 @@
+"""Stable platform errors with public-detail sanitization.
+
+Public error payloads follow ``{"error": {"code", "message", "details"}}``.
+``Path`` objects and absolute paths are stripped from public ``details``
+(本机路径不回传浏览器); the full diagnostics stay in the server log.
+"""
+
+from __future__ import annotations
+
+import logging
+import re
+from pathlib import PurePath
+from typing import Any
+
+logger = logging.getLogger("geomodeling.platform")
+
+REDACTED_PATH = "<redacted-path>"
+
+# Stable public error codes; API routes (Task 3+) reuse these.
+CASE_NOT_FOUND = "CASE_NOT_FOUND"
+DATASET_NOT_FOUND = "DATASET_NOT_FOUND"
+EXPERIMENT_NOT_FOUND = "EXPERIMENT_NOT_FOUND"
+RUN_NOT_FOUND = "RUN_NOT_FOUND"
+CANDIDATE_NOT_FOUND = "CANDIDATE_NOT_FOUND"
+DATASET_NOT_IN_CASE = "DATASET_NOT_IN_CASE"
+EXPERIMENT_NOT_IN_CASE = "EXPERIMENT_NOT_IN_CASE"
+CANDIDATE_NOT_IN_CASE = "CANDIDATE_NOT_IN_CASE"
+INVALID_STATUS_TRANSITION = "INVALID_STATUS_TRANSITION"
+RUN_NOT_RETRYABLE = "RUN_NOT_RETRYABLE"
+RUN_ALREADY_ACTIVE = "RUN_ALREADY_ACTIVE"
+CANDIDATE_NOT_SUCCEEDED = "CANDIDATE_NOT_SUCCEEDED"
+DATASET_VERSION_CONFLICT = "DATASET_VERSION_CONFLICT"
+
+# 绝对路径形态：POSIX ``/x``、根相对/UNC ``\x``/``\\srv``、Windows 盘符
+# （含 ``C:secret`` 这类盘符相对路径，同样可能泄露目录结构）。
+_ABS_PATH_TEXT_RE = re.compile(r"^(?:[\\/]|[A-Za-z]:)")
+
+
+class PlatformError(Exception):
+    """Domain error carrying a stable code, user message, and diagnostics."""
+
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        details: dict[str, Any] | None = None,
+        http_status: int = 400,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.details: dict[str, Any] = details or {}
+        self.http_status = http_status
+
+    def public_payload(self) -> dict[str, Any]:
+        return {
+            "error": {
+                "code": self.code,
+                "message": self.message,
+                "details": sanitize_public_details(self.details),
+            }
+        }
+
+
+def _is_absolute_path_text(text: str) -> bool:
+    return bool(_ABS_PATH_TEXT_RE.match(text))
+
+
+def sanitize_public_details(value: Any) -> Any:
+    """递归脱敏：``PurePath`` 实例与绝对路径文本替换为占位符，其余原样保留。
+
+    ``PurePath`` 兜底覆盖非 ``Path`` 子类（如 ``PurePosixPath``），避免
+    不可 JSON 序列化的对象直达响应层造成 500。
+    """
+
+    if isinstance(value, PurePath):
+        return REDACTED_PATH
+    if isinstance(value, str):
+        return REDACTED_PATH if _is_absolute_path_text(value) else value
+    if isinstance(value, dict):
+        return {key: sanitize_public_details(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [sanitize_public_details(item) for item in value]
+    return value
+
+
+async def platform_error_handler(request: Any, exc: PlatformError) -> Any:
+    """FastAPI exception handler：日志保留完整诊断，响应只含脱敏详情。
+
+    ``fastapi`` 在这里惰性导入，保证 platform 层不依赖 api extra。
+    """
+
+    from fastapi.responses import JSONResponse
+
+    logger.error(
+        "platform error %s (%s): %s details=%r",
+        exc.code,
+        exc.http_status,
+        exc.message,
+        exc.details,
+    )
+    return JSONResponse(status_code=exc.http_status, content=exc.public_payload())
