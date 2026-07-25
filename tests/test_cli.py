@@ -27,3 +27,4 @@ def test_cli_register_supermap_results(tmp_path):
     assert result.exit_code == 0, result.output
     assert (tmp_path / "supermap" / "registry" / "supermap" / "RHO_KRIG_FINAL_20M_40.json").exists()
     assert (tmp_path / "supermap" / "reports" / "supermap_result_inventory.md").exists()
+
