@@ -14,12 +14,21 @@ param(
 $env:GEOMODELING_DATA_DIR = $DataDir
 
 # 2. 启动前检查（即使退出码 1 也要解析完整 JSON 报告）
-$reportJson = geomodeling demo-check --json --host $HostAddress --port $Port --data-dir $DataDir
+# stdout/stderr 分离到临时文件：崩溃或附加输出可诊断，不会静默吞掉
+$outFile = Join-Path $env:TEMP "geomodeling-demo-check-out.json"
+$errFile = Join-Path $env:TEMP "geomodeling-demo-check-err.log"
+geomodeling demo-check --json --host $HostAddress --port $Port --data-dir $DataDir > $outFile 2> $errFile
 $checkExit = $LASTEXITCODE
+$report = $null
 try {
-  $report = $reportJson | ConvertFrom-Json
+  $report = (Get-Content $outFile -Raw).Trim() | ConvertFrom-Json
 } catch {
-  Write-Host "demo-check 输出无法解析为 JSON，请确认 geomodeling 已安装（editable）。"
+  $report = $null
+}
+if ($null -eq $report -or $null -eq $report.checks) {
+  Write-Host "demo-check 输出无法解析为 JSON，stdout 与 stderr 如下："
+  Get-Content $outFile | ForEach-Object { Write-Host $_ }
+  Get-Content $errFile | ForEach-Object { Write-Host $_ }
   exit 1
 }
 foreach ($c in $report.checks) {
