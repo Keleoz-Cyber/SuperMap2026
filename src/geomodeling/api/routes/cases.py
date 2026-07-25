@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, UploadFile
 
 from geomodeling.api.deps import get_platform_runtime
 from geomodeling.platform import PlatformRuntime, tables
+
+logger = logging.getLogger("geomodeling.api")
 from geomodeling.platform.public_dto import public_case, public_dataset
 from geomodeling.platform.repositories import CaseRepository, DatasetRepository
 from geomodeling.platform.schemas import CaseCreateRequest, CaseRecord, DatasetVersionRecord
@@ -57,11 +60,13 @@ async def upload_dataset(
 ) -> dict[str, Any]:
     settings = runtime.settings
     receipt = store_upload_stream(settings, file.file, file.filename or "")
+    created_dataset_id: str | None = None
     try:
         with runtime.session() as session:
             record = DatasetRepository(session).create_version(
                 case_id, source_path="pending://upload"
             )
+        created_dataset_id = record.id
         final_path = settings.upload_source(case_id, record.id, receipt.suffix)
         finalize_upload(receipt, final_path)
         with runtime.session() as session:
@@ -80,5 +85,16 @@ async def upload_dataset(
             session.commit()
             return public_dataset(DatasetRepository(session).get(record.id))
     except BaseException:
+        # 补偿事务：落盘/建档任何一步失败，删除可能残留的 pending://upload
+        # 数据集行并清理暂存文件；补偿失败只记日志，不掩盖原始异常。
+        if created_dataset_id is not None:
+            try:
+                with runtime.session() as session:
+                    row = session.get(tables.DatasetVersion, created_dataset_id)
+                    if row is not None:
+                        session.delete(row)
+                        session.commit()
+            except Exception:  # noqa: BLE001
+                logger.error("upload compensation failed for %s", created_dataset_id)
         discard_upload(receipt)
         raise
