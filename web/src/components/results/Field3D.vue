@@ -1,9 +1,17 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import type { ResultPreview } from '../../api/types'
+import type { MicroseismicPointLayer, MicroseismicPointLayerName, ResultPreview } from '../../api/types'
+
+// 微震证据图层：view 侧完成加载与可见性管理，本组件只负责渲染。
+interface EvidenceLayer {
+  name: MicroseismicPointLayerName
+  visible: boolean
+  points: MicroseismicPointLayer | null
+}
 
 const props = defineProps<{
   preview: ResultPreview | null
+  evidenceLayers?: EvidenceLayer[]
 }>()
 
 const containerEl = ref<HTMLDivElement | null>(null)
@@ -15,6 +23,19 @@ const renderError = ref<string | null>(null)
 let viewer: any = null
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let pointCollection: any = null
+// 证据图层每层一个 PointPrimitiveCollection，按图层名驻留
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const evidenceCollections: Record<string, any> = {}
+
+// 三层证据样式：剔除层必须用不同符号（红色填充 + 浅色描边）与候选/聚合区分
+const EVIDENCE_STYLES: Record<
+  MicroseismicPointLayerName,
+  { color: string; pixelSize: number; outlineColor?: string; outlineWidth?: number }
+> = {
+  aggregated: { color: '#22c55e', pixelSize: 7 },
+  accepted: { color: '#38bdf8', pixelSize: 4 },
+  rejected: { color: '#ef4444', pixelSize: 6, outlineColor: '#f8fafc', outlineWidth: 2 },
+}
 
 const validCount = computed(() => {
   if (!props.preview) return 0
@@ -78,6 +99,37 @@ function togglePoints() {
   rebuildPoints()
 }
 
+// v0.3.1 兼容约束同样适用于证据图层：可见性切换 = removeAll() + 内存数据
+// 重建，不用 .show，也不 remove/add 单个点元。图层数据由 view 侧驻留内存。
+function rebuildEvidenceLayer(layer: EvidenceLayer) {
+  if (!viewer) return
+  let collection = evidenceCollections[layer.name]
+  if (!collection) {
+    collection = viewer.scene.primitives.add(new Cesium.PointPrimitiveCollection())
+    evidenceCollections[layer.name] = collection
+  }
+  collection.removeAll()
+  if (!layer.visible || !layer.points) return
+  const style = EVIDENCE_STYLES[layer.name]
+  const { x, y, z } = layer.points
+  for (let i = 0; i < x.length; i += 1) {
+    collection.add({
+      position: toScenePosition(x[i], y[i], z[i]),
+      pixelSize: style.pixelSize,
+      color: Cesium.Color.fromCssColorString(style.color),
+      outlineColor: style.outlineColor
+        ? Cesium.Color.fromCssColorString(style.outlineColor)
+        : Cesium.Color.BLACK,
+      outlineWidth: style.outlineWidth ?? 0,
+      disableDepthTestDistance: Number.POSITIVE_INFINITY,
+    })
+  }
+}
+
+function rebuildEvidence() {
+  for (const layer of props.evidenceLayers ?? []) rebuildEvidenceLayer(layer)
+}
+
 function initViewer() {
   if (!cesiumAvailable || !containerEl.value || viewer) return
   try {
@@ -105,6 +157,7 @@ function initViewer() {
     }
     pointCollection = viewer.scene.primitives.add(new Cesium.PointPrimitiveCollection())
     rebuildPoints()
+    rebuildEvidence()
     resetView()
   } catch (e) {
     renderError.value = e instanceof Error ? e.message : String(e)
@@ -116,10 +169,12 @@ watch(() => props.preview, () => {
   rebuildPoints()
   resetView()
 })
+watch(() => props.evidenceLayers, rebuildEvidence, { deep: true })
 onBeforeUnmount(() => {
   if (viewer && !(viewer.isDestroyed?.() ?? false)) viewer.destroy?.()
   viewer = null
   pointCollection = null
+  for (const name of Object.keys(evidenceCollections)) delete evidenceCollections[name]
 })
 </script>
 

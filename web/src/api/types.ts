@@ -485,6 +485,8 @@ export interface ResultMetadata {
   result_id: string
   run_id: string
   experiment_id: string
+  // 成果归属链：result → run → experiment → dataset（Task 10 起服务端下发）
+  dataset_version_id: string
   algorithm: string
   parameters: Record<string, unknown>
   dimension: '2d' | '3d'

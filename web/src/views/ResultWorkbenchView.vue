@@ -1,14 +1,25 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   ApiError,
   fetchDatasetPoints,
   fetchExperiment,
+  fetchMicroseismicDerivation,
+  fetchMicroseismicDerivationPoints,
   fetchResult,
   fetchResultPreview,
+  MICROSEISMIC_SOURCE_KIND,
 } from '../api/client'
-import type { DatasetPoints, ExperimentRecord, ResultMetadata, ResultPreview } from '../api/types'
+import type {
+  DatasetPoints,
+  ExperimentRecord,
+  MicroseismicDerivation,
+  MicroseismicPointLayer,
+  MicroseismicPointLayerName,
+  ResultMetadata,
+  ResultPreview,
+} from '../api/types'
 import Field3D from '../components/results/Field3D.vue'
 import SlicePanel from '../components/results/SlicePanel.vue'
 import FormalSelectionPanel from '../components/results/FormalSelectionPanel.vue'
@@ -25,6 +36,77 @@ const points = ref<DatasetPoints | null>(null)
 const loadError = ref<string | null>(null)
 const activeTab = ref<'field' | 'slices'>('field')
 
+// 微震证据图层：仅当成果所属数据集 source_kind 为 microseismic_dat_bundle 时出现。
+// 图层开关只影响渲染集合，绝不触碰网格阈值、值域、指标与正式选择。
+const derivation = ref<MicroseismicDerivation | null>(null)
+const layerStates = reactive<
+  Record<MicroseismicPointLayerName, { visible: boolean; points: MicroseismicPointLayer | null }>
+>({
+  aggregated: { visible: true, points: null },
+  accepted: { visible: false, points: null },
+  rejected: { visible: false, points: null },
+})
+
+const EVIDENCE_LAYER_ORDER: MicroseismicPointLayerName[] = ['aggregated', 'accepted', 'rejected']
+
+function formatCount(n: number): string {
+  return n.toLocaleString('en-US')
+}
+
+const layerControls = computed(() => {
+  const counts = derivation.value?.layer_counts
+  if (!counts) return []
+  const labels: Record<MicroseismicPointLayerName, string> = {
+    aggregated: `${formatCount(counts.aggregated_nodes)} 个唯一建模节点`,
+    accepted: `${formatCount(counts.accepted_modeling)} 条3σ候选来源`,
+    rejected: `${formatCount(counts.rejected_3sigma)} 条3σ剔除诊断`,
+  }
+  return EVIDENCE_LAYER_ORDER.map((name) => ({
+    name,
+    label: labels[name],
+    visible: layerStates[name].visible,
+  }))
+})
+
+const evidenceLayers = computed(() =>
+  EVIDENCE_LAYER_ORDER.map((name) => ({
+    name,
+    visible: layerStates[name].visible,
+    points: layerStates[name].points,
+  })),
+)
+
+async function loadLayerPoints(name: MicroseismicPointLayerName): Promise<void> {
+  const state = layerStates[name]
+  if (state.points || !derivation.value) return
+  try {
+    state.points = await fetchMicroseismicDerivationPoints(derivation.value.dataset_id, name)
+  } catch {
+    // 单层加载失败仅影响该层：回退为关，主点云与其他层不受影响
+    state.visible = false
+  }
+}
+
+async function toggleEvidenceLayer(name: MicroseismicPointLayerName): Promise<void> {
+  layerStates[name].visible = !layerStates[name].visible
+  if (layerStates[name].visible) await loadLayerPoints(name)
+}
+
+// 成果元数据给出 dataset_version_id 后，用派生元数据探测领域身份；
+// 409（非微震）或任何失败都静默降级，绝不阻塞成果工作台本身。
+async function loadEvidence(datasetId: string): Promise<void> {
+  let report: MicroseismicDerivation
+  try {
+    report = await fetchMicroseismicDerivation(datasetId)
+  } catch {
+    return
+  }
+  if (report?.source_kind !== MICROSEISMIC_SOURCE_KIND) return
+  derivation.value = report
+  // 默认只加载聚合节点层；候选与剔除层保持关，等用户显式打开
+  await loadLayerPoints('aggregated')
+}
+
 const sourcePoints = computed(() => {
   if (!points.value) return null
   return { x: points.value.x, y: points.value.y, values: points.value.values }
@@ -40,6 +122,7 @@ onMounted(async () => {
       fetchDatasetPoints(exp.params.dataset_version_id).then((p) => {
         points.value = p
       }),
+      loadEvidence(meta.dataset_version_id),
     ]
     if (meta.dimension === '3d') {
       activeTab.value = 'field'
@@ -95,7 +178,29 @@ onMounted(async () => {
           </button>
         </div>
 
-        <Field3D v-if="metadata.dimension === '3d' && activeTab === 'field'" :preview="preview" />
+        <div
+          v-if="derivation && metadata.dimension === '3d' && activeTab === 'field'"
+          class="evidence-layers"
+          data-test="evidence-layers"
+        >
+          <span class="evidence-title">微震证据图层</span>
+          <button
+            v-for="control in layerControls"
+            :key="control.name"
+            class="layer-toggle"
+            :class="{ on: control.visible }"
+            :data-test="`layer-toggle-${control.name}`"
+            @click="toggleEvidenceLayer(control.name)"
+          >
+            {{ control.visible ? '[on]' : '[off]' }} {{ control.label }}
+          </button>
+        </div>
+
+        <Field3D
+          v-if="metadata.dimension === '3d' && activeTab === 'field'"
+          :preview="preview"
+          :evidence-layers="evidenceLayers"
+        />
         <SlicePanel
           v-else
           :result-id="resultId"
@@ -174,6 +279,36 @@ onMounted(async () => {
   background: var(--gmp-accent);
   border-color: var(--gmp-accent);
   color: #0b0f14;
+  font-weight: 600;
+}
+
+.evidence-layers {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.evidence-title {
+  color: var(--gmp-text-dim);
+  margin-right: 4px;
+}
+
+.layer-toggle {
+  border: 1px solid var(--gmp-border);
+  background: var(--gmp-bg-soft);
+  color: var(--gmp-text-dim);
+  border-radius: 8px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-family: ui-monospace, monospace;
+  cursor: pointer;
+}
+
+.layer-toggle.on {
+  border-color: var(--gmp-accent);
+  color: var(--gmp-text);
   font-weight: 600;
 }
 

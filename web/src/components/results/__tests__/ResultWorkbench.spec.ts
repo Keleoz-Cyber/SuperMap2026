@@ -28,6 +28,8 @@ vi.mock('../../../api/client', async (importOriginal) => {
     createExport: vi.fn(),
     createPublication: vi.fn(),
     fetchDatasetPoints: vi.fn(),
+    fetchMicroseismicDerivation: vi.fn(),
+    fetchMicroseismicDerivationPoints: vi.fn(),
   }
 })
 
@@ -38,6 +40,7 @@ function makeMetadata(dimension: '2d' | '3d'): ResultMetadata {
     result_id: 'r1',
     run_id: 'run1',
     experiment_id: 'exp1',
+    dataset_version_id: 'ds1',
     algorithm: 'idw',
     parameters: { power: 2, neighbor_count: 8 },
     dimension,
@@ -177,6 +180,10 @@ async function mountWorkbench(metadata: ResultMetadata) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // 默认走通用（非微震）成果路径：派生探测被 409 拒绝，绝不请求领域图层
+  vi.mocked(client.fetchMicroseismicDerivation).mockRejectedValue(
+    new client.ApiError('DATASET_NOT_MICROSEISMIC', '数据集不是微震 DAT 导入，没有派生证据', 409),
+  )
 })
 
 describe('ResultWorkbenchView', () => {
@@ -195,6 +202,14 @@ describe('ResultWorkbenchView', () => {
     expect(wrapper.find('[data-test="preview-count"]').text()).toContain('1331 / 1331')
     // jsdom 无 Cesium → 明确的降级提示而非空白
     expect(wrapper.find('[data-test="cesium-fallback"]').exists()).toBe(true)
+  })
+
+  it('通用成果不显示微震证据图层控制组，也不请求领域图层', async () => {
+    const wrapper = await mountWorkbench(makeMetadata('3d'))
+    // 派生元数据是 source_kind 唯一探测手段；409 后绝不发领域图层请求
+    expect(client.fetchMicroseismicDerivation).toHaveBeenCalledWith('ds1')
+    expect(client.fetchMicroseismicDerivationPoints).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-test="evidence-layers"]').exists()).toBe(false)
   })
 
   it('正式选择必须填写理由', async () => {
