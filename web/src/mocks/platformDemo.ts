@@ -7,6 +7,141 @@ import { WEB_VERSION } from '../version'
 const T = '2026-07-23T00:00:00Z'
 const SHA = 'ab'.repeat(32)
 
+// ---------------------------------------------------------------- v0.5 微震
+// 便携夹具口径（45/44/1/0/44/44）：与 e2e-live/fixtures/microseismicBundle.ts
+// 生成的合成 22-DAT 包同一份计数合同，绝不冒充私有 2,006/1,925 证据。
+const MICRO_SHA = 'cd'.repeat(32)
+const MICRO_RULE_VERSION = 'microseismic_e2e_mock_v0.5'
+const MICRO_MAPPING = {
+  dimension: '3d',
+  x: 'X_LOCAL_M',
+  y: 'Y_LOCAL_M',
+  z: 'Z_LOCAL_M',
+  value: 'VX_KM_S',
+  value_name: 'Vx',
+  value_unit: 'km/s',
+  coordinate_kind: 'local_linear',
+}
+
+interface MicroSourceFile {
+  file_name: string
+  sha256: string
+  point_id: string
+  line_id: string
+  source_record_count: number
+}
+
+// 文件名清单即 config/microseismic.yaml 的 expected 清单（公开合同）；
+// W8.dat 含 1 个 1.#QNAN0 伪行故 3 条源记录，其余各 2 条。
+function buildMicroSourceFiles(): MicroSourceFile[] {
+  const files: MicroSourceFile[] = []
+  const push = (pointId: string, fileName: string, lineId: string) =>
+    files.push({
+      file_name: fileName,
+      sha256: MICRO_SHA,
+      point_id: pointId,
+      line_id: lineId,
+      source_record_count: pointId === 'W8' ? 3 : 2,
+    })
+  for (let i = 1; i <= 9; i++) push(`W${i}`, `W${i}.dat`, 'L1')
+  for (let i = 12; i <= 20; i++) push(`W${i}`, `WD${i}-Vx.dat`, 'L2')
+  for (let i = 24; i <= 27; i++) push(`W${i}`, `WD${i}-Vx.dat`, 'L3')
+  return files
+}
+
+const MICRO_SOURCE_FILES = buildMicroSourceFiles()
+
+const MICRO_LAYER_COUNTS = {
+  source_records: 45,
+  finite_records: 44,
+  invalid_records: 1,
+  rejected_3sigma: 0,
+  accepted_modeling: 44,
+  aggregated_nodes: 44,
+}
+
+const MICRO_AGGREGATION = {
+  conflict_group_count: 0,
+  conflict_row_count: 0,
+  collapsed_row_count: 0,
+  max_value_range: 0,
+}
+
+const MICRO_GOLDEN = {
+  passed: true,
+  checks: [
+    { name: 'accepted_count', passed: true, expected: 44, actual: 44 },
+    { name: 'rejected_count', passed: true, expected: 0, actual: 0 },
+    { name: 'accepted_sha256', passed: true, expected: MICRO_SHA, actual: MICRO_SHA },
+    { name: 'rejected_sha256', passed: true, expected: MICRO_SHA, actual: MICRO_SHA },
+    { name: 'conflict_group_count', passed: true, expected: 0, actual: 0 },
+    { name: 'conflict_row_count', passed: true, expected: 0, actual: 0 },
+    { name: 'modeling_node_count', passed: true, expected: 44, actual: 44 },
+  ],
+}
+
+const MICRO_DERIVATION = {
+  dataset_id: 'ds-micro',
+  case_id: 'case-micro',
+  status: 'mapped',
+  source_kind: 'microseismic_dat_bundle',
+  rule_version: MICRO_RULE_VERSION,
+  adapter_version: '0.5.0',
+  aggregation_method: 'arithmetic_mean_exact_xyz',
+  layer_counts: MICRO_LAYER_COUNTS,
+  line_counts: { L1: 19, L2: 18, L3: 8 },
+  three_sigma: {
+    threshold: 3.0,
+    ddof: 1,
+    depth_mean: 52.778,
+    depth_std: 2.81,
+    vx_mean: 0.481744,
+    vx_std: 0.0436,
+  },
+  aggregation: MICRO_AGGREGATION,
+  coordinates: {
+    coord_type: 'local_engineering_m',
+    depth_rule: 'depth_m = WL/2(km) × 1000',
+    z_rule: 'z_local_m = -depth_m',
+    vx_unit: 'km/s',
+    absolute_crs: 'unavailable',
+  },
+  golden: MICRO_GOLDEN,
+  validation_passed: true,
+  downstream_gates: {
+    geometry_blocked: false,
+    cleaning_blocked: false,
+    interpolation_blocked: false,
+  },
+  source_files: MICRO_SOURCE_FILES,
+  artifacts: {
+    source_records: { file: 'source_records_45.csv', rows: 45, sha256: MICRO_SHA },
+    invalid_records: { file: 'invalid_records_1.csv', rows: 1, sha256: MICRO_SHA },
+    rejected_3sigma: { file: 'rejected_3sigma_0.csv', rows: 0, sha256: MICRO_SHA },
+    accepted_modeling: { file: 'accepted_modeling_44.csv', rows: 44, sha256: MICRO_SHA },
+    aggregated_nodes: { file: 'aggregated_nodes_44.csv', rows: 44, sha256: MICRO_SHA },
+  },
+}
+
+const MICRO_IMPORT_PROFILE = {
+  source_kind: 'microseismic_dat_bundle',
+  dimension: '3d',
+  mapping: MICRO_MAPPING,
+  rule_version: MICRO_RULE_VERSION,
+  adapter_version: '0.5.0',
+  aggregation_method: 'arithmetic_mean_exact_xyz',
+  golden: MICRO_GOLDEN,
+  layer_counts: MICRO_LAYER_COUNTS,
+  aggregation: MICRO_AGGREGATION,
+  source_files: MICRO_SOURCE_FILES,
+  derivation_report: 'derived/derivation_report.json',
+  modeling_provenance: 'derived/modeling_provenance.parquet',
+  row_count: 44,
+  valid_row_count: 44,
+  invalid_row_count: 0,
+  standardized_sha256: MICRO_SHA,
+}
+
 interface MockState {
   runPolls: number
   runStarted: boolean
@@ -100,10 +235,29 @@ export async function installMockApi(page: Page): Promise<void> {
             source_kind: 'builtin_legacy',
             links: { detail: '/api/cases/resistivity', publish_status: '/api/cases/resistivity/publish-status' },
           },
+          {
+            case_id: 'microseismic',
+            title: '微震速度',
+            data_form: '三维 X/Y/Z/Vx（局部测线坐标）',
+            status: 'audit_only',
+            coordinate: '局部测线坐标（W16 原点）',
+            unit_note: 'Vx 单位 km/s',
+            v03_stage: '第二案例：v0.5 原始 DAT 导入',
+            source_kind: 'builtin_legacy',
+            links: { detail: null, publish_status: null },
+          },
         ],
       })
     }
     if (path === '/cases' && method === 'POST') {
+      const body = route.request().postDataJSON() as { name: string; case_type?: string }
+      if (body.case_type === 'microseismic') {
+        return json(
+          route,
+          { id: 'case-micro', name: body.name, case_type: 'microseismic', config: {}, created_at: T, updated_at: T },
+          201,
+        )
+      }
       return json(route, { id: 'case-e2e', name: 'E2E 案例', case_type: 'generic', config: {}, created_at: T, updated_at: T }, 201)
     }
     if (path === '/cases/case-e2e/datasets/uploads' && method === 'POST') {
@@ -323,6 +477,50 @@ export async function installMockApi(page: Page): Promise<void> {
           iserver_rest_publish_status: 'unsupported_on_this_build',
         },
       }, 201)
+    }
+    // ---------------------------------------------------------------- v0.5 微震
+    if (path === '/cases/case-micro/datasets' && method === 'GET') {
+      return json(route, { datasets: [] })
+    }
+    if (path === '/cases/case-micro/microseismic-imports' && method === 'POST') {
+      return json(
+        route,
+        { id: 'ds-micro', case_id: 'case-micro', version: 1, status: 'mapped', created_at: T, profile: MICRO_IMPORT_PROFILE },
+        201,
+      )
+    }
+    if (path === '/datasets/ds-micro' && method === 'GET') {
+      return json(route, {
+        id: 'ds-micro',
+        case_id: 'case-micro',
+        version: 1,
+        status: 'mapped',
+        profile: MICRO_IMPORT_PROFILE,
+        created_at: T,
+      })
+    }
+    if (path === '/datasets/ds-micro/derivation' && method === 'GET') {
+      return json(route, MICRO_DERIVATION)
+    }
+    if (path === '/datasets/ds-micro/validate' && method === 'POST') {
+      return json(route, {
+        status: 'passed',
+        checks: [],
+        issues: [],
+        statistics: {
+          ranges: { x: [-750, 960], y: [-995, 1310], z: [-55.556, -50], value: [0.438684, 0.524804] },
+          unique_coordinate_count: 44,
+          duplicate_count: 0,
+          conflict_count: 0,
+        },
+        valid_row_count: 44,
+        invalid_row_count: 0,
+        row_count: 44,
+        source_sha256: MICRO_SHA,
+        standardized_sha256: MICRO_SHA,
+        confirmed: true,
+        confirmed_issue_codes: [],
+      })
     }
     return json(route, { error: { code: 'MOCK_NOT_FOUND', message: `未 mock 的端点：${method} ${path}`, details: {} } }, 404)
   })
