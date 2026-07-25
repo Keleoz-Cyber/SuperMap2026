@@ -1,4 +1,4 @@
-"""Task 10: version consistency across Python, API, web package, lockfile and home badge."""
+"""Task 10/15: version consistency across Python, API, web package, lockfile and home badge."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import re
 import tomllib
 from pathlib import Path
 
-EXPECTED = "0.4.1"
+EXPECTED = "0.5.0"
 
 
 def test_pyproject_version():
@@ -40,3 +40,9 @@ def test_home_badge_uses_shared_web_version_source():
 def test_mock_health_reports_web_version():
     mock = Path("web/src/mocks/platformDemo.ts").read_text(encoding="utf-8")
     assert "WEB_VERSION" in mock
+
+
+def test_web_version_source_stays_generated_not_hardcoded():
+    version_ts = Path("web/src/version.ts").read_text(encoding="utf-8")
+    assert "package.json" in version_ts
+    assert EXPECTED not in version_ts, "web 运行时版本必须来自 package.json，不得二次硬编码"

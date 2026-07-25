@@ -1,6 +1,6 @@
 # 当前开发状态
 
-> 更新时间：2026-07-24（v0.4 分支更新）。本文是开发人员和开发 Agent 判断“现在做到哪一步”的唯一状态入口。数据细节见 [电阻率](../data/resistivity.md)、[微震](../data/microseismic.md)、[瓦斯](../data/gas.md) 和 [数据契约](../data/contracts.md)；目标产品见 [产品蓝图](../product-blueprint.md)。
+> 更新时间：2026-07-25（v0.5 分支更新）。本文是开发人员和开发 Agent 判断“现在做到哪一步”的唯一状态入口。数据细节见 [电阻率](../data/resistivity.md)、[微震](../data/microseismic.md)、[瓦斯](../data/gas.md) 和 [数据契约](../data/contracts.md)；目标产品见 [产品蓝图](../product-blueprint.md)。
 
 ## 1. 状态分层
 
@@ -25,23 +25,31 @@
 - **v0.4.0 通用建模平台（已发布）**：2026-07-25 自 merge commit `b95f12b` 发布 annotated tag `v0.4.0`，main CI 与标签 CI 均成功。
   - 通用上传（CSV/XLSX）、字段映射、质量门禁、IDW/普通克里金调参（手动+有限网格搜索，50 组合硬上限）、空间折分验证、公共有效指标排行榜、SQLite v4 持久化任务（取消/重试/重启恢复、在途 run 唯一约束）、成果工件与 X/Y/Z 切片、正式选择、证据导出与发布记录（manual_required）。
   - v0.3.1 电阻率案例以 `builtin_legacy` 只读适配器保留，全部 legacy 路由与证据语义不变；统一错误封套，本机绝对路径不下发浏览器（含 legacy points/metric_source/local cache）。
-  - 案例预设登记于 `config/presets/`（resistivity=builtin_legacy、microseismic=upload_required，预设不含绝对路径、不自动导入私有数据）。
+  - 案例预设登记于 `config/presets/`（resistivity=builtin_legacy、microseismic=upload_required，预设不含绝对路径、不自动导入私有数据；microseismic 预设在 v0.5 升级为 `domain_adapter`，见下条）。
   - 发布时测试基线（2026-07-25）：后端 `381 passed` + 前端 vitest `31 passed` + Playwright mock 冒烟 `1 passed`；`local_data 23 passed`（原始数据哈希不变）。
   - 真实浏览器验收（2026-07-24，本机 uvicorn 单进程）：上传 3D 夹具 → 质量校验通过（144/144）→ IDW 网格 4/4 候选成功（公共有效 144）→ 普通克里金 2/2 候选成功（球状 RMSE 0.749 / 指数 RMSE 0.783）→ 完整场点云（1,331 单元值域渐变可见）→ Z/X/Y 切片真实坐标标签 → 正式选择（理由落库）→ 导出 ZIP 七文件（SHA-256 清单 + 1,331 行 grid.csv）→ 发布登记 manual_required；iServer 离线时 legacy 页降级为「未验证但模型不受影响」，点云照常。截图：`docs/evidence/v0.4/v04-01..09*.png`。
 - **v0.4.1 演示加固（`feat/v0.4.1-demo-hardening` 分支，发布候选）**：页面导航死路消除（PageNavigation，加载失败页同样可返回首页）；唯一权威演示数据 `demo/platform_demo_3d.csv`（SHA-256 固定）+ 下载端点；`geomodeling demo-check` 启动前检查（阻断/警告分级）；`scripts/start_demo.ps1` 安全启动脚本；真实 FastAPI+SQLite Live E2E（CI `browser-live`）；答辩运行手册 `docs/v0.4.1-demo-runbook.md`。
   - 候选测试基线（2026-07-25，本分支）：后端 `420 passed`、前端 vitest `43 passed`、Mock E2E `2 passed`、Live E2E `1 passed`、`local_data 23 passed`（哈希不变）。
   - 真实 Windows 彩排（2026-07-25，全新 `var/demo_v041`）：路线 A 全流程走通（IDW 与克里金各 1/1 成功，公共有效 144，导出 ZIP 七文件 1,331 行）；路线 B iServer 在线六级证据链全 `ok=True`（含 browser_report）；iServer 关闭后路线 B 如实降级、路线 A 不受影响；杀进程重启后案例/实验/成果全部恢复。截图与登记：`docs/evidence/v0.4.1/`。
-- 当前仓库仍无微震三维派生表代码化；瓦斯保持暂缓。
+- 当前仓库瓦斯保持暂缓。
+- **v0.5 微震第二案例建模闭环（`feat/v0.5-microseismic-second-case` 分支，当前代码已实现，发布候选）**：微震从“外部派生”移入代码化。
+  - 派生内核：22 个正式 DAT → 2,006 源记录（823/819/364）→ 2,005 有限（822/819/364，W8 `1.#QNAN0` 唯一无效）→ 已确认局部三维（W16 原点、X 沿 L3 向 W24、Y 沿 L2 向 W20、`local_engineering_m` 非 EPSG；`depth_m=WL/2(km)×1000` 向下为正、`z_local_m=-depth_m`；规则版本 `microseismic_local_3d_v0.2b_confirmed_2026-07-20`，适配器 0.5.0）→ 一次全局 3σ（样本标准差 `ddof=1`、两遍顺序累加）剔除 80（深度 72、速度 8）→ 1,925 候选（792/783/350）→ 三 float 完全相等分组、算术平均聚合（13 冲突组/27 组内记录/坍缩 14，组内最大极差 0.913554 km/s）→ 1,911 唯一建模节点。
+  - 黄金门禁：accepted/rejected 两张 canonical CSV（UTF-8 BOM + CRLF）SHA-256 逐字节锁定（`4f7a0886…ae1513` / `3752b2f6…872b1`），计数、分层、剔除原因、冲突组一并核对；任一检查失败即阻断导入，`downstream_gates` 全部保持 blocked。
+  - 入口等价：浏览器首页微震卡 → `/cases/new?preset=microseismic` → 四步导入向导（选文件夹或 22 DAT → 核验 → 派生确认 → 质量门禁 → 建模）；CLI `geomodeling microseismic derive` 与 `import-case`；API `POST /api/cases/{id}/microseismic-imports`（multipart 22 DAT，201）、`GET /api/datasets/{id}/derivation`、`.../derivation/artifacts/{name}`（白名单）、`.../derivation/points?layer=accepted|rejected|aggregated&decimate=1`。导入原子化：失败补偿不留数据库行、正式目录或临时目录。
+  - 平台接入：预设 `config/presets/microseismic.json`（`source=domain_adapter`、`adapter_id=microseismic_dat_v05`）；IDW 36 组合 / Kriging 27 组合网格搜索；`z_scale` 实验参数（预设 0.5/1/2，`0<z_scale≤20`，仅距离/邻域/变异函数拟合使用，不写回物理坐标）；默认 50 m 网格（X[-750,960] Y[-995,1310] Z[-4086.538,-37.5]，约 134,890 单元 < 100 万上限）；整根 XY 采样柱折分空间验证 + 按测线/测点分组诊断（不改变公共排名）。
+  - 成果与导出：成果工作台三层诊断图层（1,911 节点默认开，1,925 候选与 80 剔除默认关）；导出 ZIP = 标准七文件 + `domain_evidence/` 七文件（`source_manifest.json`、`derivation_report.json`、五个分层 CSV），全部带 SHA-256；发布登记保持 `manual_required`。
+  - 测试基线（Task 14 后实测，本分支）：后端 `564 passed`、前端 vitest `66 passed`、Mock E2E `3 passed`、Live E2E `2 passed`、`local_data 27 passed`。
+  - 运行手册：[../v0.5-microseismic-loop.md](../v0.5-microseismic-loop.md)。发布门说明：PR 未合并、tag/release 待用户批准。
 
 ## 3. 外部派生与人工验证（尚未代码化）
 
 | 案例 | 已有证据 | 当前边界 |
 |---|---|---|
 | 电阻率 | 已在iDesktopX复现完整体元、水平薄切片和阈值过滤；`WorkSpace.smwu` 已发布 iServer 三服务（人工 UI 步骤） | 垂直切片未正式验证；原生等值面失败；RHO单位和绝对EPSG未知；体元在三维服务中仅 ImageFileLayer，S3M 体渲染待缓存 |
-| 微震 | 已生成2,005条局部三维点；按3σ规则剔除80条后形成1,925条候选点，并已在SuperMap人工复现 | 生成脚本、规则配置、回归测试和插值评价尚未进入仓库 |
+| 微震 | 人工派生表（1,925候选/80剔除）已转为 v0.5 黄金回归来源：代码从原始 DAT 重新生成并逐字节锁定哈希；iDesktopX 人工复现保留为来源证据 | 绝对地理配准仍未知，不得跨案例叠加；iServer 自动发布保持 `manual_required` |
 | 瓦斯 | 已生成58条合格三维候选样本（28个位置），三维点可在平面场景显示，并生成过IDW体元 | 体元加入三维场景会导致iDesktopX原生崩溃，当前暂缓作为正式演示案例 |
 
-微震派生事实：
+微震派生事实（现为黄金回归锁定口径）：
 
 - `微震局部三维点_3Sigma_1925.csv`：1,925条，L1/L2/L3 = 792/783/350；
 - `微震3Sigma剔除记录_80.csv`：80条，其中深度原因72条、速度原因8条；
@@ -84,9 +92,8 @@
 ## 6. 明确未实现
 
 - 任务队列、WebSocket进度；
-- 通用CSV/XLSX上传、字段映射和数据版本管理；
-- Python二维/三维IDW、普通Kriging与网格搜索执行器；
-- 微震局部三维和3σ规则的仓库内可复现实现、微震三维场景接入；
+- 通用CSV/XLSX上传的字段映射外扩展与数据版本管理；
+- 微震绝对地理配准与跨案例空间叠加（需共同控制点证据）；
 - iServer 程序化发布（REST workspaces POST，ISSUE-V03-01）、S3M 体元缓存发布与体渲染、垂直切片 Web 验证；
 - 瓦斯体元稳定显示、原生等值面、DSI-like/GOCAD后端；
 - 自动成矿概率、储量或地质结论。

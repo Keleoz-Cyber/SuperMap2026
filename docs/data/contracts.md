@@ -1,6 +1,6 @@
 # 数据契约
 
-> 当前版本适用于：电阻率 v0.1.0 已发布基线 + 已合并的微震 v0.2a 数据审计底座。
+> 当前版本适用于：电阻率 v0.1.0 已发布基线 + 已合并的微震 v0.2a 数据审计底座 + v0.5 微震局部三维派生与聚合（本分支）。
 > 字段含义、单位、坐标或 Z 方向没有直接来源证据时必须标记为未确认，禁止猜测。
 
 ## 1. 总原则
@@ -110,19 +110,28 @@ x,y,z,value,i,j,k,is_observed,is_valid,source_point_id,method,model_id
 
 规则：
 
-- DAT源字段`WL/2(km)`必须原样保留。微震案例已确认派生规则`depth_m = WL_half_km × 1000`（向下为正）；三维显示可另生成`z_local_m = -depth_m`（向上为正）。原字段、派生字段、单位、符号和规则版本必须同时保存，禁止覆盖原token。当前v0.2a代码尚未实现该规则，升级时必须同步schema、config、报告和测试。
+- DAT源字段`WL/2(km)`必须原样保留。微震案例已确认派生规则`depth_m = WL_half_km × 1000`（向下为正）；三维显示可另生成`z_local_m = -depth_m`（向上为正）。原字段、派生字段、单位、符号和规则版本必须同时保存，禁止覆盖原token。v0.5 代码已实现该规则，schema、config、报告和回归测试已同步。
 - 每个 DAT 末尾的 NUL 伪行只识别为文件终止，不计入样本，并在质量报告中登记。
 - 无效原始 token（如 W8 的 `1.#QNAN0`）保留原文、源文件和源行号，不改成 0、不静默删除、不自动插值覆盖、不计入有限数值统计。
 - 未知或不适用的 `sequence_on_line`、`cumulative_s_m`、`x_local_m`、`y_local_m` 保持空值，不得写成 0。
 - W28 只作冲突登记，不进入正式 L3、累计距离、样本、清洗集合或模型。
 
-微震局部三维和3σ派生契约尚未由当前代码实现，但已经确认如下：
+微震局部三维、3σ筛选与聚合派生契约已由 v0.5 代码实现，固定口径如下：
 
-- 2,005条有限记录逐条保留`sample_id/point_id/line_id/source_file/source_line/raw_token`，并派生`x_local_m/y_local_m/depth_m/z_local_m/vx_km_s`和规则版本；
+- 2,005条有限记录逐条保留`sample_id/point_id/line_id/source_file/source_line/raw_token`，并派生`x_local_m/y_local_m/depth_m/z_local_m/vx_km_s`和规则版本（`microseismic_local_3d_v0.2b_confirmed_2026-07-20`，适配器版本 0.5.0）；
 - `depth_m = wl_half_km × 1000`且向下为正，`z_local_m = -depth_m`且向上为正；
-- 对深度和Vx分别计算标准分数，任一绝对值大于3的记录进入剔除表；当前固定回归口径为剔除80条（深度72、速度8）、保留1,925条；
+- 3σ筛选只执行一次全局筛选：对深度和Vx分别计算总体均值与**样本标准差**（`ddof=1`，即 `std = sqrt(Σ(x−mean)² / (n−1))`），标准分数 `z = (x − mean) / std`，任一绝对标准分数大于3的记录进入剔除表；锚点统计为 depth mean 676.620332169576 / std 1138.5704399315825，vx mean 0.9019579860349127 / std 0.7493428022868682；固定回归口径为剔除80条（深度72、速度8）、保留1,925条（L1/L2/L3 = 792/783/350）；标准差采用两遍顺序累加浮点算法，与黄金表字节级一致；
 - 剔除表必须包含`depth_zscore/vx_zscore/filter_status/filter_reason`，候选表不得覆盖2,006条源记录标准表；
 - 论文3.59%只作冲突来源，程序以实际输入分母和记录数计算比例。
+
+### 5.1 聚合建模节点契约（v0.5）
+
+- 聚合只按 `(x_local_m, y_local_m, z_local_m)` 三个 float **完全相等**分组（无容差），组内 Vx 取**算术平均**；单记录组保留原值；
+- 每个聚合节点保存溯源：`source_sample_ids`、`sample_count`、`min/max/std`（std 同为 `ddof=1`，单样本组为空）；组内最大极差 0.913554 km/s；
+- 固定回归口径：1,925 条候选中 13 个冲突组、27 条组内记录，坍缩 14 条，输出 **1,911** 个唯一建模节点；聚合不修改 1,925 候选表本身；
+- 聚合规则版本独立登记（`arithmetic_mean_exact_xyz`），与派生规则版本分开演进；
+- 黄金门禁：accepted（1,925）与 rejected（80）两张 canonical CSV（UTF-8 BOM + CRLF）的 SHA-256 分别锁定为 `4f7a0886…ae1513` 与 `3752b2f6…872b1`（全量见 [microseismic.md](microseismic.md) §8.3），门禁任一检查失败即阻断导入；
+- 1,911 聚合节点是进入平台调参的建模数据集；1,925 候选与 80 剔除只作诊断图层与证据导出，不参与插值输入。
 
 ## 6. 无效值、NoData 与空值语义
 
