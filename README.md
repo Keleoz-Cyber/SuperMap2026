@@ -65,6 +65,16 @@ python -m uvicorn geomodeling.api.app:app --host 127.0.0.1 --port 8000 --workers
 # 浏览器打开 http://127.0.0.1:8000/
 ```
 
+## v0.4.1 答辩演示
+
+```powershell
+geomodeling demo-check                 # 启动前检查（阻断/警告分级）
+scripts/start_demo.ps1 -CheckOnly -NoBrowser   # 只检查不启动
+scripts/start_demo.ps1                 # 检查 + 单进程启动 + 打开浏览器
+```
+
+演示数据为唯一权威样例 `demo/platform_demo_3d.csv`（SHA-256 固定，首页「下载演示数据」获取）。完整演示流程、双路线与故障恢复见 [docs/v0.4.1-demo-runbook.md](docs/v0.4.1-demo-runbook.md)。
+
 便携测试只使用 `tests/fixtures/` 中的人工小样本，可在 GitHub Actions 中运行；`local_data` 测试依赖相邻只读资料目录，资料不存在时会明确 skip。详细验收口径见 [docs/acceptance.md](docs/acceptance.md)。
 
 ## CLI 入口

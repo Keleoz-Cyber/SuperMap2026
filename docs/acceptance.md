@@ -14,6 +14,8 @@ npm --prefix web run test:unit
 npm --prefix web run type-check
 npm --prefix web run build
 npm --prefix web run test:e2e
+geomodeling demo-check --json
+npm --prefix web run test:e2e:live   # 需先设置独立 GEOMODELING_DATA_DIR
 geomodeling run-all -o outputs/release_verify
 geomodeling microseismic run-audit --config config/microseismic.yaml -o outputs/microseismic_verify
 geomodeling verify-supermap -o outputs/release_verify
@@ -24,8 +26,11 @@ geomodeling verify-supermap -o outputs/release_verify
 v0.4 通用建模验收（不依赖 iServer）：
 
 1. 便携端到端：`tests/test_platform_end_to_end.py` 一次跑通 创建案例 → 上传 3D 夹具 → 映射 → 质量门禁 → IDW + 普通克里金有限搜索 → 公共有效指标 → 正式选择 → Z/X/Y 切片 → ZIP 导出 → 运行时重启后全部资源仍可解析。
-2. 浏览器冒烟：`npm --prefix web run test:e2e` 用 mock API 在真实 Chromium 中走通同一流程（含切片坐标标签、理由必填、导出/发布状态分离）。
-3. 真实浏览器验收：启动单进程 uvicorn 后按 [v0.4 运行说明](v0.4-generic-modeling-loop.md) §1 操作，截图证据存 `docs/evidence/v0.4/`。
+2. 浏览器双层验证：Mock API 冒烟（`npm --prefix web run test:e2e`，页面契约与导航恢复）+ Live E2E（`test:e2e:live`，真实 FastAPI + 隔离 SQLite + 真实 Worker，独立 `GEOMODELING_DATA_DIR` 与端口 5201，结束不留监听）。
+3. 导航验收：所有主页面与加载失败页都有可见文字的「返回首页」；成果页可「返回实验」；返回首页不取消在途任务。
+4. 演示数据验收：`demo/platform_demo_3d.csv` 是唯一权威样例，SHA-256 固定为 `deb9c25f…2bb3`；下载端点内容与哈希一致且不泄露本机路径。
+5. 预检验收：`geomodeling demo-check` 区分 `passed/warning/blocked`；阻断项（前端未构建、演示数据哈希不符、数据目录不可写、SQLite 失败、端口被未知占用）退出码 1；iServer/S3M/凭据缺失仅警告，退出码 0。
+6. 真实浏览器验收：启动单进程 uvicorn 后按 [v0.4 运行说明](v0.4-generic-modeling-loop.md) §1 操作，截图证据存 `docs/evidence/v0.4/`；答辩执行手册见 [v0.4.1 运行手册](v0.4.1-demo-runbook.md)。
 
 v0.3 浏览器闭环验收（需本机 iServer 已启动且 `WorkSpace.smwu` 已发布，见 [v0.3 运行说明](v0.3-iserver-loop.md)）：
 
