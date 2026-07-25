@@ -62,13 +62,26 @@ class JobWorker:
                 self._pending_cancels.add(run_id)
             else:
                 event.set()
+        # 取消意图只允许对在途（queued/running）任务原子落库；
+        # 终态行完全不可变——不读改写、不追加旗标。
         with self._runtime.session() as session:
             row = session.get(tables.Run, run_id)
-            if row is not None:
-                metrics = tables.loads_canonical(row.metrics_json)
-                metrics[CANCEL_REQUESTED] = True
-                row.metrics_json = tables.dumps_canonical(metrics)
-                session.commit()
+            if row is None or row.status not in tables.RUN_INFLIGHT_STATUSES:
+                return
+            metrics = tables.loads_canonical(row.metrics_json)
+            metrics[CANCEL_REQUESTED] = True
+            session.execute(
+                tables.Run.__table__.update()
+                .where(
+                    tables.Run.id == run_id,
+                    tables.Run.status.in_(sorted(tables.RUN_INFLIGHT_STATUSES)),
+                )
+                .values(
+                    metrics_json=tables.dumps_canonical(metrics),
+                    updated_at=tables.utc_now_iso(),
+                )
+            )
+            session.commit()
 
     def wait_idle(self, timeout: float = 30.0) -> None:
         for future in list(self._futures):
