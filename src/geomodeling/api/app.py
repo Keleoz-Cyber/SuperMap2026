@@ -41,7 +41,7 @@ from geomodeling.api.deps import (
     get_iserver_client,
     get_settings,
 )
-from geomodeling.api.routes import cases, datasets, demo, experiments, results, runs
+from geomodeling.api.routes import cases, datasets, demo, experiments, microseismic, results, runs
 from geomodeling.platform import PlatformRuntime
 from geomodeling.platform.errors import (
     REDACTED_PATH,
@@ -211,6 +211,7 @@ def create_app() -> FastAPI:
     app.include_router(experiments.router)
     app.include_router(runs.router)
     app.include_router(results.router)
+    app.include_router(microseismic.router)
 
     # -------------------------------------------------------- frontend
     settings = get_settings()
