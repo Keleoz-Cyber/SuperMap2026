@@ -260,6 +260,8 @@ def test_export_zip_contains_full_lineage(tmp_path):
     assert manifest["grid_sha256"]
     assert manifest["files"]
     assert "domain_evidence" not in manifest
+    # legacy 候选（无专业工件行）：导出无 professional 节（逐位不变锁定）
+    assert "professional" not in manifest
 
     metadata = json.loads(bundle.read("metadata.json"))
     assert metadata["algorithm"] == "idw"
