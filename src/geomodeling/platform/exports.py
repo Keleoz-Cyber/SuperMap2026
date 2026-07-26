@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import shutil
 import tempfile
@@ -33,6 +34,8 @@ from geomodeling.microseismic.platform_adapter import SOURCE_KIND
 from geomodeling.platform import tables
 from geomodeling.platform.errors import PlatformError
 from geomodeling.platform.settings import PlatformSettings
+
+logger = logging.getLogger("geomodeling.platform.exports")
 
 DOMAIN_EVIDENCE_MISSING = "DOMAIN_EVIDENCE_MISSING"
 DOMAIN_EVIDENCE_HASH_MISMATCH = "DOMAIN_EVIDENCE_HASH_MISMATCH"
@@ -290,6 +293,12 @@ def build_export(runtime: PlatformRuntime, result_id: str) -> dict[str, Any]:
         # tmp_dir 可能含 domain_evidence/ 子目录，整体递归清理。
         shutil.rmtree(tmp_dir, ignore_errors=True)
     except BaseException:
+        # 任一导出阶段失败后同样清理暂存目录；清理异常只记日志（含堆栈），
+        # 绝不覆盖最初的业务异常（与 platform_adapter 补偿同款模式）。
+        try:
+            shutil.rmtree(tmp_dir)
+        except Exception:  # noqa: BLE001
+            logger.exception("export staging cleanup failed: %s", tmp_dir)
         raise
 
     return {

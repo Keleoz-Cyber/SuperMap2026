@@ -273,3 +273,46 @@ def test_export_zip_contains_full_lineage(tmp_path):
 
     selections = json.loads(bundle.read("formal_selections.json"))
     assert selections[0]["note"] == "最优候选"
+
+
+def test_export_failure_cleans_staging_dir(tmp_path, monkeypatch):
+    """任一导出阶段失败：原异常传播，且 export-* 暂存目录不得残留。"""
+
+    client, runtime = make_client(tmp_path)
+    _, _, _, candidate_id = prepare_completed_run(client)
+    client.post(f"/api/results/{candidate_id}/materialize")
+
+    from geomodeling.platform import exports as exports_module
+
+    def boom(_path):
+        raise RuntimeError("injected export failure")
+
+    monkeypatch.setattr(exports_module, "_sha256", boom)
+    with pytest.raises(RuntimeError, match="injected export failure"):
+        exports_module.build_export(runtime, candidate_id)
+    assert list(runtime.settings.exports_dir.rglob("export-*")) == []
+
+
+def test_export_cleanup_failure_does_not_mask_original_error(tmp_path, monkeypatch, caplog):
+    """清理本身失败（如权限拒绝）只能记日志，抛出的仍是原始业务异常。"""
+
+    client, runtime = make_client(tmp_path)
+    _, _, _, candidate_id = prepare_completed_run(client)
+    client.post(f"/api/results/{candidate_id}/materialize")
+
+    from geomodeling.platform import exports as exports_module
+
+    def boom(_path):
+        raise RuntimeError("injected export failure")
+
+    def denied(*_args, **_kwargs):
+        raise PermissionError("cleanup denied")
+
+    monkeypatch.setattr(exports_module, "_sha256", boom)
+    monkeypatch.setattr(exports_module.shutil, "rmtree", denied)
+    with pytest.raises(RuntimeError, match="injected export failure"):
+        exports_module.build_export(runtime, candidate_id)
+    assert any(
+        "export staging cleanup failed" in record.getMessage() and record.exc_info is not None
+        for record in caplog.records
+    )
