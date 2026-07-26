@@ -33,6 +33,8 @@ __all__ = [
     "FormalSelectionRecord",
     "FormalSelectionRequest",
     "GridSpec",
+    "ProfessionalConfirmationRequest",
+    "ProfessionalDiagnosisRequest",
     "RunRecord",
     "RunStatus",
     "SpatialValidationSpec",
@@ -158,6 +160,40 @@ class FormalSelectionBody(ContractModel):
 
     note: str = Field(min_length=1, max_length=2000)
     selected_by: str | None = Field(default=None, max_length=128)
+
+
+class ProfessionalDiagnosisRequest(ContractModel):
+    """数据集级专业诊断请求体（v0.6，POST …/professional-diagnostics）。
+
+    ``variogram`` 是
+    ``geomodeling.modeling.professional_contracts.VariogramDiagnosticSpec``
+    的原始载荷：本层只做 ``extra="forbid"`` 浅校验，严格校验由服务层
+    用上述契约执行——分层方式与 ``ExperimentCreateRequest.parameters``
+    一致，字段定义不在此处重复。数据集身份取自 URL 路径。
+    """
+
+    variogram: dict[str, Any] = Field(default_factory=dict)
+
+
+class ProfessionalConfirmationRequest(ContractModel):
+    """各向异性人工确认请求体（v0.6，POST …/confirm）。
+
+    用户确认一组各向异性参数，或显式选择「保持各向同性」，二者必须
+    恰好其一。``anisotropy`` 为建模层各向异性契约的原始载荷（方位角、
+    3D 倾角、滚转角、主/次/垂向尺度比与证据引用），严格校验在服务层
+    执行；``note`` 为确认说明，按设计要求必填。
+    """
+
+    keep_isotropic: bool = False
+    anisotropy: dict[str, Any] = Field(default_factory=dict)
+    note: str = Field(min_length=1, max_length=2000)
+
+    @model_validator(mode="after")
+    def _check_exactly_one_choice(self) -> "ProfessionalConfirmationRequest":
+        has_anisotropy = bool(self.anisotropy)
+        if self.keep_isotropic == has_anisotropy:
+            raise ValueError("必须恰好选择「保持各向同性」或提供一组各向异性参数")
+        return self
 
 
 # ---------------------------------------------------------------------------
