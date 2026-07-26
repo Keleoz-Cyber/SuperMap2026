@@ -20,6 +20,8 @@ from geomodeling.platform.tables import RunStatus
 
 __all__ = [
     "Algorithm",
+    "AnalysisJobRecord",
+    "AnomalyExtractionRecord",
     "CaseCreateRequest",
     "CaseRecord",
     "CandidateResultRecord",
@@ -33,8 +35,11 @@ __all__ = [
     "FormalSelectionRecord",
     "FormalSelectionRequest",
     "GridSpec",
+    "ProfessionalConfirmationRecord",
     "ProfessionalConfirmationRequest",
     "ProfessionalDiagnosisRequest",
+    "ProfessionalDiagnosticRecord",
+    "ProfessionalResultArtifactsRecord",
     "RunRecord",
     "RunStatus",
     "SpatialValidationSpec",
@@ -267,3 +272,77 @@ class FormalSelectionRecord(ContractModel):
     selected_by: str | None = None
     note: str
     created_at: str
+
+
+# ---------------------------------------------------------------------------
+# v0.6 professional modeling records (SQLite v5)
+# ---------------------------------------------------------------------------
+
+
+class ProfessionalDiagnosticRecord(ContractModel):
+    """数据集级专业诊断记录；状态由持久化分析任务驱动。"""
+
+    id: str
+    dataset_version_id: str
+    status: RunStatus
+    config: dict[str, Any] = Field(default_factory=dict)
+    fingerprint: str = ""
+    manifest: dict[str, Any] = Field(default_factory=dict)
+    error: dict[str, Any] | None = None
+    created_at: str
+    updated_at: str
+    finished_at: str | None = None
+
+
+class ProfessionalConfirmationRecord(ContractModel):
+    """一次性不可变确认快照；创建后没有更新路径。"""
+
+    id: str
+    diagnostic_id: str
+    config: dict[str, Any] = Field(default_factory=dict)
+    fingerprint: str = ""
+    note: str = ""
+    created_at: str
+
+
+class ProfessionalResultArtifactsRecord(ContractModel):
+    """一个候选唯一的一套专业工件（candidate_result_id 唯一约束）。"""
+
+    id: str
+    candidate_result_id: str
+    confirmation_id: str | None = None
+    status: Literal["pending", "succeeded", "failed"] = "pending"
+    capabilities: dict[str, Any] = Field(default_factory=dict)
+    manifest: dict[str, Any] = Field(default_factory=dict)
+    created_at: str
+
+
+class AnomalyExtractionRecord(ContractModel):
+    """异常提取记录；同成果同配置指纹幂等返回同一成功提取。"""
+
+    id: str
+    candidate_result_id: str
+    status: Literal["pending", "succeeded", "failed"] = "pending"
+    config: dict[str, Any] = Field(default_factory=dict)
+    fingerprint: str = ""
+    manifest: dict[str, Any] = Field(default_factory=dict)
+    error: dict[str, Any] | None = None
+    created_at: str
+
+
+class AnalysisJobRecord(ContractModel):
+    """持久化专业分析任务记录（诊断/异常提取）。"""
+
+    id: str
+    job_kind: Literal["professional_diagnosis", "anomaly_extraction"]
+    subject_type: str
+    subject_id: str
+    request_fingerprint: str
+    status: RunStatus
+    retry_of_job_id: str | None = None
+    progress: dict[str, Any] = Field(default_factory=dict)
+    error: dict[str, Any] | None = None
+    created_at: str
+    updated_at: str
+    started_at: str | None = None
+    finished_at: str | None = None

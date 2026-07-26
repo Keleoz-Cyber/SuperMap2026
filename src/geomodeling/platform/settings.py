@@ -90,6 +90,21 @@ class PlatformSettings:
 
         return self.results_dir / result_id / "professional"
 
+    def professional_diagnosis_dir(
+        self, case_id: str, dataset_id: str, diagnosis_id: str
+    ) -> Path:
+        """Per-diagnosis professional artifact directory (variogram evidence)."""
+
+        return (
+            self.datasets_dir / case_id / dataset_id / "professional"
+            / "diagnostics" / diagnosis_id
+        )
+
+    def anomaly_extraction_dir(self, result_id: str, extraction_id: str) -> Path:
+        """Per-extraction anomaly artifact directory under a materialized result."""
+
+        return self.results_dir / result_id / "anomalies" / extraction_id
+
     def export_package(self, export_id: str) -> Path:
         return self.exports_dir / export_id / "result-package.zip"
 

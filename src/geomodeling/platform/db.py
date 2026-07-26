@@ -3,37 +3,69 @@
 The runtime owns the SQLAlchemy engine, creates the initial schema on first
 initialize, and deterministically marks persisted in-flight runs as
 ``interrupted`` (error code ``PROCESS_RESTARTED``) at startup. Interrupted
-runs are never auto-requeued; retry is an explicit user action.
+runs are never auto-requeued; retry is an explicit user action. v5 起启动
+恢复同样覆盖持久化分析任务（analysis_jobs）。
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-from sqlalchemy import create_engine, engine, event, update
+from sqlalchemy import create_engine, engine, event, inspect, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from geomodeling.platform.settings import PlatformSettings
 from geomodeling.platform.tables import (
     ERROR_PROCESS_RESTARTED,
     RUN_INFLIGHT_STATUSES,
+    AnalysisJob,
     Base,
     Run,
     RunStatus,
+    dumps_canonical,
     utc_now_iso,
 )
 
 # v2: dataset_versions 增加 status 列与 (case_id, version) 唯一约束，
 # runs 增加 retry_of_run_id 列。v1 开发库按 greenfield 删除重建，不做迁移。
-SCHEMA_VERSION = 4  # v3: candidate_results 成果列；v4: 在途 run 部分唯一索引 + exports.candidate_result_id
+# v3: candidate_results 成果列；v4: 在途 run 部分唯一索引 + exports.candidate_result_id；
+# v5: professional_diagnostics / professional_confirmations /
+# professional_result_artifacts / anomaly_extractions / analysis_jobs 五表。
+SCHEMA_VERSION = 5
 
 _BUSY_TIMEOUT_MS = 30000
 
-# 逐版本迁移步骤：键为起始版本。每步必须在事务内幂等执行；
-# 迁移完成后统一重打 user_version。比代码新的数据库仍然拒绝启动。
-_MIGRATIONS: dict[int, tuple[str, ...]] = {
+# v5 新增表：迁移后显式核验必须全部存在。
+_V5_NEW_TABLES = (
+    "professional_diagnostics",
+    "professional_confirmations",
+    "professional_result_artifacts",
+    "anomaly_extractions",
+    "analysis_jobs",
+)
+
+
+def _create_v5_tables(conn: engine.Connection) -> None:
+    """v4→v5：在同一事务内用 ORM metadata 创建五张新表并显式核验。
+
+    采用 metadata 而非字面 SQL，消除 tables.py 与迁移脚本的漂移风险；
+    ``checkfirst`` 保证绝不重建或清空既有 v4 行。新表在迁移前不存在，
+    始终为空表，部分唯一索引无需像 v3→v4 在途 run 迁移那样先翻转历史数据。
+    """
+
+    Base.metadata.create_all(bind=conn, checkfirst=True)
+    inspector = inspect(conn)
+    missing = [name for name in _V5_NEW_TABLES if not inspector.has_table(name)]
+    if missing:
+        raise RuntimeError(f"v5 migration did not create tables: {missing}")
+
+
+# 逐版本迁移步骤：键为起始版本。步骤为 SQL 字符串或接受连接的可调用对象；
+# 每步必须在事务内幂等执行；迁移完成后统一重打 user_version。
+# 比代码新的数据库仍然拒绝启动。
+_MIGRATIONS: dict[int, tuple[str | Callable[[engine.Connection], None], ...]] = {
     3: (
         # 先按重启语义把历史在途 run 原子转 interrupted（v3 允许同一实验双在途），
         # 否则部分唯一索引建不起来
@@ -45,6 +77,7 @@ _MIGRATIONS: dict[int, tuple[str, ...]] = {
         "ALTER TABLE exports ADD COLUMN candidate_result_id "
         "VARCHAR(128) REFERENCES candidate_results(id)",
     ),
+    4: (_create_v5_tables,),
 }
 
 
@@ -109,8 +142,11 @@ class PlatformRuntime:
                             "recreate the development database"
                         )
                     for step_version in sorted(v for v in _MIGRATIONS if v >= existing):
-                        for statement in _MIGRATIONS[step_version]:
-                            conn.exec_driver_sql(statement)
+                        for step in _MIGRATIONS[step_version]:
+                            if isinstance(step, str):
+                                conn.exec_driver_sql(step)
+                            else:
+                                step(conn)
                     conn.exec_driver_sql(f"PRAGMA user_version={SCHEMA_VERSION}")
                 elif existing > SCHEMA_VERSION:
                     raise RuntimeError(
@@ -138,14 +174,15 @@ class PlatformRuntime:
             session.close()
 
     def recover_interrupted_runs(self) -> int:
-        """Mark persisted queued/running runs interrupted after a restart.
+        """Mark persisted queued/running runs and analysis jobs interrupted.
 
-        Returns the number of runs flipped. Runs are not requeued; retrying
-        is an explicit user action.
+        v5 起同一段恢复语义同时覆盖持久化分析任务：进程重启后在途任务
+        一律转 ``interrupted``（错误码 ``PROCESS_RESTARTED``）。返回两张表
+        翻转的总行数。任务不会被自动重排队；重试是显式用户动作。
         """
 
         with self.session() as session:
-            result = session.execute(
+            runs_flipped = session.execute(
                 update(Run)
                 .where(Run.status.in_(sorted(RUN_INFLIGHT_STATUSES)))
                 .values(
@@ -154,8 +191,22 @@ class PlatformRuntime:
                     updated_at=utc_now_iso(),
                 )
             )
+            jobs_flipped = session.execute(
+                update(AnalysisJob)
+                .where(AnalysisJob.status.in_(sorted(RUN_INFLIGHT_STATUSES)))
+                .values(
+                    status=RunStatus.INTERRUPTED.value,
+                    error_json=dumps_canonical(
+                        {
+                            "code": ERROR_PROCESS_RESTARTED,
+                            "message": "进程重启，在途分析任务被标记为中断",
+                        }
+                    ),
+                    updated_at=utc_now_iso(),
+                )
+            )
             session.commit()
-            return int(result.rowcount)
+            return int(runs_flipped.rowcount) + int(jobs_flipped.rowcount)
 
     def close(self) -> None:
         if self._engine is not None:

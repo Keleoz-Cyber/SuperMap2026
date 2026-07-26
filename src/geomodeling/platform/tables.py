@@ -4,6 +4,9 @@ Conventions follow the v0.3 codebase: statuses are plain enum strings,
 structured fields are stored as canonical JSON text
 (``json.dumps(..., ensure_ascii=False, sort_keys=True, separators=(",", ":"))``),
 and timestamps are UTC ISO-8601 strings.
+
+v5 增加专业建模状态表：诊断、不可变确认快照、按候选唯一的专业工件、
+幂等异常提取与持久化分析任务（设计 §5.1）。
 """
 
 from __future__ import annotations
@@ -190,3 +193,130 @@ class Publication(Base):
     detail_json: Mapped[str] = mapped_column(Text, default="{}")
     created_at: Mapped[str] = mapped_column(Text, default=utc_now_iso)
     updated_at: Mapped[str] = mapped_column(Text, default=utc_now_iso, onupdate=utc_now_iso)
+
+
+# ---------------------------------------------------------------------------
+# v5: professional modeling state
+# ---------------------------------------------------------------------------
+
+
+class ProfessionalDiagnostic(Base):
+    """数据集级专业诊断（半变异函数等），由 analysis_jobs 驱动状态。"""
+
+    __tablename__ = "professional_diagnostics"
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    dataset_version_id: Mapped[str] = mapped_column(ForeignKey("dataset_versions.id"))
+    status: Mapped[str] = mapped_column(String(32), default=RunStatus.QUEUED.value)
+    config_json: Mapped[str] = mapped_column(Text, default="{}")
+    fingerprint: Mapped[str] = mapped_column(String(64), default="")
+    manifest_json: Mapped[str] = mapped_column(Text, default="{}")
+    error_json: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    created_at: Mapped[str] = mapped_column(Text, default=utc_now_iso)
+    updated_at: Mapped[str] = mapped_column(Text, default=utc_now_iso, onupdate=utc_now_iso)
+    finished_at: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+
+
+class ProfessionalConfirmation(Base):
+    """一次性不可变确认快照；修改任何参数必须以新指纹创建新快照。IDW 不创建。"""
+
+    __tablename__ = "professional_confirmations"
+    __table_args__ = (
+        # 同一诊断下同一配置指纹的确认是纯粹重复：数据库层拒绝；
+        # 不同人工判断以不同指纹形成各自快照。
+        UniqueConstraint(
+            "diagnostic_id",
+            "fingerprint",
+            name="uq_professional_confirmations_diagnostic_fingerprint",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    diagnostic_id: Mapped[str] = mapped_column(ForeignKey("professional_diagnostics.id"))
+    config_json: Mapped[str] = mapped_column(Text, default="{}")
+    fingerprint: Mapped[str] = mapped_column(String(64), default="")
+    note: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[str] = mapped_column(Text, default=utc_now_iso)
+
+
+class ProfessionalResultArtifacts(Base):
+    """一个候选的一套专业真相（折分/OOF/方差/经验误差工件）。"""
+
+    __tablename__ = "professional_result_artifacts"
+    __table_args__ = (
+        # candidate_result_id 唯一：防止一个候选出现两套专业真相。
+        UniqueConstraint(
+            "candidate_result_id", name="uq_professional_result_artifacts_candidate"
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    candidate_result_id: Mapped[str] = mapped_column(ForeignKey("candidate_results.id"))
+    # 可空；专业 Kriging 候选必填（由服务层校验）
+    confirmation_id: Mapped[str | None] = mapped_column(
+        String(128), ForeignKey("professional_confirmations.id"), nullable=True, default=None
+    )
+    status: Mapped[str] = mapped_column(String(32), default="pending")
+    capabilities_json: Mapped[str] = mapped_column(Text, default="{}")
+    manifest_json: Mapped[str] = mapped_column(Text, default="{}")
+    created_at: Mapped[str] = mapped_column(Text, default=utc_now_iso)
+
+
+class AnomalyExtraction(Base):
+    """成果网格上的异常提取；同成果同配置指纹幂等返回同一成功提取。"""
+
+    __tablename__ = "anomaly_extractions"
+    __table_args__ = (
+        # 同一成果同一指纹最多一条成功提取（幂等返回的结构兜底）；
+        # pending/failed 行不受限，失败后可按同指纹重新提取。
+        Index(
+            "ux_anomaly_extractions_succeeded_fingerprint",
+            "candidate_result_id",
+            "fingerprint",
+            unique=True,
+            sqlite_where=text("status = 'succeeded'"),
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    candidate_result_id: Mapped[str] = mapped_column(ForeignKey("candidate_results.id"))
+    status: Mapped[str] = mapped_column(String(32), default="pending")
+    config_json: Mapped[str] = mapped_column(Text, default="{}")
+    fingerprint: Mapped[str] = mapped_column(String(64), default="")
+    manifest_json: Mapped[str] = mapped_column(Text, default="{}")
+    error_json: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    created_at: Mapped[str] = mapped_column(Text, default=utc_now_iso)
+
+
+class AnalysisJob(Base):
+    """持久化专业分析任务（诊断/异常提取）；长计算不在 FastAPI 请求中执行。"""
+
+    __tablename__ = "analysis_jobs"
+    # 数据库层保证同一 job_kind + subject_id 最多一个 queued/running 任务
+    # （部分唯一索引）；应用层预检只是友好错误，竞态由本约束兜底。
+    __table_args__ = (
+        Index(
+            "ux_analysis_jobs_subject_inflight",
+            "job_kind",
+            "subject_id",
+            unique=True,
+            sqlite_where=text("status IN ('queued', 'running')"),
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    job_kind: Mapped[str] = mapped_column(String(32))
+    # subject_id 是多态引用（诊断或异常提取），不建外键
+    subject_type: Mapped[str] = mapped_column(String(64))
+    subject_id: Mapped[str] = mapped_column(String(128))
+    request_fingerprint: Mapped[str] = mapped_column(String(64), default="")
+    status: Mapped[str] = mapped_column(String(32), default=RunStatus.QUEUED.value)
+    retry_of_job_id: Mapped[str | None] = mapped_column(
+        String(128), ForeignKey("analysis_jobs.id"), nullable=True, default=None
+    )
+    progress_json: Mapped[str] = mapped_column(Text, default="{}")
+    error_json: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    created_at: Mapped[str] = mapped_column(Text, default=utc_now_iso)
+    updated_at: Mapped[str] = mapped_column(Text, default=utc_now_iso, onupdate=utc_now_iso)
+    started_at: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    finished_at: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
