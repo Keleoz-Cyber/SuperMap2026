@@ -1,4 +1,5 @@
 import type {
+  AnalysisJobRecord,
   ApiErrorBody,
   BrowserLoadReport,
   CandidatesResponse,
@@ -19,6 +20,11 @@ import type {
   MicroseismicPointLayer,
   MicroseismicPointLayerName,
   PlatformCaseRecord,
+  ProfessionalConfirmationPayload,
+  ProfessionalConfirmationRecord,
+  ProfessionalDiagnosisAccepted,
+  ProfessionalDiagnosisRecord,
+  ProfessionalDiagnosisRequestPayload,
   PublicationRecord,
   PublishStatus,
   QualityReport,
@@ -28,6 +34,7 @@ import type {
   RhoPoints,
   RunRecord,
   SliceResponse,
+  VariogramEvidence,
   VoxelCells,
 } from './types'
 
@@ -277,4 +284,49 @@ export function fetchMicroseismicDerivationPoints(
   return getJson<MicroseismicPointLayer>(
     `/datasets/${datasetId}/derivation/points?layer=${layer}&decimate=${decimate}`,
   )
+}
+
+// ---------------------------------------------------------- v0.6 professional
+
+// 诊断/异常提取是长任务：POST 返回 202 + 任务身份（幂等成功 200，reused=true），
+// 前端只轮询任务与读取证据，绝不在浏览器计算统计结果。
+
+export function requestProfessionalDiagnosis(
+  datasetId: string,
+  payload: ProfessionalDiagnosisRequestPayload,
+): Promise<ProfessionalDiagnosisAccepted> {
+  return postJson<ProfessionalDiagnosisAccepted>(
+    `/datasets/${datasetId}/professional-diagnostics`,
+    payload,
+  )
+}
+
+export function fetchProfessionalDiagnosis(diagnosisId: string): Promise<ProfessionalDiagnosisRecord> {
+  return getJson<ProfessionalDiagnosisRecord>(`/professional-diagnostics/${diagnosisId}`)
+}
+
+export function fetchDiagnosisVariogram(diagnosisId: string, decimate = 1): Promise<VariogramEvidence> {
+  return getJson<VariogramEvidence>(
+    `/professional-diagnostics/${diagnosisId}/variogram?decimate=${decimate}`,
+  )
+}
+
+// 确认快照只新建（201）：不可变，无任何更新/编辑入口
+export function confirmProfessionalDiagnosis(
+  diagnosisId: string,
+  payload: ProfessionalConfirmationPayload,
+): Promise<ProfessionalConfirmationRecord> {
+  return postJson<ProfessionalConfirmationRecord>(
+    `/professional-diagnostics/${diagnosisId}/confirm`,
+    payload,
+  )
+}
+
+export function fetchAnalysisJob(jobId: string): Promise<AnalysisJobRecord> {
+  return getJson<AnalysisJobRecord>(`/analysis-jobs/${jobId}`)
+}
+
+// 重试产生新任务身份（retry_of_job_id 回指原任务），原记录不改写
+export function retryAnalysisJob(jobId: string): Promise<AnalysisJobRecord> {
+  return requestJson<AnalysisJobRecord>(`/analysis-jobs/${jobId}/retry`, { method: 'POST' })
 }

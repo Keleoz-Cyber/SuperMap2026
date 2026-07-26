@@ -434,6 +434,12 @@ export interface ExperimentCreatePayload {
   parameters: Record<string, unknown>
   validation: ValidationSpecPayload
   grid?: GridSpecPayload | null
+  // v0.6 专业输入（三字段全缺时行为与 v0.4 逐位一致）：
+  // professional_confirmation_id 仅普通 Kriging 可用（IDW 携带 409）；
+  // neighborhood / empirical_uncertainty 为契约原始载荷，严格校验在服务端。
+  professional_confirmation_id?: string
+  neighborhood?: NeighborhoodPayload
+  empirical_uncertainty?: EmpiricalUncertaintyPayload
 }
 
 export interface ExperimentRecord {
@@ -735,4 +741,257 @@ export interface MicroseismicPointLayer {
   vx_min?: number[]
   vx_max?: number[]
   vx_std?: Array<number | null>
+}
+
+// ---------------- v0.6 专业诊断契约（与 routes/professional.py + public_dto.py 一一对应） ----------------
+
+// 能力/支持状态的判别联合：「不适用/不支持」是类型化状态，绝不用空值或 0 表达
+export type ProfessionalCapabilityState = 'supported' | 'not_applicable'
+export type DirectionFitStatus = 'supported' | 'unsupported_insufficient_pairs'
+
+// POST /api/datasets/{id}/professional-diagnostics 请求体（严格校验在服务端契约层）
+export interface DirectionPayload {
+  dimension: '2d' | '3d'
+  azimuth_deg: number
+  dip_deg?: number | null
+  azimuth_tolerance_deg?: number
+  dip_tolerance_deg?: number | null
+}
+
+export interface VariogramDiagnosticPayload {
+  lag_count?: number
+  max_distance?: number | null
+  min_pairs_per_bin?: number
+  max_pairs?: number
+  directions?: DirectionPayload[]
+}
+
+export interface ProfessionalDiagnosisRequestPayload {
+  variogram?: VariogramDiagnosticPayload
+}
+
+// POST 诊断响应：202 新任务 / 200 幂等复用（reused=true 时 job_id 为 null）
+export interface ProfessionalDiagnosisAccepted {
+  diagnosis_id: string
+  job_id: string | null
+  status: RunStatus
+  reused: boolean
+}
+
+// manifest 公开摘要：工件只给逻辑名 + file/sha256/bytes，绝不含服务器目录
+export interface ManifestArtifactSummary {
+  file: string | null
+  sha256: string | null
+  bytes: number | null
+}
+
+export interface ProfessionalManifestSummary {
+  version: number | null
+  fingerprint: string | null
+  artifacts: Record<string, ManifestArtifactSummary>
+  created_at: string | null
+  summary?: {
+    fitted_models?: Array<'spherical' | 'exponential' | 'gaussian'>
+    best_model?: 'spherical' | 'exponential' | 'gaussian'
+    omni_used_bin_count?: number
+    direction_count?: number
+    supported_direction_count?: number
+    skipped_direction_ids?: string[]
+    candidate_ranks?: number[]
+    warnings?: string[]
+  }
+}
+
+export interface ProfessionalErrorBody {
+  code: string
+  message: string
+}
+
+export interface ProfessionalDiagnosisRecord {
+  id: string
+  dataset_version_id: string
+  status: RunStatus
+  fingerprint: string
+  config: { variogram?: VariogramDiagnosticPayload } & Record<string, unknown>
+  manifest: ProfessionalManifestSummary | null
+  error: ProfessionalErrorBody | null
+  created_at: string
+  updated_at: string
+  finished_at: string | null
+}
+
+// 分析任务公开 DTO（与插值 run 同一生命周期合同；retry 产生新身份）
+export interface AnalysisJobRecord {
+  id: string
+  job_kind: string
+  subject_type: string
+  subject_id: string
+  request_fingerprint: string
+  status: RunStatus
+  retry_of_job_id: string | null
+  progress: Record<string, unknown>
+  error: ProfessionalErrorBody | null
+  created_at: string
+  updated_at: string
+  started_at: string | null
+  finished_at: string | null
+}
+
+// 大表有界内联：decimate 抽稀 + 行数硬上限（完整工件走白名单下载）
+export interface BoundedRows<T> {
+  total: number
+  returned: number
+  decimate: number
+  rows: T[]
+}
+
+export interface VariogramBin {
+  bin_index: number
+  lower_distance: number
+  upper_distance: number
+  center_distance: number
+  // 空 bin 的 mean_distance 为 null（NaN 在公共出口序列化为 null）
+  mean_distance: number | null
+  semivariance: number | null
+  pair_count: number
+  used_for_fit: boolean
+  exclusion_reason: string | null
+}
+
+export interface DirectionalVariogramBin extends VariogramBin {
+  direction_id: string
+  azimuth_deg: number
+  dip_deg: number | null
+  azimuth_tolerance_deg: number
+  dip_tolerance_deg: number | null
+}
+
+export type VariogramModelName = 'spherical' | 'exponential' | 'gaussian'
+
+export interface FittedVariogramModel {
+  model: VariogramModelName
+  nugget: number
+  partial_sill: number
+  sill: number
+  range: number
+  weighted_sse: number
+  converged: boolean
+  parameter_origin:
+    | 'automatic_candidate'
+    | 'manual_confirmed'
+    | 'legacy_auto_fold_fit'
+    | 'final_full_data_fit'
+  used_bin_indices: number[]
+  bounds: Record<string, [number, number]>
+  residuals: number[]
+}
+
+export interface FittedModelsEvidence {
+  models: FittedVariogramModel[]
+  best_model: VariogramModelName
+  parameter_origin: string
+}
+
+// 各向异性候选：恒为诊断建议（diagnostic_suggestion），确认是显式人工操作
+export interface AnisotropyCandidateEvidence {
+  status: 'diagnostic_suggestion'
+  rank: number
+  major_direction_id: string
+  major_azimuth_deg: number
+  major_dip_deg: number | null
+  major_range: number
+  secondary_direction_id: string | null
+  secondary_range: number | null
+  secondary_support_pairs: number
+  vertical_direction_id: string | null
+  vertical_range: number | null
+  vertical_support_pairs: number
+  major_minor_range_ratio: number | null
+  major_vertical_range_ratio: number | null
+  used_direction_ids: string[]
+  used_bin_indices: number[]
+  used_pair_count: number
+  warnings: string[]
+}
+
+export interface AnisotropySuggestion {
+  candidates: AnisotropyCandidateEvidence[]
+  compared_direction_ids: string[]
+  skipped_direction_ids: string[]
+  warnings: string[]
+}
+
+// 点对抽样披露：sampled=false 即全量点对，true 即分层抽样
+export interface VariogramSamplingDisclosure {
+  total_pair_count: number
+  used_pair_count: number
+  sampling_rate: number
+  sampled: boolean
+  seed: number
+}
+
+// GET /api/professional-diagnostics/{id}/variogram
+export interface VariogramEvidence {
+  diagnosis_id: string
+  omnidirectional: BoundedRows<VariogramBin>
+  directional: BoundedRows<DirectionalVariogramBin>
+  fitted_models: FittedModelsEvidence
+  anisotropy_candidates: AnisotropySuggestion
+  sampling: VariogramSamplingDisclosure
+  downloads: Record<string, string>
+}
+
+// POST /api/professional-diagnostics/{id}/confirm 请求体（note 必填，服务端 min_length=1）
+export interface ManualVariogramParameters {
+  nugget: number
+  sill: number
+  range: number
+}
+
+export interface AnisotropyConfirmationPayload {
+  keep_isotropic: boolean
+  azimuth_deg?: number
+  dip_deg?: number | null
+  roll_deg?: number | null
+  major_minor_ratio?: number
+  major_vertical_ratio?: number | null
+  candidate_rank?: number
+  anisotropy_candidates_sha256?: string
+}
+
+export interface ProfessionalConfirmationPayload {
+  model: VariogramModelName
+  parameter_strategy: 'automatic_candidate' | 'manual'
+  fitted_models_sha256?: string
+  manual_parameters?: ManualVariogramParameters
+  anisotropy: AnisotropyConfirmationPayload
+  note: string
+}
+
+// 不可变确认快照：只新建（201），无任何更新入口
+export interface ProfessionalConfirmationRecord {
+  id: string
+  diagnostic_id: string
+  fingerprint: string
+  note: string
+  config: Record<string, unknown>
+  created_at: string
+}
+
+// 实验创建的专业邻域 / 经验不确定性原始载荷（严格校验在服务端契约层）
+export interface NeighborhoodPayload {
+  radii: number[]
+  azimuth_deg?: number
+  dip_deg?: number | null
+  roll_deg?: number | null
+  min_neighbors?: number
+  max_neighbors?: number
+  sector_count?: number
+  max_per_sector?: number
+}
+
+export interface EmpiricalUncertaintyPayload {
+  min_neighbors?: number
+  max_neighbors?: number
+  power?: number
 }
