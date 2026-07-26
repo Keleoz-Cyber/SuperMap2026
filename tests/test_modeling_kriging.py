@@ -384,3 +384,52 @@ def test_fit_variogram_matches_legacy_reference_bitwise():
     assert model.nugget == 7.708953972850713e-16
     assert model.partial_sill == 1.0302351693326357
     assert model.range == 1652.575581583548
+
+
+# ---------------------------------------------------------------------------
+# v0.6 Task 8: legacy 兼容 pin —— 未给 anisotropy/neighborhood 时现有行为
+# 逐位不变（参考值取自引入专业选项之前的实现）
+# ---------------------------------------------------------------------------
+
+
+def test_legacy_2d_prediction_bitwise_pin_without_professional_options():
+    from geomodeling.modeling.kriging import OrdinaryKrigingInterpolator
+
+    rng = np.random.default_rng(42)
+    coords = np.column_stack([rng.uniform(-50, 50, 24), rng.uniform(100, 200, 24)])
+    values = np.sin(coords[:, 0] / 15.0) + 0.5 * np.cos(coords[:, 1] / 25.0) + 3.0
+    query = np.array([[-30.0, 120.0], [0.0, 150.0], [25.0, 190.0]])
+    interpolator = OrdinaryKrigingInterpolator()
+    params = interpolator.validate_parameters(
+        {"variogram_mode": "manual", "variogram_model": "spherical",
+         "nugget": 0.05, "sill": 1.2, "range": 80.0, "neighbor_count": 8},
+        "2d",
+    )
+    assert params.anisotropy is None and params.neighborhood is None
+    batch = interpolator.fit(coords, values, params).predict(query, cancel=lambda: False)
+    np.testing.assert_array_equal(
+        batch.values, [2.522227095913784, 3.398996313035415, 4.048265800991689]
+    )
+    np.testing.assert_array_equal(batch.is_nodata, [False, False, False])
+
+
+def test_legacy_3d_z_scale_prediction_bitwise_pin_without_professional_options():
+    from geomodeling.modeling.kriging import OrdinaryKrigingInterpolator
+
+    rng = np.random.default_rng(7)
+    coords = np.column_stack(
+        [rng.uniform(-40, 40, 20), rng.uniform(0, 80, 20), rng.uniform(-200, 0, 20)]
+    )
+    values = np.cos(coords[:, 0] / 20.0) + 0.001 * coords[:, 2] + 5.0
+    query = np.array([[-10.0, 30.0, -80.0], [15.0, 60.0, -40.0]])
+    interpolator = OrdinaryKrigingInterpolator()
+    params = interpolator.validate_parameters(
+        {"variogram_mode": "manual", "variogram_model": "exponential",
+         "nugget": 0.02, "sill": 0.9, "range": 60.0, "neighbor_count": 10,
+         "z_scale": 2.0},
+        "3d",
+    )
+    assert params.anisotropy is None and params.neighborhood is None
+    batch = interpolator.fit(coords, values, params).predict(query, cancel=lambda: False)
+    np.testing.assert_array_equal(batch.values, [5.429593345184889, 5.343671085767241])
+    np.testing.assert_array_equal(batch.is_nodata, [False, False])
