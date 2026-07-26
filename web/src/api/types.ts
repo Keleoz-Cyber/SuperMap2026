@@ -995,3 +995,175 @@ export interface EmpiricalUncertaintyPayload {
   max_neighbors?: number
   power?: number
 }
+
+// ---------------- v0.6 成果专业证据 / 折分 / 残差 / 不确定性 / 异常 / 比较契约 ----------------
+// （与 routes/professional.py + public_dto.py + modeling/comparison.py 一一对应）
+
+// 算法能力记录：「不适用」是类型化状态，绝不用空值或 0 表达
+export interface ProfessionalCapabilities {
+  algorithm?: string
+  empirical_variogram?: ProfessionalCapabilityState
+  model_anisotropy?: ProfessionalCapabilityState
+  z_scale_weight_distance?: ProfessionalCapabilityState
+  search_neighborhood?: ProfessionalCapabilityState
+  sector_neighbor_limits?: ProfessionalCapabilityState
+  spatial_fold_inspection?: ProfessionalCapabilityState
+  empirical_error_scale?: ProfessionalCapabilityState
+  native_kriging_std?: ProfessionalCapabilityState
+  anomaly_extraction?: ProfessionalCapabilityState
+  candidate_comparison?: ProfessionalCapabilityState
+  notes?: Record<string, string>
+}
+
+// 参数出处（§6.4）：折内参数与全数据拟合参数分别标记，互不混述
+export interface ParameterProvenanceEntry {
+  origin: string
+  scope: string
+  evidence?: string
+  variogram?: Record<string, unknown>
+}
+
+export interface ParameterProvenance {
+  validation: ParameterProvenanceEntry
+  final: ParameterProvenanceEntry
+}
+
+// GET /api/results/{id}/professional
+// legacy 候选（available=false）只携带 reason，绝不伪造零值能力
+export interface ProfessionalResultEvidence {
+  result_id: string
+  available: boolean
+  reason?: string
+  algorithm: string
+  confirmation_id?: string | null
+  capabilities?: ProfessionalCapabilities
+  parameter_provenance?: ParameterProvenance | null
+  manifest?: ProfessionalManifestSummary | null
+}
+
+// GET /api/results/{id}/folds
+export interface FoldInfo {
+  fold_index: number
+  training_count: number
+  validation_count: number
+  validation_groups: number[]
+  group_count: number
+  leakage_detected: boolean
+  metrics: { rmse: number | null; valid_count: number | null } | null
+}
+
+export interface FoldEvidence {
+  result_id: string
+  fold_count: number
+  leakage_detected: boolean
+  folds: FoldInfo[]
+  download_url: string
+}
+
+// GET /api/results/{id}/residuals（列式有界内联；2D 成果 z 列为 null）
+export interface ResidualEvidence {
+  result_id: string
+  total: number
+  returned: number
+  decimate: number
+  source_row: number[]
+  fold_index: number[]
+  x: number[]
+  y: number[]
+  z: Array<number | null>
+  observed: Array<number | null>
+  predicted: Array<number | null>
+  residual: Array<number | null>
+  absolute_error: Array<number | null>
+  squared_error: Array<number | null>
+  is_nodata: boolean[]
+  download_url: string
+}
+
+// GET /api/results/{id}/uncertainty/{kind}（与值预览同一抽稀上限与 NoData 语义）
+export type UncertaintyLayerKind = 'empirical_error' | 'kriging_std'
+
+export interface UncertaintyPreview {
+  result_id: string
+  layer: string
+  dimension: '2d' | '3d'
+  original_cell_count: number
+  served_cell_count: number
+  stride: number
+  x: number[]
+  y: number[]
+  z: number[] | null
+  values: number[]
+  is_nodata: boolean[]
+  value_range: [number | null, number | null]
+}
+
+// POST /api/results/{id}/anomaly-extractions 请求体（严格校验在服务端契约层）
+export interface AnomalyExtractionPayload {
+  direction: 'high' | 'low'
+  threshold: number
+  empirical_error_max?: number | null
+  kriging_std_max?: number | null
+  min_support_nodes?: number
+  connectivity_rule?: 'face_2d4_3d6_v1'
+}
+
+// POST 异常提取响应：202 新任务 / 200 幂等复用（reused=true 时 job_id 为 null）
+export interface AnomalyExtractionAccepted {
+  extraction_id: string
+  job_id: string | null
+  status: string
+  reused: boolean
+}
+
+// GET /api/anomaly-extractions/{id} 的连通区行（有界预览，完整工件走下载）
+export interface AnomalyComponentRow {
+  component_id: number
+  support_node_count: number
+  support_measure: number
+  support_unit: string
+  bounds: Array<[number, number]>
+  centroid: number[]
+  value_min: number
+  value_max: number
+  value_mean: number
+  touches_grid_boundary: boolean
+  empirical_error_scale_min?: number | null
+  empirical_error_scale_max?: number | null
+  empirical_error_scale_mean?: number | null
+  kriging_std_min?: number | null
+  kriging_std_max?: number | null
+  kriging_std_mean?: number | null
+}
+
+export interface AnomalyExtractionRecord {
+  id: string
+  candidate_result_id: string
+  status: 'pending' | 'succeeded' | 'failed' | string
+  fingerprint: string
+  config: Record<string, unknown>
+  manifest: ProfessionalManifestSummary | null
+  error: ProfessionalErrorBody | null
+  components: { total: number; returned: number; rows: AnomalyComponentRow[] } | null
+  created_at: string
+}
+
+// POST /api/professional-comparisons → 201（comparison_fingerprint 即登记身份）
+export interface GridDifferenceSummary {
+  common_valid_count: number
+  mean: number
+  max_abs: number
+}
+
+// 双候选比较结论：不兼容时 metric_deltas/common_valid_count 一律 null
+export interface CandidateComparisonResult {
+  first_result_id: string
+  second_result_id: string
+  compatible: boolean
+  mismatches: string[]
+  common_valid_count: number | null
+  metric_deltas: Record<string, number> | null
+  grid_difference_available: boolean
+  grid_difference: GridDifferenceSummary | null
+  comparison_fingerprint: string
+}

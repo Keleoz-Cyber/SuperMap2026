@@ -6,6 +6,7 @@ import DatasetWizardView from '../views/DatasetWizardView.vue'
 import MicroseismicImportView from '../views/MicroseismicImportView.vue'
 import ExperimentView from '../views/ExperimentView.vue'
 import ProfessionalDiagnosisView from '../views/ProfessionalDiagnosisView.vue'
+import ProfessionalAnalysisView from '../views/ProfessionalAnalysisView.vue'
 import ResultWorkbenchView from '../views/ResultWorkbenchView.vue'
 
 // 构建产物由 FastAPI StaticFiles 直接托管，hash 模式可避免刷新深链 404。
@@ -44,6 +45,11 @@ const router = createRouter({
       path: '/results/:resultId',
       name: 'result-workbench',
       component: ResultWorkbenchView,
+    },
+    {
+      path: '/results/:resultId/professional',
+      name: 'professional-analysis',
+      component: ProfessionalAnalysisView,
     },
   ],
 })

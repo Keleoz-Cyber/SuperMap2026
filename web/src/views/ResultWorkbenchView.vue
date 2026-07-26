@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import {
   ApiError,
   fetchDatasetPoints,
@@ -27,7 +27,13 @@ import ExportPublicationPanel from '../components/results/ExportPublicationPanel
 import PageNavigation from '../components/navigation/PageNavigation.vue'
 
 const route = useRoute()
+const router = useRouter()
 const resultId = computed(() => String(route.params.resultId))
+
+// v0.6：统一专业分析台入口；只跳转路由，不改变现有完整场/切片/选择/导出行为
+function gotoProfessionalAnalysis() {
+  void router.push({ name: 'professional-analysis', params: { resultId: resultId.value } })
+}
 
 const metadata = ref<ResultMetadata | null>(null)
 const experiment = ref<ExperimentRecord | null>(null)
@@ -156,6 +162,13 @@ onMounted(async () => {
           网格 {{ metadata.shape.join('×') }} ·
           值域 {{ metadata.value_range[0] }} ~ {{ metadata.value_range[1] }}
         </p>
+        <button
+          class="professional-entry"
+          data-test="professional-entry"
+          @click="gotoProfessionalAnalysis"
+        >
+          专业分析
+        </button>
       </header>
 
       <section class="panel">
@@ -248,6 +261,22 @@ onMounted(async () => {
   margin-left: 12px;
   color: var(--gmp-accent);
   text-decoration: none;
+}
+
+.professional-entry {
+  margin-top: 10px;
+  border: 1px solid var(--gmp-accent);
+  background: transparent;
+  color: var(--gmp-accent);
+  border-radius: 8px;
+  padding: 6px 16px;
+  font-size: 12px;
+  cursor: pointer;
+  align-self: flex-start;
+}
+
+.professional-entry:hover {
+  background: rgba(79, 209, 197, 0.1);
 }
 
 .panel {
