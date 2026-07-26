@@ -142,6 +142,19 @@ class CaseCreateRequest(ContractModel):
 
 
 class ExperimentCreateRequest(ContractModel):
+    """实验创建请求（v0.4）；v0.6 扩展三个可选专业输入。
+
+    ``professional_confirmation_id`` 引用一条不可变确认快照（仅普通
+    Kriging；给出即为 Kriging 专业模式）。``neighborhood`` 与
+    ``empirical_uncertainty`` 分别是
+    ``geomodeling.modeling.professional_contracts.NeighborhoodSpec`` 与
+    ``EmpiricalUncertaintySpec`` 的原始载荷：本层只做 ``extra="forbid"``
+    浅校验，严格校验由服务层用上述契约执行——分层方式与
+    ``parameters``、``ProfessionalDiagnosisRequest.variogram`` 一致（契约
+    模块反向依赖本模块，字段类型无法在此直接引用）。三字段全缺时行为与
+    v0.5 逐位不变。
+    """
+
     case_id: str = Field(min_length=1, max_length=128)
     name: str = Field(min_length=1, max_length=256)
     algorithm: Algorithm
@@ -150,6 +163,9 @@ class ExperimentCreateRequest(ContractModel):
     parameters: dict[str, Any] | list[dict[str, Any]] = Field(default_factory=dict)
     validation: SpatialValidationSpec = Field(default_factory=SpatialValidationSpec)
     grid: GridSpec | None = None
+    professional_confirmation_id: str | None = Field(default=None, min_length=1, max_length=128)
+    neighborhood: dict[str, Any] | None = None
+    empirical_uncertainty: dict[str, Any] | None = None
 
 
 class FormalSelectionRequest(ContractModel):

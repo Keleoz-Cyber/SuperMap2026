@@ -14,6 +14,14 @@ persists out-of-fold residual records plus the shared fold assignment
 table under ``results/<candidate_id>/professional/``; candidate metrics
 reference both artifacts by SHA-256, and inconsistent OOF evidence fails
 the run instead of the candidate.
+
+v0.6 专业候选（Task 14，设计 §4.2）：实验携带专业上下文（确认快照/搜索
+邻域/经验不确定性）时，折证据建成后以「标准化数据 SHA-256 + 折分计划
+指纹」补全候选指纹并重新展开；成功候选额外落盘逐折实际预测诊断
+（``prediction_diagnostics.json``），清单声明的全部文件哈希校验通过后
+才创建唯一的 ``ProfessionalResultArtifacts`` 行（pending→succeeded，
+能力按算法能力矩阵填写）。候选失败保留结构化错误且绝不写成功行；
+legacy 运行（无专业上下文）行为逐位不变。
 """
 
 from __future__ import annotations
@@ -39,6 +47,7 @@ from geomodeling.modeling.fold_artifacts import (
 from geomodeling.modeling.idw import IDWInterpolator
 from geomodeling.modeling.kriging import OrdinaryKrigingInterpolator
 from geomodeling.modeling.metrics import common_valid_mask, compute_metrics
+from geomodeling.modeling.professional_contracts import capabilities_for
 from geomodeling.modeling.provenance import (
     compute_group_diagnostics,
     ensure_provenance_coverage,
@@ -47,13 +56,21 @@ from geomodeling.modeling.provenance import (
 from geomodeling.modeling.splits import build_spatial_splits
 from geomodeling.platform import tables
 from geomodeling.platform.errors import PlatformError
-from geomodeling.platform.experiments import expand_candidates
-from geomodeling.platform.repositories import RunRepository
+from geomodeling.platform.experiments import (
+    PROFESSIONAL_CONFIRMATION_REQUIRED,
+    expand_candidates,
+)
+from geomodeling.platform.professional import verify_manifest
+from geomodeling.platform.repositories import (
+    ProfessionalResultArtifactsRepository,
+    RunRepository,
+)
 from geomodeling.platform.schemas import Algorithm, SpatialValidationSpec
 from geomodeling.platform.settings import PlatformSettings
 
 RUN_CANCELED = "RUN_CANCELED"
 METRICS_EMPTY_COMMON_VALID = "METRICS_EMPTY_COMMON_VALID"
+PROFESSIONAL_ARTIFACT_WRITE_FAILED = "PROFESSIONAL_ARTIFACT_WRITE_FAILED"
 
 _INTERPOLATORS = {
     Algorithm.IDW.value: IDWInterpolator(),
@@ -117,6 +134,7 @@ def _evaluate_candidate(
     started = time.perf_counter()
     records: list[pd.DataFrame] = []
     fold_metrics: list[dict[str, float]] = []
+    fold_diagnostics: list[dict[str, Any]] = []
     for fold in folds:
         if cancel.is_set():
             raise PlatformError(RUN_CANCELED, "任务已被取消", {"fold": fold.index}, http_status=409)
@@ -125,6 +143,8 @@ def _evaluate_candidate(
         query = points[fold.validation_indices]
         fitted = interpolator.fit(train_coords, train_values, validated)
         batch = fitted.predict(query, cancel=cancel.is_set)
+        # 逐折实际预测诊断（有界聚合）：仅专业候选落盘，legacy 不持久化
+        fold_diagnostics.append({"fold": fold.index, "diagnostics": batch.diagnostics})
         truth = values[fold.validation_indices]
         mask = ~batch.is_nodata
         part = pd.DataFrame(
@@ -185,7 +205,7 @@ def _evaluate_candidate(
         }
     metrics["runtime_seconds"] = runtime_seconds
     metrics["fold_metrics"] = fold_metrics
-    return {"predictions": predictions, "metrics": metrics}
+    return {"predictions": predictions, "metrics": metrics, "fold_diagnostics": fold_diagnostics}
 
 
 def _persist_progress(runtime, run_id: str, progress: dict[str, Any]) -> None:
@@ -195,10 +215,81 @@ def _persist_progress(runtime, run_id: str, progress: dict[str, Any]) -> None:
         session.commit()
 
 
+def _manifest_entry(directory: Path, name: str, sha256: str) -> dict[str, Any]:
+    return {"file": name, "sha256": sha256, "bytes": (directory / name).stat().st_size}
+
+
+def _write_professional_candidate_evidence(
+    *,
+    professional_dir: Path,
+    result_id: str,
+    candidate,
+    outcome: dict[str, Any],
+    professional: dict[str, Any],
+    assignments_sha256: str,
+    oof_sha256: str,
+) -> dict[str, Any]:
+    """落盘逐折实际预测诊断并构建候选专业清单（Task 14，设计 §4.2/§5.3）。
+
+    清单声明 fold/OOF/诊断三件工件；``verify_manifest`` 重算全部声明文件
+    的 SHA-256 与大小，任何不匹配以 ``MANIFEST_VERIFICATION_FAILED``
+    fail-closed——校验通过的 manifest 才会随工件行提交。
+    """
+
+    import os
+
+    diagnostics_payload = {
+        "candidate_fingerprint": candidate.fingerprint,
+        "algorithm": candidate.algorithm,
+        "fold_diagnostics": outcome["fold_diagnostics"],
+    }
+    blob = tables.dumps_canonical(diagnostics_payload).encode("utf-8")
+    diagnostics_path = professional_dir / "prediction_diagnostics.json"
+    tmp = diagnostics_path.with_suffix(".tmp.json")
+    tmp.write_bytes(blob)
+    if tmp.read_bytes() != blob:
+        tmp.unlink(missing_ok=True)
+        raise PlatformError(
+            PROFESSIONAL_ARTIFACT_WRITE_FAILED,
+            "专业工件回读校验失败",
+            {"file": diagnostics_path.name},
+        )
+    os.replace(tmp, diagnostics_path)
+    manifest = {
+        "version": 1,
+        "candidate_result_id": result_id,
+        "confirmation_id": professional.get("confirmation_id"),
+        "fingerprint": candidate.fingerprint,
+        "directory": str(professional_dir),
+        "artifacts": {
+            "fold_assignments": _manifest_entry(
+                professional_dir, "fold_assignments.parquet", assignments_sha256
+            ),
+            "out_of_fold_predictions": _manifest_entry(
+                professional_dir, "out_of_fold_predictions.parquet", oof_sha256
+            ),
+            "prediction_diagnostics": _manifest_entry(
+                professional_dir,
+                "prediction_diagnostics.json",
+                sha256_file(diagnostics_path),
+            ),
+        },
+        "config": {
+            "neighborhood": professional.get("neighborhood"),
+            "empirical_uncertainty": professional.get("empirical_uncertainty"),
+        },
+        "created_at": tables.utc_now_iso(),
+    }
+    verify_manifest(manifest)
+    return manifest
+
+
 def execute_run(runtime, run_id: str, cancel: Event) -> RunOutcome:
     """Execute one queued run end-to-end (called by the worker thread)."""
 
     experiment, params = _load_experiment(runtime, run_id)
+    # v0.6：实验携带的规范化专业上下文（确认快照/邻域/不确定性）；legacy 为 None
+    professional = params.get("professional") or None
     search = {
         "algorithm": params["algorithm"],
         "search_mode": params.get("search_mode", "manual"),
@@ -206,6 +297,8 @@ def execute_run(runtime, run_id: str, cancel: Event) -> RunOutcome:
         "validation": params.get("validation"),
         "grid": params.get("grid"),
     }
+    if professional is not None:
+        search["professional"] = professional
     candidates = expand_candidates(search)
     dataset_id = params["dataset_version_id"]
     frame = _load_frame(runtime, experiment.case_id, dataset_id)
@@ -233,6 +326,19 @@ def execute_run(runtime, run_id: str, cancel: Event) -> RunOutcome:
     progress = {"current_candidate": None, "completed": 0, "total": total, "failed": 0}
     _persist_progress(runtime, run_id, progress)
 
+    if (
+        professional is not None
+        and params["algorithm"] == Algorithm.ORDINARY_KRIGING.value
+        and not professional.get("confirmation_id")
+    ):
+        # 专业 Kriging 候选 confirmation_id 必填（§5.1）：创建层已拒绝，
+        # 此处兜底手工构造的实验记录，fail-closed。
+        with runtime.session() as session:
+            RunRepository(session).mark_failed(
+                run_id, error_code=PROFESSIONAL_CONFIRMATION_REQUIRED, metrics=progress
+            )
+        return RunOutcome(run_id, "failed", total, 0, 0)
+
     # 可选 provenance sidecar：profile 声明了就必须完整有效，否则 fail closed，
     # run 直接失败且不产生任何候选；未声明则保持通用行为逐位不变。
     try:
@@ -254,7 +360,7 @@ def execute_run(runtime, run_id: str, cancel: Event) -> RunOutcome:
     valid_points = valid_frame[coord_cols].to_numpy(dtype="float64")
     try:
         folds = build_spatial_splits(valid_points, dimension, validation)
-        fold_assignments, _fingerprint = build_fold_assignments(
+        fold_assignments, validation_fingerprint = build_fold_assignments(
             valid_frame,
             folds,
             dimension=dimension,
@@ -265,6 +371,18 @@ def execute_run(runtime, run_id: str, cancel: Event) -> RunOutcome:
         with runtime.session() as session:
             RunRepository(session).mark_failed(run_id, error_code=exc.code, metrics=progress)
         return RunOutcome(run_id, "failed", total, 0, 0)
+
+    if professional is not None:
+        # 设计 §4.2：标准化数据 SHA-256 与折分计划指纹是专业候选指纹的
+        # 组成部分——折证据建成后以完整专业上下文重新展开候选（展开是纯
+        # 函数，候选数量与参数合并结果不变，仅指纹补全）。
+        professional = {
+            **professional,
+            "dataset_sha256": data_sha256,
+            "validation_fingerprint": validation_fingerprint,
+        }
+        search["professional"] = professional
+        candidates = expand_candidates(search)
 
     experiment_dir = runtime.settings.experiment_dir(experiment.id)
     succeeded: list[tuple[str, pd.DataFrame, dict[str, Any], str]] = []
@@ -333,6 +451,30 @@ def execute_run(runtime, run_id: str, cancel: Event) -> RunOutcome:
             outcome["metrics"]["fold_assignments_sha256"] = assignments_sha256
             outcome["metrics"]["oof_predictions_sha256"] = oof_sha256
 
+            if professional is not None:
+                # Task 14：实际预测诊断落盘 + 清单声明；全部声明文件哈希
+                # 校验通过后才创建唯一专业工件行（候选行提交之后）。
+                try:
+                    professional_manifest = _write_professional_candidate_evidence(
+                        professional_dir=professional_dir,
+                        result_id=result_id,
+                        candidate=candidate,
+                        outcome=outcome,
+                        professional=professional,
+                        assignments_sha256=assignments_sha256,
+                        oof_sha256=oof_sha256,
+                    )
+                except PlatformError as exc:
+                    with runtime.session() as session:
+                        RunRepository(session).mark_failed(run_id, error_code=exc.code, metrics=progress)
+                    return RunOutcome(run_id, "failed", total, completed, failed)
+                except Exception:
+                    with runtime.session() as session:
+                        RunRepository(session).mark_failed(
+                            run_id, error_code=PROFESSIONAL_ARTIFACT_WRITE_FAILED, metrics=progress
+                        )
+                    return RunOutcome(run_id, "failed", total, completed, failed)
+
         with runtime.session() as session:
             session.add(
                 tables.CandidateResult(
@@ -348,6 +490,23 @@ def execute_run(runtime, run_id: str, cancel: Event) -> RunOutcome:
                 )
             )
             session.commit()
+        if professional is not None and outcome is not None:
+            # 唯一专业工件行（candidate_result_id 唯一；pending→succeeded，
+            # 能力按算法能力矩阵填写）。创建失败绝不写成功行：整次运行
+            # 结构化失败，已落盘文件保留为证据。
+            try:
+                with runtime.session() as session:
+                    artifacts_repo = ProfessionalResultArtifactsRepository(session)
+                    artifacts = artifacts_repo.create(
+                        result_id,
+                        confirmation_id=professional.get("confirmation_id"),
+                        capabilities=capabilities_for(candidate.algorithm).model_dump(mode="json"),
+                    )
+                    artifacts_repo.mark_succeeded(artifacts.id, manifest=professional_manifest)
+            except PlatformError as exc:
+                with runtime.session() as session:
+                    RunRepository(session).mark_failed(run_id, error_code=exc.code, metrics=progress)
+                return RunOutcome(run_id, "failed", total, completed, failed)
         if outcome is not None:
             succeeded.append((result_id, outcome["predictions"], outcome["metrics"], candidate.fingerprint))
             completed += 1
