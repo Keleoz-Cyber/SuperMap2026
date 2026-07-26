@@ -23,6 +23,11 @@ import pandas as pd
 from geomodeling.modeling.idw import IDWInterpolator
 from geomodeling.modeling.kriging import OrdinaryKrigingInterpolator
 from geomodeling.modeling.metrics import common_valid_mask, compute_metrics
+from geomodeling.modeling.provenance import (
+    compute_group_diagnostics,
+    ensure_provenance_coverage,
+    load_optional_provenance,
+)
 from geomodeling.modeling.splits import build_spatial_splits
 from geomodeling.platform import tables
 from geomodeling.platform.errors import PlatformError
@@ -190,10 +195,10 @@ def execute_run(runtime, run_id: str, cancel: Event) -> RunOutcome:
     dataset_id = params["dataset_version_id"]
     frame = _load_frame(runtime, experiment.case_id, dataset_id)
 
-    mapping = {}
     with runtime.session() as session:
         dataset = session.get(tables.DatasetVersion, dataset_id)
-        mapping = tables.loads_canonical(dataset.profile_json).get("mapping", {})
+        profile = tables.loads_canonical(dataset.profile_json)
+    mapping = profile.get("mapping", {})
     dimension = "3d" if mapping.get("dimension") == "3d" else "2d"
     interpolator = _interpolator(params["algorithm"])
     validation = SpatialValidationSpec.model_validate(params.get("validation") or {})
@@ -212,6 +217,17 @@ def execute_run(runtime, run_id: str, cancel: Event) -> RunOutcome:
     failed = 0
     progress = {"current_candidate": None, "completed": 0, "total": total, "failed": 0}
     _persist_progress(runtime, run_id, progress)
+
+    # 可选 provenance sidecar：profile 声明了就必须完整有效，否则 fail closed，
+    # run 直接失败且不产生任何候选；未声明则保持通用行为逐位不变。
+    try:
+        provenance = load_optional_provenance(runtime.settings, experiment.case_id, dataset_id, profile)
+        if provenance is not None:
+            ensure_provenance_coverage(provenance, frame["source_row"])
+    except PlatformError as exc:
+        with runtime.session() as session:
+            RunRepository(session).mark_failed(run_id, error_code=exc.code, metrics=progress)
+        return RunOutcome(run_id, "failed", total, 0, 0)
 
     experiment_dir = runtime.settings.experiment_dir(experiment.id)
     succeeded: list[tuple[str, pd.DataFrame, dict[str, Any], str]] = []
@@ -348,6 +364,11 @@ def execute_run(runtime, run_id: str, cancel: Event) -> RunOutcome:
                         "total_count": public_summary.total_count,
                     }
                 )
+                # 分组诊断只在公共有效掩膜上复算，不参与 best 选择与覆盖率
+                if provenance is not None:
+                    metrics["group_diagnostics"] = compute_group_diagnostics(
+                        predictions, provenance, common_mask
+                    )
                 session.query(tables.CandidateResult).filter(
                     tables.CandidateResult.id == result_id
                 ).update({"metrics_json": tables.dumps_canonical(metrics)})

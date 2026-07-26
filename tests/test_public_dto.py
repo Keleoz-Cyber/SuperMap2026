@@ -117,6 +117,107 @@ def test_export_and_publication_responses_have_no_internal_paths(tmp_path):
     assert "package" not in body["evidence"]
 
 
+def test_microseismic_profile_and_derivation_dtos_never_leak_paths():
+    """v0.5: public_dataset / public_derivation 对微震 profile 与派生报告递归脱敏。"""
+
+    from types import SimpleNamespace
+
+    from geomodeling.platform.public_dto import public_dataset, public_derivation
+
+    record = SimpleNamespace(
+        id="ds-1",
+        case_id="case-1",
+        version=1,
+        status="mapped",
+        created_at="2026-07-25T00:00:00+00:00",
+        profile={
+            "source_kind": "microseismic_dat_bundle",
+            "dimension": "3d",
+            "mapping": {"dimension": "3d", "value": "VX_KM_S", "value_unit": "km/s"},
+            "rule_version": "microseismic_api_synthetic_v0.5",
+            "layer_counts": {"source_records": 45, "aggregated_nodes": 44},
+            "golden": {"passed": True, "checks": []},
+            "standardized_path": "D:/abs/standardized.parquet",
+            "source_files": [
+                {
+                    "file_name": "W1.dat",
+                    "sha256": "a" * 64,
+                    "point_id": "W1",
+                    "line_id": "L1",
+                    "source_record_count": 2,
+                    "note": "C:/tmp/W1.dat",
+                },
+                {
+                    "file_name": "W2.dat",
+                    "sha256": "b" * 64,
+                    "point_id": "W2",
+                    "line_id": "L1",
+                    "source_record_count": 3,
+                },
+            ],
+            "derivation_report": "derived/derivation_report.json",
+        },
+    )
+
+    dataset_body = public_dataset(record)
+    assert_no_path_leak(dataset_body, "$.microseismic_dataset")
+    assert "standardized_path" not in dataset_body["profile"]
+    assert dataset_body["profile"]["source_files"][0]["note"] == "<redacted-path>"
+
+    report = {
+        "rule_version": "microseismic_api_synthetic_v0.5",
+        "adapter_version": "0.5.0",
+        "aggregation_method": "arithmetic_mean_exact_xyz",
+        "layer_counts": {"source_records": 45, "accepted_modeling": 44, "aggregated_nodes": 44},
+        "three_sigma": {"threshold": 3.0, "ddof": 1},
+        "aggregation": {"conflict_group_count": 0, "conflict_row_count": 0, "collapsed_row_count": 0},
+        "coordinates": {"vx_unit": "km/s", "evidence": "D:/abs/evidence.txt"},
+        "golden": {
+            "passed": True,
+            "checks": [
+                {
+                    "name": "accepted_count",
+                    "passed": True,
+                    "expected": 44,
+                    "actual": 44,
+                    "grid_path": "/tmp/internal/grid.npz",
+                }
+            ],
+        },
+        "validation_passed": True,
+        "downstream_gates": {"geometry_blocked": False},
+        "artifacts": {
+            "accepted_modeling": {
+                "file": "accepted_modeling_44.csv",
+                "rows": 44,
+                "sha256": "c" * 64,
+                "package_path": "C:/pkg/internal.zip",
+            }
+        },
+        # 非白名单顶层键（含路径键与服务器目录）不得出现在公开 DTO
+        "output_dir": "D:/should/not/appear",
+        "source_path": "/internal/source_manifest.json",
+    }
+
+    body = public_derivation(record, report)
+    assert_no_path_leak(body, "$.public_derivation")
+    assert body["dataset_id"] == "ds-1"
+    assert body["case_id"] == "case-1"
+    assert body["status"] == "mapped"
+    assert body["line_counts"] == {"L1": 5}
+    assert "output_dir" not in body
+    assert "source_path" not in body
+    assert body["golden"]["checks"][0] == {
+        "name": "accepted_count",
+        "passed": True,
+        "expected": 44,
+        "actual": 44,
+    }
+    assert body["coordinates"]["evidence"] == "<redacted-path>"
+    assert body["artifacts"]["accepted_modeling"]["file"] == "accepted_modeling_44.csv"
+    assert "package_path" not in body["artifacts"]["accepted_modeling"]
+
+
 def test_legacy_resistivity_responses_have_no_absolute_paths(tmp_path, monkeypatch):
     """Merge-blocker 4: legacy points/detail/voxel 响应也不得含本机绝对路径。"""
 

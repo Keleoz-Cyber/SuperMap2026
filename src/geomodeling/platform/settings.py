@@ -66,6 +66,19 @@ class PlatformSettings:
     def standardized_dataset(self, case_id: str, dataset_id: str) -> Path:
         return self.datasets_dir / case_id / dataset_id / "standardized.parquet"
 
+    def microseismic_dataset_dir(self, case_id: str, dataset_id: str) -> Path:
+        """Immutable microseismic dataset version directory (source/ + derived/)."""
+
+        return self.datasets_dir / case_id / dataset_id
+
+    def microseismic_staging_dir(self) -> Path:
+        """Per-import staging root; each import derives under a unique child."""
+
+        return self.data_dir / "staging" / "microseismic"
+
+    def modeling_provenance(self, case_id: str, dataset_id: str) -> Path:
+        return self.microseismic_dataset_dir(case_id, dataset_id) / "derived" / "modeling_provenance.parquet"
+
     def experiment_dir(self, experiment_id: str) -> Path:
         return self.experiments_dir / experiment_id
 

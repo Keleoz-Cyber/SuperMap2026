@@ -98,6 +98,7 @@ def test_materialize_result_writes_grid_and_metadata(tmp_path):
     assert result["bounds"] == [[-150.0, -60.0], [260.0, 580.0], [-800.0, -200.0]]
     assert result["algorithm"] == "idw"
     assert result["parameters"]["power"] == 2.0
+    assert result["dataset_version_id"] == dataset_id
     assert len(result["grid_sha256"]) == 64
     assert result["value_range"][0] < result["value_range"][1]
 
@@ -108,6 +109,7 @@ def test_materialize_result_writes_grid_and_metadata(tmp_path):
     assert bundle["is_nodata"].shape == (11, 11, 11)
     metadata = json.loads((grid_path.parent / "metadata.json").read_text(encoding="utf-8"))
     assert metadata["algorithm"] == "idw"
+    assert metadata["dataset_version_id"] == dataset_id
     assert metadata["source_sha256"]
 
     # 幂等：重复 materialize 返回同一成果
@@ -118,7 +120,7 @@ def test_materialize_result_writes_grid_and_metadata(tmp_path):
 
 def test_result_metadata_and_preview(tmp_path):
     client, _ = make_client(tmp_path)
-    _, _, _, candidate_id = prepare_completed_run(client)
+    _, dataset_id, _, candidate_id = prepare_completed_run(client)
     client.post(f"/api/results/{candidate_id}/materialize")
 
     resp = client.get(f"/api/results/{candidate_id}")
@@ -126,6 +128,7 @@ def test_result_metadata_and_preview(tmp_path):
     meta = resp.json()
     assert meta["dimension"] == "3d"
     assert meta["cell_count"] == 11 ** 3
+    assert meta["dataset_version_id"] == dataset_id
 
     resp = client.get(f"/api/results/{candidate_id}/preview")
     assert resp.status_code == 200
@@ -233,30 +236,36 @@ def test_export_zip_contains_full_lineage(tmp_path):
     export = resp.json()
     export_id = export["id"]
     assert export["package_sha256"]
-    assert export["file_count"] >= 5
+    assert export["file_count"] == 7
 
     resp = client.get(f"/api/exports/{export_id}/download")
     assert resp.status_code == 200
     assert resp.headers["content-type"] == "application/zip"
     bundle = zipfile.ZipFile(io.BytesIO(resp.content))
+    # 通用数据集 ZIP 保持七文件不变（回归锁定），无领域证据
     names = set(bundle.namelist())
-    assert "manifest.json" in names
-    assert "metadata.json" in names
-    assert "metrics.json" in names
-    assert "quality.json" in names
-    assert "formal_selections.json" in names
-    assert "grid.csv" in names
+    assert names == {
+        "manifest.json",
+        "metadata.json",
+        "metrics.json",
+        "quality.json",
+        "formal_selections.json",
+        "failed_evidence.json",
+        "grid.csv",
+    }
 
     manifest = json.loads(bundle.read("manifest.json"))
     assert manifest["candidate_result_id"] == candidate_id
     assert manifest["source_sha256"]
     assert manifest["grid_sha256"]
     assert manifest["files"]
+    assert "domain_evidence" not in manifest
 
     metadata = json.loads(bundle.read("metadata.json"))
     assert metadata["algorithm"] == "idw"
     assert metadata["parameters"]["power"] == 2.0
     assert metadata["validation"]["folds"] == 3
+    assert metadata["dataset_version_id"] == dataset_id
 
     metrics = json.loads(bundle.read("metrics.json"))
     assert metrics["public_metrics"]["common_valid_count"] > 0
@@ -264,3 +273,46 @@ def test_export_zip_contains_full_lineage(tmp_path):
 
     selections = json.loads(bundle.read("formal_selections.json"))
     assert selections[0]["note"] == "最优候选"
+
+
+def test_export_failure_cleans_staging_dir(tmp_path, monkeypatch):
+    """任一导出阶段失败：原异常传播，且 export-* 暂存目录不得残留。"""
+
+    client, runtime = make_client(tmp_path)
+    _, _, _, candidate_id = prepare_completed_run(client)
+    client.post(f"/api/results/{candidate_id}/materialize")
+
+    from geomodeling.platform import exports as exports_module
+
+    def boom(_path):
+        raise RuntimeError("injected export failure")
+
+    monkeypatch.setattr(exports_module, "_sha256", boom)
+    with pytest.raises(RuntimeError, match="injected export failure"):
+        exports_module.build_export(runtime, candidate_id)
+    assert list(runtime.settings.exports_dir.rglob("export-*")) == []
+
+
+def test_export_cleanup_failure_does_not_mask_original_error(tmp_path, monkeypatch, caplog):
+    """清理本身失败（如权限拒绝）只能记日志，抛出的仍是原始业务异常。"""
+
+    client, runtime = make_client(tmp_path)
+    _, _, _, candidate_id = prepare_completed_run(client)
+    client.post(f"/api/results/{candidate_id}/materialize")
+
+    from geomodeling.platform import exports as exports_module
+
+    def boom(_path):
+        raise RuntimeError("injected export failure")
+
+    def denied(*_args, **_kwargs):
+        raise PermissionError("cleanup denied")
+
+    monkeypatch.setattr(exports_module, "_sha256", boom)
+    monkeypatch.setattr(exports_module.shutil, "rmtree", denied)
+    with pytest.raises(RuntimeError, match="injected export failure"):
+        exports_module.build_export(runtime, candidate_id)
+    assert any(
+        "export staging cleanup failed" in record.getMessage() and record.exc_info is not None
+        for record in caplog.records
+    )

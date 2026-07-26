@@ -32,9 +32,9 @@ const CASE_META: Record<string, CaseMeta> = {
   },
   microseismic: {
     icon: Bell,
-    enterable: false,
-    badgeType: 'warning',
-    badgeText: '审计底座已合并 · 第二案例',
+    enterable: true,
+    badgeType: 'success',
+    badgeText: '原始 DAT 导入 · 第二案例',
   },
   gas: {
     icon: Lock,
@@ -76,6 +76,10 @@ function enter(c: CaseSummary) {
   }
   if (c.case_id === 'resistivity') {
     void router.push('/case/resistivity')
+    return
+  }
+  if (c.case_id === 'microseismic') {
+    void router.push({ path: '/cases/new', query: { preset: 'microseismic' } })
   }
 }
 
@@ -150,6 +154,10 @@ onMounted(async () => {
           <div class="case-foot">
             <el-button v-if="c.case_id === 'resistivity'" type="primary">
               进入三维工作台
+              <el-icon style="margin-left: 4px"><ArrowRight /></el-icon>
+            </el-button>
+            <el-button v-else-if="c.case_id === 'microseismic'" type="primary" data-test="enter-microseismic">
+              导入微震 DAT
               <el-icon style="margin-left: 4px"><ArrowRight /></el-icon>
             </el-button>
             <el-button v-else-if="c.source_kind === 'upload'" type="primary">

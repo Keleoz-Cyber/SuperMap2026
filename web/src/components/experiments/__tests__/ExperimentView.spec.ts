@@ -40,6 +40,20 @@ const DATASET: DatasetVersionRecord = {
   created_at: T,
 }
 
+const MICRO_DATASET: DatasetVersionRecord = {
+  id: 'ds-micro',
+  case_id: 'c1',
+  version: 1,
+  status: 'validated',
+  profile: {
+    dimension: '3d',
+    original_filename: 'microseismic-dat',
+    source_kind: 'microseismic_dat_bundle',
+    mapping: { x: 'X_LOCAL_M', y: 'Y_LOCAL_M', z: 'Z_LOCAL_M', value: 'VX_KM_S' },
+  },
+  created_at: T,
+}
+
 const EXP: ExperimentRecord = {
   id: 'exp1',
   case_id: 'c1',
@@ -234,6 +248,95 @@ describe('ExperimentView 创建模式', () => {
     expect(client.fetchCaseDatasets).toHaveBeenCalledWith('c1')
     expect(wrapper.text()).toContain('borehole.csv')
     expect(wrapper.find('[data-test="param-editor"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+})
+
+describe('ExperimentView 微震预设', () => {
+  function mockMicroseismicCreate() {
+    vi.mocked(client.fetchDataset).mockResolvedValue(MICRO_DATASET)
+    vi.mocked(client.createExperiment).mockResolvedValue(EXP)
+    vi.mocked(client.startRun).mockResolvedValue(makeRun('queued'))
+    vi.mocked(client.fetchExperiment).mockResolvedValue(EXP)
+    vi.mocked(client.fetchCandidates).mockResolvedValue(makeCandidates([], makeRun('queued')))
+    vi.mocked(client.fetchRun).mockResolvedValue(makeRun('succeeded', { completed: 1, total: 1 }))
+  }
+
+  it('manual 模式显示 z_scale 字段（默认 1）与说明文案，并随 payload 提交', async () => {
+    mockMicroseismicCreate()
+    const { wrapper } = await mountAt('/cases/c1/experiments/new?dataset=ds-micro')
+
+    const zScale = wrapper.find('[data-test="z-scale-manual"]')
+    expect(zScale.exists()).toBe(true)
+    expect((zScale.element as HTMLInputElement).value).toBe('1')
+    expect(wrapper.find('[data-test="z-scale-hint"]').text()).toContain(
+      '距离计算使用 Z × z_scale；它是实验参数，不是已确认地质各向异性。',
+    )
+
+    await wrapper.find('[data-test="exp-submit"]').trigger('click')
+    await flushPromises()
+    const payload = vi.mocked(client.createExperiment).mock.calls[0][0]
+    expect(payload.parameters).toMatchObject({ power: 2, neighbor_count: 16, z_scale: 1 })
+    wrapper.unmount()
+  })
+
+  it('grid IDW 默认候选 3×4×3=36，z_scale 计入组合数与 payload', async () => {
+    mockMicroseismicCreate()
+    const { wrapper } = await mountAt('/cases/c1/experiments/new?dataset=ds-micro')
+    await wrapper.find('[data-test="mode-grid"]').setValue(true)
+
+    expect((wrapper.find('[data-test="grid-power"]').element as HTMLInputElement).value).toBe('1, 2, 3')
+    expect((wrapper.find('[data-test="grid-neighbors"]').element as HTMLInputElement).value).toBe(
+      '8, 16, 24, 32',
+    )
+    expect((wrapper.find('[data-test="grid-z-scale"]').element as HTMLInputElement).value).toBe(
+      '0.5, 1, 2',
+    )
+    expect(wrapper.text()).toContain('36 个候选组合')
+
+    await wrapper.find('[data-test="exp-submit"]').trigger('click')
+    await flushPromises()
+    const payload = vi.mocked(client.createExperiment).mock.calls[0][0]
+    expect(payload.parameters).toMatchObject({
+      power: [1, 2, 3],
+      neighbor_count: [8, 16, 24, 32],
+      z_scale: [0.5, 1, 2],
+    })
+    wrapper.unmount()
+  })
+
+  it('grid Kriging 默认候选 3×3×3=27', async () => {
+    mockMicroseismicCreate()
+    const { wrapper } = await mountAt('/cases/c1/experiments/new?dataset=ds-micro')
+    await wrapper.find('[data-test="algo-kriging"]').setValue(true)
+    await wrapper.find('[data-test="mode-grid"]').setValue(true)
+
+    expect((wrapper.find('[data-test="grid-kriging-neighbors"]').element as HTMLInputElement).value).toBe(
+      '12, 24, 36',
+    )
+    expect(wrapper.text()).toContain('27 个候选组合')
+
+    await wrapper.find('[data-test="exp-submit"]').trigger('click')
+    await flushPromises()
+    const payload = vi.mocked(client.createExperiment).mock.calls[0][0]
+    expect(payload.parameters).toMatchObject({
+      variogram_model: ['spherical', 'exponential', 'gaussian'],
+      neighbor_count: [12, 24, 36],
+      z_scale: [0.5, 1, 2],
+    })
+    wrapper.unmount()
+  })
+
+  it('通用数据集不显示 z_scale 控件且默认体验不变', async () => {
+    vi.mocked(client.fetchDataset).mockResolvedValue(DATASET)
+    const { wrapper } = await mountAt('/cases/c1/experiments/new?dataset=ds1')
+    expect(wrapper.find('[data-test="z-scale-manual"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="z-scale-hint"]').exists()).toBe(false)
+
+    await wrapper.find('[data-test="mode-grid"]').setValue(true)
+    expect(wrapper.find('[data-test="grid-z-scale"]').exists()).toBe(false)
+    expect((wrapper.find('[data-test="grid-power"]').element as HTMLInputElement).value).toBe('2')
+    expect((wrapper.find('[data-test="grid-neighbors"]').element as HTMLInputElement).value).toBe('8, 16')
     wrapper.unmount()
   })
 })

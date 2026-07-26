@@ -485,6 +485,8 @@ export interface ResultMetadata {
   result_id: string
   run_id: string
   experiment_id: string
+  // 成果归属链：result → run → experiment → dataset（Task 10 起服务端下发）
+  dataset_version_id: string
   algorithm: string
   parameters: Record<string, unknown>
   dimension: '2d' | '3d'
@@ -576,4 +578,161 @@ export interface DatasetPoints {
   value_range: [number, number] | null
   value_name: string | null
   source_sha256: string | null
+}
+
+// ---------------- v0.5 微震 DAT 导入契约（与 routes/microseismic.py 一一对应） ----------------
+
+export interface MicroseismicLayerCounts {
+  source_records: number
+  finite_records: number
+  invalid_records: number
+  rejected_3sigma: number
+  accepted_modeling: number
+  aggregated_nodes: number
+}
+
+export interface MicroseismicGoldenCheck {
+  name: string
+  passed: boolean
+  expected: unknown
+  actual: unknown
+}
+
+export interface MicroseismicGolden {
+  passed: boolean
+  checks: MicroseismicGoldenCheck[]
+}
+
+export interface MicroseismicAggregation {
+  conflict_group_count: number
+  conflict_row_count: number
+  collapsed_row_count: number
+  max_value_range: number
+}
+
+export interface MicroseismicThreeSigma {
+  threshold: number
+  ddof: number
+  depth_mean: number
+  depth_std: number
+  vx_mean: number
+  vx_std: number
+}
+
+export interface MicroseismicCoordinates {
+  coord_type: string
+  depth_rule: string
+  z_rule: string
+  vx_unit: string
+  absolute_crs: string
+}
+
+export interface MicroseismicSourceFile {
+  file_name: string
+  sha256: string
+  point_id: string
+  line_id: string
+  source_record_count: number
+}
+
+// 派生工件的公开身份：逻辑名 + 行数 + 哈希，绝不含服务器路径
+export interface MicroseismicArtifactIdentity {
+  file: string
+  rows: number
+  sha256: string
+}
+
+export interface MicroseismicDownstreamGates {
+  geometry_blocked: boolean
+  cleaning_blocked: boolean
+  interpolation_blocked: boolean
+}
+
+// 导入合同固定的自动映射（不经用户选择）
+export interface MicroseismicMapping {
+  dimension: '2d' | '3d'
+  x: string
+  y: string
+  z: string | null
+  value: string
+  value_name: string
+  value_unit: string | null
+  coordinate_kind: 'local_linear' | 'projected' | 'geographic'
+}
+
+export interface MicroseismicImportProfile {
+  source_kind: string
+  dimension: string
+  mapping: MicroseismicMapping
+  rule_version: string
+  adapter_version: string
+  aggregation_method: string
+  golden: MicroseismicGolden
+  layer_counts: MicroseismicLayerCounts
+  aggregation: MicroseismicAggregation
+  source_files: MicroseismicSourceFile[]
+  derivation_report: string
+  modeling_provenance: string
+  row_count: number
+  valid_row_count: number
+  invalid_row_count: number
+  standardized_sha256: string
+}
+
+// POST /api/cases/{case_id}/microseismic-imports → 201 public_dataset
+export interface MicroseismicImportResponse {
+  id: string
+  case_id: string
+  version: number
+  status: DatasetStatus
+  created_at: string
+  profile: MicroseismicImportProfile
+}
+
+// GET /api/datasets/{id}/derivation → 白名单 17 键
+export interface MicroseismicDerivation {
+  dataset_id: string
+  case_id: string
+  status: DatasetStatus
+  source_kind: string
+  rule_version: string
+  adapter_version: string
+  aggregation_method: string
+  layer_counts: MicroseismicLayerCounts
+  line_counts: Record<string, number>
+  three_sigma: MicroseismicThreeSigma
+  aggregation: MicroseismicAggregation
+  coordinates: MicroseismicCoordinates
+  golden: MicroseismicGolden
+  validation_passed: boolean
+  downstream_gates: MicroseismicDownstreamGates
+  source_files: MicroseismicSourceFile[]
+  artifacts: Record<string, MicroseismicArtifactIdentity>
+}
+
+// GET /api/datasets/{id}/derivation/points?layer=…&decimate=…
+export type MicroseismicPointLayerName = 'accepted' | 'rejected' | 'aggregated'
+
+export interface MicroseismicPointLayer {
+  dataset_id: string
+  layer: MicroseismicPointLayerName
+  total: number
+  returned: number
+  decimate: number
+  x: number[]
+  y: number[]
+  z: number[]
+  vx: number[]
+  // accepted / rejected 层
+  sample_id?: string[]
+  // rejected 层
+  filter_reason?: string[]
+  depth_zscore?: number[]
+  vx_zscore?: number[]
+  // aggregated 层
+  sample_count?: number[]
+  source_sample_ids?: string[][]
+  vx_min?: number[]
+  vx_max?: number[]
+  vx_std?: Array<number | null>
 }

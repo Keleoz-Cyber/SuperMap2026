@@ -1,11 +1,21 @@
+from collections import Counter
+from hashlib import sha256
 from pathlib import Path
 
 import pandas as pd
 import pytest
 
+from geomodeling.microseismic.aggregation import aggregate_exact_xyz
+from geomodeling.microseismic.canonical import accepted_csv_bytes, rejected_csv_bytes
 from geomodeling.microseismic.config import load_microseismic_config
+from geomodeling.microseismic.derivation import derive_local_samples
+from geomodeling.microseismic.filtering import filter_three_sigma
+from geomodeling.microseismic.golden import verify_golden
 from geomodeling.microseismic.inventory import snapshot_sha256
 from geomodeling.microseismic.service import build_audit, export_all
+
+EXPECTED_ACCEPTED = "4f7a0886b54bb1776e9d7ca98299f8f86e67897ba19236fb151c3fc9e2ae1513"
+EXPECTED_REJECTED = "3752b2f62de4e56121b7af66c205ccf3984270d332636335e559e7e2745872b1"
 
 pytestmark = [
     pytest.mark.local_data,
@@ -106,10 +116,87 @@ def test_source_sha256_unchanged(audit_result):
     assert result.validation.sha256_protection["unchanged"] is True
 
 
-def test_no_fabricated_xy_or_z(audit_result):
+def test_confirmed_local_coordinates(audit_result):
     result, _, _ = audit_result
-    assert all(point.x_local_m is None and point.y_local_m is None for point in result.points)
+    coordinates = load_microseismic_config().coordinate_lookup()
+    formal = [point for point in result.points if point.included_in_formal_set]
+    assert len(formal) == 22
+    for point in formal:
+        assert point.coordinate_status == "confirmed_local"
+        assert (point.x_local_m, point.y_local_m) == coordinates[point.point_id]
+    assert coordinates["W16"] == (0.0, 0.0)
+    assert coordinates["W5"] == (0.0, 220.0)
+    assert coordinates["W24"] == (960.0, 0.0)
+    w28 = next(point for point in result.points if point.point_id == "W28")
+    assert w28.x_local_m is None and w28.y_local_m is None
+    assert w28.coordinate_status == "unconfirmed"
     assert all(sample.derived_depth_m is None and sample.derived_z_m is None for sample in result.samples)
+
+
+def test_derive_local_samples_real_data(audit_result):
+    result, _, _ = audit_result
+    config = load_microseismic_config()
+    finite, invalid = derive_local_samples(config, result)
+    assert len(finite) == 2005
+    assert len(invalid) == 1
+    assert dict(Counter(item.line_id for item in finite)) == {"L1": 822, "L2": 819, "L3": 364}
+    rejected = invalid[0]
+    assert rejected.sample_id == "W8:2"
+    assert rejected.source_file == "W8.dat"
+    assert rejected.source_line == 2
+    assert rejected.vx_raw_token == "1.#QNAN0"
+    assert rejected.is_valid is False
+    row = next(item for item in finite if item.sample_id == "W1:2")
+    assert (row.x_local_m, row.y_local_m) == (400.0, 220.0)
+    assert row.depth_m == pytest.approx(row.wl_half_km * 1000)
+    assert row.z_local_m == pytest.approx(-row.depth_m)
+    assert row.coord_type == "local_engineering_m"
+    assert row.rule_version == "microseismic_local_3d_v0.2b_confirmed_2026-07-20"
+    assert {item.point_id for item in finite}.isdisjoint({"W28"})
+
+
+def test_filter_three_sigma_real_data_anchors(audit_result):
+    result, _, _ = audit_result
+    config = load_microseismic_config()
+    finite, _ = derive_local_samples(config, result)
+    filtered = filter_three_sigma(
+        finite,
+        threshold=config.derivation.sigma_threshold,
+        ddof=config.derivation.sigma_ddof,
+    )
+    assert filtered.depth_mean == pytest.approx(676.620332169576)
+    assert filtered.depth_std == pytest.approx(1138.5704399315825)
+    assert filtered.vx_mean == pytest.approx(0.9019579860349127)
+    assert filtered.vx_std == pytest.approx(0.7493428022868682)
+    assert len(filtered.rejected) == 80
+    assert Counter(row.filter_reason for row in filtered.rejected) == {"深度": 72, "速度": 8}
+    assert len(filtered.accepted) == 1925
+    # Accepted and rejected each preserve the derived source order.
+    accepted_ids = {row.sample_id for row in filtered.accepted}
+    assert [row.sample_id for row in filtered.accepted] == [
+        row.sample_id for row in finite if row.sample_id in accepted_ids
+    ]
+
+
+def test_golden_bytes_and_aggregation_real_data(audit_result):
+    result, _, _ = audit_result
+    config = load_microseismic_config()
+    finite, _ = derive_local_samples(config, result)
+    filtered = filter_three_sigma(
+        finite,
+        threshold=config.derivation.sigma_threshold,
+        ddof=config.derivation.sigma_ddof,
+    )
+    assert sha256(accepted_csv_bytes(filtered.accepted)).hexdigest() == EXPECTED_ACCEPTED
+    assert sha256(rejected_csv_bytes(filtered.rejected)).hexdigest() == EXPECTED_REJECTED
+    aggregation = aggregate_exact_xyz(filtered.accepted)
+    assert aggregation.conflict_group_count == 13
+    assert aggregation.conflict_row_count == 27
+    assert aggregation.collapsed_row_count == 14
+    assert len(aggregation.nodes) == 1911
+    assert aggregation.max_value_range == pytest.approx(0.913554)
+    golden = verify_golden(config, filtered, aggregation)
+    assert golden.passed is True
 
 
 def test_validation_passed(audit_result):

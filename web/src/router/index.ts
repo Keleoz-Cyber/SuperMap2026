@@ -3,6 +3,7 @@ import HomeView from '../views/HomeView.vue'
 import RhoCaseView from '../views/RhoCaseView.vue'
 import CaseCreateView from '../views/CaseCreateView.vue'
 import DatasetWizardView from '../views/DatasetWizardView.vue'
+import MicroseismicImportView from '../views/MicroseismicImportView.vue'
 import ExperimentView from '../views/ExperimentView.vue'
 import ResultWorkbenchView from '../views/ResultWorkbenchView.vue'
 
@@ -13,6 +14,11 @@ const router = createRouter({
     { path: '/', name: 'home', component: HomeView },
     { path: '/case/resistivity', name: 'rho-case', component: RhoCaseView },
     { path: '/cases/new', name: 'case-create', component: CaseCreateView },
+    {
+      path: '/cases/:caseId/microseismic/import',
+      name: 'microseismic-import',
+      component: MicroseismicImportView,
+    },
     {
       path: '/cases/:caseId/datasets/:datasetId/prepare',
       name: 'dataset-prepare',

@@ -164,6 +164,47 @@ def inspect_source(
     return result
 
 
+def write_standardized_frame(target: Path, frame: pd.DataFrame) -> dict[str, Any]:
+    """Persist a standardized frame through temp-write, reread-verify, os.replace.
+
+    The frame must already follow ``STANDARDIZED_SCHEMA`` exactly (column set
+    and order). The Parquet bytes are written to a temporary sibling, read
+    back and checked before an atomic replace, so a partially written target
+    never appears. Returns the standard summary shared by ``standardize``.
+    """
+
+    if list(frame.columns) != STANDARDIZED_SCHEMA:
+        raise PlatformError(
+            DATASET_PARSE_FAILED,
+            f"标准化帧列不符合契约：{[str(c) for c in frame.columns]}",
+            {"columns": [str(c) for c in frame.columns], "expected": STANDARDIZED_SCHEMA},
+        )
+    target.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(prefix="standardized-", suffix=".parquet", dir=target.parent)
+    os.close(fd)
+    tmp_path = Path(tmp_name)
+    try:
+        frame.to_parquet(tmp_path, index=False)
+        reread = pd.read_parquet(tmp_path)
+        if list(reread.columns) != STANDARDIZED_SCHEMA:
+            raise PlatformError(DATASET_PARSE_FAILED, "标准化产物 schema 校验失败")
+        if len(reread) != len(frame):
+            raise PlatformError(DATASET_PARSE_FAILED, "标准化产物行数校验失败")
+        os.replace(tmp_path, target)
+    except BaseException:
+        tmp_path.unlink(missing_ok=True)
+        raise
+
+    valid_count = int(frame["is_numeric_valid"].sum())
+    return {
+        "row_count": len(frame),
+        "valid_row_count": valid_count,
+        "invalid_row_count": len(frame) - valid_count,
+        "standardized_path": str(target),
+        "standardized_sha256": _sha256(target),
+    }
+
+
 def standardize(
     settings: PlatformSettings,
     case_id: str,
@@ -215,28 +256,6 @@ def standardize(
     standardized = standardized[STANDARDIZED_SCHEMA]
 
     target = settings.standardized_dataset(case_id, dataset_id)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp_name = tempfile.mkstemp(prefix="standardized-", suffix=".parquet", dir=target.parent)
-    os.close(fd)
-    tmp_path = Path(tmp_name)
-    try:
-        standardized.to_parquet(tmp_path, index=False)
-        reread = pd.read_parquet(tmp_path)
-        if list(reread.columns) != STANDARDIZED_SCHEMA:
-            raise PlatformError(DATASET_PARSE_FAILED, "标准化产物 schema 校验失败")
-        if len(reread) != len(standardized):
-            raise PlatformError(DATASET_PARSE_FAILED, "标准化产物行数校验失败")
-        os.replace(tmp_path, target)
-    except BaseException:
-        tmp_path.unlink(missing_ok=True)
-        raise
-
-    valid_count = int(standardized["is_numeric_valid"].sum())
-    return {
-        "row_count": len(standardized),
-        "valid_row_count": valid_count,
-        "invalid_row_count": len(standardized) - valid_count,
-        "standardized_path": str(target),
-        "standardized_sha256": _sha256(target),
-        "sheet": resolved_sheet,
-    }
+    summary = write_standardized_frame(target, standardized)
+    summary["sheet"] = resolved_sheet
+    return summary

@@ -45,7 +45,7 @@ def write_fixture_config(base: Path, data_dir: Path, **overrides) -> Path:
             "interval_workbook": "点间距.xlsx",
             "paper_reference": "fixture-paper.pdf",
             "line_map_image": "fixture-lines.jpg",
-            "source_unit": "WL/2(km) verbatim; Vx unit pending source confirmation",
+            "source_unit": "WL/2(km); Vx km/s",
         },
         "lines": [
             {
@@ -75,6 +75,36 @@ def write_fixture_config(base: Path, data_dir: Path, **overrides) -> Path:
                 "issue_code": "L3_W28_SOURCE_CONFLICT",
             }
         ],
+        "local_coordinates": [
+            {"point_id": "W1", "x_local_m": 0, "y_local_m": 220},
+            {"point_id": "W2", "x_local_m": 100, "y_local_m": 220},
+            {"point_id": "WA", "x_local_m": 0, "y_local_m": 0},
+        ],
+        "derivation": {
+            "rule_version": "microseismic_local_3d_v0.2b_confirmed_2026-07-20",
+            "adapter_version": "0.5.0",
+            "depth_multiplier": 1000.0,
+            "z_multiplier": -1.0,
+            "vx_unit": "km/s",
+            "sigma_threshold": 3.0,
+            "sigma_ddof": 1,
+            "aggregation_method": "arithmetic_mean_exact_xyz",
+            # Fixture-specific contract: the fixture's 6 finite rows yield no
+            # 3-sigma rejections and no exact-xyz conflicts. Never copy the
+            # real 2006/1925/80/1911 counts into this portable fixture.
+            "expected_rejected": 0,
+            "expected_accepted": 6,
+            "expected_conflict_groups": 0,
+            "expected_conflict_rows": 0,
+            "expected_modeling_nodes": 6,
+            # Fixture-only golden pins, re-pinned in Task 4: sha256 of the
+            # canonical UTF-8-BOM/CRLF CSV bytes of the fixture's accepted
+            # set (6 rows) and of its empty rejected set (header only).
+            "golden": {
+                "accepted_sha256": "063a98c5277a2c3ce557e166e30c6652765a207b68059a9eb3cdac14503e0316",
+                "rejected_sha256": "2ebb1f496b428d75d713e7e8bfe3dff78749be0155aa8395fa577fb2339e8738",
+            },
+        },
         "expected": expected,
         "cleaning_conflicts": {
             "outlier_count_claim": 80,

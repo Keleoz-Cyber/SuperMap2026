@@ -183,13 +183,32 @@ def run_contract_checks(
         )
     )
 
-    no_fake_xy = all(point.x_local_m is None and point.y_local_m is None for point in points)
-    no_fake_z = all(sample.derived_depth_m is None and sample.derived_z_m is None and sample.depth_derivation_status == "unconfirmed" for sample in samples)
+    coordinates = config.coordinate_lookup()
+    formal_mismatch = [
+        point.point_id
+        for point in points
+        if point.included_in_formal_set
+        and (
+            point.coordinate_status != "confirmed_local"
+            or point.x_local_m is None
+            or point.y_local_m is None
+            or coordinates.get(point.point_id) != (point.x_local_m, point.y_local_m)
+        )
+    ]
+    excluded_with_xy = [
+        point.point_id
+        for point in points
+        if not point.included_in_formal_set and (point.x_local_m is not None or point.y_local_m is not None)
+    ]
+    no_fake_z = all(
+        sample.derived_depth_m is None and sample.derived_z_m is None and sample.depth_derivation_status == "unconfirmed"
+        for sample in samples
+    )
     checks.append(
         _check(
-            "no_fabricated_coordinates_or_z",
-            no_fake_xy and no_fake_z,
-            f"points_with_xy={sum(1 for point in points if point.x_local_m is not None or point.y_local_m is not None)} samples_with_z={sum(1 for sample in samples if sample.derived_z_m is not None or sample.derived_depth_m is not None)}",
+            "confirmed_local_coordinates",
+            not formal_mismatch and not excluded_with_xy and no_fake_z,
+            f"formal_mismatch={formal_mismatch} excluded_with_xy={excluded_with_xy} samples_with_z={sum(1 for sample in samples if sample.derived_z_m is not None or sample.derived_depth_m is not None)}",
         )
     )
 

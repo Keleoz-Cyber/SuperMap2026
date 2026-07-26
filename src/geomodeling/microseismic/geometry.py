@@ -15,6 +15,7 @@ def build_survey_geometry(
         entry.point_id: (entry.source_record_count, entry.valid_numeric_count) for entry in manifest
     }
     interval_lookup = config.interval_lookup()
+    coordinates = config.coordinate_lookup()
     interval_workbook = config.source.get("interval_workbook", INTERVAL_SOURCE)
     lines: list[SurveyLine] = []
     points: list[SurveyPoint] = []
@@ -29,6 +30,15 @@ def build_survey_geometry(
                     interval = spec.distance_m
                     cumulative += spec.distance_m
             source_records, valid_numeric = counts.get(point.point_id, (0, 0))
+            xy = coordinates.get(point.point_id)
+            note_parts = []
+            if interval is None and previous_id is not None:
+                note_parts.append("interval to previous point not registered")
+            if xy is not None:
+                note_parts.append(
+                    "local engineering coordinates confirmed from versioned config "
+                    "(local_engineering_m); no EPSG declared"
+                )
             points.append(
                 SurveyPoint(
                     point_id=point.point_id,
@@ -45,12 +55,16 @@ def build_survey_geometry(
                     exclusion_reason=None,
                     source_record_count=source_records,
                     valid_numeric_count=valid_numeric,
-                    coordinate_status="unconfirmed",
-                    x_local_m=None,
-                    y_local_m=None,
+                    coordinate_status="confirmed_local" if xy is not None else "unconfirmed",
+                    x_local_m=xy[0] if xy is not None else None,
+                    y_local_m=xy[1] if xy is not None else None,
                     z_reference_status="unconfirmed",
-                    source_confidence="interval_source_confirmed; absolute_geometry_unconfirmed",
-                    notes=None if interval is not None or previous_id is None else "interval to previous point not registered",
+                    source_confidence=(
+                        "interval_source_confirmed; local_coordinates_confirmed; absolute_geometry_unconfirmed"
+                        if xy is not None
+                        else "interval_source_confirmed; absolute_geometry_unconfirmed"
+                    ),
+                    notes="; ".join(note_parts) or None,
                 )
             )
             previous_id = point.point_id
@@ -66,11 +80,17 @@ def build_survey_geometry(
                 valid_numeric_count=line_valid,
                 geometry_status="cumulative_1d_only",
                 crs_type="none",
-                origin_status="unconfirmed",
-                direction_status="unconfirmed",
-                geometry_source=f"point intervals from {interval_workbook}; order from {ORDER_SOURCE}",
-                source_confidence="interval_source_confirmed; origin_and_direction_unconfirmed",
-                notes="1D along-line distance only; no X/Y/Z generated in v0.2a",
+                origin_status="confirmed_local",
+                direction_status="confirmed_local",
+                geometry_source=(
+                    f"point intervals from {interval_workbook}; order from {ORDER_SOURCE}; "
+                    "local coordinates from config local_coordinates"
+                ),
+                source_confidence="interval_source_confirmed; local_origin_and_direction_confirmed; absolute_crs_unconfirmed",
+                notes=(
+                    "2D local engineering coordinates confirmed from versioned config "
+                    "(local_engineering_m); absolute CRS/EPSG unavailable"
+                ),
             )
         )
     for excluded in config.excluded_points:

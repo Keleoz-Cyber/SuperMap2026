@@ -45,7 +45,7 @@ def test_health_reports_v04_dev_version(tmp_path, monkeypatch):
     app = make_integrated_app(tmp_path, monkeypatch)
     with TestClient(app) as client:
         body = client.get("/api/health").json()
-    assert body["version"] == "0.4.1"
+    assert body["version"] == "0.5.0"
 
 
 def test_cases_merges_legacy_card_and_upload_cases(tmp_path, monkeypatch):
@@ -109,6 +109,19 @@ def test_http_errors_use_envelope_and_never_leak_paths(tmp_path, monkeypatch):
         # 本机绝对路径不得出现在任何公开错误字段里
         assert str(tmp_path) not in json.dumps(payload, ensure_ascii=False)
         assert "missing-standardized" not in json.dumps(payload, ensure_ascii=False)
+
+
+def test_microseismic_router_registered_without_shadowing_legacy(tmp_path, monkeypatch):
+    """v0.5 微震路由注册后，legacy 精确路由仍然优先命中。"""
+    app = make_integrated_app(tmp_path, monkeypatch)
+    with TestClient(app) as client:
+        legacy = client.get("/api/cases/resistivity")
+        assert legacy.status_code == 200, legacy.text
+        assert legacy.json()["case_id"] == "resistivity"
+
+        paths = client.get("/openapi.json").json()["paths"]
+        assert "/api/cases/{case_id}/microseismic-imports" in paths
+        assert "/api/datasets/{dataset_id}/derivation" in paths
 
 
 def test_lifespan_shutdown_stops_worker_and_closes_runtime(tmp_path, monkeypatch):

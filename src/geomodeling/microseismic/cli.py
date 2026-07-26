@@ -7,10 +7,11 @@ import typer
 from ..audit import AuditLogger
 from ..io import write_json
 from .config import load_microseismic_config
+from .platform_adapter import DEFAULT_CASE_NAME
 from .reports import export_manifest, export_validation_json, export_velocity_samples
-from .service import build_audit, export_all
+from .service import _derive_result, build_audit, derive_from_directory, export_all, export_derivation
 
-microseismic_app = typer.Typer(add_completion=False, help="Microseismic v0.2a data audit and standardization commands")
+microseismic_app = typer.Typer(add_completion=False, help="Microseismic v0.2a data audit and v0.5 derivation commands")
 
 
 def _output_dir(config_path: Path, output_dir: Path | None) -> Path:
@@ -118,6 +119,84 @@ def export_reports(
     _finish("microseismic export-reports", result, base, outputs)
 
 
+@microseismic_app.command("derive")
+def derive(
+    config: Path = typer.Option(Path("config/microseismic.yaml"), "--config", "-c"),
+    source_dir: Path | None = typer.Option(None, "--source-dir", help="Directory holding the DAT files; defaults to the config data_dir."),
+    output_dir: Path = typer.Option(..., "--output-dir", "-o", help="Output directory for the v0.5 derivation layers."),
+) -> None:
+    """Run the v0.5 derivation workflow: audit, local XYZ, 3σ filter, golden gate, aggregation."""
+    app_config = load_microseismic_config(config)
+    base = output_dir.resolve()
+    base.mkdir(parents=True, exist_ok=True)
+    source = source_dir.resolve() if source_dir is not None else app_config.data_dir
+    result, output_map = derive_from_directory(app_config, source, base)
+    typer.echo(
+        f"source_records={len(result.audit.samples)} finite={len(result.finite)} invalid={len(result.invalid)} "
+        f"rejected_3sigma={len(result.filtered.rejected)} accepted_modeling={len(result.filtered.accepted)} "
+        f"modeling_nodes={len(result.aggregated.nodes)}"
+    )
+    typer.echo(f"golden_passed={result.golden.passed}")
+    typer.echo(f"downstream_gates={result.downstream_gates}")
+    typer.echo(f"output_dir={base}")
+    failed = [check for check in result.validation.checks if not check.passed]
+    _audit_log(
+        base,
+        "microseismic derive",
+        "succeeded" if result.validation.passed else "failed",
+        inputs=[entry.relative_path for entry in result.audit.manifest],
+        outputs=list(output_map.values()),
+        error=f"{len(failed)} checks failed" if failed else None,
+    )
+    typer.echo(f"validation_passed={result.validation.passed} failed_checks={len(failed)}")
+    if not result.validation.passed:
+        for check in failed:
+            typer.echo(f"FAILED {check.name}: {check.evidence}")
+        raise typer.Exit(code=1)
+
+
+@microseismic_app.command("import-case")
+def import_case(
+    source_dir: Path = typer.Option(..., "--source-dir", help="Directory holding the DAT files."),
+    data_dir: Path = typer.Option(..., "--data-dir", help="Platform data directory (the GEOMODELING_DATA_DIR layout)."),
+    case_name: str = typer.Option(DEFAULT_CASE_NAME, "--case-name", help="Display name of the created case."),
+    config: Path = typer.Option(Path("config/microseismic.yaml"), "--config", "-c"),
+) -> None:
+    """Atomically import a DAT bundle as a mapped platform dataset (case_type=microseismic)."""
+    from ..platform.db import PlatformRuntime
+    from ..platform.errors import PlatformError
+    from ..platform.settings import PlatformSettings
+    from .platform_adapter import MicroseismicImportBundle, create_microseismic_case, import_microseismic_dataset
+
+    app_config = load_microseismic_config(config)
+    runtime = PlatformRuntime(settings=PlatformSettings(data_dir=data_dir.resolve()))
+    runtime.initialize()
+    try:
+        case = create_microseismic_case(runtime, name=case_name)
+        bundle = MicroseismicImportBundle(config=app_config, source_dir=source_dir.resolve())
+        record = import_microseismic_dataset(runtime, case.id, bundle)
+        profile = record.profile
+        counts = profile["layer_counts"]
+        typer.echo(f"case_id={case.id}")
+        typer.echo(f"dataset_id={record.id}")
+        typer.echo(
+            f"source_records={counts['source_records']} finite={counts['finite_records']} invalid={counts['invalid_records']} "
+            f"rejected_3sigma={counts['rejected_3sigma']} accepted_modeling={counts['accepted_modeling']} "
+            f"modeling_nodes={counts['aggregated_nodes']}"
+        )
+        typer.echo(f"rule_version={profile['rule_version']}")
+        typer.echo(f"golden_passed={profile['golden']['passed']}")
+        typer.echo(f"validation_passed=True status={record.status}")
+    except PlatformError as exc:
+        typer.echo(f"FAILED {exc.code}: {exc.message}")
+        for check in exc.details.get("failed_checks", []):
+            typer.echo(f"FAILED {check['name']}: {check['evidence']}")
+        typer.echo("validation_passed=False")
+        raise typer.Exit(code=1)
+    finally:
+        runtime.close()
+
+
 @microseismic_app.command("run-audit")
 def run_audit(
     config: Path = typer.Option(Path("config/microseismic.yaml"), "--config", "-c"),
@@ -129,8 +208,26 @@ def run_audit(
     result = build_audit(app_config)
     result.output_dir = str(base)
     output_map = export_all(result, base)
+    derivation = None
+    # v0.5: when the confirmed derivation contract is present and the source
+    # contract validates, append the derivation layers to the audit outputs.
+    if result.validation.passed and getattr(app_config, "derivation", None) is not None:
+        derivation = _derive_result(app_config, result)
+        derivation.output_dir = str(base)
+        output_map.update(export_derivation(derivation, base))
     write_json(base / "microseismic_run_outputs.json", {key: str(value) for key, value in output_map.items()})
     outputs = list(output_map.values())
     _echo_counts(result)
+    if derivation is not None:
+        typer.echo(
+            f"derived: finite={len(derivation.finite)} invalid={len(derivation.invalid)} "
+            f"rejected_3sigma={len(derivation.filtered.rejected)} accepted_modeling={len(derivation.filtered.accepted)} "
+            f"modeling_nodes={len(derivation.aggregated.nodes)} golden_passed={derivation.golden.passed}"
+        )
     typer.echo(f"output_dir={base}")
     _finish("microseismic run-audit", result, base, outputs)
+    if derivation is not None and not derivation.golden.passed:
+        for check in derivation.golden.checks:
+            if not check.passed:
+                typer.echo(f"FAILED golden_{check.name}: expected={check.expected} actual={check.actual}")
+        raise typer.Exit(code=1)

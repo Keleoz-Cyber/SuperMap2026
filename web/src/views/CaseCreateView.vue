@@ -1,17 +1,24 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ApiError, createCase, uploadDataset } from '../api/client'
 import PageNavigation from '../components/navigation/PageNavigation.vue'
 
+const route = useRoute()
 const router = useRouter()
+
+// preset=microseismic：微震第二案例入口，只要案例名称；
+// DAT 原始数据在创建后的导入向导中上传，通用 CSV/XLSX 路径保持不变。
+const isMicroseismic = computed(() => route.query.preset === 'microseismic')
 
 const name = ref('')
 const file = ref<File | null>(null)
 const busy = ref(false)
 const error = ref<string | null>(null)
 
-const canSubmit = computed(() => name.value.trim().length > 0 && file.value !== null && !busy.value)
+const canSubmit = computed(
+  () => name.value.trim().length > 0 && (isMicroseismic.value || file.value !== null) && !busy.value,
+)
 
 function onFileChange(event: Event) {
   const input = event.target as HTMLInputElement
@@ -19,10 +26,16 @@ function onFileChange(event: Event) {
 }
 
 async function submit() {
-  if (!canSubmit.value || !file.value) return
+  if (!canSubmit.value) return
   busy.value = true
   error.value = null
   try {
+    if (isMicroseismic.value) {
+      const created = await createCase(name.value.trim(), 'microseismic')
+      void router.push(`/cases/${created.id}/microseismic/import`)
+      return
+    }
+    if (!file.value) return
     const created = await createCase(name.value.trim(), 'generic')
     const uploaded = await uploadDataset(created.id, file.value)
     // 上传成功以服务端返回的数据集记录为准（含状态与校验和）
@@ -41,8 +54,9 @@ async function submit() {
 <template>
   <div class="create-page">
     <header class="create-header">
-      <h1>新建建模案例</h1>
-      <p>上传 CSV / XLSX 点数据，完成字段映射与质量校验后即可开始调参实验。</p>
+      <h1>{{ isMicroseismic ? '新建微震建模案例' : '新建建模案例' }}</h1>
+      <p v-if="isMicroseismic">只需命名；22 个原始 DAT 将在创建后的导入向导中上传并由服务端核验。</p>
+      <p v-else>上传 CSV / XLSX 点数据，完成字段映射与质量校验后即可开始调参实验。</p>
     </header>
 
     <div class="create-form">
@@ -52,12 +66,12 @@ async function submit() {
           v-model="name"
           class="gmp-input"
           data-test="case-name"
-          placeholder="如：××矿区电阻率建模"
+          :placeholder="isMicroseismic ? '如：××矿区微震速度建模' : '如：××矿区电阻率建模'"
           maxlength="256"
         />
       </label>
 
-      <label class="field">
+      <label v-if="!isMicroseismic" class="field">
         <span>数据文件（CSV / XLSX，≤ 50 MiB、≤ 50 万行）</span>
         <input
           class="gmp-file"
@@ -72,7 +86,7 @@ async function submit() {
 
       <div class="create-actions">
         <button class="gmp-btn primary" data-test="case-submit" :disabled="!canSubmit" @click="submit">
-          {{ busy ? '创建并上传中…' : '创建并进入数据准备' }}
+          {{ busy ? (isMicroseismic ? '创建中…' : '创建并上传中…') : isMicroseismic ? '创建并进入微震导入' : '创建并进入数据准备' }}
         </button>
         <PageNavigation home />
       </div>

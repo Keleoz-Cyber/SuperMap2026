@@ -19,10 +19,9 @@ EXPECTED_ISSUE_CODES = {
     "LINE_COUNT_CONFLICT",
     "L3_W28_SOURCE_CONFLICT",
     "L3_W28_INTERVAL_EXCLUDED",
-    "WL_HALF_MEANING_UNCONFIRMED",
-    "DEPTH_Z_DERIVATION_UNCONFIRMED",
+    "LOCAL_GEOMETRY_CONFIRMED",
+    "DEPTH_Z_VX_RULE_CONFIRMED",
     "ABSOLUTE_COORDINATES_UNAVAILABLE",
-    "LINE_AZIMUTH_UNCONFIRMED",
     "CLEANING_RATE_CONFLICT",
     "CLEANING_METHOD_CONFLICT",
 }
@@ -123,11 +122,16 @@ def test_cumulative_distance(fixture_setup):
     assert points["W2"].interval_source
 
 
-def test_no_fabricated_coordinates_or_z(fixture_setup):
+def test_confirmed_local_coordinates(fixture_setup):
     config, _, _ = fixture_setup
     result = build_audit(config)
-    assert all(point.x_local_m is None and point.y_local_m is None for point in result.points)
-    assert all(point.coordinate_status == "unconfirmed" for point in result.points)
+    coordinates = config.coordinate_lookup()
+    formal = [point for point in result.points if point.included_in_formal_set]
+    assert all(point.coordinate_status == "confirmed_local" for point in formal)
+    assert all((point.x_local_m, point.y_local_m) == coordinates[point.point_id] for point in formal)
+    excluded = [point for point in result.points if not point.included_in_formal_set]
+    assert all(point.x_local_m is None and point.y_local_m is None for point in excluded)
+    assert all(point.coordinate_status == "unconfirmed" for point in excluded)
     assert all(sample.derived_depth_m is None and sample.derived_z_m is None for sample in result.samples)
     assert all(sample.depth_derivation_status == "unconfirmed" for sample in result.samples)
 
@@ -190,10 +194,18 @@ def test_audit_summary_separates_blockers_and_gates(fixture_setup):
     summary = (out_dir / "microseismic_audit_summary.md").read_text(encoding="utf-8")
     assert "## Downstream gates" in summary
     assert "## Validation blockers" in summary
-    assert "geometry_blocked: True" in summary
-    assert "cleaning_blocked: True" in summary
-    assert "interpolation_blocked: True" in summary
-    assert "ABSOLUTE_COORDINATES_UNAVAILABLE" in summary
+    # v0.5: local geometry, depth/Z, Vx and the 3-sigma cleaning rule are
+    # confirmed, so a passing audit no longer blocks the downstream gates.
+    assert "geometry_blocked: False" in summary
+    assert "cleaning_blocked: False" in summary
+    assert "interpolation_blocked: False" in summary
+    issues = json.loads((out_dir / "microseismic_issue_list.json").read_text(encoding="utf-8"))
+    absolute = next(issue for issue in issues if issue["code"] == "ABSOLUTE_COORDINATES_UNAVAILABLE")
+    # Absolute CRS is still unavailable but blocks only cross-case fusion,
+    # never the independent local modeling gates.
+    assert absolute["blocks_geometry"] is False
+    assert absolute["blocks_cleaning"] is False
+    assert absolute["blocks_interpolation"] is False
 
 
 def test_sha256_protection_check(fixture_setup):
@@ -238,4 +250,4 @@ def test_cli_validate_lists_checks(fixture_setup):
     completed = runner.invoke(app, ["microseismic", "validate", "--config", str(config_path), "-o", str(out_dir)])
     assert completed.exit_code == 0
     assert "PASS formal_dat_file_count" in completed.output
-    assert "PASS no_fabricated_coordinates_or_z" in completed.output
+    assert "PASS confirmed_local_coordinates" in completed.output

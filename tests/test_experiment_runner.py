@@ -170,6 +170,12 @@ def test_manual_idw_run_succeeds_with_predictions_and_metrics(tmp_path):
     assert metrics["common_valid_count"] > 0
     assert metrics["candidate_valid_count"] + metrics["candidate_nodata_count"] == metrics["total_count"]
     assert metrics["runtime_seconds"] >= 0
+    # 通用数据集无 provenance 声明：指标键集合逐位不变，不出现 group_diagnostics
+    assert set(metrics) == {
+        "rmse", "mae", "r2", "bias", "coverage",
+        "common_valid_count", "candidate_valid_count", "candidate_nodata_count",
+        "total_count", "runtime_seconds", "fold_metrics",
+    }
     assert Path(candidate["predictions_path"]).exists()
     predictions = pd.read_parquet(candidate["predictions_path"])
     assert set(predictions.columns) >= {"source_row", "truth", "prediction", "is_nodata", "fold"}

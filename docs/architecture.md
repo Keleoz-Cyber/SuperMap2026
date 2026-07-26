@@ -4,7 +4,7 @@
 
 The project builds a browser-based modeling platform for independent underground-property cases. The target workflow is upload, field mapping, validation, interpolation tuning, spatial validation, formal modeling, visualization, and evidence export. The approved product design is [product-blueprint.md](product-blueprint.md).
 
-Current implementation is still the Python CLI foundation: v0.1.0 connects standardized `X,Y,Z,RHO` data, train/validation splits, existing SuperMap prediction exports, quality metrics, model/task state, and SuperMap result registration. The current code additionally contains the merged microseismic v0.2a audit foundation. FastAPI, the browser UI, generic upload, tuning execution, iServer publishing, microseismic geometry/3σ/interpolation, and gas modeling are target capabilities, not implemented capabilities. External microseismic and gas CSVs plus iDesktopX experiments are manual evidence, not delivered modules.
+Current implementation is still the Python CLI foundation: v0.1.0 connects standardized `X,Y,Z,RHO` data, train/validation splits, existing SuperMap prediction exports, quality metrics, model/task state, and SuperMap result registration. The current code additionally contains the merged microseismic v0.2a audit foundation and, on the v0.5 branch, the microseismic second-case modeling loop: a domain adapter derives local XYZ/Vx samples from the 22 formal DATs, applies the confirmed global 3σ filter and exact-XYZ arithmetic-mean aggregation behind a byte-pinned golden gate, and feeds the resulting 1,911 modeling nodes into the generic v0.4 platform (browser wizard and CLI share the same derivation kernel). Gas modeling, absolute georeferencing, cross-case overlay, and automated iServer publishing remain target capabilities, not implemented capabilities. External gas CSVs plus iDesktopX experiments are manual evidence, not delivered modules.
 
 ## Constraints
 
@@ -14,7 +14,7 @@ Current implementation is still the Python CLI foundation: v0.1.0 connects stand
 - Empty or failed SuperMap outputs must not be marked as successful formal results.
 - IDW and ordinary Kriging must not be renamed as DSI.
 - Different research cases retain independent coordinate systems. They may share software and algorithms but must not be spatially overlaid without control points and a proven transformation.
-- Coalbed methane and DSI-like capabilities are interfaces only; microseismic has an implemented audit layer but no implemented 2D/3D geometry, 3σ filtering, or interpolation.
+- Coalbed methane and DSI-like capabilities are interfaces only; microseismic has an implemented audit layer (v0.2a) and, since v0.5, an implemented local-geometry/3σ/aggregation derivation and modeling loop. It still has no absolute CRS and no cross-case overlay.
 
 ## Current and target stack
 
@@ -106,6 +106,18 @@ Provides the analysis entry for registering data, validating contracts, importin
 - `reports`: standard tables (`survey_lines.csv`, `survey_points.csv`, `velocity_samples.csv`), `source_manifest.json`, validation JSON, issue lists, data quality/data dictionary/audit summary Markdown.
 - `service` + `cli`: orchestration (`build_audit`, `export_all`, `run_full_audit`) and the `inventory/parse/validate/export-reports/run-audit` command group; blockers return a non-zero exit code while still writing diagnostic reports.
 
+### `geomodeling.microseismic` v0.5 derivation layer (implemented in v0.5)
+
+- `derivation`: converts finite audit samples to confirmed local XYZ/Vx rows (`depth_m = wl_half_km × 1000` positive down, `z_local_m = -depth_m` positive up); non-finite records keep raw tokens in a separate invalid layer and never enter statistics; audit samples are never mutated.
+- `filtering`: one global 3σ filter over depth and Vx with sample standard deviation (`ddof=1`) and two-pass sequential float64 summation — the exact arithmetic that reproduces the golden z-score bytes; rejected rows carry `depth_zscore/vx_zscore/filter_status/filter_reason`.
+- `canonical`: byte-stable CSV serialization (UTF-8 BOM + CRLF, fixed column order) for the accepted/rejected layers; atomic write-temp-then-replace.
+- `golden`: fail-closed golden gate comparing each run against the pinned contract (accepted/rejected counts, per-line accepted counts, rejection reasons, both canonical SHA-256s, conflict-group/row counts, modeling-node count); any failed check blocks the import.
+- `aggregation`: exact-`(x,y,z)` float-equality grouping (no tolerance) with arithmetic-mean Vx; single-record groups keep the original value; provenance keeps `source_sample_ids/sample_count/min/max/std` (`ddof=1`, empty for single-sample groups); rule version `arithmetic_mean_exact_xyz` evolves independently of the derivation rule version. The 1,925 accepted rows are never modified; output is 1,911 unique modeling nodes (13 conflict groups, 27 member rows, 14 collapsed).
+- `service`: `derive_from_directory` composes audit → local XYZ → 3σ → golden gate → aggregation, exports all layers (`source_records_2006.csv`, `invalid_records_1.csv`, `rejected_3sigma_80.csv`, `accepted_modeling_1925.csv`, `aggregated_nodes_1911.csv`, `modeling_provenance.parquet`, `derivation_report.json`), keeps `downstream_gates` blocked unless audit contract and golden gate both pass.
+- `platform_adapter`: atomic case/dataset import (`source_kind="microseismic_dat_bundle"`); staging directory replaced into the deterministic dataset directory only after every gate passes; compensation on failure removes the DB row, formal directory, and staging directory independently (cleanup failures are logged only).
+- `cli`: `geomodeling microseismic derive` (directory → all layers + gates) and `geomodeling microseismic import-case` (directory → platform case + mapped dataset); the v0.2a command group stays compatible.
+- `api/routes/microseismic`: `POST /api/cases/{id}/microseismic-imports` (multipart, 22 DATs, 201), `GET /api/datasets/{id}/derivation`, `GET .../derivation/artifacts/{name}` (whitelist), `GET .../derivation/points?layer=accepted|rejected|aggregated&decimate=1`. The browser wizard consumes the same kernel; public payloads never leak absolute local paths.
+
 ### `geomodeling.publishing` (implemented in v0.3)
 
 - `client`: non-throwing iServer REST client (optional admin token via environment variables only); every call degrades gracefully when iServer is down.
@@ -129,6 +141,7 @@ FastAPI layer: `/api/health`, `/api/iserver/status`, `/api/cases`, `/api/cases/r
 ### `geomodeling.modeling` (implemented in v0.4)
 
 - `contracts`/`grid`/`splits`/`metrics`: interpolator protocol, default/user rule grids (cell-count guard), spatial-column k-fold/holdout splits, and common-valid-mask metrics (coverage reported per candidate, never traded for rank).
+- `distance`: the experimental `z_scale` parameter — every distance used by neighborhood search and variogram fitting is computed on `(x, y, z × z_scale)` with `0 < z_scale ≤ 20` (presets 0.5/1/2, default 1). It only affects distance/neighborhood/variogram fitting, never rewrites the physical coordinates of results, and is not a confirmed geological anisotropy conclusion.
 - `idw`/`kriging`/`variogram`: 2D/3D adapters; ordinary Kriging with per-fold auto variogram fitting (no validation-row leakage) or validated manual nugget/sill/range; technical gate in `docs/evidence/v0.4/kriging-technical-gate.md`.
 - `runner`: fold-isolated candidate evaluation with progress persistence, per-candidate failure evidence, and cancellation checks between candidates.
 - `slices`: orthogonal X/Y/Z slice extraction over persisted grids (NoData preserved).
@@ -149,7 +162,7 @@ v0.4 routers (`cases`, `datasets`, `experiments`, `runs`, `results`) registered 
 
 - Coalbed methane: an independent experimental 3D case using Xi'an 1980 zone 20 candidate coordinates, DEM-derived surface elevations, and a vertical-borehole midpoint approximation. The current 58-point table is external evidence; volume rendering is parked because loading the generated voxel crashes iDesktopX.
 - DSI-like/GOCAD: external backends emitting unified XYZV/regular-grid nodes plus model metadata; DSI results must not be re-interpolated with IDW/Kriging inside SuperMap.
-- Microseismic local geometry and data rules are now design inputs recorded in `docs/data/microseismic.md`; code/config implementation and regression validation remain pending.
+- Microseismic absolute georeferencing (needs common control points and azimuth evidence) and automated iServer publishing (`manual_required` stays). The local-geometry/3σ/aggregation derivation itself is implemented since v0.5; see the v0.5 derivation layer above.
 
 ## Data Flow
 
@@ -172,7 +185,18 @@ v0.4 routers (`cases`, `datasets`, `experiments`, `runs`, `results`) registered 
   -> contract validation + issue list
   -> JSON/Markdown reports + audit log
 
+Microseismic v0.5 derivation (browser wizard and CLI share this kernel)
+  -> 2,005 finite samples -> confirmed local XYZ/Vx (rule version pinned)
+  -> one global 3σ filter (ddof=1): 80 rejected / 1,925 accepted
+  -> exact-XYZ arithmetic-mean aggregation: 13 conflict groups -> 1,911 modeling nodes
+  -> golden gate (canonical SHA-256 + counts, fail-closed)
+  -> atomic platform dataset import (compensation on failure)
+  -> generic tuning / validation / result / export pipeline
+  -> export ZIP adds domain_evidence/ (manifest + report + five layered CSVs, all hashed)
+
 External derived microseismic/gas CSVs (read-only evidence)
+  -> microseismic pair is now the golden regression source regenerated in-repo (v0.5)
+  -> gas table remains external evidence only
   -> fingerprint + contract import (target)
   -> provenance and rule validation (target)
   -> experiment input without overwriting source/audit tables (target)
@@ -184,7 +208,7 @@ External derived microseismic/gas CSVs (read-only evidence)
 - Task success requires state, output existence, nonzero/expected records or objects, and readable content.
 - External tool errors are stored as raw evidence text and mark the task failed.
 - Warnings are allowed for known limitations such as coverage below 100%, metric disagreement between models, boundary-touching anomalies, and unverified vertical slices.
-- Microseismic audit validation passing does not clear the current code's downstream gates. External rule confirmation and manual CSV generation are recorded separately until schema, config, implementation, and regression tests reproduce them.
+- Since v0.5 the microseismic downstream gates are driven by the derivation run itself: audit contract and golden gate both passing clears `geometry/cleaning/interpolation_blocked`; any failure keeps them blocked, fails the import, and still writes diagnostic layers.
 
 ## Testing Strategy
 
@@ -196,6 +220,7 @@ External derived microseismic/gas CSVs (read-only evidence)
 - State tests verify empty/failed SuperMap results cannot be marked successful.
 - Evidence tests verify declared/file/dataset/manual evidence boundaries and prevent fake `dataset_verified` claims.
 - Microseismic tests verify NUL handling, special NaN tokens, count layers, W28 exclusion and null semantics, stable relative manifest paths, cumulative distance, no fabricated XY/Z, blocker exit codes, and unchanged source SHA-256.
+- Microseismic v0.5 tests verify the local XYZ derivation (coordinates/depth sign/units/rule version), the exact 3σ statistics (ddof=1, two-pass summation, anchor mean/std), canonical byte stability, golden-gate fail-closed behavior, exact-XYZ aggregation with provenance, atomic import compensation, the derivation API routes, and a `local_data` end-to-end regression against the real 22 DATs (2,006/2,005/80/1,925/1,911 plus both golden SHA-256s).
 
 ## SuperMap Boundary
 

@@ -6,6 +6,12 @@ Singular neighborhoods fall back to least squares and are counted;
 targets with fewer than ``min_neighbors`` neighbors are NoData. Manual
 variogram mode requires a complete nugget/sill/range triple with sill
 (total sill) strictly greater than nugget.
+
+``z_scale`` (3D only) scales the z column by a validated factor before the
+KD-tree and the auto variogram are fit and before queries are issued, so
+neighborhood distances and semivariogram lags use ``(x, y, z × z_scale)``;
+physical training and grid coordinates are never written back. In manual
+mode the given nugget/sill/range are interpreted in the scaled space.
 """
 
 from __future__ import annotations
@@ -18,6 +24,7 @@ from pydantic import Field, model_validator
 from scipy.spatial import cKDTree
 
 from geomodeling.modeling.base import CancelFn, PredictionBatch
+from geomodeling.modeling.distance import scale_distance_coordinates
 from geomodeling.modeling.variogram import VariogramModel, fit_variogram, semivariance
 from geomodeling.platform.errors import PlatformError
 from geomodeling.platform.schemas import Algorithm, ContractModel, Dimension
@@ -35,6 +42,7 @@ class KrigingParameters(ContractModel):
     neighbor_count: int = Field(default=24, ge=4, le=128)
     search_radius: float | None = Field(default=None, gt=0)
     min_neighbors: int = Field(default=4, ge=3, le=32)
+    z_scale: float = Field(default=1.0, gt=0, le=20)
 
     @model_validator(mode="after")
     def _check_manual(self) -> "KrigingParameters":
@@ -101,9 +109,14 @@ class OrdinaryKrigingInterpolator:
                 "训练坐标与属性数量不一致",
                 {"coordinates": coordinates.shape[0], "values": values.shape[0]},
             )
+        dimension = Dimension.THREE_D if coordinates.shape[1] == 3 else Dimension.TWO_D
+        # 邻域树与变异函数都建在缩放副本上；传入的训练坐标保持物理坐标不被改写
+        scaled = scale_distance_coordinates(
+            coordinates, dimension=dimension, z_scale=parameters.z_scale
+        )
         if parameters.variogram_mode == "auto":
             # 自动拟合只使用传入的训练折数据；调用方（折分 runner）保证不泄验证行
-            model = fit_variogram(coordinates, values, parameters.variogram_model)
+            model = fit_variogram(scaled, values, parameters.variogram_model)
         else:
             model = VariogramModel(
                 model=parameters.variogram_model,
@@ -111,7 +124,13 @@ class OrdinaryKrigingInterpolator:
                 partial_sill=float(parameters.sill - parameters.nugget),
                 range=float(parameters.range),
             )
-        return _KrigingFitted(tree=cKDTree(coordinates), values=values, model=model, parameters=parameters)
+        return _KrigingFitted(
+            tree=cKDTree(scaled),
+            values=values,
+            model=model,
+            parameters=parameters,
+            dimension=dimension,
+        )
 
 
 @dataclass(frozen=True)
@@ -120,6 +139,7 @@ class _KrigingFitted:
     values: np.ndarray
     model: VariogramModel
     parameters: KrigingParameters
+    dimension: Dimension
     _canceled: bool = field(default=False, compare=False)
 
     def _predict_chunk(
@@ -160,7 +180,10 @@ class _KrigingFitted:
         return values, is_nodata, max_used, singular_fallbacks
 
     def predict(self, query: np.ndarray, *, cancel: CancelFn) -> PredictionBatch:
-        query = np.asarray(query, dtype="float64")
+        # 查询点按同一规则缩放到距离空间；调用方持有的物理坐标不被改写
+        query = scale_distance_coordinates(
+            query, dimension=self.dimension, z_scale=self.parameters.z_scale
+        )
         n = query.shape[0]
         values = np.full(n, np.nan)
         is_nodata = np.ones(n, dtype=bool)
@@ -181,6 +204,7 @@ class _KrigingFitted:
             diagnostics={
                 "max_neighbors_used": max_used,
                 "singular_fallback_count": singular_fallbacks,
+                "z_scale": self.parameters.z_scale,
                 "variogram": {
                     "model": self.model.model,
                     "nugget": self.model.nugget,

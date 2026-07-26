@@ -6,6 +6,11 @@ use 1/d**power weights over at most ``neighbor_count`` neighbors inside
 ``search_radius``. Targets with fewer than ``min_neighbors`` neighbors are
 NoData — values are never fabricated. Prediction runs in bounded chunks
 and checks the cooperative cancel flag before each chunk.
+
+``z_scale`` (3D only) scales the z column by a validated factor before the
+KD-tree is built and before queries are issued, so distances are computed
+on ``(x, y, z × z_scale)``; physical training and grid coordinates are
+never written back.
 """
 
 from __future__ import annotations
@@ -18,6 +23,7 @@ from pydantic import Field
 from scipy.spatial import cKDTree
 
 from geomodeling.modeling.base import CancelFn, PredictionBatch
+from geomodeling.modeling.distance import scale_distance_coordinates
 from geomodeling.platform.errors import PlatformError
 from geomodeling.platform.schemas import Algorithm, ContractModel, Dimension
 
@@ -31,6 +37,7 @@ class IDWParameters(ContractModel):
     neighbor_count: int = Field(default=16, ge=1, le=128)
     search_radius: float | None = Field(default=None, gt=0)
     min_neighbors: int = Field(default=3, ge=1, le=32)
+    z_scale: float = Field(default=1.0, gt=0, le=20)
 
 
 class IDWInterpolator:
@@ -56,7 +63,14 @@ class IDWInterpolator:
                 "训练坐标与属性数量不一致",
                 {"coordinates": coordinates.shape[0], "values": values.shape[0]},
             )
-        return _IDWFitted(tree=cKDTree(coordinates), values=values, parameters=parameters)
+        dimension = Dimension.THREE_D if coordinates.shape[1] == 3 else Dimension.TWO_D
+        # KD-tree 建在缩放副本上；传入的训练坐标保持物理坐标不被改写
+        scaled = scale_distance_coordinates(
+            coordinates, dimension=dimension, z_scale=parameters.z_scale
+        )
+        return _IDWFitted(
+            tree=cKDTree(scaled), values=values, parameters=parameters, dimension=dimension
+        )
 
 
 @dataclass(frozen=True)
@@ -64,6 +78,7 @@ class _IDWFitted:
     tree: cKDTree
     values: np.ndarray
     parameters: IDWParameters
+    dimension: Dimension
     _canceled: bool = field(default=False, compare=False)
 
     def _predict_chunk(self, query: np.ndarray) -> tuple[np.ndarray, np.ndarray, int]:
@@ -108,7 +123,10 @@ class _IDWFitted:
         return values, is_nodata, max_used
 
     def predict(self, query: np.ndarray, *, cancel: CancelFn) -> PredictionBatch:
-        query = np.asarray(query, dtype="float64")
+        # 查询点按同一规则缩放到距离空间；调用方持有的物理坐标不被改写
+        query = scale_distance_coordinates(
+            query, dimension=self.dimension, z_scale=self.parameters.z_scale
+        )
         n = query.shape[0]
         values = np.full(n, np.nan)
         is_nodata = np.ones(n, dtype=bool)
@@ -124,5 +142,9 @@ class _IDWFitted:
         return PredictionBatch(
             values=values,
             is_nodata=is_nodata,
-            diagnostics={"max_neighbors_used": max_used, "n_targets": n},
+            diagnostics={
+                "max_neighbors_used": max_used,
+                "n_targets": n,
+                "z_scale": self.parameters.z_scale,
+            },
         )

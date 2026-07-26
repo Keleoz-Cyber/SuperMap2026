@@ -4,6 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from geomodeling.config import load_config
+from geomodeling.microseismic.config import load_microseismic_config
 from geomodeling.schemas import ModelMetadata, ModelStatus, ResultCategory, SuperMapResultRegistration
 
 
@@ -46,3 +47,24 @@ def test_supermap_registration_prevents_false_success():
             object_count=0,
             openable=True,
         )
+
+
+def test_microseismic_derivation_contract_is_typed_and_versioned():
+    derivation = load_microseismic_config().derivation
+    assert derivation.rule_version == "microseismic_local_3d_v0.2b_confirmed_2026-07-20"
+    assert derivation.adapter_version == "0.5.0"
+    assert derivation.depth_multiplier == 1000.0
+    assert derivation.z_multiplier == -1.0
+    assert derivation.vx_unit == "km/s"
+    assert derivation.expected_rejected == 80
+    assert derivation.expected_accepted == 1925
+    assert derivation.expected_conflict_groups == 13
+    assert derivation.expected_conflict_rows == 27
+
+
+def test_microseismic_golden_hash_pattern_rejects_non_lowercase_hex():
+    derivation = load_microseismic_config().derivation
+    payload = derivation.model_dump()
+    payload["golden"]["accepted_sha256"] = "A" * 64
+    with pytest.raises(ValidationError):
+        type(derivation).model_validate(payload)

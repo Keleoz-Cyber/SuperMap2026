@@ -91,7 +91,8 @@ _SKIP_PREFIXES = ("http://", "https://", "mailto:", "#")
 
 def _markdown_files() -> list[Path]:
     roots = [Path("README.md"), Path("docs/v0.4.1-demo-runbook.md"), STATUS_DOC, BLUEPRINT,
-             Path("docs/v0.4-generic-modeling-loop.md"), Path("docs/acceptance.md")]
+             Path("docs/v0.4-generic-modeling-loop.md"), Path("docs/acceptance.md"),
+             Path("docs/v0.5-microseismic-loop.md")]
     return [p for p in roots if p.exists()]
 
 
@@ -108,3 +109,77 @@ def test_internal_markdown_links_resolve():
             if not resolved.exists():
                 failures.append(f"{md}: 无法解析的链接 {target}")
     assert not failures, "\n".join(failures)
+
+
+# ---------------------------------------------------------- Task 15: v0.5 microseismic loop docs
+V05_RUNBOOK = Path("docs/v0.5-microseismic-loop.md")
+MICRO_DATA_DOC = Path("docs/data/microseismic.md")
+CONTRACTS_DOC = Path("docs/data/contracts.md")
+README_DOC = Path("README.md")
+
+
+def _v05_runbook() -> str:
+    assert V05_RUNBOOK.exists(), "docs/v0.5-microseismic-loop.md 不存在"
+    return V05_RUNBOOK.read_text(encoding="utf-8")
+
+
+def test_v05_runbook_records_expected_counts():
+    text = _v05_runbook()
+    for token in ("2,006", "2,005", "80", "1,925", "1,911"):
+        assert token in text, f"v0.5 运行手册缺少预期计数 {token}"
+
+
+def test_v05_runbook_distinguishes_local_coords_candidates_and_nodes():
+    text = _v05_runbook()
+    assert "局部工程坐标" in text, "运行手册必须说明局部工程坐标"
+    assert "源记录" in text, "运行手册必须区分源记录层"
+    assert "候选" in text and "聚合" in text, "运行手册必须区分 1,925 候选与 1,911 聚合节点"
+
+
+def test_v05_runbook_covers_browser_and_cli_entries():
+    text = _v05_runbook()
+    assert "microseismic derive" in text, "运行手册缺少 CLI derive 入口"
+    assert "microseismic import-case" in text, "运行手册缺少 CLI import-case 入口"
+    assert "导入微震 DAT" in text, "运行手册缺少浏览器 DAT 导入步骤"
+
+
+def test_v05_runbook_covers_modeling_recovery_export_and_demo():
+    text = _v05_runbook()
+    for phrase in ("IDW", "克里金", "50 m", "z_scale", "重启", "导出", "演示"):
+        assert phrase in text, f"v0.5 运行手册缺少 {phrase} 内容"
+    assert "预检" in text, "运行手册缺少预检清单"
+    assert "失败" in text or "诊断" in text, "运行手册缺少失败诊断"
+
+
+def test_v05_runbook_has_no_absolute_paths_or_private_tracking():
+    text = _v05_runbook()
+    assert not re.search(r"(?<![A-Za-z])[A-Za-z]:[\\/]", text), "运行手册不得含盘符绝对路径"
+    assert "超图杯资料" not in text or "../超图杯资料" in text, "原始资料只允许相对引用"
+
+
+def test_readme_documents_microseismic_browser_and_cli_entries():
+    text = README_DOC.read_text(encoding="utf-8")
+    assert "导入微震 DAT" in text or "浏览器" in text, "README 缺少浏览器 DAT 导入入口说明"
+    assert "microseismic derive" in text, "README CLI 清单缺少 derive"
+    assert "microseismic import-case" in text, "README CLI 清单缺少 import-case"
+
+
+def test_no_stale_claim_that_browser_cannot_read_dat():
+    for doc in (MICRO_DATA_DOC, README_DOC, STATUS_DOC):
+        text = doc.read_text(encoding="utf-8")
+        assert "不读取 DAT" not in text, f"{doc} 仍声称浏览器不读取 DAT"
+
+
+def test_no_stale_microseismic_not_implemented_claims():
+    micro = MICRO_DATA_DOC.read_text(encoding="utf-8")
+    status = STATUS_DOC.read_text(encoding="utf-8")
+    assert "仍是v0.2a实现" not in micro, "微震文档 §1 仍停留在 v0.2a 口径"
+    assert "仍无微震三维派生表代码化" not in status, "状态文档仍称微震派生未代码化"
+    assert "微震局部三维和3σ规则的仓库内可复现实现、微震三维场景接入" not in status
+
+
+def test_contracts_document_v05_aggregation_and_three_sigma():
+    text = CONTRACTS_DOC.read_text(encoding="utf-8")
+    assert "1,911" in text, "数据契约缺少 1,911 聚合节点口径"
+    assert "算术平均" in text, "数据契约缺少算术平均聚合规则"
+    assert "ddof=1" in text, "数据契约缺少 3σ 样本标准差 ddof=1 口径"

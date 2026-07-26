@@ -79,6 +79,8 @@ jobs:
         run: |
           $dir = Join-Path $env:RUNNER_TEMP "geomodeling-live-${{ github.run_id }}-${{ github.run_attempt }}"
           "GEOMODELING_DATA_DIR=$dir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          # 微震合同指向隔离目录内运行时生成的合成夹具配置（由 e2e-live 夹具现造，绝不用真实私有配置）
+          "GEOMODELING_MICROSEISMIC_CONFIG=$(Join-Path $dir 'microseismic-live\microseismic_live_fixture.yaml')" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5

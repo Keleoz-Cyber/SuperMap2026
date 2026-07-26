@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any
+from typing import Any, ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -64,6 +64,211 @@ class VelocitySample(MicroseismicModel):
     derived_z_m: float | None = None
     depth_derivation_status: str = "unconfirmed"
     notes: str | None = None
+
+
+class DerivationContractError(ValueError):
+    """A supposedly finite source sample is missing values required for derivation."""
+
+
+class AggregationContractError(ValueError):
+    """Exactly collocated rows disagree on point or line identity."""
+
+
+# Golden-compatible rule strings, kept byte-identical to the confirmed golden
+# derived table (microseismic_local_3d_v0.2b_confirmed_2026-07-20).
+DEPTH_RULE = "DEPTH_M=WL_HALF_KM*1000;down_positive"
+Z_RULE = "Z_LOCAL_M=-DEPTH_M;up_positive"
+COORD_TYPE_LOCAL = "local_engineering_m"
+
+
+class DerivedVelocitySample(MicroseismicModel):
+    """v0.5 local-XYZ row derived from one finite v0.2a VelocitySample.
+
+    Field set mirrors the golden derived table columns in snake case. The Vx
+    unit is a fixed contract constant (the golden table has no unit column),
+    so vx_unit is exposed as a class attribute, not a serialized field.
+    """
+
+    vx_unit: ClassVar[str] = "km/s"
+
+    sample_id: str
+    point_id: str
+    line_id: str
+    x_local_m: float
+    y_local_m: float
+    depth_m: float
+    z_local_m: float
+    vx_km_s: float
+    wl_half_km: float
+    source_file: str
+    source_line: int
+    vx_raw_token: str
+    is_valid: bool = True
+    coord_type: str = COORD_TYPE_LOCAL
+    depth_rule: str
+    z_rule: str
+    rule_version: str
+
+    @classmethod
+    def from_source(
+        cls,
+        sample: VelocitySample,
+        *,
+        x: float,
+        y: float,
+        depth: float,
+        z: float,
+        rule_version: str,
+    ) -> "DerivedVelocitySample":
+        missing = [
+            name
+            for name, value in (
+                ("wl_half_km_value", sample.wl_half_km_value),
+                ("vx_value", sample.vx_value),
+                ("vx_raw_token", sample.vx_raw_token),
+            )
+            if value is None
+        ]
+        if missing:
+            raise DerivationContractError(
+                f"sample {sample.sample_id} is numeric-valid but missing {', '.join(missing)}"
+            )
+        return cls(
+            sample_id=sample.sample_id,
+            point_id=sample.point_id,
+            line_id=sample.line_id,
+            x_local_m=x,
+            y_local_m=y,
+            depth_m=depth,
+            z_local_m=z,
+            vx_km_s=sample.vx_value,
+            wl_half_km=sample.wl_half_km_value,
+            source_file=sample.source_file_name,
+            source_line=sample.source_line_number,
+            vx_raw_token=sample.vx_raw_token,
+            depth_rule=DEPTH_RULE,
+            z_rule=Z_RULE,
+            rule_version=rule_version,
+        )
+
+
+class RejectedFilteredSample(DerivedVelocitySample):
+    """Derived row rejected by the one-pass global 3σ filter.
+
+    Keeps every derived source field and adds both z-scores plus the filter
+    outcome. The four outcome fields serialize to the uppercase golden
+    columns; the source record is never deleted, interpolated, or backfilled.
+    """
+
+    depth_zscore: float = Field(serialization_alias="DEPTH_ZSCORE")
+    vx_zscore: float = Field(serialization_alias="VX_ZSCORE")
+    filter_status: str = Field(serialization_alias="FILTER_STATUS")
+    filter_reason: str = Field(serialization_alias="FILTER_REASON")
+
+    @classmethod
+    def from_derived(
+        cls,
+        row: DerivedVelocitySample,
+        *,
+        depth_zscore: float,
+        vx_zscore: float,
+        filter_reason: str,
+        filter_status: str = "剔除",
+    ) -> "RejectedFilteredSample":
+        return cls(
+            **row.model_dump(),
+            depth_zscore=depth_zscore,
+            vx_zscore=vx_zscore,
+            filter_status=filter_status,
+            filter_reason=filter_reason,
+        )
+
+
+class ThreeSigmaResult(MicroseismicModel):
+    """Immutable outcome of one global 3σ pass over all finite derived rows.
+
+    Statistics are computed exactly once from the full input (sample standard
+    deviation, ddof=1); accepted and rejected each preserve source order.
+    """
+
+    model_config = ConfigDict(extra="forbid", use_enum_values=True, frozen=True)
+
+    threshold: float
+    ddof: int
+    depth_mean: float
+    depth_std: float
+    vx_mean: float
+    vx_std: float
+    accepted: list[DerivedVelocitySample]
+    rejected: list[RejectedFilteredSample]
+
+
+class AggregatedModelingNode(MicroseismicModel):
+    """One unique modeling node produced by exact-XYZ aggregation.
+
+    vx_km_s is the arithmetic mean of the group's candidate Vx values; a
+    single-record group keeps its source value exactly. Provenance fields keep
+    every source sample id in source order, and vx_sample_std_km_s is null for
+    single-record groups and uses ddof=1 otherwise.
+    """
+
+    x_local_m: float
+    y_local_m: float
+    z_local_m: float
+    vx_km_s: float
+    point_id: str
+    line_id: str
+    source_sample_ids: list[str]
+    sample_count: int = Field(ge=1)
+    vx_min_km_s: float
+    vx_max_km_s: float
+    vx_sample_std_km_s: float | None
+
+
+class AggregationResult(MicroseismicModel):
+    """Immutable outcome of exact-XYZ aggregation over the accepted rows.
+
+    The accepted golden candidate set is never modified; aggregation only
+    produces this modeling-node collection. Conflict statistics describe the
+    groups whose sample_count is greater than one.
+    """
+
+    model_config = ConfigDict(extra="forbid", use_enum_values=True, frozen=True)
+
+    nodes: list[AggregatedModelingNode]
+    conflict_group_count: int = Field(ge=0)
+    conflict_row_count: int = Field(ge=0)
+    collapsed_row_count: int = Field(ge=0)
+    max_value_range: float = Field(ge=0)
+
+
+class InvalidDerivedSample(MicroseismicModel):
+    """Non-finite source record routed out of derivation with its raw trace."""
+
+    sample_id: str
+    point_id: str
+    line_id: str
+    source_file: str
+    source_line: int
+    wl_half_km_raw_token: str | None
+    vx_raw_token: str | None
+    invalid_reason: str | None
+    is_valid: bool = False
+    rule_version: str = ""
+
+    @classmethod
+    def from_source(cls, sample: VelocitySample, *, rule_version: str = "") -> "InvalidDerivedSample":
+        return cls(
+            sample_id=sample.sample_id,
+            point_id=sample.point_id,
+            line_id=sample.line_id,
+            source_file=sample.source_file_name,
+            source_line=sample.source_line_number,
+            wl_half_km_raw_token=sample.wl_half_km_raw_token,
+            vx_raw_token=sample.vx_raw_token,
+            invalid_reason=sample.invalid_reason,
+            rule_version=rule_version,
+        )
 
 
 class SurveyPoint(MicroseismicModel):

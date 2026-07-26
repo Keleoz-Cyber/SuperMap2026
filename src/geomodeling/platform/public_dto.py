@@ -54,6 +54,43 @@ def public_dataset(record: DatasetVersionRecord) -> dict[str, Any]:
     }
 
 
+def public_derivation(record: DatasetVersionRecord, report: dict[str, Any]) -> dict[str, Any]:
+    """微震派生证据公开 DTO（v0.5）：白名单字段 + 递归清理后的报告摘要。
+
+    ``report`` 是内部 ``derivation_report.json`` 的自由形态内容，未来键会
+    扩张，因此每个取值都过 ``scrub_nested``；工件只给逻辑名（报告自带的
+    file/rows/sha256），绝不给服务器路径。分线计数由 profile 的来源清单
+    摘要聚合得到，同样不含路径。
+    """
+
+    profile = record.profile
+    source_files = scrub_nested(profile.get("source_files") or [])
+    line_counts: dict[str, int] = {}
+    for entry in source_files:
+        line_id = entry.get("line_id") if isinstance(entry, dict) else None
+        if line_id:
+            line_counts[line_id] = line_counts.get(line_id, 0) + int(entry.get("source_record_count") or 0)
+    return {
+        "dataset_id": record.id,
+        "case_id": record.case_id,
+        "status": getattr(record.status, "value", record.status),
+        "source_kind": profile.get("source_kind"),
+        "rule_version": report.get("rule_version"),
+        "adapter_version": report.get("adapter_version"),
+        "aggregation_method": report.get("aggregation_method"),
+        "layer_counts": scrub_nested(report.get("layer_counts") or {}),
+        "line_counts": line_counts,
+        "three_sigma": scrub_nested(report.get("three_sigma") or {}),
+        "aggregation": scrub_nested(report.get("aggregation") or {}),
+        "coordinates": scrub_nested(report.get("coordinates") or {}),
+        "golden": scrub_nested(report.get("golden") or {}),
+        "validation_passed": report.get("validation_passed"),
+        "downstream_gates": scrub_nested(report.get("downstream_gates") or {}),
+        "source_files": source_files,
+        "artifacts": scrub_nested(report.get("artifacts") or {}),
+    }
+
+
 def public_case(record: CaseRecord) -> dict[str, Any]:
     """案例公开 DTO（config 同样递归清理，防未来键扩张）。"""
 
