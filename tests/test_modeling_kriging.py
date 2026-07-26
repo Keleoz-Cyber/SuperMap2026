@@ -334,3 +334,53 @@ def test_z_scale_parameter_bounds():
             interpolator.validate_parameters({"z_scale": bad}, "3d")
     ok = interpolator.validate_parameters({"z_scale": 20.0}, "3d")
     assert ok.z_scale == 20.0
+
+
+# ---------------------------------------------------------------------------
+# v0.6 Task 3: legacy 兼容 pin —— empirical_semivariogram 重构为共享分箱核心
+# 后，12-bin 数值与 v0.5 参考输出逐位一致（参考值取自重构前实现）
+# ---------------------------------------------------------------------------
+
+
+def test_empirical_semivariogram_matches_legacy_12_bin_reference_bitwise():
+    from geomodeling.modeling.variogram import empirical_semivariogram
+
+    coords, values = plane_field_2d()
+    centers, gammas, counts = empirical_semivariogram(coords, values)
+    np.testing.assert_array_equal(
+        counts, [55, 317, 392, 325, 216, 228, 152, 100, 144, 108, 72, 36]
+    )
+    np.testing.assert_array_equal(
+        centers,
+        [
+            19.0029237516523, 57.0087712549569, 95.01461875826149,
+            133.0204662615661, 171.0263137648707, 209.0321612681753,
+            247.0380087714799, 285.0438562747845, 323.0497037780891,
+            361.0555512813937, 399.0613987846983, 437.06724628800293,
+        ],
+    )
+    np.testing.assert_array_equal(
+        gammas,
+        [
+            0.11520000000000005, 0.3978094637223975, 0.9955183673469388,
+            1.6242510769230771, 2.041422222222222, 2.820547368421053,
+            3.7822736842105265, 4.636799999999999, 5.4152000000000005,
+            6.8672, 8.5128, 10.352000000000002,
+        ],
+    )
+
+
+def test_fit_variogram_matches_legacy_reference_bitwise():
+    from geomodeling.modeling.variogram import fit_variogram
+
+    coords, values = plane_field_2d()
+    model = fit_variogram(coords, values, "spherical")
+    assert model.nugget == 7.528834720767456e-20
+    assert model.partial_sill == 11.568770768708706
+    assert model.range == 874.1344925760058
+
+    coords, values = smooth_field_3d()
+    model = fit_variogram(coords, values, "spherical")
+    assert model.nugget == 7.708953972850713e-16
+    assert model.partial_sill == 1.0302351693326357
+    assert model.range == 1652.575581583548

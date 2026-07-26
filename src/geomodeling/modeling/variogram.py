@@ -4,6 +4,13 @@ Three models (spherical / exponential / Gaussian) with explicit parameter
 bounds. Empirical semivariograms use at most 50,000 deterministic pairs and
 12 equal-width lag bins. Auto-fit is always executed inside a training
 fold — never once on the full dataset before cross-validation.
+
+Lag binning is delegated to the shared typed core
+:func:`geomodeling.modeling.directional_variogram.bin_pair_distances`
+(v0.6): pairs exactly on an interior edge join the lower bin (pre-v0.6
+``np.digitize`` put them in the upper bin — a measure-zero difference for
+continuous data), and the legacy nearest-non-empty fill keeps all
+``n_bins`` entries finite for the unweighted fit, preserving v0.5 numerics.
 """
 
 from __future__ import annotations
@@ -14,6 +21,7 @@ import numpy as np
 from scipy.optimize import least_squares
 from scipy.spatial.distance import pdist, squareform
 
+from geomodeling.modeling.directional_variogram import bin_pair_distances
 from geomodeling.platform.errors import PlatformError
 
 VARIOGRAM_MODEL_UNKNOWN = "VARIOGRAM_MODEL_UNKNOWN"
@@ -90,21 +98,27 @@ def empirical_semivariogram(
     max_pairs: int = MAX_PAIRS,
     seed: int = 20260723,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Equal-width lag binning; returns (centers, mean_gamma, pair_counts)."""
+    """Equal-width lag binning; returns (centers, mean_gamma, pair_counts).
+
+    分箱委托 ``directional_variogram.bin_pair_distances``（点对恰在内部
+    边界时归入下侧 bin；与旧 ``np.digitize`` 的上侧归属仅在测度零的
+    边界命中时不同）。空桶仍按最近非空桶填充，保证拟合输入有限。
+    """
 
     coordinates = np.asarray(coordinates, dtype="float64")
     values = np.asarray(values, dtype="float64")
     dh, dv = _pair_distances(coordinates, values, seed, max_pairs)
     h_max = float(dh.max()) if dh.size else 1.0
+    if h_max <= 0.0:
+        h_max = 1.0  # 全重合退化输入：保持非失败路径（分箱核心要求递增边界）
     edges = np.linspace(0.0, h_max, n_bins + 1)
-    centers = (edges[:-1] + edges[1:]) / 2.0
-    gammas = np.zeros(n_bins)
-    counts = np.zeros(n_bins, dtype="int64")
-    indices = np.clip(np.digitize(dh, edges) - 1, 0, n_bins - 1)
-    for idx in range(n_bins):
-        members = indices == idx
-        counts[idx] = int(members.sum())
-        gammas[idx] = float(dv[members].mean()) if counts[idx] else np.nan
+    bins = bin_pair_distances(dh, dv, edges, min_pairs_per_bin=1)
+    centers = np.fromiter((b.center_distance for b in bins), dtype="float64", count=n_bins)
+    counts = np.fromiter((b.pair_count for b in bins), dtype="int64", count=n_bins)
+    gammas = np.array(
+        [b.semivariance if b.semivariance is not None else np.nan for b in bins],
+        dtype="float64",
+    )
     # 空桶用最近非空桶的 gamma 填充，保证拟合输入有限
     valid = counts > 0
     if not valid.any():
