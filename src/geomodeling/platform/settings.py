@@ -85,6 +85,11 @@ class PlatformSettings:
     def result_grid(self, result_id: str) -> Path:
         return self.results_dir / result_id / "grid.npz"
 
+    def professional_result_dir(self, result_id: str) -> Path:
+        """Per-candidate professional artifact directory (fold/OOF evidence)."""
+
+        return self.results_dir / result_id / "professional"
+
     def export_package(self, export_id: str) -> Path:
         return self.exports_dir / export_id / "result-package.zip"
 

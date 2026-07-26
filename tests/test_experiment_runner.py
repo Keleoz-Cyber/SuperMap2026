@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import threading
 from pathlib import Path
 
@@ -170,11 +171,13 @@ def test_manual_idw_run_succeeds_with_predictions_and_metrics(tmp_path):
     assert metrics["common_valid_count"] > 0
     assert metrics["candidate_valid_count"] + metrics["candidate_nodata_count"] == metrics["total_count"]
     assert metrics["runtime_seconds"] >= 0
-    # 通用数据集无 provenance 声明：指标键集合逐位不变，不出现 group_diagnostics
+    # 通用数据集无 provenance 声明：不出现 group_diagnostics；Task 9 起
+    # 候选指标固定引用折分与折外预测两个工件的 SHA-256
     assert set(metrics) == {
         "rmse", "mae", "r2", "bias", "coverage",
         "common_valid_count", "candidate_valid_count", "candidate_nodata_count",
         "total_count", "runtime_seconds", "fold_metrics",
+        "fold_assignments_sha256", "oof_predictions_sha256",
     }
     assert Path(candidate["predictions_path"]).exists()
     predictions = pd.read_parquet(candidate["predictions_path"])
@@ -316,3 +319,129 @@ def test_kriging_manual_and_auto_both_run(tmp_path):
     candidates = load_candidates(runtime, run_id)
     assert all(c["status"] == "succeeded" for c in candidates)
     assert any(c["metrics"]["rmse"] >= 0 for c in candidates)
+
+
+def test_run_persists_fold_and_oof_artifacts(tmp_path):
+    from geomodeling.modeling.runner import execute_run
+
+    runtime = make_runtime(tmp_path)
+    _target, frame = make_standardized(runtime, "c1", "ds1")
+    experiment_id = insert_experiment(runtime, "c1", "ds1", dict(SEARCH_IDW_MANUAL))
+    run_id = insert_run(runtime, experiment_id)
+
+    outcome = execute_run(runtime, run_id, threading.Event())
+    assert outcome.status == "succeeded"
+    candidate = load_candidates(runtime, run_id)[0]
+
+    # 设计 §5.3：两个工件都在候选的 professional/ 目录下
+    professional_dir = runtime.settings.professional_result_dir(candidate["id"])
+    assert professional_dir == runtime.settings.results_dir / candidate["id"] / "professional"
+    assignments_path = professional_dir / "fold_assignments.parquet"
+    oof_path = professional_dir / "out_of_fold_predictions.parquet"
+    assert assignments_path.exists()
+    assert oof_path.exists()
+
+    # 候选 metrics 引用两工件 SHA-256
+    metrics = candidate["metrics"]
+    assert metrics["fold_assignments_sha256"] == hashlib.sha256(
+        assignments_path.read_bytes()
+    ).hexdigest()
+    assert metrics["oof_predictions_sha256"] == hashlib.sha256(
+        oof_path.read_bytes()
+    ).hexdigest()
+
+    oof = pd.read_parquet(oof_path)
+    assert list(oof.columns) == [
+        "source_row", "fold_index", "x", "y", "z", "observed",
+        "predicted", "residual", "absolute_error", "squared_error", "is_nodata",
+    ]
+    assert oof["source_row"].is_unique
+    assert set(oof["source_row"]) == set(frame["source_row"])
+    assert oof["z"].isna().all()  # 2D 数据集 z 为 null
+    assert not oof["is_nodata"].any()
+    merged = oof.merge(frame[["source_row", "value"]], on="source_row")
+    assert merged["observed"].to_numpy() == pytest.approx(merged["value"].to_numpy())
+    assert merged["residual"].to_numpy() == pytest.approx(
+        merged["predicted"].to_numpy() - merged["value"].to_numpy()
+    )
+    assert merged["absolute_error"].to_numpy() == pytest.approx(
+        np.abs(merged["residual"].to_numpy())
+    )
+    assert merged["squared_error"].to_numpy() == pytest.approx(
+        merged["residual"].to_numpy() ** 2
+    )
+
+    assignments = pd.read_parquet(assignments_path)
+    assert {"fold_index", "source_row", "group_key", "role", "leakage_detected"} <= set(
+        assignments.columns
+    )
+    assert set(assignments["role"]) == {"training", "validation"}
+    assert not assignments["leakage_detected"].any()
+    validation = assignments[assignments["role"] == "validation"]
+    assert validation.groupby("source_row").size().eq(1).all()
+    # OOF 折归属与折分分配表一致
+    assert (
+        oof.set_index("source_row")["fold_index"].sort_index().to_numpy()
+        == validation.set_index("source_row")["fold_index"].sort_index().to_numpy()
+    ).all()
+
+
+def test_fold_leakage_fails_run_before_any_candidate(tmp_path, monkeypatch):
+    import geomodeling.modeling.runner as runner_mod
+    from geomodeling.modeling.contracts import Fold
+
+    runtime = make_runtime(tmp_path)
+    make_standardized(runtime, "c1", "ds1")
+    experiment_id = insert_experiment(runtime, "c1", "ds1", dict(SEARCH_IDW_MANUAL))
+    run_id = insert_run(runtime, experiment_id)
+
+    n = 36
+
+    def leaking_splits(points, dimension, spec):
+        half = len(points) // 2
+        return [
+            Fold(
+                index=0,
+                training_indices=np.arange(0, half + 2),  # 与验证重叠两行 → 泄漏
+                validation_indices=np.arange(half, n),
+            ),
+            Fold(
+                index=1,
+                training_indices=np.arange(half, n),
+                validation_indices=np.arange(0, half),
+            ),
+        ]
+
+    monkeypatch.setattr(runner_mod, "build_spatial_splits", leaking_splits)
+    outcome = runner_mod.execute_run(runtime, run_id, threading.Event())
+    assert outcome.status == "failed"
+    # 泄漏在候选行持久化之前判失败：没有任何候选记录
+    assert load_candidates(runtime, run_id) == []
+    with runtime.session() as session:
+        run = session.get(tables.Run, run_id)
+        assert run.status == "failed"
+        assert run.error_code == "FOLD_LEAKAGE_DETECTED"
+
+
+def test_oof_prediction_mismatch_fails_run_not_candidate(tmp_path, monkeypatch):
+    import geomodeling.modeling.runner as runner_mod
+    from geomodeling.platform.errors import PlatformError
+
+    runtime = make_runtime(tmp_path)
+    make_standardized(runtime, "c1", "ds1")
+    experiment_id = insert_experiment(runtime, "c1", "ds1", dict(SEARCH_IDW_MANUAL))
+    run_id = insert_run(runtime, experiment_id)
+
+    def broken_oof(frame, folds, predictions, *, dimension):
+        raise PlatformError(
+            "OOF_PREDICTION_MISMATCH", "候选预测 source_row 集合与折分计划的验证样本不一致"
+        )
+
+    monkeypatch.setattr(runner_mod, "build_oof_predictions", broken_oof)
+    outcome = runner_mod.execute_run(runtime, run_id, threading.Event())
+    assert outcome.status == "failed"
+    assert load_candidates(runtime, run_id) == []
+    with runtime.session() as session:
+        run = session.get(tables.Run, run_id)
+        assert run.status == "failed"
+        assert run.error_code == "OOF_PREDICTION_MISMATCH"

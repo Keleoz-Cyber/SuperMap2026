@@ -6,6 +6,14 @@ reach a fit. Predictions are stored by stable ``source_row``. After all
 candidates finish, a public common-valid mask is computed across succeeded
 candidates and every public metric is recomputed on exactly that mask;
 per-candidate coverage stays separate so NoData cannot buy rank.
+
+Fold evidence is run-level (Task 9): the split plan and its leakage check
+are built once before any candidate row is persisted — leakage or an
+incomplete plan fails the whole run closed. Each succeeded candidate also
+persists out-of-fold residual records plus the shared fold assignment
+table under ``results/<candidate_id>/professional/``; candidate metrics
+reference both artifacts by SHA-256, and inconsistent OOF evidence fails
+the run instead of the candidate.
 """
 
 from __future__ import annotations
@@ -20,6 +28,14 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from geomodeling.modeling.contracts import Fold
+from geomodeling.modeling.fold_artifacts import (
+    FOLD_ARTIFACT_WRITE_FAILED,
+    build_fold_assignments,
+    build_oof_predictions,
+    sha256_file,
+    write_artifact_parquet,
+)
 from geomodeling.modeling.idw import IDWInterpolator
 from geomodeling.modeling.kriging import OrdinaryKrigingInterpolator
 from geomodeling.modeling.metrics import common_valid_mask, compute_metrics
@@ -85,7 +101,7 @@ def _evaluate_candidate(
     interpolator,
     dimension: str,
     frame: pd.DataFrame,
-    validation: SpatialValidationSpec,
+    folds: list[Fold],
     parameters: dict[str, Any],
     predictions_path: Path,
     cancel: Event,
@@ -96,7 +112,6 @@ def _evaluate_candidate(
     values = valid["value"].to_numpy(dtype="float64")
     source_rows = valid["source_row"].to_numpy(dtype="int64")
 
-    folds = build_spatial_splits(points, dimension, validation)
     validated = interpolator.validate_parameters(parameters, dimension)
 
     started = time.perf_counter()
@@ -229,6 +244,28 @@ def execute_run(runtime, run_id: str, cancel: Event) -> RunOutcome:
             RunRepository(session).mark_failed(run_id, error_code=exc.code, metrics=progress)
         return RunOutcome(run_id, "failed", total, 0, 0)
 
+    # Task 9：折分与泄漏检查是 run 级证据，先于任何候选行持久化。泄漏或
+    # 折分结构不完整 → 整次运行结构化失败（fail-closed），不产生候选。
+    data_sha256 = profile.get("standardized_sha256") or sha256_file(
+        runtime.settings.standardized_dataset(experiment.case_id, dataset_id)
+    )
+    valid_frame = frame.loc[frame["is_numeric_valid"]].reset_index(drop=True)
+    coord_cols = ["x", "y"] + (["z"] if dimension == "3d" else [])
+    valid_points = valid_frame[coord_cols].to_numpy(dtype="float64")
+    try:
+        folds = build_spatial_splits(valid_points, dimension, validation)
+        fold_assignments, _fingerprint = build_fold_assignments(
+            valid_frame,
+            folds,
+            dimension=dimension,
+            validation=validation,
+            data_sha256=data_sha256,
+        )
+    except PlatformError as exc:
+        with runtime.session() as session:
+            RunRepository(session).mark_failed(run_id, error_code=exc.code, metrics=progress)
+        return RunOutcome(run_id, "failed", total, 0, 0)
+
     experiment_dir = runtime.settings.experiment_dir(experiment.id)
     succeeded: list[tuple[str, pd.DataFrame, dict[str, Any], str]] = []
 
@@ -250,7 +287,7 @@ def execute_run(runtime, run_id: str, cancel: Event) -> RunOutcome:
                 interpolator=interpolator,
                 dimension=dimension,
                 frame=frame,
-                validation=validation,
+                folds=folds,
                 parameters=candidate.parameters,
                 predictions_path=predictions_path,
                 cancel=cancel,
@@ -267,6 +304,34 @@ def execute_run(runtime, run_id: str, cancel: Event) -> RunOutcome:
             status = "failed"
             error = {"code": "CANDIDATE_EVALUATION_FAILED", "message": str(exc)[:500]}
             outcome = None
+
+        if outcome is not None:
+            # Task 9：折外证据（OOF 记录 + run 级折分分配）随候选落盘到
+            # results/<candidate_id>/professional/。证据不完整（source_row
+            # 不匹配、写入校验失败）→ 整次运行失败，候选行不落盘。
+            professional_dir = runtime.settings.professional_result_dir(result_id)
+            try:
+                oof = build_oof_predictions(
+                    valid_frame, folds, outcome["predictions"], dimension=dimension
+                )
+                oof_sha256 = write_artifact_parquet(
+                    professional_dir / "out_of_fold_predictions.parquet", oof
+                )
+                assignments_sha256 = write_artifact_parquet(
+                    professional_dir / "fold_assignments.parquet", fold_assignments
+                )
+            except PlatformError as exc:
+                with runtime.session() as session:
+                    RunRepository(session).mark_failed(run_id, error_code=exc.code, metrics=progress)
+                return RunOutcome(run_id, "failed", total, completed, failed)
+            except Exception:
+                with runtime.session() as session:
+                    RunRepository(session).mark_failed(
+                        run_id, error_code=FOLD_ARTIFACT_WRITE_FAILED, metrics=progress
+                    )
+                return RunOutcome(run_id, "failed", total, completed, failed)
+            outcome["metrics"]["fold_assignments_sha256"] = assignments_sha256
+            outcome["metrics"]["oof_predictions_sha256"] = oof_sha256
 
         with runtime.session() as session:
             session.add(
