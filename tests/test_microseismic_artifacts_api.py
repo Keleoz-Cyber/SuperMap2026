@@ -36,6 +36,8 @@ from test_microseismic_api import (
 )
 from test_public_dto import assert_no_path_leak
 
+from geomodeling.platform import PlatformRuntime, tables
+
 # 通用模型证据包（七文件，回归锁定；通用数据集 ZIP 不得多出任何文件）。
 STANDARD_PACKAGE_FILES = {
     "manifest.json",
@@ -445,3 +447,37 @@ def test_export_blocked_when_declared_evidence_missing(tmp_path, monkeypatch):
         assert error["code"] == "DOMAIN_EVIDENCE_MISSING"
         assert error["details"]["file"] == "accepted_modeling_44.csv"
         assert_no_path_leak(resp.json(), "$.export_blocked")
+
+
+def test_export_blocked_when_declared_evidence_hash_mismatches(tmp_path, monkeypatch):
+    """篡改已登记的领域证据：实际字节哈希与派生报告声明不符 → fail-closed 409。"""
+
+    config_path, data_dir = build_synthetic_bundle(tmp_path)
+    app = make_app(tmp_path, monkeypatch, config_path)
+    with TestClient(app) as client:
+        case_id, dataset_id, candidate_id = prepare_succeeded_result(client, data_dir)
+        derived = tmp_path / "data" / "datasets" / case_id / dataset_id / "derived"
+        target = derived / "accepted_modeling_44.csv"
+        assert target.is_file()
+        original_sha = hashlib.sha256(target.read_bytes()).hexdigest()
+        with target.open("ab") as handle:
+            handle.write(b"        0.060000        0.500000\r\n")
+        assert hashlib.sha256(target.read_bytes()).hexdigest() != original_sha
+
+        # 哈希不匹配必须阻断导出，绝不打包被篡改的证据
+        resp = client.post(f"/api/results/{candidate_id}/exports")
+        assert resp.status_code == 409, resp.text
+        error = assert_envelope(resp.json())
+        assert error["code"] == "DOMAIN_EVIDENCE_HASH_MISMATCH"
+        assert error["details"]["file"] == "accepted_modeling_44.csv"
+        assert_no_path_leak(resp.json(), "$.export_hash_mismatch")
+
+        # 不得产生可下载的不完整 ZIP：仓储中无导出记录，盘上无任何 zip 包
+        runtime = PlatformRuntime(tmp_path / "data")
+        runtime.initialize()
+        try:
+            with runtime.session() as session:
+                assert session.query(tables.Export).all() == []
+        finally:
+            runtime.close()
+        assert list((tmp_path / "data" / "exports").rglob("*.zip")) == []
