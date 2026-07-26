@@ -15,6 +15,9 @@
   同款模式）。成功只在 manifest 校验通过后提交数据库。
 - 取消语义与插值 run 一致：内存事件 + 持久 ``cancel_requested`` 旗标；
   取消只影响当前任务，不改已有成功工件。
+- 双候选比较（设计 §4.3/§13.3）：只读已登记工件（OOF parquet、
+  fold_assignments、grid.npz、metadata.json），绝不重跑模型；兼容对在所
+  选候选交集上重算指标差，不兼容只披露 mismatches，绝不显示指标差值。
 """
 
 from __future__ import annotations
@@ -42,6 +45,16 @@ from geomodeling.modeling.anomalies import (
     UncertaintyLayer,
     extract_anomalies,
 )
+from geomodeling.modeling.comparison import (
+    CandidateComparison,
+    align_oof_pair,
+    comparison_fingerprint,
+    grid_axes_identical,
+    grid_difference_summary,
+    pair_common_valid_mask,
+    pair_metric_deltas,
+    validation_fingerprint_from_assignments,
+)
 from geomodeling.modeling.directional_variogram import (
     EmpiricalBin,
     compute_empirical_variogram,
@@ -65,6 +78,7 @@ from geomodeling.modeling.variogram import (
 )
 from geomodeling.platform import tables
 from geomodeling.platform.errors import (
+    CANDIDATE_NOT_SUCCEEDED,
     PROFESSIONAL_DIAGNOSIS_NOT_SUCCEEDED,
     PlatformError,
 )
@@ -75,11 +89,12 @@ from geomodeling.platform.repositories import (
     ProfessionalConfirmationRepository,
     ProfessionalDiagnosticRepository,
 )
-from geomodeling.platform.results import load_grid
+from geomodeling.platform.results import RESULT_NOT_MATERIALIZED, _load_candidate, load_grid
 from geomodeling.platform.schemas import (
     AnalysisJobRecord,
     ContractModel,
     ProfessionalConfirmationRecord,
+    SpatialValidationSpec,
 )
 from geomodeling.platform.tables import RunStatus
 
@@ -88,6 +103,8 @@ __all__ = [
     "ANOMALY_ARTIFACT_WRITE_FAILED",
     "ANOMALY_INTERNAL_INCONSISTENT",
     "CANCEL_REQUESTED",
+    "COMPARISON_EVIDENCE_INCOMPLETE",
+    "COMPARISON_SAME_CANDIDATE",
     "DIAGNOSIS_ARTIFACT_WRITE_FAILED",
     "MANIFEST_VERIFICATION_FAILED",
     "PROFESSIONAL_CONFIG_INVALID",
@@ -96,6 +113,7 @@ __all__ = [
     "anomaly_fingerprint",
     "canonical_anomaly_config",
     "canonical_variogram_config",
+    "compare_candidates",
     "confirm_professional_diagnosis",
     "diagnosis_fingerprint",
     "execute_anomaly_extraction",
@@ -115,6 +133,8 @@ ANALYSIS_JOB_KIND_UNKNOWN = "ANALYSIS_JOB_KIND_UNKNOWN"
 PROFESSIONAL_CONFIG_INVALID = "PROFESSIONAL_CONFIG_INVALID"
 PROFESSIONAL_CONFIRMATION_INVALID = "PROFESSIONAL_CONFIRMATION_INVALID"
 ANOMALY_INTERNAL_INCONSISTENT = "ANOMALY_INTERNAL_INCONSISTENT"
+COMPARISON_SAME_CANDIDATE = "COMPARISON_SAME_CANDIDATE"
+COMPARISON_EVIDENCE_INCOMPLETE = "COMPARISON_EVIDENCE_INCOMPLETE"
 
 #: 取消意图的持久旗标键（与 worker.CANCEL_REQUESTED 同串，两处常量不互
 #: 引以避免 worker ↔ professional 循环依赖）。
@@ -1131,3 +1151,167 @@ def _drive_anomaly_extraction(
             job.id,
             progress={"phase": "succeeded", "component_count": len(outcome.components)},
         )
+
+
+# ---------------------------------------------------------------------------
+# 双候选比较服务（设计 §4.3/§13.3）：只读已登记工件，绝不重跑模型
+# ---------------------------------------------------------------------------
+
+
+def _comparison_context(runtime, result_id: str) -> dict[str, Any]:
+    """读取候选的归属链、数据版本 profile 与已登记折证据（只读）。
+
+    候选必须存在且为 succeeded；折证据（OOF / fold_assignments）缺失以
+    ``COMPARISON_EVIDENCE_INCOMPLETE`` 结构化失败——没有登记证据就不比
+    较，绝不现场重跑补齐。验证折分指纹从登记的 fold_assignments 工件重
+    算（与 run 期定义逐位一致）。
+    """
+
+    candidate, _run, experiment = _load_candidate(runtime, result_id)
+    if candidate.status != RunStatus.SUCCEEDED.value:
+        raise PlatformError(
+            CANDIDATE_NOT_SUCCEEDED,
+            "只有成功候选才能参与比较",
+            {"result_id": result_id, "status": candidate.status},
+            http_status=409,
+        )
+    params = tables.loads_canonical(experiment.params_json)
+    dataset_version_id = params["dataset_version_id"]
+    with runtime.session() as session:
+        dataset = session.get(tables.DatasetVersion, dataset_version_id)
+    if dataset is None:
+        raise PlatformError(
+            "DATASET_NOT_FOUND",
+            "候选所属数据版本缺失，归属链不完整",
+            {"result_id": result_id, "dataset_version_id": dataset_version_id},
+            http_status=409,
+        )
+    profile = tables.loads_canonical(dataset.profile_json)
+
+    professional_dir = runtime.settings.professional_result_dir(result_id)
+    oof_path = professional_dir / "out_of_fold_predictions.parquet"
+    assignments_path = professional_dir / "fold_assignments.parquet"
+    for evidence in (oof_path, assignments_path):
+        if not evidence.is_file():
+            raise PlatformError(
+                COMPARISON_EVIDENCE_INCOMPLETE,
+                "候选折证据不完整，无法比较",
+                {"result_id": result_id, "artifact": evidence.name},
+                http_status=409,
+            )
+    data_sha256 = profile.get("standardized_sha256") or sha256_file(
+        runtime.settings.standardized_dataset(experiment.case_id, dataset_version_id)
+    )
+    validation = SpatialValidationSpec.model_validate(params.get("validation") or {})
+    assignments = pd.read_parquet(assignments_path)
+    mapping = profile.get("mapping", {})
+    return {
+        "candidate": candidate,
+        "dataset_version_id": dataset_version_id,
+        "value_name": mapping.get("value_name"),
+        "value_unit": mapping.get("value_unit"),
+        "oof": pd.read_parquet(oof_path),
+        "validation_fingerprint": validation_fingerprint_from_assignments(
+            assignments, validation=validation, data_sha256=data_sha256
+        ),
+    }
+
+
+def compare_candidates(runtime, first_result_id: str, second_result_id: str) -> CandidateComparison:
+    """比较两个成功候选，返回兼容判定与（兼容时）同口径指标差。
+
+    兼容条件（全部满足才 compatible）：同一 ``dataset_version_id``、同一
+    验证折分指纹、同一 OOF ``source_row`` 集合、同一值单位
+    （value_name/value_unit 来自数据集 profile）。指标差只在所选候选的
+    公共有效交集上重算（first − second），绝不复用各 run 预存的公共掩
+    膜；交集为空视为不兼容（``common_valid_mask``）。不兼容仍可分别打
+    开，但 ``metric_deltas``/``common_valid_count`` 一律 None。
+
+    场差只在两候选网格轴完全一致且已物化时，于共同有效网格节点上给出
+    有界摘要；否则 ``grid_difference_available=False`` 且不生成差值。
+    同一候选（first == second）以 ``COMPARISON_SAME_CANDIDATE`` 结构化
+    错误拒绝。归属解析（case → dataset → experiment → run → result 链
+    路校验）留给 Task 17 API 层；本服务只校验两候选存在且为 succeeded。
+    """
+
+    if first_result_id == second_result_id:
+        raise PlatformError(
+            COMPARISON_SAME_CANDIDATE,
+            "候选不能与自身比较",
+            {"result_id": first_result_id},
+            http_status=409,
+        )
+    first = _comparison_context(runtime, first_result_id)
+    second = _comparison_context(runtime, second_result_id)
+
+    mismatches: list[str] = []
+    if first["dataset_version_id"] != second["dataset_version_id"]:
+        mismatches.append("dataset_version_id")
+    if (first["value_name"], first["value_unit"]) != (
+        second["value_name"],
+        second["value_unit"],
+    ):
+        mismatches.append("value_unit")
+    if first["validation_fingerprint"] != second["validation_fingerprint"]:
+        mismatches.append("validation_fingerprint")
+    first_rows = sorted(int(row) for row in first["oof"]["source_row"].unique())
+    second_rows = sorted(int(row) for row in second["oof"]["source_row"].unique())
+    if first_rows != second_rows:
+        mismatches.append("source_row")
+    fingerprint = comparison_fingerprint(
+        first["candidate"].fingerprint,
+        second["candidate"].fingerprint,
+        sorted(set(first_rows) & set(second_rows)),
+    )
+
+    common_valid_count: int | None = None
+    metric_deltas: dict[str, float] | None = None
+    if not mismatches:
+        aligned_first, aligned_second = align_oof_pair(first["oof"], second["oof"])
+        mask = pair_common_valid_mask(aligned_first, aligned_second)
+        if not mask.any():
+            # 公共有效集合为空：无任何同口径指标可展示，视为不兼容
+            mismatches.append("common_valid_mask")
+        else:
+            common_valid_count, metric_deltas = pair_metric_deltas(
+                aligned_first, aligned_second, mask
+            )
+    if mismatches:
+        return CandidateComparison(
+            first_result_id=first_result_id,
+            second_result_id=second_result_id,
+            compatible=False,
+            mismatches=mismatches,
+            common_valid_count=None,
+            metric_deltas=None,
+            grid_difference_available=False,
+            grid_difference=None,
+            comparison_fingerprint=fingerprint,
+        )
+
+    grid_difference = None
+    try:
+        first_grid = load_grid(runtime, first_result_id)
+        second_grid = load_grid(runtime, second_result_id)
+    except PlatformError as exc:
+        if exc.code != RESULT_NOT_MATERIALIZED:
+            raise
+    else:
+        if grid_axes_identical(first_grid.axes, second_grid.axes):
+            grid_difference = grid_difference_summary(
+                first_grid.values,
+                first_grid.is_nodata,
+                second_grid.values,
+                second_grid.is_nodata,
+            )
+    return CandidateComparison(
+        first_result_id=first_result_id,
+        second_result_id=second_result_id,
+        compatible=True,
+        mismatches=[],
+        common_valid_count=common_valid_count,
+        metric_deltas=metric_deltas,
+        grid_difference_available=grid_difference is not None,
+        grid_difference=grid_difference,
+        comparison_fingerprint=fingerprint,
+    )
