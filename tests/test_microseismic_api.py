@@ -438,6 +438,46 @@ def test_duplicate_basename_with_different_client_paths_rejected(tmp_path, monke
         assert not staging_root.exists() or list(staging_root.iterdir()) == []
 
 
+def test_case_variant_dat_names_conflict_is_stable_422(tmp_path, monkeypatch):
+    """同一请求含 W1.dat 与 w1.dat：必须稳定 422，绝不抛 FileExistsError 500。
+
+    Windows 文件系统大小写不敏感，第二次 open("xb") 会撞已暂存的 W1.dat；
+    POSIX 上两个文件都能暂存，再由文件集校验拒绝。两种平台都必须返回
+    统一封套的 422，且暂存目录无残留。
+    """
+
+    config_path, data_dir = build_synthetic_bundle(tmp_path)
+    app = make_app(tmp_path, monkeypatch, config_path)
+    entries = [(name, None) for name in ALL_NAMES]
+    entries.insert(1, ("W1.dat", "w1.dat"))
+    with TestClient(app) as client:
+        case_id = create_case(client)
+        resp = client.post(f"/api/cases/{case_id}/microseismic-imports", files=multipart(data_dir, entries))
+        assert resp.status_code == 422, resp.text
+        error = assert_envelope(resp.json())
+        assert error["code"] == "MICROSEISMIC_BUNDLE_INVALID"
+        assert "w1.dat" in json.dumps(error["details"], ensure_ascii=False)
+        assert_no_path_leak(resp.json(), "$.case_conflict")
+        staging_root = tmp_path / "data" / "staging" / "microseismic"
+        assert not staging_root.exists() or list(staging_root.iterdir()) == []
+
+
+def test_wrong_case_dat_name_alone_rejected_as_unknown(tmp_path, monkeypatch):
+    """错误大小写单独成集不得被静默接受：w1.dat 顶替 W1.dat → unknown/missing 422。"""
+
+    config_path, data_dir = build_synthetic_bundle(tmp_path)
+    app = make_app(tmp_path, monkeypatch, config_path)
+    entries = [("W1.dat", "w1.dat")] + [(name, None) for name in ALL_NAMES if name != "W1.dat"]
+    with TestClient(app) as client:
+        case_id = create_case(client)
+        resp = client.post(f"/api/cases/{case_id}/microseismic-imports", files=multipart(data_dir, entries))
+        assert resp.status_code == 422, resp.text
+        error = assert_envelope(resp.json())
+        assert error["code"] == "MICROSEISMIC_BUNDLE_INVALID"
+        assert error["details"]["unknown"] == ["w1.dat"]
+        assert error["details"]["missing"] == ["W1.dat"]
+
+
 def test_missing_dat_rejected_with_file_level_detail(tmp_path, monkeypatch):
     config_path, data_dir = build_synthetic_bundle(tmp_path)
     app = make_app(tmp_path, monkeypatch, config_path)

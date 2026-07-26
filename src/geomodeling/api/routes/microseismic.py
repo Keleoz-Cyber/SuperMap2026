@@ -147,6 +147,9 @@ async def _stage_uploads(files: list[UploadFile], staging_dir: Path) -> list[Sta
 
     Basenames are validated before any byte is written and duplicates are
     rejected; every upload is closed whether or not its stream succeeded.
+    Duplicate detection keys on ``os.path.normcase`` so case-only variants
+    (``W1.dat`` vs ``w1.dat``) collide exactly the way the hosting filesystem
+    would, instead of crashing later in ``open("xb")``.
     """
 
     staging_dir.mkdir(parents=True, exist_ok=False)
@@ -157,18 +160,19 @@ async def _stage_uploads(files: list[UploadFile], staging_dir: Path) -> list[Sta
         try:
             original = upload.filename or ""
             name = _safe_dat_basename(original)
-            if name in seen:
+            key = os.path.normcase(name)
+            if key in seen:
                 raise PlatformError(
                     MICROSEISMIC_BUNDLE_INVALID,
                     f"重复的 DAT 文件名：{name}",
                     {
                         "file_name": name,
-                        "first_client_path": seen[name],
+                        "first_client_path": seen[key],
                         "second_client_path": original,
                     },
                     http_status=422,
                 )
-            seen[name] = original
+            seen[key] = original
             digest = hashlib.sha256()
             size = 0
             with (staging_dir / name).open("xb") as handle:
