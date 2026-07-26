@@ -124,6 +124,39 @@ def test_microseismic_router_registered_without_shadowing_legacy(tmp_path, monke
         assert "/api/datasets/{dataset_id}/derivation" in paths
 
 
+def test_professional_router_registered_without_shadowing_existing(tmp_path, monkeypatch):
+    """v0.6 专业分析路由注册后，legacy 精确路由与微震路由仍然优先命中。"""
+    app = make_integrated_app(tmp_path, monkeypatch)
+    with TestClient(app) as client:
+        legacy = client.get("/api/cases/resistivity")
+        assert legacy.status_code == 200, legacy.text
+        assert legacy.json()["case_id"] == "resistivity"
+
+        paths = client.get("/openapi.json").json()["paths"]
+        # 既有微震路由不被遮蔽
+        assert "/api/cases/{case_id}/microseismic-imports" in paths
+        assert "/api/datasets/{dataset_id}/derivation" in paths
+        for path in (
+            "/api/datasets/{dataset_id}/professional-diagnostics",
+            "/api/professional-diagnostics/{diagnosis_id}",
+            "/api/professional-diagnostics/{diagnosis_id}/variogram",
+            "/api/professional-diagnostics/{diagnosis_id}/confirm",
+            "/api/analysis-jobs/{job_id}",
+            "/api/analysis-jobs/{job_id}/cancel",
+            "/api/analysis-jobs/{job_id}/retry",
+            "/api/results/{result_id}/professional",
+            "/api/results/{result_id}/folds",
+            "/api/results/{result_id}/residuals",
+            "/api/results/{result_id}/uncertainty/{kind}",
+            "/api/results/{result_id}/anomaly-extractions",
+            "/api/anomaly-extractions/{extraction_id}",
+            "/api/professional-comparisons",
+            "/api/professional-comparisons/{comparison_id}",
+            "/api/professional-artifacts/{artifact_id}/download",
+        ):
+            assert path in paths, path
+
+
 def test_lifespan_shutdown_stops_worker_and_closes_runtime(tmp_path, monkeypatch):
     app = make_integrated_app(tmp_path, monkeypatch)
     with TestClient(app) as client:
