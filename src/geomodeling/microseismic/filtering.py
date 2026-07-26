@@ -5,9 +5,13 @@ from typing import Sequence
 
 import numpy as np
 
+from geomodeling.platform.errors import PlatformError
+
 from .schemas import DerivedVelocitySample, RejectedFilteredSample, ThreeSigmaResult
 
-__all__ = ["filter_three_sigma"]
+__all__ = ["MICROSEISMIC_INSUFFICIENT_FINITE", "filter_three_sigma"]
+
+MICROSEISMIC_INSUFFICIENT_FINITE = "MICROSEISMIC_INSUFFICIENT_FINITE"
 
 REASON_DEPTH = "深度"
 REASON_VX = "速度"
@@ -54,7 +58,19 @@ def filter_three_sigma(
     every derived source field plus both z-scores, and accepted/rejected each
     preserve source order. Source rows are never mutated, deleted,
     interpolated, or backfilled.
+
+    Fail-closed: with at most ``ddof`` finite rows the statistics are
+    undefined (zero mean denominator, or zero N-ddof sample-std denominator),
+    so the filter raises a structured PlatformError instead of dividing by
+    zero or silently propagating NaN statistics.
     """
+    if len(rows) <= ddof:
+        raise PlatformError(
+            MICROSEISMIC_INSUFFICIENT_FINITE,
+            "有限样本数量不足，无法计算 3σ 统计，派生已阻断",
+            {"finite_total": len(rows), "ddof": ddof, "min_required": ddof + 1},
+            http_status=422,
+        )
     depth = np.asarray([row.depth_m for row in rows], dtype="float64")
     vx = np.asarray([row.vx_km_s for row in rows], dtype="float64")
     depth_mean, depth_std = _sample_statistics(depth, ddof)

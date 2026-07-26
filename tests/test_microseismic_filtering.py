@@ -7,9 +7,10 @@ import pytest
 
 from geomodeling.microseismic.config import load_microseismic_config
 from geomodeling.microseismic.derivation import derive_local_samples
-from geomodeling.microseismic.filtering import filter_three_sigma
+from geomodeling.microseismic.filtering import MICROSEISMIC_INSUFFICIENT_FINITE, filter_three_sigma
 from geomodeling.microseismic.schemas import DerivedVelocitySample
 from geomodeling.microseismic.service import build_audit
+from geomodeling.platform.errors import PlatformError
 
 from microseismic_fixtures import write_fixture_config, write_fixture_tree
 
@@ -155,3 +156,27 @@ def test_fixture_finite_rows_all_accepted_at_configured_threshold(tmp_path: Path
     assert len(result.accepted) == config.derivation.expected_accepted
     assert len(result.rejected) == config.derivation.expected_rejected
     assert [row.sample_id for row in result.accepted] == [row.sample_id for row in finite]
+
+
+def test_zero_finite_rows_fail_closed_with_structured_error():
+    # 0 条有限记录：均值分母为 0，绝不进入统计计算，也不抛裸
+    # ZeroDivisionError；收口为统一错误封套风格的结构化 PlatformError。
+    with pytest.raises(PlatformError) as excinfo:
+        filter_three_sigma([], threshold=3.0, ddof=1)
+    error = excinfo.value
+    assert error.code == MICROSEISMIC_INSUFFICIENT_FINITE
+    assert error.http_status == 422
+    assert error.details["finite_total"] == 0
+    assert error.details["ddof"] == 1
+
+
+def test_single_finite_row_fails_closed_with_structured_error():
+    # 1 条有限记录且 ddof=1：样本标准差分母 (N-ddof) 为 0，同样 fail-closed。
+    rows = derived_rows(depth=[50.0], vx=[0.5])
+    with pytest.raises(PlatformError) as excinfo:
+        filter_three_sigma(rows, threshold=3.0, ddof=1)
+    error = excinfo.value
+    assert error.code == MICROSEISMIC_INSUFFICIENT_FINITE
+    assert error.http_status == 422
+    assert error.details["finite_total"] == 1
+    assert error.details["ddof"] == 1

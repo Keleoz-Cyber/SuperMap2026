@@ -9,6 +9,7 @@ from typer.testing import CliRunner
 from geomodeling.cli import app
 from geomodeling.microseismic.config import load_microseismic_config
 from geomodeling.microseismic.service import derive_from_directory
+from geomodeling.platform.errors import PlatformError
 
 from microseismic_fixtures import write_dat, write_fixture_config, write_fixture_tree
 
@@ -214,3 +215,22 @@ def test_run_audit_reports_state_confirmed_facts(tmp_path: Path):
     assert "interpolation_blocked: False" in summary
     quality = (out_dir / "microseismic_data_quality.md").read_text(encoding="utf-8")
     assert "cannot: reconstruct 2D/3D coordinates" not in quality
+
+
+def test_derive_fails_closed_on_insufficient_finite_rows(tmp_path: Path):
+    # 全包只有 1 条有限记录（<= sigma_ddof=1）：派生必须在进入 3σ 统计前
+    # 收口为结构化 PlatformError（API/适配器路径得 4xx 封套），
+    # 绝不让裸 ZeroDivisionError 以 500 收场。
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    write_dat(data_dir / "W1.dat", ["        0.050000        0.524804"])
+    write_dat(data_dir / "W2.dat", ["        0.050000        1.#QNAN0"])
+    write_dat(data_dir / "WA.dat", ["        0.100000        1.#QNAN0"], trailing_nul=False)
+    config = load_microseismic_config(write_fixture_config(tmp_path, data_dir))
+    with pytest.raises(PlatformError) as excinfo:
+        derive_from_directory(config, data_dir, tmp_path / "out")
+    error = excinfo.value
+    assert error.code == "MICROSEISMIC_INSUFFICIENT_FINITE"
+    assert error.http_status == 422
+    assert error.details["finite_total"] == 1
+    assert error.details["ddof"] == config.derivation.sigma_ddof
