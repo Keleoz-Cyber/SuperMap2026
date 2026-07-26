@@ -90,6 +90,11 @@ class PlatformSettings:
 
         return self.results_dir / result_id / "professional"
 
+    def professional_result_manifest(self, result_id: str) -> Path:
+        """专业物化清单：物化完成与幂等重读的身份标记（设计 §5.3）。"""
+
+        return self.professional_result_dir(result_id) / "manifest.json"
+
     def professional_diagnosis_dir(
         self, case_id: str, dataset_id: str, diagnosis_id: str
     ) -> Path:

@@ -275,6 +275,35 @@ def test_export_zip_contains_full_lineage(tmp_path):
     assert selections[0]["note"] == "最优候选"
 
 
+def test_legacy_materialize_has_no_professional_artifacts(tmp_path):
+    """legacy 候选物化逐字节兼容：无 professional 文件、metadata 无 professional 键。"""
+
+    client, runtime = make_client(tmp_path)
+    _, _, _, candidate_id = prepare_completed_run(client)
+
+    resp = client.post(f"/api/results/{candidate_id}/materialize")
+    assert resp.status_code in (200, 201), resp.text
+    metadata = resp.json()
+    assert "professional" not in metadata
+    assert set(metadata) == {
+        "result_id", "run_id", "experiment_id", "dataset_version_id", "algorithm",
+        "parameters", "dimension", "shape", "cell_count", "bounds", "resolution",
+        "value_range", "nodata_count", "grid_sha256", "source_sha256",
+        "standardized_sha256", "fingerprint", "validation", "created_at",
+    }
+
+    professional_dir = runtime.settings.professional_result_dir(candidate_id)
+    # Task 9 的 run 级折证据照常落盘，但绝不自动创建任何专业物化文件
+    assert sorted(p.name for p in professional_dir.iterdir()) == [
+        "fold_assignments.parquet",
+        "out_of_fold_predictions.parquet",
+    ]
+
+    resp = client.get(f"/api/results/{candidate_id}/preview")
+    assert resp.status_code == 200
+    assert resp.json()["layer"] == "value"
+
+
 def test_export_failure_cleans_staging_dir(tmp_path, monkeypatch):
     """任一导出阶段失败：原异常传播，且 export-* 暂存目录不得残留。"""
 
