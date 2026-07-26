@@ -20,6 +20,7 @@ from .metrics import (
 )
 from .microseismic.cli import microseismic_app
 from .model_tasks import ModelTaskRegistry, build_model_task, ensure_config_model_tasks, select_models
+from .professional_cli import professional_app
 from .registry import DatasetRegistry
 from .reports import (
     export_acceptance_summary,
@@ -51,6 +52,7 @@ from .views import view_configurations_from_config
 
 app = typer.Typer(add_completion=False)
 app.add_typer(microseismic_app, name="microseismic")
+app.add_typer(professional_app, name="professional")
 
 
 def _dirs(config: AppConfig, output_dir: Path | None) -> dict[str, Path]:

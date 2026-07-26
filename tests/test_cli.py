@@ -8,6 +8,12 @@ pytestmark = pytest.mark.local_data
 runner = CliRunner()
 
 
+def test_cli_help_lists_professional_group():
+    result = runner.invoke(app, ["--help"])
+    assert result.exit_code == 0
+    assert "professional" in result.output
+
+
 def test_cli_validate_data(tmp_path):
     result = runner.invoke(app, ["validate-data", "-o", str(tmp_path / "validate")])
     assert result.exit_code == 0, result.output
