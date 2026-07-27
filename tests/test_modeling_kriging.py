@@ -370,20 +370,22 @@ def test_empirical_semivariogram_matches_legacy_12_bin_reference_bitwise():
     )
 
 
-def test_fit_variogram_matches_legacy_reference_bitwise():
+def test_fit_variogram_matches_legacy_reference_within_platform_tolerance():
     from geomodeling.modeling.variogram import fit_variogram
 
+    # 参考值取自重构前实现；least_squares 的 LAPACK/BLAS 路径随平台有末位差异，
+    # 故以紧容差钉住数值（rtol=1e-7），仍能捕获算法级漂移。近零 nugget 用 atol。
     coords, values = plane_field_2d()
     model = fit_variogram(coords, values, "spherical")
-    assert model.nugget == 7.528834720767456e-20
-    assert model.partial_sill == 11.568770768708706
-    assert model.range == 874.1344925760058
+    assert model.nugget == pytest.approx(7.528834720767456e-20, abs=1e-12)
+    assert model.partial_sill == pytest.approx(11.568770768708706, rel=1e-7)
+    assert model.range == pytest.approx(874.1344925760058, rel=1e-7)
 
     coords, values = smooth_field_3d()
     model = fit_variogram(coords, values, "spherical")
-    assert model.nugget == 7.708953972850713e-16
-    assert model.partial_sill == 1.0302351693326357
-    assert model.range == 1652.575581583548
+    assert model.nugget == pytest.approx(7.708953972850713e-16, abs=1e-12)
+    assert model.partial_sill == pytest.approx(1.0302351693326357, rel=1e-7)
+    assert model.range == pytest.approx(1652.575581583548, rel=1e-7)
 
 
 # ---------------------------------------------------------------------------
@@ -392,7 +394,7 @@ def test_fit_variogram_matches_legacy_reference_bitwise():
 # ---------------------------------------------------------------------------
 
 
-def test_legacy_2d_prediction_bitwise_pin_without_professional_options():
+def test_legacy_2d_prediction_pin_without_professional_options():
     from geomodeling.modeling.kriging import OrdinaryKrigingInterpolator
 
     rng = np.random.default_rng(42)
@@ -407,13 +409,15 @@ def test_legacy_2d_prediction_bitwise_pin_without_professional_options():
     )
     assert params.anisotropy is None and params.neighborhood is None
     batch = interpolator.fit(coords, values, params).predict(query, cancel=lambda: False)
-    np.testing.assert_array_equal(
-        batch.values, [2.522227095913784, 3.398996313035415, 4.048265800991689]
+    # 参考值取自引入专业选项之前的实现；LAPACK 求解随平台有末位差异，用紧容差锁定
+    np.testing.assert_allclose(
+        batch.values, [2.522227095913784, 3.398996313035415, 4.048265800991689],
+        rtol=1e-9, atol=1e-12,
     )
     np.testing.assert_array_equal(batch.is_nodata, [False, False, False])
 
 
-def test_legacy_3d_z_scale_prediction_bitwise_pin_without_professional_options():
+def test_legacy_3d_z_scale_prediction_pin_without_professional_options():
     from geomodeling.modeling.kriging import OrdinaryKrigingInterpolator
 
     rng = np.random.default_rng(7)
@@ -431,5 +435,8 @@ def test_legacy_3d_z_scale_prediction_bitwise_pin_without_professional_options()
     )
     assert params.anisotropy is None and params.neighborhood is None
     batch = interpolator.fit(coords, values, params).predict(query, cancel=lambda: False)
-    np.testing.assert_array_equal(batch.values, [5.429593345184889, 5.343671085767241])
+    # 参考值取自引入专业选项之前的实现；LAPACK 求解随平台有末位差异，用紧容差锁定
+    np.testing.assert_allclose(
+        batch.values, [5.429593345184889, 5.343671085767241], rtol=1e-9, atol=1e-12
+    )
     np.testing.assert_array_equal(batch.is_nodata, [False, False])
