@@ -3,7 +3,11 @@ import type { VoxelCells } from '../../../api/types'
 import {
   SOURCE_COUNT,
   SOURCE_SHAPE,
+  TARGET_COUNT,
+  TARGET_SHAPE,
   buildSourceVolume,
+  packVolumeTexture,
+  resampleVolume,
   volumeIndex,
 } from '../volumeGrid'
 
@@ -75,5 +79,37 @@ describe('buildSourceVolume', () => {
     const data = sourceFixture()
     mutate(data)
     expect(() => buildSourceVolume(data)).toThrow()
+  })
+})
+
+describe('resampleVolume and packVolumeTexture', () => {
+  it('preserves a constant field through 7 x 23 x 42 resampling', () => {
+    const source = buildSourceVolume(sourceFixture())
+    source.values.fill(42)
+    source.valueRange = [42, 42]
+    const target = resampleVolume(source)
+    expect(target.shape).toEqual(TARGET_SHAPE)
+    expect(target.values).toHaveLength(TARGET_COUNT)
+    expect([...target.values].every((value) => value === 42)).toBe(true)
+  })
+
+  it('preserves a physical linear gradient within float tolerance', () => {
+    const source = buildSourceVolume(sourceFixture())
+    const target = resampleVolume(source)
+    const nx = TARGET_SHAPE[0]
+    const ny = TARGET_SHAPE[1]
+    const center = target.values[volumeIndex(3, 11, 21, nx, ny)]
+    const x = target.axes[0][3]
+    const y = target.axes[1][11]
+    const z = target.axes[2][21]
+    expect(center).toBeCloseTo(x * 0.1 + y * 0.01 - z * 0.001, 4)
+  })
+
+  it('packs source extrema to 0 and 255', () => {
+    const target = resampleVolume(buildSourceVolume(sourceFixture()))
+    const packed = packVolumeTexture(target)
+    expect(packed.bytes).toHaveLength(TARGET_COUNT)
+    expect(Math.min(...packed.bytes)).toBe(0)
+    expect(Math.max(...packed.bytes)).toBe(255)
   })
 })
