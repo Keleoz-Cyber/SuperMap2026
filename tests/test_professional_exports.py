@@ -249,7 +249,8 @@ class TestKrigingProfessionalExport:
         assert diag_payload["diagnosis_id"] == ns.diagnosis_id
         assert diag_payload["sampling"]["total_pair_count"] > 0
         fitted = json.loads(bundle.read("professional/fitted_models.json"))
-        assert fitted["best_model"] in {m["model"] for m in fitted["models"]}
+        assert fitted["min_sse_model"] in {m["model"] for m in fitted["models"]}
+        assert "best_model" not in fitted
 
         # 确认快照：不可变确认身份、指纹与各向异性选择
         confirmation = json.loads(bundle.read("professional/anisotropy_confirmation.json"))

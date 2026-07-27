@@ -355,7 +355,8 @@ def test_diagnose_then_confirm_workflow(professional_data):
     manifest = diagnosis["manifest"]
     assert set(manifest["artifacts"]) == DIAGNOSIS_ARTIFACT_NAMES
     _assert_manifest_artifacts(manifest)
-    assert manifest["summary"]["best_model"] in {"spherical", "exponential", "gaussian"}
+    assert manifest["summary"]["min_sse_model"] in {"spherical", "exponential", "gaussian"}
+    assert "best_model" not in manifest["summary"]
 
     confirm_config = {
         "model": "spherical",

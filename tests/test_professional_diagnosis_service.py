@@ -217,6 +217,12 @@ class TestDiagnosisHappyPath:
             assert model["converged"] is True
             assert model["weighted_sse"] >= 0.0
             assert model["bounds"]["range"][1] > 0.0
+        # SSE 最小只描述变异函数拟合优度，字段命名不得暗示插值意义上的「最优」
+        assert fitted["min_sse_model"] in {m["model"] for m in fitted["models"]}
+        assert "best_model" not in fitted
+        summary = finished.manifest["summary"]
+        assert summary["min_sse_model"] == fitted["min_sse_model"]
+        assert "best_model" not in summary
 
         candidates = json.loads(
             (final_dir / "anisotropy_candidates.json").read_text(encoding="utf-8")

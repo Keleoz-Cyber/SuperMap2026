@@ -601,15 +601,15 @@ def _drive_professional_diagnosis(
                 )
             )
             continue
-        # supported 方向三模型全部拟合，取 weighted_sse 最优者参与候选比较
+        # supported 方向三模型全部拟合，取 weighted_sse 最小者参与候选比较
         fits = [fit_variogram_evidence(directional_bins, model) for model in MODELS]
-        best = min(fits, key=lambda evidence: evidence.weighted_sse)
+        min_sse_fit = min(fits, key=lambda evidence: evidence.weighted_sse)
         direction_fits.append(
             DirectionalFit(
                 direction_id=direction_id,
                 direction=direction,
                 status=STATUS_SUPPORTED,
-                fit=best,
+                fit=min_sse_fit,
                 used_pair_count=sum(b.pair_count for b in used),
             )
         )
@@ -621,7 +621,9 @@ def _drive_professional_diagnosis(
     final_dir = runtime.settings.professional_diagnosis_dir(
         dataset.case_id, dataset.id, diagnosis_id
     )
-    best_overall = min(models, key=lambda evidence: evidence.weighted_sse)
+    # SSE 最小只衡量变异函数曲线拟合优度，不代表空间验证指标或数值稳定性；
+    # 字段如实命名为 min_sse_model，绝不暗示插值意义上的「最优」。
+    min_sse_overall = min(models, key=lambda evidence: evidence.weighted_sse)
     metadata = {
         "diagnosis_id": diagnosis_id,
         "dataset_version_id": dataset.id,
@@ -653,7 +655,7 @@ def _drive_professional_diagnosis(
             "fitted_models.json": _json_bytes(
                 {
                     "models": [m.model_dump(mode="json") for m in models],
-                    "best_model": best_overall.model,
+                    "min_sse_model": min_sse_overall.model,
                     "parameter_origin": "automatic_candidate",
                 }
             ),
@@ -687,7 +689,7 @@ def _drive_professional_diagnosis(
         "artifacts": {artifact_names[name]: entry for name, entry in entries.items()},
         "summary": {
             "fitted_models": [m.model for m in models],
-            "best_model": best_overall.model,
+            "min_sse_model": min_sse_overall.model,
             "omni_used_bin_count": sum(
                 1 for b in empirical.omnidirectional if b.used_for_fit
             ),

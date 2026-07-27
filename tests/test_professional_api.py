@@ -444,7 +444,8 @@ class TestDiagnosisEndpoints:
             assert len(entry["sha256"]) == 64
             assert entry["bytes"] > 0
         summary = manifest["summary"]
-        assert summary["best_model"] in {"spherical", "exponential", "gaussian"}
+        assert summary["min_sse_model"] in {"spherical", "exponential", "gaussian"}
+        assert "best_model" not in summary
         assert summary["omni_used_bin_count"] >= 4
         assert summary["direction_count"] == 2
         assert_no_path_leak(body, "$.diagnosis")

@@ -230,7 +230,7 @@ const EVIDENCE: VariogramEvidence = {
         residuals: [0.0, 0.0],
       },
     ],
-    best_model: 'spherical',
+    min_sse_model: 'spherical',
     parameter_origin: 'automatic_candidate',
   },
   anisotropy_candidates: SUGGESTION,
@@ -276,7 +276,7 @@ const DIAGNOSIS: ProfessionalDiagnosisRecord = {
     created_at: T,
     summary: {
       fitted_models: ['spherical', 'exponential', 'gaussian'],
-      best_model: 'spherical',
+      min_sse_model: 'spherical',
       omni_used_bin_count: 2,
       direction_count: 2,
       supported_direction_count: 1,
@@ -496,6 +496,40 @@ describe('诊断运行与证据展示', () => {
   })
 })
 
+describe('模型选择语义', () => {
+  it('变异函数模型无默认选中：占位提示选中且禁用，显式选择后才可确认', async () => {
+    mockHappyPath()
+    const { wrapper } = await mountDiagnosis('/datasets/ds1/professional-diagnosis?case=c1')
+    await runToSuccess(wrapper)
+
+    const select = wrapper.find('[data-test="confirm-model"]')
+    expect(select.exists()).toBe(true)
+    // 三个模型都不被默认选中：只有禁用的占位提示处于选中态
+    const placeholder = select.find('option[disabled]')
+    expect(placeholder.exists()).toBe(true)
+    expect((placeholder.element as HTMLOptionElement).selected).toBe(true)
+    // 只填 note 仍因未选模型而禁用；显式选择后放开
+    await wrapper.find('[data-test="confirm-note"]').setValue('审阅拟合证据后确认')
+    expect((wrapper.find('[data-test="confirm-submit"]').element as HTMLButtonElement).disabled).toBe(true)
+    await select.setValue('exponential')
+    expect((wrapper.find('[data-test="confirm-submit"]').element as HTMLButtonElement).disabled).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('SSE 最小按语义命名披露并附数值稳定警告，无「拟合最优」表述', async () => {
+    mockHappyPath()
+    const { wrapper } = await mountDiagnosis('/datasets/ds1/professional-diagnosis?case=c1')
+    await runToSuccess(wrapper)
+
+    expect(wrapper.find('[data-test="confirm-model"]').text()).toContain('变异函数拟合 SSE 最小')
+    expect(wrapper.text()).not.toContain('拟合最优')
+    const warning = wrapper.find('[data-test="model-sse-warning"]')
+    expect(warning.exists()).toBe(true)
+    expect(warning.text()).toContain('拟合 SSE 最小不代表空间验证更优或数值稳定，确认前请审阅拟合证据')
+    wrapper.unmount()
+  })
+})
+
 describe('不可变确认', () => {
   it('note 必填；提交创建新不可变确认快照并展示确认 ID 与指纹，表单不再出现', async () => {
     mockHappyPath()
@@ -506,6 +540,9 @@ describe('不可变确认', () => {
     // note 为空：确认按钮不可用，且不会发出请求
     expect((wrapper.find('[data-test="confirm-submit"]').element as HTMLButtonElement).disabled).toBe(true)
     await wrapper.find('[data-test="confirm-note"]').setValue('人工确认主方向')
+    // 模型无默认选中：只填 note 仍不可用，必须显式选择模型
+    expect((wrapper.find('[data-test="confirm-submit"]').element as HTMLButtonElement).disabled).toBe(true)
+    await wrapper.find('[data-test="confirm-model"]').setValue('spherical')
     expect((wrapper.find('[data-test="confirm-submit"]').element as HTMLButtonElement).disabled).toBe(false)
 
     await wrapper.find('[data-test="confirm-submit"]').trigger('click')
@@ -546,6 +583,7 @@ describe('不可变确认', () => {
     await runToSuccess(wrapper)
 
     await wrapper.find('[data-test="mode-isotropic"]').setValue(true)
+    await wrapper.find('[data-test="confirm-model"]').setValue('spherical')
     await wrapper.find('[data-test="confirm-note"]').setValue('证据不足，保持各向同性')
     await wrapper.find('[data-test="confirm-submit"]').trigger('click')
     await flushPromises()

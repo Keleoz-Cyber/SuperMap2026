@@ -204,7 +204,8 @@ test.describe('v0.6 专业建模流程（mock API）', () => {
     await expect(page.getByTestId('suggestion-label')).toContainText('诊断建议，需人工确认')
     await expect(page.getByTestId('candidate-evidence').first()).toContainText('主方位角 90')
 
-    // 不可变确认：note 必填，快照只创建不修改
+    // 不可变确认：模型必须显式选择，note 必填，快照只创建不修改
+    await page.getByTestId('confirm-model').selectOption('spherical')
     await page.getByTestId('confirm-note').fill('采纳诊断候选主方向（mock 夹具）')
     await page.getByTestId('confirm-submit').click()
     await expect(page.getByTestId('confirmation-snapshot')).toBeVisible()

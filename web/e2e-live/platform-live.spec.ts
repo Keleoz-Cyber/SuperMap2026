@@ -331,7 +331,8 @@ test.describe('v0.6 专业建模流程（真实链路）', () => {
     await expect(page.getByTestId('suggestion-label')).toContainText('诊断建议，需人工确认')
     await expect(page.getByTestId('candidate-evidence').first()).toBeVisible()
 
-    // 6. 人工确认：显式写入人工几何先验（az 30 / 主次比 3），note 必填，快照不可变
+    // 6. 人工确认：显式选择模型 + 写入人工几何先验（az 30 / 主次比 3），note 必填，快照不可变
+    await page.getByTestId('confirm-model').selectOption('spherical')
     await page.getByTestId('manual-azimuth').fill('30')
     await page.getByTestId('manual-ratio-minor').fill('3')
     await page.getByTestId('confirm-note').fill('人工确认合成场主方向（Live 夹具）')

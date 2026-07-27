@@ -250,8 +250,8 @@ async function onRetry() {
 const fittedModelNames = computed<VariogramModelName[]>(
   () => diagnosis.value?.manifest?.summary?.fitted_models ?? [],
 )
-const bestModel = computed<VariogramModelName | null>(
-  () => diagnosis.value?.manifest?.summary?.best_model ?? null,
+const minSseModel = computed<VariogramModelName | null>(
+  () => diagnosis.value?.manifest?.summary?.min_sse_model ?? null,
 )
 const fittedModelsSha256 = computed(
   () => diagnosis.value?.manifest?.artifacts.fitted_models?.sha256 ?? null,
@@ -404,7 +404,7 @@ onBeforeUnmount(stopPolling)
           v-else
           :suggestion="evidence.anisotropy_candidates"
           :fitted-model-names="fittedModelNames"
-          :best-model="bestModel"
+          :min-sse-model="minSseModel"
           :fitted-models-sha256="fittedModelsSha256"
           :anisotropy-candidates-sha256="anisotropyCandidatesSha256"
           :dimension="dimension"

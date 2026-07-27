@@ -792,7 +792,8 @@ export interface ProfessionalManifestSummary {
   created_at: string | null
   summary?: {
     fitted_models?: Array<'spherical' | 'exponential' | 'gaussian'>
-    best_model?: 'spherical' | 'exponential' | 'gaussian'
+    // SSE 最小只描述变异函数拟合优度，不代表空间验证更优或数值稳定
+    min_sse_model?: 'spherical' | 'exponential' | 'gaussian'
     omni_used_bin_count?: number
     direction_count?: number
     supported_direction_count?: number
@@ -888,7 +889,7 @@ export interface FittedVariogramModel {
 
 export interface FittedModelsEvidence {
   models: FittedVariogramModel[]
-  best_model: VariogramModelName
+  min_sse_model: VariogramModelName
   parameter_origin: string
 }
 

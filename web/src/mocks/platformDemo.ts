@@ -229,7 +229,7 @@ const PRO_FITTED_MODELS = {
       residuals: [0.03, -0.03, 0.05, -0.02, 0.02, 0.04],
     },
   ],
-  best_model: 'spherical',
+  min_sse_model: 'spherical',
   parameter_origin: 'automatic_candidate',
 }
 
@@ -274,7 +274,7 @@ const PRO_DIAGNOSIS_MANIFEST = {
   created_at: T,
   summary: {
     fitted_models: ['spherical', 'exponential', 'gaussian'],
-    best_model: 'spherical',
+    min_sse_model: 'spherical',
     omni_used_bin_count: 6,
     direction_count: 2,
     supported_direction_count: 2,

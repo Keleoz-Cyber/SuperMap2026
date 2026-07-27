@@ -12,7 +12,7 @@ import type {
 const props = defineProps<{
   suggestion: AnisotropySuggestion
   fittedModelNames: VariogramModelName[]
-  bestModel: VariogramModelName | null
+  minSseModel: VariogramModelName | null
   fittedModelsSha256: string | null
   anisotropyCandidatesSha256: string | null
   dimension: '2d' | '3d'
@@ -54,9 +54,9 @@ watch(
   { immediate: true },
 )
 
-const model = ref<VariogramModelName>(
-  props.bestModel ?? props.fittedModelNames[0] ?? 'spherical',
-)
+// 模型必须显式选择：SSE 最小只衡量变异函数拟合优度，不代表空间验证更优
+// 或数值稳定，绝不默认选中任何模型
+const model = ref<VariogramModelName | null>(null)
 const strategy = ref<'automatic_candidate' | 'manual'>('automatic_candidate')
 const manualNugget = ref(0)
 const manualSill = ref(1)
@@ -96,11 +96,13 @@ const strategyErrors = computed<string[]>(() => {
 })
 
 const noteMissing = computed(() => note.value.trim().length === 0)
+const modelMissing = computed(() => model.value === null)
 
 const canSubmit = computed(
   () =>
     !props.submitting &&
     !noteMissing.value &&
+    !modelMissing.value &&
     anisotropyErrors.value.length === 0 &&
     strategyErrors.value.length === 0,
 )
@@ -120,7 +122,7 @@ function buildAnisotropy(): AnisotropyConfirmationPayload {
 }
 
 function submit() {
-  if (!canSubmit.value) return
+  if (!canSubmit.value || model.value === null) return
   const payload: ProfessionalConfirmationPayload = {
     model: model.value,
     parameter_strategy: strategy.value,
@@ -257,10 +259,11 @@ function submit() {
 
     <div class="model-row">
       <label class="field">
-        <span>变异函数模型</span>
+        <span>变异函数模型（必须显式选择）</span>
         <select v-model="model" class="gmp-select" data-test="confirm-model">
+          <option :value="null" disabled>请选择变异函数模型</option>
           <option v-for="name in fittedModelNames" :key="name" :value="name">
-            {{ name }}{{ name === bestModel ? '（拟合最优）' : '' }}
+            {{ name }}{{ name === minSseModel ? '（变异函数拟合 SSE 最小）' : '' }}
           </option>
         </select>
       </label>
@@ -285,6 +288,11 @@ function submit() {
         人工固定参数（用户先验）
       </label>
     </div>
+
+    <p class="sse-warning" data-test="model-sse-warning">
+      拟合 SSE 最小不代表空间验证更优或数值稳定，确认前请审阅拟合证据
+    </p>
+    <p v-if="modelMissing" class="note-hint">确认前必须显式选择变异函数模型。</p>
 
     <div v-if="strategy === 'manual'" class="manual-grid">
       <label class="field">
@@ -440,6 +448,16 @@ function submit() {
   margin: 0;
   font-size: 12px;
   color: var(--gmp-text-faint);
+}
+
+.sse-warning {
+  margin: 0;
+  border: 1px solid #9a7b2d;
+  background: rgba(154, 123, 45, 0.12);
+  color: #e5c76b;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
 }
 
 .invalid-list {

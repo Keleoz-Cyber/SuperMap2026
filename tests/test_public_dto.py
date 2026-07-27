@@ -346,7 +346,7 @@ def test_professional_dtos_never_leak_paths():
                 "grid_path": "D:/abs/internal.npz",  # 路径键——必须剔除
             }
         },
-        "summary": {"best_model": "gaussian", "evidence": "C:/abs/evidence.json"},
+        "summary": {"min_sse_model": "gaussian", "evidence": "C:/abs/evidence.json"},
         "created_at": "2026-07-26T00:00:00+00:00",
     }
 
@@ -358,6 +358,7 @@ def test_professional_dtos_never_leak_paths():
         "sha256": "a" * 64,
         "bytes": 128,
     }
+    assert summary["summary"]["min_sse_model"] == "gaussian"
     assert summary["summary"]["evidence"] == "<redacted-path>"
 
     diagnosis = SimpleNamespace(
@@ -513,7 +514,7 @@ def test_professional_dtos_never_leak_paths():
             "rows": [{"bin_index": 0, "src": "D:/s"}],
         },
         directional={"total": 0, "returned": 0, "decimate": 1, "rows": []},
-        fitted_models={"models": [], "best_model": "gaussian"},
+        fitted_models={"models": [], "min_sse_model": "gaussian"},
         anisotropy_candidates={"candidates": []},
         sampling={"seed": 1, "dump": "/tmp/dump"},
         downloads={
@@ -522,4 +523,5 @@ def test_professional_dtos_never_leak_paths():
     )
     assert_no_path_leak(variogram_body, "$.variogram")
     assert variogram_body["omnidirectional"]["rows"][0]["src"] == "<redacted-path>"
+    assert variogram_body["fitted_models"]["min_sse_model"] == "gaussian"
     assert variogram_body["sampling"]["dump"] == "<redacted-path>"
