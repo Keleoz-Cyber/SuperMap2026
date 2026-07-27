@@ -481,13 +481,16 @@ class TestCompatibilityGates:
         _, kriging_candidates = run_professional_experiment(runtime, algorithm="ordinary_kriging")
         idw = idw_candidates[0]
         kriging = kriging_candidates[0]
-        # 改写已登记 OOF 工件：两方有效行互补 → 公共有效交集为空
+        # 改写已登记 OOF 工件：两方有效行互补 → 公共有效交集为空。
+        # 改写后同步重新登记 manifest 哈希（合法再登记，不是篡改）——
+        # 比较只读「已登记且哈希吻合」的工件（§4.3/§16）。
         for candidate_id, nodata_below in ((idw["id"], True), (kriging["id"], False)):
             path = oof_path(runtime, candidate_id)
             oof = pd.read_parquet(path)
             below = oof["source_row"] <= 18
             oof["is_nodata"] = below if nodata_below else ~below
             oof.to_parquet(path, index=False)
+            reregister_artifact_hash(runtime, candidate_id, "out_of_fold_predictions", path)
 
         result = compare_candidates(runtime, idw["id"], kriging["id"])
         assert result.compatible is False
@@ -684,3 +687,229 @@ class TestValidationFingerprintRecomputation:
             registered, validation=spec, data_sha256="b" * 64
         )
         assert recomputed == expected
+
+
+# ---------------------------------------------------------------------------
+# 比较证据链完整性：只读「已登记且哈希吻合」的工件（设计 §4.3/§16，fail-closed）
+# ---------------------------------------------------------------------------
+
+
+def artifacts_row(runtime: PlatformRuntime, candidate_id: str):
+    with runtime.session() as session:
+        return (
+            session.query(tables.ProfessionalResultArtifacts)
+            .filter(tables.ProfessionalResultArtifacts.candidate_result_id == candidate_id)
+            .one_or_none()
+        )
+
+
+def set_artifacts_status(runtime: PlatformRuntime, candidate_id: str, status: str) -> None:
+    """直写工件行状态（手工构造场景；生产路径只有 pending→succeeded/failed）。"""
+
+    with runtime.session() as session:
+        row = session.query(tables.ProfessionalResultArtifacts).filter(
+            tables.ProfessionalResultArtifacts.candidate_result_id == candidate_id
+        ).one()
+        row.status = status
+        session.commit()
+
+
+def delete_artifacts_row(runtime: PlatformRuntime, candidate_id: str) -> None:
+    with runtime.session() as session:
+        row = session.query(tables.ProfessionalResultArtifacts).filter(
+            tables.ProfessionalResultArtifacts.candidate_result_id == candidate_id
+        ).one()
+        session.delete(row)
+        session.commit()
+
+
+def reregister_artifact_hash(
+    runtime: PlatformRuntime, candidate_id: str, logical: str, path: Path
+) -> None:
+    """工件合法改写后同步登记 manifest 哈希（模拟重新登记，而非篡改）。"""
+
+    blob = path.read_bytes()
+    with runtime.session() as session:
+        row = session.query(tables.ProfessionalResultArtifacts).filter(
+            tables.ProfessionalResultArtifacts.candidate_result_id == candidate_id
+        ).one()
+        manifest = tables.loads_canonical(row.manifest_json)
+        manifest["artifacts"][logical] = {
+            "file": path.name,
+            "sha256": hashlib.sha256(blob).hexdigest(),
+            "bytes": len(blob),
+        }
+        row.manifest_json = tables.dumps_canonical(manifest)
+        session.commit()
+
+
+def tamper_artifact(path: Path) -> None:
+    """篡改登记工件：追加字节使登记 SHA-256/大小不再吻合。"""
+
+    with path.open("ab") as handle:
+        handle.write(b"tampered-evidence")
+
+
+def comparison_registry_files(runtime: PlatformRuntime) -> list[Path]:
+    directory = runtime.settings.data_dir / "comparisons"
+    return sorted(directory.glob("*.json")) if directory.is_dir() else []
+
+
+def run_legacy_experiment(
+    runtime: PlatformRuntime,
+    *,
+    case_id: str = "c1",
+    dataset_id: str = "ds1",
+    parameters: dict | None = None,
+) -> tuple[str, list[dict]]:
+    """构造 legacy 实验（无专业上下文）并运行到成功：不产生专业工件行。"""
+
+    from geomodeling.modeling.runner import execute_run
+
+    search = {
+        "dimension": "2d",
+        "algorithm": "idw",
+        "dataset_version_id": dataset_id,
+        "search_mode": "manual",
+        "parameters": parameters or {"power": 2.0, "neighbor_count": 8},
+        "validation": dict(VALIDATION_DEFAULT),
+        "grid": None,
+    }
+    experiment_id = insert_experiment(runtime, case_id, dataset_id, search)
+    run_id = insert_run(runtime, experiment_id)
+    outcome = execute_run(runtime, run_id, threading.Event())
+    assert outcome.status == "succeeded"
+    return run_id, load_candidates(runtime, run_id)
+
+
+class TestComparisonManifestVerification:
+    def test_tampered_oof_parquet_is_rejected(self, tmp_path):
+        """篡改 OOF parquet（追加字节）→ 409 fail-closed，details 不含本机路径。"""
+
+        from geomodeling.platform.professional import compare_candidates
+
+        runtime, _frame = make_runtime_with_dataset(tmp_path)
+        _limited, unlimited, kriging = run_idw_pair_and_kriging(runtime)
+        tamper_artifact(oof_path(runtime, unlimited["id"]))
+
+        with pytest.raises(PlatformError) as excinfo:
+            compare_candidates(runtime, unlimited["id"], kriging["id"])
+        assert excinfo.value.code == "MANIFEST_VERIFICATION_FAILED"
+        assert excinfo.value.http_status == 409
+        assert excinfo.value.details["artifact"] == "out_of_fold_predictions"
+        assert str(tmp_path) not in json.dumps(excinfo.value.details, ensure_ascii=False)
+        # fail-closed：不得留下任何比较登记
+        assert comparison_registry_files(runtime) == []
+
+    def test_tampered_fold_assignments_parquet_is_rejected(self, tmp_path):
+        """篡改 fold_assignments parquet → 409 fail-closed。"""
+
+        from geomodeling.platform.professional import compare_candidates
+
+        runtime, _frame = make_runtime_with_dataset(tmp_path)
+        _limited, unlimited, kriging = run_idw_pair_and_kriging(runtime)
+        tamper_artifact(
+            runtime.settings.professional_result_dir(kriging["id"]) / "fold_assignments.parquet"
+        )
+
+        with pytest.raises(PlatformError) as excinfo:
+            compare_candidates(runtime, unlimited["id"], kriging["id"])
+        assert excinfo.value.code == "MANIFEST_VERIFICATION_FAILED"
+        assert excinfo.value.http_status == 409
+        assert excinfo.value.details["artifact"] == "fold_assignments"
+        assert str(tmp_path) not in json.dumps(excinfo.value.details, ensure_ascii=False)
+        assert comparison_registry_files(runtime) == []
+
+    @pytest.mark.parametrize("status", ["pending", "failed"])
+    def test_non_succeeded_artifacts_row_is_rejected(self, tmp_path, status):
+        """工件行存在但非 succeeded：登记证据不可信 → 409 fail-closed。"""
+
+        from geomodeling.platform.professional import compare_candidates
+
+        runtime, _frame = make_runtime_with_dataset(tmp_path)
+        _limited, unlimited, kriging = run_idw_pair_and_kriging(runtime)
+        set_artifacts_status(runtime, kriging["id"], status)
+
+        with pytest.raises(PlatformError) as excinfo:
+            compare_candidates(runtime, unlimited["id"], kriging["id"])
+        assert excinfo.value.code == "MANIFEST_VERIFICATION_FAILED"
+        assert excinfo.value.http_status == 409
+        assert str(tmp_path) not in json.dumps(excinfo.value.details, ensure_ascii=False)
+        assert comparison_registry_files(runtime) == []
+
+    def test_missing_artifacts_row_for_professional_candidate_is_rejected(self, tmp_path):
+        """专业候选缺工件行（登记链断裂）→ 409 fail-closed。"""
+
+        from geomodeling.platform.professional import compare_candidates
+
+        runtime, _frame = make_runtime_with_dataset(tmp_path)
+        _limited, unlimited, kriging = run_idw_pair_and_kriging(runtime)
+        delete_artifacts_row(runtime, kriging["id"])
+
+        with pytest.raises(PlatformError) as excinfo:
+            compare_candidates(runtime, unlimited["id"], kriging["id"])
+        assert excinfo.value.code == "MANIFEST_VERIFICATION_FAILED"
+        assert excinfo.value.http_status == 409
+        assert comparison_registry_files(runtime) == []
+
+    def test_legacy_candidates_compare_without_registered_manifest(self, tmp_path):
+        """legacy 候选（无专业工件行）保持现状兼容：行为不变，本修复不强制。
+
+        legacy run 也落 OOF/fold parquet 但从不登记 manifest；比较证据链
+        只对专业候选（有工件行）强制哈希校验，legacy 路径沿用既有文件
+        存在性检查（COMPARISON_EVIDENCE_INCOMPLETE）。
+        """
+
+        from geomodeling.platform.professional import compare_candidates
+
+        runtime, _frame = make_runtime_with_dataset(tmp_path)
+        _, first_candidates = run_legacy_experiment(runtime)
+        _, second_candidates = run_legacy_experiment(
+            runtime, parameters={"power": 3.0, "neighbor_count": 8}
+        )
+        first, second = first_candidates[0], second_candidates[0]
+        # 锁定前提：legacy 候选没有任何专业工件行
+        assert artifacts_row(runtime, first["id"]) is None
+        assert artifacts_row(runtime, second["id"]) is None
+
+        result = compare_candidates(runtime, first["id"], second["id"])
+        assert result.compatible is True
+        assert result.metric_deltas is not None
+        assert result.common_valid_count == 36
+
+    def test_tampered_evidence_returns_409_and_registers_no_comparison(self, tmp_path):
+        """API 级：篡改工件 → 409，且 data_dir/comparisons 下不得出现新文件。"""
+
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+        from geomodeling.api.routes import professional as professional_routes
+        from geomodeling.platform.errors import platform_error_handler
+
+        runtime, _frame = make_runtime_with_dataset(tmp_path)
+        _limited, unlimited, kriging = run_idw_pair_and_kriging(runtime)
+
+        app = FastAPI()
+        app.add_exception_handler(PlatformError, platform_error_handler)
+        app.include_router(professional_routes.router)
+        app.state.platform_runtime = runtime
+        client = TestClient(app)
+
+        # 未篡改：正常登记一次，锁定基线文件数
+        resp = client.post(
+            "/api/professional-comparisons",
+            json={"first_result_id": unlimited["id"], "second_result_id": kriging["id"]},
+        )
+        assert resp.status_code == 201, resp.text
+        baseline = comparison_registry_files(runtime)
+        assert len(baseline) == 1
+
+        tamper_artifact(oof_path(runtime, unlimited["id"]))
+        resp = client.post(
+            "/api/professional-comparisons",
+            json={"first_result_id": unlimited["id"], "second_result_id": kriging["id"]},
+        )
+        assert resp.status_code == 409, resp.text
+        body = resp.json()
+        assert body["error"]["code"] == "MANIFEST_VERIFICATION_FAILED"
+        assert str(tmp_path) not in json.dumps(body["error"]["details"], ensure_ascii=False)
+        assert comparison_registry_files(runtime) == baseline

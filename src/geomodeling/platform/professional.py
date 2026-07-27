@@ -1157,11 +1157,73 @@ def _drive_anomaly_extraction(
 # 双候选比较服务（设计 §4.3/§13.3）：只读已登记工件，绝不重跑模型
 # ---------------------------------------------------------------------------
 
+#: 比较证据链工件（§4.3/§16）：比较实际读取/依赖的登记工件，读取前必须
+#: 与 succeeded manifest 登记的 SHA-256/大小吻合。
+_COMPARISON_EVIDENCE_ARTIFACTS = (
+    "fold_assignments",
+    "out_of_fold_predictions",
+    "prediction_diagnostics",
+)
+
+
+def _verify_comparison_evidence(runtime, result_id: str, *, professional: bool) -> None:
+    """对专业候选强制 succeeded manifest 哈希校验（fail-closed，§4.3/§16）。
+
+    无工件行（专业候选）、行非 succeeded、manifest 未声明证据工件、工件
+    缺失、哈希/大小不符一律 ``MANIFEST_VERIFICATION_FAILED`` 结构化 409
+    ——与 §17「工件哈希不匹配必须结构化失败」同族，不新增错误码。
+    legacy 候选（无专业上下文，从不登记工件行）保持现状兼容：仅由
+    ``_comparison_context`` 的文件存在性检查兜底。details 只含逻辑工件名
+    与状态，绝不泄露本机路径。
+    """
+
+    with runtime.session() as session:
+        artifacts_row = (
+            session.query(tables.ProfessionalResultArtifacts)
+            .filter(tables.ProfessionalResultArtifacts.candidate_result_id == result_id)
+            .one_or_none()
+        )
+    if artifacts_row is None:
+        if professional:
+            raise PlatformError(
+                MANIFEST_VERIFICATION_FAILED,
+                "专业候选缺少已登记工件集合，比较证据链不完整",
+                {"result_id": result_id},
+                http_status=409,
+            )
+        return  # legacy 候选：无 manifest 可校验，维持既有行为
+    if artifacts_row.status != RunStatus.SUCCEEDED.value:
+        raise PlatformError(
+            MANIFEST_VERIFICATION_FAILED,
+            "专业工件集合未成功登记，比较证据链不可信",
+            {"result_id": result_id, "artifacts_status": artifacts_row.status},
+            http_status=409,
+        )
+    manifest = tables.loads_canonical(artifacts_row.manifest_json)
+    artifacts = manifest.get("artifacts") if isinstance(manifest, dict) else None
+    declared = {name: (artifacts or {}).get(name) for name in _COMPARISON_EVIDENCE_ARTIFACTS}
+    for name in ("fold_assignments", "out_of_fold_predictions"):
+        if declared[name] is None:
+            raise PlatformError(
+                MANIFEST_VERIFICATION_FAILED,
+                "已登记 manifest 未声明比较证据工件",
+                {"result_id": result_id, "artifact": name},
+                http_status=409,
+            )
+    verify_manifest(
+        {
+            "directory": manifest.get("directory"),
+            "artifacts": {name: entry for name, entry in declared.items() if entry is not None},
+        }
+    )
+
 
 def _comparison_context(runtime, result_id: str) -> dict[str, Any]:
     """读取候选的归属链、数据版本 profile 与已登记折证据（只读）。
 
-    候选必须存在且为 succeeded；折证据（OOF / fold_assignments）缺失以
+    候选必须存在且为 succeeded；专业候选的折证据读取前必须通过 succeeded
+    manifest 的 size/SHA-256 校验（``MANIFEST_VERIFICATION_FAILED``
+    fail-closed），折证据（OOF / fold_assignments）缺失以
     ``COMPARISON_EVIDENCE_INCOMPLETE`` 结构化失败——没有登记证据就不比
     较，绝不现场重跑补齐。验证折分指纹从登记的 fold_assignments 工件重
     算（与 run 期定义逐位一致）。
@@ -1188,6 +1250,9 @@ def _comparison_context(runtime, result_id: str) -> dict[str, Any]:
         )
     profile = tables.loads_canonical(dataset.profile_json)
 
+    _verify_comparison_evidence(
+        runtime, result_id, professional=params.get("professional") is not None
+    )
     professional_dir = runtime.settings.professional_result_dir(result_id)
     oof_path = professional_dir / "out_of_fold_predictions.parquet"
     assignments_path = professional_dir / "fold_assignments.parquet"
