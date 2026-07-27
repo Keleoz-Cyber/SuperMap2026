@@ -14,6 +14,16 @@ const secondResultId = ref<string | null>(null)
 const comparison = ref<CandidateComparisonResult | null>(null)
 const running = ref(false)
 const error = ref<string | null>(null)
+// 跨实验候选：用户粘贴的任意成果 ID（快捷按钮只覆盖同实验成功候选）
+const externalId = ref('')
+
+// 成果 ID 为 uuid4 形态；前端只校验形态、绝不自行判断兼容——
+// 兼容/存在性结论一律来自后端 comparison API（404/409 错误封套原样展示）。
+const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
+
+const externalIdTrimmed = computed(() => externalId.value.trim())
+const externalIdValid = computed(() => UUID_RE.test(externalIdTrimmed.value))
+const externalIdInvalid = computed(() => externalIdTrimmed.value !== '' && !externalIdValid.value)
 
 // 只有成功候选可以进入比较（后端对非成功候选 409）
 const secondOptions = computed(() =>
@@ -41,6 +51,11 @@ function selectSecond(id: string) {
   error.value = null
 }
 
+function applyExternal() {
+  if (!externalIdValid.value) return
+  selectSecond(externalIdTrimmed.value)
+}
+
 async function run() {
   if (!canRun.value || secondResultId.value === null) return
   running.value = true
@@ -60,6 +75,7 @@ watch(
   () => props.firstResultId,
   () => {
     secondResultId.value = null
+    externalId.value = ''
     comparison.value = null
     error.value = null
   },
@@ -91,6 +107,32 @@ watch(
       <button class="gmp-btn primary" data-test="comparison-run" :disabled="!canRun" @click="run">
         {{ running ? '比较中…' : '运行比较' }}
       </button>
+    </div>
+
+    <div class="external-picker">
+      <span class="picker-label">跨实验成果 ID：</span>
+      <input
+        v-model="externalId"
+        class="external-input mono"
+        data-test="comparison-external-input"
+        type="text"
+        placeholder="粘贴任意成果 ID（UUID 形态）"
+        spellcheck="false"
+      />
+      <button
+        class="gmp-btn"
+        data-test="comparison-external-apply"
+        :disabled="!externalIdValid"
+        @click="applyExternal"
+      >
+        设为对比候选
+      </button>
+      <span v-if="externalIdInvalid" class="external-invalid" data-test="comparison-external-invalid">
+        ID 需为 UUID 形态（8-4-4-4-12 十六进制）
+      </span>
+      <span v-if="secondResultId" class="second-current" data-test="comparison-second-current">
+        当前对比候选 <span class="mono">{{ secondResultId }}</span>
+      </span>
     </div>
 
     <div v-if="error" class="comparison-error" data-test="comparison-error">{{ error }}</div>
@@ -185,6 +227,38 @@ watch(
 .picker-empty {
   font-size: 12px;
   color: var(--gmp-text-faint);
+}
+
+.external-picker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.external-input {
+  border: 1px solid var(--gmp-border);
+  background: var(--gmp-bg-soft);
+  color: var(--gmp-text);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  width: 340px;
+}
+
+.external-input:focus {
+  outline: none;
+  border-color: var(--gmp-accent);
+}
+
+.external-invalid {
+  font-size: 12px;
+  color: #ef9a9a;
+}
+
+.second-current {
+  font-size: 12px;
+  color: var(--gmp-text-dim);
 }
 
 .second-option {
