@@ -48,6 +48,7 @@
   - 平台与入口：SQLite v5 新增五表（`professional_diagnostics`/`professional_confirmations`/`professional_result_artifacts`/`anomaly_extractions`/`analysis_jobs`，部分唯一在途索引）；诊断与异常提取走 `analysis_jobs` 持久化任务（取消/重试/重启转 `interrupted`）；能力矩阵类型化 `not_applicable`，旧候选 `LEGACY_RESULT_NOT_COMPUTED`；专业证据 ZIP（`professional/` 目录，声明缺失或哈希不符 409 fail-closed）；浏览器专业诊断工作台 + 专业分析台、API（`professional-diagnostics`/`analysis-jobs`/`professional-comparisons`/白名单工件下载）、CLI（`geomodeling professional diagnose/confirm/inspect-result/extract-anomalies/compare`）三入口。
   - 测试基线（Task 23 后实测，本分支）：后端 `1153 passed`（便携 1124 + `local_data 29`）、前端 vitest `97 passed`、Mock E2E `4 passed`、Live E2E `3 passed`。
   - 运行手册：[../v0.6-professional-modeling-loop.md](../v0.6-professional-modeling-loop.md)。发布门说明：PR 未合并、tag/release 待批准。
+- **连续体渲染 POC（`feat/volume-rendering-poc` 分支，本分支验证通过，PR 未合并）**：独立 `/volume-demo`（仅直接 URL，无首页/导航入口）把电阻率 S3M 缓存采样（7×21×48/7,056，采样值域 2.291–127.281）经三线性可视化重采样为 7×23×42 纹理，用 WebGL2 光线步进渲染为连续半透明体。本机真实缓存验收通过（Chrome 150 + ANGLE D3D11）：旋转连续、阈值/透明度像素变化、控制台零错误、进出 10 次无资源累积。边界：纹理是可视化重采样，不是 VOLUME 精确逐单元导出（登记精确值域 1.418283–133.146194 不冒充）；不构成新正式成果；验收中发现并修复片元 `modelMatrix` 未声明与高 DPR ResizeObserver 正反馈两个真实缺陷。证据：[../evidence/volume-rendering-poc/verification.md](../evidence/volume-rendering-poc/verification.md)。
 
 ## 3. 外部派生与人工验证（尚未代码化）
 

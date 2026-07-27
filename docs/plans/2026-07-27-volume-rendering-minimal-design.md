@@ -267,3 +267,11 @@ Playwright 真实 Chromium 验证：
 - 是否在答辩版 UI 重做阶段加入切片、等值面和传递函数编辑。
 
 本设计不预先授权上述扩展。
+
+## 13. 实施结果
+
+- 实施分支与 SHA：`feat/volume-rendering-poc`，验收提交 `4d3ac7dc708f17de8050a63ed1d75648af991921`（其后为证据文档提交）。
+- 测试计数（2026-07-27 实测）：后端 `1167 passed`；前端 vitest `126 passed`；type-check/build 通过；Mock E2E `5 passed`（含 volume-demo 像素验证）；Live E2E `3 passed`；`git diff --check` 通过；危险文件扫描零命中。
+- 本机真实缓存浏览器验收：**通过**。Chrome 150 + ANGLE（Intel UHD, D3D11），WebGL2 初始化成功；源 `RHO_KRIG_FINAL_20M_40` / `7 × 21 × 48 / 7,056` / 采样值域 `2.291–127.281`；目标纹理 `7 × 23 × 42 / 6,762`；连续半透明体可旋转；阈值与透明度产生像素变化；控制台零错误；进出路由 10 次无资源累积。截图 `docs/evidence/volume-rendering-poc/volume-demo.png`，实测记录 `docs/evidence/volume-rendering-poc/verification.md`。
+- 实施中修正的真实缺陷（实测证据驱动）：片元着色器 `modelMatrix` 未声明（改为 CPU 传入 `uModelInverse`）；高 DPR 下 `setSize(…, false)` 触发 ResizeObserver 正反馈致 33M px 黑屏（恢复 `updateStyle=true` 钉住 CSS 尺寸）。
+- 边界：纹理为可视化重采样，不是 VOLUME 精确逐单元导出；不构成新正式成果；页面仅直接 URL 访问。
