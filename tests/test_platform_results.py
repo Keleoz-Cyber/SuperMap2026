@@ -13,7 +13,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from geomodeling.platform import PlatformRuntime
+from geomodeling.platform import PlatformRuntime, tables
 from geomodeling.platform.errors import platform_error_handler, PlatformError
 
 
@@ -203,6 +203,50 @@ def test_formal_selection_requires_reason_and_succeeded_run(tmp_path):
     resp = client.get(f"/api/cases/{case_id}/formal-selections")
     assert resp.status_code == 200
     assert len(resp.json()["selections"]) == 2
+
+
+def test_select_formal_rejects_candidate_not_succeeded(tmp_path):
+    """run succeeded 但候选非 succeeded → 409，且不写 FormalSelection。"""
+
+    client, runtime = make_client(tmp_path)
+    _, _, _, candidate_id = prepare_completed_run(client)
+
+    for status in ("failed", "queued"):
+        with runtime.session() as session:
+            row = session.get(tables.CandidateResult, candidate_id)
+            row.status = status
+            session.commit()
+        resp = client.post(
+            f"/api/results/{candidate_id}/select-formal",
+            json={"note": "尝试选为正式模型", "selected_by": "tester"},
+        )
+        assert resp.status_code == 409, resp.text
+        assert resp.json()["error"]["code"] == "CANDIDATE_NOT_SUCCEEDED"
+        assert resp.json()["error"]["details"]["candidate_status"] == status
+    with runtime.session() as session:
+        assert session.query(tables.FormalSelection).count() == 0
+
+
+def test_select_formal_rejects_succeeded_candidate_of_failed_run(tmp_path):
+    """手工构造：候选 succeeded 但 run failed → 409，且不写 FormalSelection。"""
+
+    client, runtime = make_client(tmp_path)
+    _, _, _, candidate_id = prepare_completed_run(client)
+
+    with runtime.session() as session:
+        candidate = session.get(tables.CandidateResult, candidate_id)
+        run = session.get(tables.Run, candidate.run_id)
+        run.status = "failed"
+        session.commit()
+    resp = client.post(
+        f"/api/results/{candidate_id}/select-formal",
+        json={"note": "尝试选为正式模型", "selected_by": "tester"},
+    )
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["error"]["code"] == "CANDIDATE_NOT_SUCCEEDED"
+    assert resp.json()["error"]["details"]["run_status"] == "failed"
+    with runtime.session() as session:
+        assert session.query(tables.FormalSelection).count() == 0
 
 
 def test_publication_records_manual_required_without_iserver(tmp_path, monkeypatch):

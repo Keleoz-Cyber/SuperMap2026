@@ -617,10 +617,11 @@ class FormalSelectionRepository:
         self._s = session
 
     def select(self, case_id: str, request: FormalSelectionRequest) -> FormalSelectionRecord:
-        """只有成功 run 产出的候选可以设为正式模型，且必须属于本案例。
+        """只有成功 run 产出的成功候选可以设为正式模型，且必须属于本案例。
 
         ownership（404）先于 run 状态（409）检查：跨案例探测候选时
-        一律得到 404，不泄露候选存在性及其任务状态。
+        一律得到 404，不泄露候选存在性及其任务状态。run 与 candidate
+        状态都必须为 succeeded：成功 run 里失败的候选同样拒绝。
         """
 
         candidate = CandidateRepository(self._s)._get_row(request.candidate_result_id)
@@ -641,6 +642,17 @@ class FormalSelectionRepository:
                     "candidate_result_id": candidate.id,
                     "run_id": run.id,
                     "run_status": run.status,
+                },
+                http_status=409,
+            )
+        if candidate.status != RunStatus.SUCCEEDED.value:
+            raise PlatformError(
+                CANDIDATE_NOT_SUCCEEDED,
+                "只有成功候选才能设为正式模型",
+                {
+                    "candidate_result_id": candidate.id,
+                    "run_id": run.id,
+                    "candidate_status": candidate.status,
                 },
                 http_status=409,
             )
