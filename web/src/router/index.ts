@@ -15,6 +15,11 @@ const router = createRouter({
   routes: [
     { path: '/', name: 'home', component: HomeView },
     { path: '/case/resistivity', name: 'rho-case', component: RhoCaseView },
+    {
+      path: '/volume-demo',
+      name: 'volume-demo',
+      component: () => import('../views/VolumeDemoView.vue'),
+    },
     { path: '/cases/new', name: 'case-create', component: CaseCreateView },
     {
       path: '/cases/:caseId/microseismic/import',
