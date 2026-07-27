@@ -14,7 +14,7 @@
 
 `npm --prefix web run test:unit`：**16 files / 126 passed**（基线 110 + volume 16）。
 
-- `volumeGrid.spec.ts`：7×21×48 完整笛卡尔重索引；错误 result_id / 数组不齐 / 非有限值 / 重复坐标 / 缺失组合拒收；常量场与物理线性梯度三线性重采样；8 位打包极值 0/255；退化值域报错；
+- `volumeGrid.spec.ts`：7×21×48 完整笛卡尔重索引；错误 result_id / 数组不齐 / 非有限值 / 重复坐标拒收；常量场与物理线性梯度三线性重采样；8 位打包极值 0/255；退化/倒置/非有限值域打包报错；
 - `VolumeRenderer.spec.ts`：runtime 创建、卸载 dispose 一次、阈值/透明度转发；
 - `VolumeDemoView.spec.ts`：源/目标尺寸与「可视化重采样」披露、契约失败显示错误且无渲染器、控件 props 转发；
 - `volumeRoute.spec.ts`：`/volume-demo` 仅直接 URL 可达、无导航入口；

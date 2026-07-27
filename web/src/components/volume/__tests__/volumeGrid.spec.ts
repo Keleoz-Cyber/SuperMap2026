@@ -112,4 +112,14 @@ describe('resampleVolume and packVolumeTexture', () => {
     expect(Math.min(...packed.bytes)).toBe(0)
     expect(Math.max(...packed.bytes)).toBe(255)
   })
+
+  it.each([
+    ['degenerate range', [42, 42] as [number, number]],
+    ['inverted range', [9, 3] as [number, number]],
+    ['non-finite range', [1, Number.NaN] as [number, number]],
+  ])('rejects %s when packing', (_name, valueRange) => {
+    const target = resampleVolume(buildSourceVolume(sourceFixture()))
+    target.valueRange = valueRange
+    expect(() => packVolumeTexture(target)).toThrow(/value range/)
+  })
 })
