@@ -97,20 +97,26 @@ S3M 数据是 SuperMap 渲染缓存采样，不是 VOLUME 数据集的逐单元�
 - Y：在源物理坐标范围内生成 23 个等距目标位置；
 - Z：在源物理坐标范围内生成 42 个等距目标位置；
 - 每个目标位置按源 X/Y/Z 轴坐标执行三线性插值；
-- 纹理值使用 `Float32Array`；
+- CPU 重采样结果使用 `Float32Array`；
 - 重采样后再次检查全部值有限且落在源采样值域包络内（允许浮点容差）。
 
 重采样属于显示处理，不写数据库、不生成成果记录、不覆盖现有缓存。
 
 ### 4.3 纹理归一化
 
-GPU 纹理保存归一化值：
+GPU 纹理保存 8 位归一化值：
 
 ```text
 normalized = (value - source_min) / (source_max - source_min)
+texture_byte = round(clamp(normalized, 0, 1) × 255)
 ```
 
-原始值域继续单独保留，用于图例和阈值标签。源值域退化或包含非有限数时直接失败。
+上传 `Uint8Array` 单通道三维纹理并启用线性过滤，避免把
+32 位浮点纹理线性过滤扩展当作必备条件。CPU 侧继续保留原始
+`Float32Array` 与值域，用于图例、阈值标签和测试。8 位量化只服务于本次
+显示验证，必须在页面说明中归入“可视化重采样”。
+
+源值域退化或包含非有限数时直接失败。
 
 ## 5. 渲染设计
 
@@ -174,6 +180,8 @@ web/src/components/volume/VolumeRenderer.vue
 web/src/components/volume/volumeGrid.ts
 web/src/components/volume/volumeShaders.ts
 ```
+
+Three.js 作为前端直接依赖使用精确版本固定，不从 CDN 动态加载。
 
 职责：
 
