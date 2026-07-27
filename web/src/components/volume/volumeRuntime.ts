@@ -101,7 +101,10 @@ export function createVolumeRuntime(
     const resize = () => {
       const width = Math.max(container.clientWidth, 1)
       const height = Math.max(container.clientHeight, 1)
-      renderer.setSize(width, height, false)
+      // updateStyle=false 时高 DPR 下 canvas 属性像素超过容器 CSS 尺寸，
+      // ResizeObserver 会正反馈无限撑高（真实 Chromium 实测 33M px 黑屏）；
+      // 默认 updateStyle=true 把 canvas CSS 尺寸钉在容器上，杜绝增长环。
+      renderer.setSize(width, height)
       camera.aspect = width / height
       camera.updateProjectionMatrix()
     }
