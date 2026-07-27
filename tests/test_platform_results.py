@@ -13,7 +13,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from geomodeling.platform import PlatformRuntime
+from geomodeling.platform import PlatformRuntime, tables
 from geomodeling.platform.errors import platform_error_handler, PlatformError
 
 
@@ -205,6 +205,50 @@ def test_formal_selection_requires_reason_and_succeeded_run(tmp_path):
     assert len(resp.json()["selections"]) == 2
 
 
+def test_select_formal_rejects_candidate_not_succeeded(tmp_path):
+    """run succeeded 但候选非 succeeded → 409，且不写 FormalSelection。"""
+
+    client, runtime = make_client(tmp_path)
+    _, _, _, candidate_id = prepare_completed_run(client)
+
+    for status in ("failed", "queued"):
+        with runtime.session() as session:
+            row = session.get(tables.CandidateResult, candidate_id)
+            row.status = status
+            session.commit()
+        resp = client.post(
+            f"/api/results/{candidate_id}/select-formal",
+            json={"note": "尝试选为正式模型", "selected_by": "tester"},
+        )
+        assert resp.status_code == 409, resp.text
+        assert resp.json()["error"]["code"] == "CANDIDATE_NOT_SUCCEEDED"
+        assert resp.json()["error"]["details"]["candidate_status"] == status
+    with runtime.session() as session:
+        assert session.query(tables.FormalSelection).count() == 0
+
+
+def test_select_formal_rejects_succeeded_candidate_of_failed_run(tmp_path):
+    """手工构造：候选 succeeded 但 run failed → 409，且不写 FormalSelection。"""
+
+    client, runtime = make_client(tmp_path)
+    _, _, _, candidate_id = prepare_completed_run(client)
+
+    with runtime.session() as session:
+        candidate = session.get(tables.CandidateResult, candidate_id)
+        run = session.get(tables.Run, candidate.run_id)
+        run.status = "failed"
+        session.commit()
+    resp = client.post(
+        f"/api/results/{candidate_id}/select-formal",
+        json={"note": "尝试选为正式模型", "selected_by": "tester"},
+    )
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["error"]["code"] == "CANDIDATE_NOT_SUCCEEDED"
+    assert resp.json()["error"]["details"]["run_status"] == "failed"
+    with runtime.session() as session:
+        assert session.query(tables.FormalSelection).count() == 0
+
+
 def test_publication_records_manual_required_without_iserver(tmp_path, monkeypatch):
     client, _ = make_client(tmp_path)
     _, _, _, candidate_id = prepare_completed_run(client)
@@ -260,6 +304,8 @@ def test_export_zip_contains_full_lineage(tmp_path):
     assert manifest["grid_sha256"]
     assert manifest["files"]
     assert "domain_evidence" not in manifest
+    # legacy 候选（无专业工件行）：导出无 professional 节（逐位不变锁定）
+    assert "professional" not in manifest
 
     metadata = json.loads(bundle.read("metadata.json"))
     assert metadata["algorithm"] == "idw"
@@ -273,6 +319,35 @@ def test_export_zip_contains_full_lineage(tmp_path):
 
     selections = json.loads(bundle.read("formal_selections.json"))
     assert selections[0]["note"] == "最优候选"
+
+
+def test_legacy_materialize_has_no_professional_artifacts(tmp_path):
+    """legacy 候选物化逐字节兼容：无 professional 文件、metadata 无 professional 键。"""
+
+    client, runtime = make_client(tmp_path)
+    _, _, _, candidate_id = prepare_completed_run(client)
+
+    resp = client.post(f"/api/results/{candidate_id}/materialize")
+    assert resp.status_code in (200, 201), resp.text
+    metadata = resp.json()
+    assert "professional" not in metadata
+    assert set(metadata) == {
+        "result_id", "run_id", "experiment_id", "dataset_version_id", "algorithm",
+        "parameters", "dimension", "shape", "cell_count", "bounds", "resolution",
+        "value_range", "nodata_count", "grid_sha256", "source_sha256",
+        "standardized_sha256", "fingerprint", "validation", "created_at",
+    }
+
+    professional_dir = runtime.settings.professional_result_dir(candidate_id)
+    # Task 9 的 run 级折证据照常落盘，但绝不自动创建任何专业物化文件
+    assert sorted(p.name for p in professional_dir.iterdir()) == [
+        "fold_assignments.parquet",
+        "out_of_fold_predictions.parquet",
+    ]
+
+    resp = client.get(f"/api/results/{candidate_id}/preview")
+    assert resp.status_code == 200
+    assert resp.json()["layer"] == "value"
 
 
 def test_export_failure_cleans_staging_dir(tmp_path, monkeypatch):

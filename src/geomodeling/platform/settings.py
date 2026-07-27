@@ -85,6 +85,31 @@ class PlatformSettings:
     def result_grid(self, result_id: str) -> Path:
         return self.results_dir / result_id / "grid.npz"
 
+    def professional_result_dir(self, result_id: str) -> Path:
+        """Per-candidate professional artifact directory (fold/OOF evidence)."""
+
+        return self.results_dir / result_id / "professional"
+
+    def professional_result_manifest(self, result_id: str) -> Path:
+        """专业物化清单：物化完成与幂等重读的身份标记（设计 §5.3）。"""
+
+        return self.professional_result_dir(result_id) / "manifest.json"
+
+    def professional_diagnosis_dir(
+        self, case_id: str, dataset_id: str, diagnosis_id: str
+    ) -> Path:
+        """Per-diagnosis professional artifact directory (variogram evidence)."""
+
+        return (
+            self.datasets_dir / case_id / dataset_id / "professional"
+            / "diagnostics" / diagnosis_id
+        )
+
+    def anomaly_extraction_dir(self, result_id: str, extraction_id: str) -> Path:
+        """Per-extraction anomaly artifact directory under a materialized result."""
+
+        return self.results_dir / result_id / "anomalies" / extraction_id
+
     def export_package(self, export_id: str) -> Path:
         return self.exports_dir / export_id / "result-package.zip"
 

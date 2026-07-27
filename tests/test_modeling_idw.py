@@ -266,3 +266,96 @@ def test_z_scale_parameter_bounds():
             interpolator.validate_parameters({"z_scale": bad}, "3d")
     ok = interpolator.validate_parameters({"z_scale": 20.0}, "3d")
     assert ok.z_scale == 20.0
+
+
+# ---------------------------------------------------------------------------
+# Task 7: 默认路径（无专业搜索邻域）逐位锁定
+# ---------------------------------------------------------------------------
+
+
+def legacy_reference(points, values, query, *, power, k, z_scale, min_neighbors=3, search_radius=None):
+    """Task 7 之前生产实现（向量化 cKDTree 路径）的逐位誊录。
+
+    只用于锁定 ``neighborhood=None`` 时的默认行为：生产代码一旦偏离该
+    誊录（缩放、近邻选择、精确点、权重或 NoData 判定任一变化），断言
+    即失败。查询点按行分块与单块语义一致，故誊录按单块计算。
+    """
+
+    from scipy.spatial import cKDTree
+
+    from geomodeling.modeling.distance import scale_distance_coordinates
+    from geomodeling.platform.schemas import Dimension
+
+    points = np.asarray(points, dtype="float64")
+    values = np.asarray(values, dtype="float64")
+    dimension = Dimension.THREE_D if points.shape[1] == 3 else Dimension.TWO_D
+    scaled_points = scale_distance_coordinates(points, dimension=dimension, z_scale=z_scale)
+    scaled_query = scale_distance_coordinates(query, dimension=dimension, z_scale=z_scale)
+    tree = cKDTree(scaled_points)
+    kk = min(k, values.shape[0])
+    if search_radius is not None:
+        distances, indices = tree.query(scaled_query, k=kk, distance_upper_bound=search_radius)
+    else:
+        distances, indices = tree.query(scaled_query, k=kk)
+    if kk == 1:
+        distances = distances[:, None]
+        indices = indices[:, None]
+
+    out = np.full(scaled_query.shape[0], np.nan)
+    finite_mask = np.isfinite(distances)
+    neighbor_counts = finite_mask.sum(axis=1)
+    ok = neighbor_counts >= min_neighbors
+    exact = ok & (distances[:, 0] <= 1e-12) & finite_mask[:, 0]
+    if exact.any():
+        out[exact] = values[indices[exact, 0]]
+    weighted = ok & ~exact
+    if weighted.any():
+        safe_distances = np.where(finite_mask, distances, np.inf)
+        weights = 1.0 / np.power(safe_distances, power)
+        weights[~finite_mask] = 0.0
+        totals = weights.sum(axis=1)
+        usable = weighted & (totals > 0)
+        gathered = values[np.where(finite_mask, indices, 0)]
+        estimates = (weights * gathered).sum(axis=1) / totals
+        out[usable] = estimates[usable]
+    return out, ~np.isfinite(out)
+
+
+def test_idw_without_professional_neighborhood_is_bitwise_legacy():
+    from geomodeling.modeling.idw import IDWInterpolator, IDWParameters
+
+    points, values = train_3d()
+    rng = np.random.default_rng(17)
+    query = np.column_stack(
+        [
+            rng.uniform(-160, -40, 64),
+            rng.uniform(220, 660, 64),
+            rng.uniform(-840, 0, 64),
+        ]
+    )
+    legacy_values, legacy_nodata = legacy_reference(points, values, query, power=2, k=16, z_scale=1)
+    current = IDWInterpolator().fit(points, values, IDWParameters()).predict(
+        query, cancel=lambda: False
+    )
+    np.testing.assert_array_equal(current.values, legacy_values)
+    np.testing.assert_array_equal(current.is_nodata, legacy_nodata)
+    # 默认路径诊断保持原形状，不出现邻域汇总
+    assert set(current.diagnostics) == {"max_neighbors_used", "n_targets", "z_scale"}
+
+
+def test_idw_without_professional_neighborhood_is_bitwise_legacy_with_radius():
+    from geomodeling.modeling.idw import IDWInterpolator
+
+    points, values = train_2d()
+    query = np.array([[-100.0, 400.0], [1e6, 1e6], [-140.0, 250.0]])
+    legacy_values, legacy_nodata = legacy_reference(
+        points, values, query, power=2.0, k=8, z_scale=1.0, min_neighbors=4, search_radius=60.0
+    )
+    assert legacy_nodata.any()  # 誊录确实覆盖了半径外 NoData 分支
+    interpolator = IDWInterpolator()
+    params = interpolator.validate_parameters(
+        {"power": 2.0, "neighbor_count": 8, "min_neighbors": 4, "search_radius": 60.0}, "2d"
+    )
+    current = interpolator.fit(points, values, params).predict(query, cancel=lambda: False)
+    np.testing.assert_array_equal(current.values, legacy_values)
+    np.testing.assert_array_equal(current.is_nodata, legacy_nodata)

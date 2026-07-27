@@ -164,3 +164,109 @@ test.describe('v0.5 微震第二案例（mock API）', () => {
     await expect(page.getByTestId('create-case-card')).toBeVisible()
   })
 })
+
+// ---------------------------------------------------------------------------
+// v0.6 专业建模流程（mock API）：质量通过的数据集 → 诊断 → 不可变确认 →
+// 专业 Kriging 实验 → 折分检查 → 不确定性图层 → 已保存异常 → 兼容比较。
+// 所有计数/身份均来自 platformDemo.ts 的夹具值，不冒充真实计算结果。
+// ---------------------------------------------------------------------------
+test.describe('v0.6 专业建模流程（mock API）', () => {
+  test('质量门禁 → 诊断 → 确认 → 专业实验 → 折分/不确定性/异常/比较', async ({ page }) => {
+    await installMockApi(page)
+
+    // 案例 + 上传 → 映射 → 质量门禁通过（数据集进入 validated）
+    await page.goto('/')
+    await page.getByTestId('create-case-card').click()
+    await page.getByTestId('case-name').fill('专业 E2E 案例')
+    await page.getByTestId('case-file').setInputFiles({
+      name: 'platform_demo_3d.csv',
+      mimeType: 'text/csv',
+      buffer: Buffer.from('x,y,z,rho\n-50,300,-50,67.05\n'),
+    })
+    await page.getByTestId('case-submit').click()
+    await expect(page).toHaveURL(/#\/cases\/case-e2e\/datasets\/ds-e2e\/prepare/)
+    await page.getByTestId('mapping-value-name').fill('电阻率')
+    await page.getByTestId('mapping-submit').click()
+    await expect(page.getByTestId('quality-banner')).toContainText('质量校验通过')
+
+    // 诊断入口：实验创建页的专业入口（质量门禁通过后才可用）
+    await page.getByTestId('start-experiment').click()
+    await expect(page).toHaveURL(/#\/cases\/case-e2e\/experiments\/new\?dataset=ds-e2e/)
+    await page.getByTestId('professional-entry').click()
+    await expect(page).toHaveURL(/#\/datasets\/ds-e2e\/professional-diagnosis\?case=case-e2e/)
+
+    // 诊断：提交 → 任务轮询 → 证据（点对模式/候选建议）
+    await expect(page.getByTestId('diagnosis-config')).toBeVisible()
+    await page.getByTestId('start-diagnosis').click()
+    await expect(page.getByTestId('job-status')).toBeVisible()
+    await expect(page.getByTestId('variogram-panel')).toBeVisible({ timeout: 15000 })
+    await expect(page.getByTestId('sampling-mode')).toContainText('全量')
+    await expect(page.getByTestId('suggestion-label')).toContainText('诊断建议，需人工确认')
+    await expect(page.getByTestId('candidate-evidence').first()).toContainText('主方位角 90')
+
+    // 不可变确认：模型必须显式选择，note 必填，快照只创建不修改
+    await page.getByTestId('confirm-model').selectOption('spherical')
+    await page.getByTestId('confirm-note').fill('采纳诊断候选主方向（mock 夹具）')
+    await page.getByTestId('confirm-submit').click()
+    await expect(page.getByTestId('confirmation-snapshot')).toBeVisible()
+    await expect(page.getByTestId('confirmation-id')).toContainText('conf-pro-1')
+    await page.getByTestId('goto-experiment').click()
+    await expect(page).toHaveURL(
+      /#\/cases\/case-e2e\/experiments\/new\?dataset=ds-e2e&confirmation=conf-pro-1/,
+    )
+
+    // 专业 Kriging 实验：网格搜索两组邻点数 → 两个成功候选
+    await page.getByTestId('professional-toggle').check()
+    await page.getByTestId('algo-kriging').check()
+    await expect(page.getByTestId('professional-confirmation')).toContainText('conf-pro-1')
+    await page.getByTestId('mode-grid').check()
+    await page.getByTestId('exp-submit').click()
+    await expect(page).toHaveURL(/#\/experiments\/exp-pro/)
+    await expect(page.getByTestId('run-progress')).toContainText('succeeded', { timeout: 15000 })
+    await expect(page.getByTestId('candidate-row')).toHaveCount(2)
+
+    // 成果工作台 → 专业分析台
+    await page.getByTestId('open-result').first().click()
+    await expect(page).toHaveURL(/#\/results\/cand-pro-1/)
+    await page.getByTestId('professional-entry').click()
+    await expect(page).toHaveURL(/#\/results\/cand-pro-1\/professional/)
+    await expect(page.getByTestId('summary-algorithm')).toContainText('ordinary_kriging')
+    await expect(page.getByTestId('summary-confirmation')).toContainText('conf-pro-1')
+    await expect(page.getByTestId('capability-native-kriging-std')).toContainText('supported')
+
+    // 折分检查：泄漏徽章 + 折切换改变训练/验证计数
+    await expect(page.getByTestId('fold-inspector')).toBeVisible()
+    await expect(page.getByTestId('leakage-badge')).toContainText('未检测到泄漏')
+    await expect(page.getByTestId('fold-training-count')).toContainText('96')
+    await page.getByTestId('fold-tab-1').click()
+    await expect(page.getByTestId('fold-validation-count')).toContainText('24')
+
+    // 不确定性图层：预测值 / 经验误差尺度 / Kriging 标准差各自标题与值域
+    await expect(page.getByTestId('layer-title')).toContainText('预测值')
+    await page.getByTestId('layer-tab-empirical').click()
+    await expect(page.getByTestId('layer-title')).toContainText('经验误差尺度')
+    await expect(page.getByTestId('layer-value-range')).toContainText('0.5')
+    await page.getByTestId('layer-tab-kriging-std').click()
+    await expect(page.getByTestId('layer-title')).toContainText('Kriging 标准差')
+    await expect(page.getByTestId('layer-value-range')).toContainText('0.3')
+
+    // 异常：阈值预览 → 保存 → 任务轮询 → 连通区表与网格高亮
+    await page.getByTestId('anomaly-threshold').fill('100')
+    await expect(page.getByTestId('anomaly-preview-count')).toContainText('预计合格节点')
+    await page.getByTestId('anomaly-save').click()
+    await expect(page.getByTestId('extraction-identity')).toContainText('ext-pro-1', {
+      timeout: 15000,
+    })
+    await expect(page.getByTestId('component-count')).toContainText('连通区 2 / 2 个')
+    await expect(page.getByTestId('component-row')).toHaveCount(2)
+    await expect(page.getByTestId('highlight-count')).toContainText('网格高亮节点')
+
+    // 兼容比较：同实验第二候选 → 成对公共指标差 + 场差摘要
+    await page.getByTestId('comparison-second-cand-pro-2').click()
+    await page.getByTestId('comparison-run').click()
+    await expect(page.getByTestId('comparison-compatible')).toBeVisible()
+    await expect(page.getByTestId('common-valid-count')).toContainText('128')
+    await expect(page.getByTestId('metric-delta-row').first()).toBeVisible()
+    await expect(page.getByTestId('grid-difference')).toContainText('121')
+  })
+})

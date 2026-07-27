@@ -20,6 +20,8 @@ from geomodeling.platform.tables import RunStatus
 
 __all__ = [
     "Algorithm",
+    "AnalysisJobRecord",
+    "AnomalyExtractionRecord",
     "CaseCreateRequest",
     "CaseRecord",
     "CandidateResultRecord",
@@ -33,6 +35,11 @@ __all__ = [
     "FormalSelectionRecord",
     "FormalSelectionRequest",
     "GridSpec",
+    "ProfessionalConfirmationRecord",
+    "ProfessionalConfirmationRequest",
+    "ProfessionalDiagnosisRequest",
+    "ProfessionalDiagnosticRecord",
+    "ProfessionalResultArtifactsRecord",
     "RunRecord",
     "RunStatus",
     "SpatialValidationSpec",
@@ -135,6 +142,19 @@ class CaseCreateRequest(ContractModel):
 
 
 class ExperimentCreateRequest(ContractModel):
+    """实验创建请求（v0.4）；v0.6 扩展三个可选专业输入。
+
+    ``professional_confirmation_id`` 引用一条不可变确认快照（仅普通
+    Kriging；给出即为 Kriging 专业模式）。``neighborhood`` 与
+    ``empirical_uncertainty`` 分别是
+    ``geomodeling.modeling.professional_contracts.NeighborhoodSpec`` 与
+    ``EmpiricalUncertaintySpec`` 的原始载荷：本层只做 ``extra="forbid"``
+    浅校验，严格校验由服务层用上述契约执行——分层方式与
+    ``parameters``、``ProfessionalDiagnosisRequest.variogram`` 一致（契约
+    模块反向依赖本模块，字段类型无法在此直接引用）。三字段全缺时行为与
+    v0.5 逐位不变。
+    """
+
     case_id: str = Field(min_length=1, max_length=128)
     name: str = Field(min_length=1, max_length=256)
     algorithm: Algorithm
@@ -143,6 +163,9 @@ class ExperimentCreateRequest(ContractModel):
     parameters: dict[str, Any] | list[dict[str, Any]] = Field(default_factory=dict)
     validation: SpatialValidationSpec = Field(default_factory=SpatialValidationSpec)
     grid: GridSpec | None = None
+    professional_confirmation_id: str | None = Field(default=None, min_length=1, max_length=128)
+    neighborhood: dict[str, Any] | None = None
+    empirical_uncertainty: dict[str, Any] | None = None
 
 
 class FormalSelectionRequest(ContractModel):
@@ -158,6 +181,40 @@ class FormalSelectionBody(ContractModel):
 
     note: str = Field(min_length=1, max_length=2000)
     selected_by: str | None = Field(default=None, max_length=128)
+
+
+class ProfessionalDiagnosisRequest(ContractModel):
+    """数据集级专业诊断请求体（v0.6，POST …/professional-diagnostics）。
+
+    ``variogram`` 是
+    ``geomodeling.modeling.professional_contracts.VariogramDiagnosticSpec``
+    的原始载荷：本层只做 ``extra="forbid"`` 浅校验，严格校验由服务层
+    用上述契约执行——分层方式与 ``ExperimentCreateRequest.parameters``
+    一致，字段定义不在此处重复。数据集身份取自 URL 路径。
+    """
+
+    variogram: dict[str, Any] = Field(default_factory=dict)
+
+
+class ProfessionalConfirmationRequest(ContractModel):
+    """各向异性人工确认请求体（v0.6，POST …/confirm）。
+
+    用户确认一组各向异性参数，或显式选择「保持各向同性」，二者必须
+    恰好其一。``anisotropy`` 为建模层各向异性契约的原始载荷（方位角、
+    3D 倾角、滚转角、主/次/垂向尺度比与证据引用），严格校验在服务层
+    执行；``note`` 为确认说明，按设计要求必填。
+    """
+
+    keep_isotropic: bool = False
+    anisotropy: dict[str, Any] = Field(default_factory=dict)
+    note: str = Field(min_length=1, max_length=2000)
+
+    @model_validator(mode="after")
+    def _check_exactly_one_choice(self) -> "ProfessionalConfirmationRequest":
+        has_anisotropy = bool(self.anisotropy)
+        if self.keep_isotropic == has_anisotropy:
+            raise ValueError("必须恰好选择「保持各向同性」或提供一组各向异性参数")
+        return self
 
 
 # ---------------------------------------------------------------------------
@@ -231,3 +288,77 @@ class FormalSelectionRecord(ContractModel):
     selected_by: str | None = None
     note: str
     created_at: str
+
+
+# ---------------------------------------------------------------------------
+# v0.6 professional modeling records (SQLite v5)
+# ---------------------------------------------------------------------------
+
+
+class ProfessionalDiagnosticRecord(ContractModel):
+    """数据集级专业诊断记录；状态由持久化分析任务驱动。"""
+
+    id: str
+    dataset_version_id: str
+    status: RunStatus
+    config: dict[str, Any] = Field(default_factory=dict)
+    fingerprint: str = ""
+    manifest: dict[str, Any] = Field(default_factory=dict)
+    error: dict[str, Any] | None = None
+    created_at: str
+    updated_at: str
+    finished_at: str | None = None
+
+
+class ProfessionalConfirmationRecord(ContractModel):
+    """一次性不可变确认快照；创建后没有更新路径。"""
+
+    id: str
+    diagnostic_id: str
+    config: dict[str, Any] = Field(default_factory=dict)
+    fingerprint: str = ""
+    note: str = ""
+    created_at: str
+
+
+class ProfessionalResultArtifactsRecord(ContractModel):
+    """一个候选唯一的一套专业工件（candidate_result_id 唯一约束）。"""
+
+    id: str
+    candidate_result_id: str
+    confirmation_id: str | None = None
+    status: Literal["pending", "succeeded", "failed"] = "pending"
+    capabilities: dict[str, Any] = Field(default_factory=dict)
+    manifest: dict[str, Any] = Field(default_factory=dict)
+    created_at: str
+
+
+class AnomalyExtractionRecord(ContractModel):
+    """异常提取记录；同成果同配置指纹幂等返回同一成功提取。"""
+
+    id: str
+    candidate_result_id: str
+    status: Literal["pending", "succeeded", "failed"] = "pending"
+    config: dict[str, Any] = Field(default_factory=dict)
+    fingerprint: str = ""
+    manifest: dict[str, Any] = Field(default_factory=dict)
+    error: dict[str, Any] | None = None
+    created_at: str
+
+
+class AnalysisJobRecord(ContractModel):
+    """持久化专业分析任务记录（诊断/异常提取）。"""
+
+    id: str
+    job_kind: Literal["professional_diagnosis", "anomaly_extraction"]
+    subject_type: str
+    subject_id: str
+    request_fingerprint: str
+    status: RunStatus
+    retry_of_job_id: str | None = None
+    progress: dict[str, Any] = Field(default_factory=dict)
+    error: dict[str, Any] | None = None
+    created_at: str
+    updated_at: str
+    started_at: str | None = None
+    finished_at: str | None = None

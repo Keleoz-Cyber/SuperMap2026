@@ -147,6 +147,190 @@ interface MockState {
   runStarted: boolean
   selections: unknown[]
   exported: boolean
+  datasetStatus: 'uploaded' | 'mapped' | 'validated'
+  diagnosisJobPolls: number
+  extractionJobPolls: number
+}
+
+// ---------------------------------------------------------------- v0.6 专业建模
+// 专业 mock 计数全部来自本文件定义的夹具值（32 折外点/3 折/2 连通区/121 网格
+// 节点），只驱动浏览器流程，绝不冒充真实数据或私有证据。
+const PRO_SHA = 'bd'.repeat(32)
+
+const PRO_OMNI_BINS = Array.from({ length: 8 }, (_, i) => ({
+  bin_index: i,
+  lower_distance: i * 10,
+  upper_distance: (i + 1) * 10,
+  center_distance: i * 10 + 5,
+  mean_distance: i * 10 + 5.2,
+  semivariance: 0.4 + i * 0.3,
+  pair_count: 120 - i * 6,
+  used_for_fit: i < 6,
+  exclusion_reason: i < 6 ? null : 'insufficient_pairs',
+}))
+
+const PRO_DIRECTIONS = [
+  { id: 'd000', azimuth_deg: 0, range: 20.5 },
+  { id: 'd001', azimuth_deg: 90, range: 61.2 },
+]
+
+const PRO_DIRECTIONAL_ROWS = PRO_DIRECTIONS.flatMap((direction) =>
+  PRO_OMNI_BINS.map((bin, i) => ({
+    ...bin,
+    semivariance: Number((bin.semivariance * (direction.azimuth_deg === 90 ? 0.7 : 1.4)).toFixed(3)),
+    direction_id: direction.id,
+    azimuth_deg: direction.azimuth_deg,
+    dip_deg: null,
+    azimuth_tolerance_deg: 15,
+    dip_tolerance_deg: null,
+    bin_index: i,
+  })),
+)
+
+const PRO_FITTED_MODELS = {
+  models: [
+    {
+      model: 'spherical',
+      nugget: 0.05,
+      partial_sill: 1.15,
+      sill: 1.2,
+      range: 42.0,
+      weighted_sse: 0.031,
+      converged: true,
+      parameter_origin: 'automatic_candidate',
+      used_bin_indices: [0, 1, 2, 3, 4, 5],
+      bounds: { nugget: [0, 1.2], partial_sill: [0.001, 3.6], range: [0.001, 160] },
+      residuals: [0.01, -0.02, 0.03, -0.01, 0.0, 0.02],
+    },
+    {
+      model: 'exponential',
+      nugget: 0.08,
+      partial_sill: 1.12,
+      sill: 1.2,
+      range: 38.5,
+      weighted_sse: 0.052,
+      converged: true,
+      parameter_origin: 'automatic_candidate',
+      used_bin_indices: [0, 1, 2, 3, 4, 5],
+      bounds: { nugget: [0, 1.2], partial_sill: [0.001, 3.6], range: [0.001, 160] },
+      residuals: [0.02, -0.01, 0.04, -0.02, 0.01, 0.03],
+    },
+    {
+      model: 'gaussian',
+      nugget: 0.11,
+      partial_sill: 1.09,
+      sill: 1.2,
+      range: 35.8,
+      weighted_sse: 0.068,
+      converged: true,
+      parameter_origin: 'automatic_candidate',
+      used_bin_indices: [0, 1, 2, 3, 4, 5],
+      bounds: { nugget: [0, 1.2], partial_sill: [0.001, 3.6], range: [0.001, 160] },
+      residuals: [0.03, -0.03, 0.05, -0.02, 0.02, 0.04],
+    },
+  ],
+  min_sse_model: 'spherical',
+  parameter_origin: 'automatic_candidate',
+}
+
+const PRO_SUGGESTION = {
+  candidates: [
+    {
+      status: 'diagnostic_suggestion',
+      rank: 1,
+      major_direction_id: 'd001',
+      major_azimuth_deg: 90,
+      major_dip_deg: null,
+      major_range: 61.2,
+      secondary_direction_id: 'd000',
+      secondary_range: 20.5,
+      secondary_support_pairs: 640,
+      vertical_direction_id: null,
+      vertical_range: null,
+      vertical_support_pairs: 0,
+      major_minor_range_ratio: 2.99,
+      major_vertical_range_ratio: null,
+      used_direction_ids: ['d001', 'd000'],
+      used_bin_indices: [0, 1, 2, 3, 4, 5],
+      used_pair_count: 1280,
+      warnings: [],
+    },
+  ],
+  compared_direction_ids: ['d000', 'd001'],
+  skipped_direction_ids: [],
+  warnings: [],
+}
+
+const PRO_DIAGNOSIS_MANIFEST = {
+  version: 1,
+  fingerprint: 'fp-diag-pro-1',
+  artifacts: {
+    metadata: { file: 'metadata.json', sha256: PRO_SHA, bytes: 512 },
+    omnidirectional: { file: 'omnidirectional.csv', sha256: PRO_SHA, bytes: 1024 },
+    directional: { file: 'directional.csv', sha256: PRO_SHA, bytes: 2048 },
+    fitted_models: { file: 'fitted_models.json', sha256: 'ae'.repeat(32), bytes: 1536 },
+    anisotropy_candidates: { file: 'anisotropy_candidates.json', sha256: 'af'.repeat(32), bytes: 768 },
+  },
+  created_at: T,
+  summary: {
+    fitted_models: ['spherical', 'exponential', 'gaussian'],
+    min_sse_model: 'spherical',
+    omni_used_bin_count: 6,
+    direction_count: 2,
+    supported_direction_count: 2,
+    candidate_ranks: [1],
+    warnings: [],
+  },
+}
+
+const PRO_CAPABILITIES = {
+  algorithm: 'ordinary_kriging',
+  empirical_variogram: 'supported',
+  model_anisotropy: 'supported',
+  z_scale_weight_distance: 'supported',
+  search_neighborhood: 'supported',
+  sector_neighbor_limits: 'supported',
+  spatial_fold_inspection: 'supported',
+  empirical_error_scale: 'supported',
+  native_kriging_std: 'supported',
+  anomaly_extraction: 'supported',
+  candidate_comparison: 'supported',
+}
+
+const PRO_FOLDS = {
+  result_id: 'cand-pro-1',
+  fold_count: 3,
+  leakage_detected: false,
+  folds: [
+    { fold_index: 0, training_count: 96, validation_count: 32, validation_groups: [2, 5], group_count: 2, leakage_detected: false, metrics: { rmse: 1.234, valid_count: 32 } },
+    { fold_index: 1, training_count: 104, validation_count: 24, validation_groups: [0], group_count: 1, leakage_detected: false, metrics: { rmse: 1.421, valid_count: 24 } },
+    { fold_index: 2, training_count: 100, validation_count: 28, validation_groups: [1, 4], group_count: 2, leakage_detected: false, metrics: { rmse: 1.102, valid_count: 28 } },
+  ],
+  download_url: '/api/professional-artifacts/art-folds/download',
+}
+
+const PRO_RESIDUAL_ROWS = [
+  { source_row: 3, fold_index: 0, x: 10, y: 20, observed: 101.2, predicted: 100.4, residual: 0.8 },
+  { source_row: 7, fold_index: 0, x: 30, y: 40, observed: 99.1, predicted: 100.2, residual: -1.1 },
+  { source_row: 11, fold_index: 0, x: 50, y: 60, observed: 104.5, predicted: 103.1, residual: 1.4 },
+  { source_row: 18, fold_index: 1, x: 20, y: 70, observed: 97.6, predicted: 98.9, residual: -1.3 },
+  { source_row: 23, fold_index: 1, x: 60, y: 10, observed: 102.8, predicted: 101.7, residual: 1.1 },
+  { source_row: 29, fold_index: 2, x: 80, y: 30, observed: 100.0, predicted: 101.2, residual: -1.2 },
+  { source_row: 31, fold_index: 2, x: 90, y: 80, observed: 103.3, predicted: 102.0, residual: 1.3 },
+]
+
+const PRO_PREVIEW = {
+  result_id: 'cand-pro-1',
+  dimension: '2d',
+  original_cell_count: 121,
+  served_cell_count: 121,
+  stride: 1,
+  x: Array.from({ length: 121 }, (_, i) => (i % 11) * 10),
+  y: Array.from({ length: 121 }, (_, i) => Math.floor(i / 11) * 10),
+  z: null,
+  values: Array.from({ length: 121 }, (_, i) => 90 + ((i * 37) % 41)),
+  is_nodata: Array.from({ length: 121 }, () => false),
+  value_range: [90, 130],
 }
 
 function json(route: Route, body: unknown, status = 200) {
@@ -154,7 +338,15 @@ function json(route: Route, body: unknown, status = 200) {
 }
 
 export async function installMockApi(page: Page): Promise<void> {
-  const state: MockState = { runPolls: 0, runStarted: false, selections: [], exported: false }
+  const state: MockState = {
+    runPolls: 0,
+    runStarted: false,
+    selections: [],
+    exported: false,
+    datasetStatus: 'uploaded',
+    diagnosisJobPolls: 0,
+    extractionJobPolls: 0,
+  }
 
   const runBody = (status: string, completed: number) => ({
     id: 'run-e2e',
@@ -275,7 +467,7 @@ export async function installMockApi(page: Page): Promise<void> {
         id: 'ds-e2e',
         case_id: 'case-e2e',
         version: 1,
-        status: 'uploaded',
+        status: state.datasetStatus,
         profile: { original_filename: 'platform_demo_3d.csv', suffix: 'csv', size_bytes: 4096, source_sha256: SHA },
         created_at: T,
       })
@@ -300,6 +492,7 @@ export async function installMockApi(page: Page): Promise<void> {
       })
     }
     if (path === '/datasets/ds-e2e/mapping' && method === 'POST') {
+      state.datasetStatus = 'mapped'
       return json(route, {
         id: 'ds-e2e',
         case_id: 'case-e2e',
@@ -310,6 +503,7 @@ export async function installMockApi(page: Page): Promise<void> {
       })
     }
     if (path === '/datasets/ds-e2e/validate' && method === 'POST') {
+      state.datasetStatus = 'validated'
       return json(route, {
         status: 'passed',
         checks: [],
@@ -346,6 +540,35 @@ export async function installMockApi(page: Page): Promise<void> {
       })
     }
     if (path === '/experiments' && method === 'POST') {
+      const body = route.request().postDataJSON() as {
+        professional_confirmation_id?: string
+        neighborhood?: unknown
+        empirical_uncertainty?: unknown
+      }
+      if (body.professional_confirmation_id) {
+        return json(route, {
+          id: 'exp-pro',
+          case_id: 'case-e2e',
+          name: '专业 Kriging 实验',
+          params: {
+            case_id: 'case-e2e',
+            name: '专业 Kriging 实验',
+            algorithm: 'ordinary_kriging',
+            dataset_version_id: 'ds-e2e',
+            search_mode: 'grid',
+            parameters: { variogram_model: ['spherical'], neighbor_count: [16, 24] },
+            validation: { method: 'spatial_kfold', folds: 5, seed: 20260723, holdout_fraction: 0.2 },
+            grid: null,
+            professional: {
+              confirmation_id: body.professional_confirmation_id,
+              neighborhood: body.neighborhood ?? null,
+              empirical_uncertainty: body.empirical_uncertainty ?? null,
+            },
+          },
+          created_at: T,
+          updated_at: T,
+        }, 201)
+      }
       return json(route, {
         id: 'exp-e2e',
         case_id: 'case-e2e',
@@ -476,6 +699,367 @@ export async function installMockApi(page: Page): Promise<void> {
           manual_instruction: '请通过 iServer 管理界面手动发布导出的成果包',
           iserver_rest_publish_status: 'unsupported_on_this_build',
         },
+      }, 201)
+    }
+    // ---------------------------------------------------------------- v0.6 专业建模
+    if (path === '/datasets/ds-e2e/professional-diagnostics' && method === 'POST') {
+      return json(
+        route,
+        { diagnosis_id: 'diag-pro-1', job_id: 'job-diag-1', status: 'queued', reused: false },
+        202,
+      )
+    }
+    if (path === '/analysis-jobs/job-diag-1' && method === 'GET') {
+      state.diagnosisJobPolls += 1
+      const done = state.diagnosisJobPolls > 1
+      return json(route, {
+        id: 'job-diag-1',
+        job_kind: 'professional_diagnosis',
+        subject_type: 'professional_diagnostic',
+        subject_id: 'diag-pro-1',
+        request_fingerprint: 'fp-req-diag-1',
+        status: done ? 'succeeded' : 'running',
+        retry_of_job_id: null,
+        progress: done ? { phase: 'finalize' } : { phase: 'variogram', completed_bins: 4, total_bins: 24 },
+        error: null,
+        created_at: T,
+        updated_at: T,
+        started_at: T,
+        finished_at: done ? T : null,
+      })
+    }
+    if (path === '/professional-diagnostics/diag-pro-1' && method === 'GET') {
+      return json(route, {
+        id: 'diag-pro-1',
+        dataset_version_id: 'ds-e2e',
+        status: 'succeeded',
+        fingerprint: 'fp-diag-pro-1',
+        config: {
+          variogram: {
+            lag_count: 12,
+            min_pairs_per_bin: 30,
+            max_pairs: 50000,
+            directions: [
+              { dimension: '2d', azimuth_deg: 0, azimuth_tolerance_deg: 15 },
+              { dimension: '2d', azimuth_deg: 90, azimuth_tolerance_deg: 15 },
+            ],
+          },
+        },
+        manifest: PRO_DIAGNOSIS_MANIFEST,
+        error: null,
+        created_at: T,
+        updated_at: T,
+        finished_at: T,
+      })
+    }
+    if (path === '/professional-diagnostics/diag-pro-1/variogram' && method === 'GET') {
+      return json(route, {
+        diagnosis_id: 'diag-pro-1',
+        omnidirectional: { total: PRO_OMNI_BINS.length, returned: PRO_OMNI_BINS.length, decimate: 1, rows: PRO_OMNI_BINS },
+        directional: { total: PRO_DIRECTIONAL_ROWS.length, returned: PRO_DIRECTIONAL_ROWS.length, decimate: 1, rows: PRO_DIRECTIONAL_ROWS },
+        fitted_models: PRO_FITTED_MODELS,
+        anisotropy_candidates: PRO_SUGGESTION,
+        sampling: { total_pair_count: 20100, used_pair_count: 20100, sampling_rate: 1.0, sampled: false, seed: 42 },
+        downloads: {
+          omnidirectional: '/api/professional-artifacts/art-omni/download',
+          directional: '/api/professional-artifacts/art-directional/download',
+        },
+      })
+    }
+    if (path === '/professional-diagnostics/diag-pro-1/confirm' && method === 'POST') {
+      const body = route.request().postDataJSON() as Record<string, unknown>
+      return json(route, {
+        id: 'conf-pro-1',
+        diagnostic_id: 'diag-pro-1',
+        fingerprint: 'fp-conf-pro-1',
+        note: body.note,
+        config: { ...body, parameter_origin: 'manual_confirmed', prior: 'user_prior' },
+        created_at: T,
+      }, 201)
+    }
+    if (path === '/experiments/exp-pro' && method === 'GET') {
+      return json(route, {
+        id: 'exp-pro',
+        case_id: 'case-e2e',
+        name: '专业 Kriging 实验',
+        params: {
+          case_id: 'case-e2e',
+          name: '专业 Kriging 实验',
+          algorithm: 'ordinary_kriging',
+          dataset_version_id: 'ds-e2e',
+          search_mode: 'grid',
+          parameters: { variogram_model: ['spherical'], neighbor_count: [16, 24] },
+          validation: { method: 'spatial_kfold', folds: 5, seed: 20260723, holdout_fraction: 0.2 },
+          grid: null,
+        },
+        created_at: T,
+        updated_at: T,
+      })
+    }
+    if (path === '/experiments/exp-pro/runs' && method === 'POST') {
+      return json(route, {
+        id: 'run-pro',
+        experiment_id: 'exp-pro',
+        status: 'queued',
+        error_code: null,
+        metrics: { current_candidate: 1, completed: 0, total: 2, failed: 0 },
+        retry_of_run_id: null,
+        created_at: T,
+        updated_at: T,
+        started_at: null,
+        finished_at: null,
+      }, 201)
+    }
+    if (path === '/runs/run-pro' && method === 'GET') {
+      state.runPolls += 1
+      const done = state.runPolls > 1
+      return json(route, {
+        id: 'run-pro',
+        experiment_id: 'exp-pro',
+        status: done ? 'succeeded' : 'running',
+        error_code: null,
+        metrics: { current_candidate: done ? null : 2, completed: done ? 2 : 1, total: 2, failed: 0 },
+        retry_of_run_id: null,
+        created_at: T,
+        updated_at: T,
+        started_at: T,
+        finished_at: done ? T : null,
+      })
+    }
+    if (path === '/experiments/exp-pro/candidates' && method === 'GET') {
+      return json(route, {
+        experiment_id: 'exp-pro',
+        public_metrics: { common_valid_count: 128 },
+        latest_run: {
+          id: 'run-pro',
+          experiment_id: 'exp-pro',
+          status: 'succeeded',
+          error_code: null,
+          metrics: { current_candidate: null, completed: 2, total: 2, failed: 0 },
+          retry_of_run_id: null,
+          created_at: T,
+          updated_at: T,
+          started_at: T,
+          finished_at: T,
+        },
+        candidates: [
+          {
+            id: 'cand-pro-1',
+            fingerprint: 'fp-pro-1',
+            status: 'succeeded',
+            parameters: { variogram_model: 'spherical', neighbor_count: 16 },
+            metrics: { total_count: 128, common_valid_count: 128, candidate_valid_count: 128, candidate_nodata_count: 0, coverage: 1.0, mae: 0.92, rmse: 1.21, r2: 0.93, bias: 0.04 },
+            error: null,
+          },
+          {
+            id: 'cand-pro-2',
+            fingerprint: 'fp-pro-2',
+            status: 'succeeded',
+            parameters: { variogram_model: 'spherical', neighbor_count: 24 },
+            metrics: { total_count: 128, common_valid_count: 128, candidate_valid_count: 128, candidate_nodata_count: 0, coverage: 1.0, mae: 1.0, rmse: 1.33, r2: 0.91, bias: 0.05 },
+            error: null,
+          },
+        ],
+      })
+    }
+    if (path === '/results/cand-pro-1' && method === 'GET') {
+      return json(route, {
+        result_id: 'cand-pro-1',
+        run_id: 'run-pro',
+        experiment_id: 'exp-pro',
+        dataset_version_id: 'ds-e2e',
+        algorithm: 'ordinary_kriging',
+        parameters: { variogram_model: 'spherical', neighbor_count: 16 },
+        dimension: '2d',
+        shape: [11, 11],
+        cell_count: 121,
+        bounds: [[0, 100], [0, 100]],
+        resolution: [10, 10],
+        value_range: [90, 130],
+        nodata_count: 0,
+        grid_sha256: PRO_SHA,
+        source_sha256: SHA,
+        standardized_sha256: SHA,
+        fingerprint: 'fp-pro-1',
+        validation: { folds: 5 },
+        created_at: T,
+      })
+    }
+    if (path === '/results/cand-pro-1/preview' && method === 'GET') {
+      return json(route, PRO_PREVIEW)
+    }
+    if (path === '/results/cand-pro-1/slices' && method === 'GET') {
+      return json(route, {
+        result_id: 'cand-pro-1',
+        fixed_axis: 'z',
+        fixed_coordinate: 0,
+        axes_names: ['x', 'y'],
+        axes: [
+          [0, 10, 20],
+          [0, 10, 20],
+        ],
+        matrix: [
+          [95, 101, 108],
+          [99, null, 112],
+        ],
+        nodata_mask: [
+          [false, false, false],
+          [false, true, false],
+        ],
+        value_range: [95, 112],
+      })
+    }
+    if (path === '/results/cand-pro-1/professional' && method === 'GET') {
+      return json(route, {
+        result_id: 'cand-pro-1',
+        available: true,
+        algorithm: 'ordinary_kriging',
+        confirmation_id: 'conf-pro-1',
+        capabilities: PRO_CAPABILITIES,
+        parameter_provenance: {
+          validation: { origin: 'legacy_auto_fold_fit', scope: 'training_fold', evidence: 'fold_assignments.parquet' },
+          final: { origin: 'final_full_data_fit', scope: 'full_data', variogram: { model: 'spherical', nugget: 0.05, sill: 1.2, range: 42.0 } },
+        },
+        manifest: {
+          version: 1,
+          fingerprint: 'fp-pro-1',
+          artifacts: {
+            fold_assignments: { file: 'fold_assignments.parquet', sha256: PRO_SHA, bytes: 2048 },
+            out_of_fold_predictions: { file: 'out_of_fold_predictions.parquet', sha256: PRO_SHA, bytes: 4096 },
+            prediction_diagnostics: { file: 'prediction_diagnostics.json', sha256: PRO_SHA, bytes: 1024 },
+          },
+          created_at: T,
+        },
+      })
+    }
+    if (path === '/results/cand-pro-1/folds' && method === 'GET') {
+      return json(route, PRO_FOLDS)
+    }
+    if (path === '/results/cand-pro-1/residuals' && method === 'GET') {
+      return json(route, {
+        result_id: 'cand-pro-1',
+        total: PRO_RESIDUAL_ROWS.length,
+        returned: PRO_RESIDUAL_ROWS.length,
+        decimate: 1,
+        source_row: PRO_RESIDUAL_ROWS.map((r) => r.source_row),
+        fold_index: PRO_RESIDUAL_ROWS.map((r) => r.fold_index),
+        x: PRO_RESIDUAL_ROWS.map((r) => r.x),
+        y: PRO_RESIDUAL_ROWS.map((r) => r.y),
+        z: PRO_RESIDUAL_ROWS.map(() => null),
+        observed: PRO_RESIDUAL_ROWS.map((r) => r.observed),
+        predicted: PRO_RESIDUAL_ROWS.map((r) => r.predicted),
+        residual: PRO_RESIDUAL_ROWS.map((r) => r.residual),
+        absolute_error: PRO_RESIDUAL_ROWS.map((r) => Math.abs(r.residual)),
+        squared_error: PRO_RESIDUAL_ROWS.map((r) => r.residual * r.residual),
+        is_nodata: PRO_RESIDUAL_ROWS.map(() => false),
+        download_url: '/api/professional-artifacts/art-oof/download',
+      })
+    }
+    if (path === '/results/cand-pro-1/uncertainty/empirical_error' && method === 'GET') {
+      return json(route, {
+        ...PRO_PREVIEW,
+        layer: 'empirical_error',
+        values: PRO_PREVIEW.values.map((v) => 0.5 + ((v - 90) % 20) / 10),
+        value_range: [0.5, 2.4],
+      })
+    }
+    if (path === '/results/cand-pro-1/uncertainty/kriging_std' && method === 'GET') {
+      return json(route, {
+        ...PRO_PREVIEW,
+        layer: 'kriging_std',
+        values: PRO_PREVIEW.values.map((v) => 0.3 + ((v - 90) % 9) / 10),
+        value_range: [0.3, 1.1],
+      })
+    }
+    if (path === '/results/cand-pro-1/anomaly-extractions' && method === 'POST') {
+      return json(
+        route,
+        { extraction_id: 'ext-pro-1', job_id: 'job-ext-1', status: 'queued', reused: false },
+        202,
+      )
+    }
+    if (path === '/analysis-jobs/job-ext-1' && method === 'GET') {
+      state.extractionJobPolls += 1
+      const done = state.extractionJobPolls > 1
+      return json(route, {
+        id: 'job-ext-1',
+        job_kind: 'anomaly_extraction',
+        subject_type: 'anomaly_extraction',
+        subject_id: 'ext-pro-1',
+        request_fingerprint: 'fp-req-ext-1',
+        status: done ? 'succeeded' : 'running',
+        retry_of_job_id: null,
+        progress: {},
+        error: null,
+        created_at: T,
+        updated_at: T,
+        started_at: T,
+        finished_at: done ? T : null,
+      })
+    }
+    if (path === '/anomaly-extractions/ext-pro-1' && method === 'GET') {
+      return json(route, {
+        id: 'ext-pro-1',
+        candidate_result_id: 'cand-pro-1',
+        status: 'succeeded',
+        fingerprint: 'fp-ext-pro-1',
+        config: { direction: 'high', threshold: 100, connectivity_rule: 'face_2d4_3d6_v1' },
+        manifest: {
+          version: 1,
+          fingerprint: 'fp-ext-pro-1',
+          artifacts: {
+            components: { file: 'components.csv', sha256: PRO_SHA, bytes: 256 },
+            summary: { file: 'summary.json', sha256: PRO_SHA, bytes: 512 },
+            mask: { file: 'mask.npz', sha256: PRO_SHA, bytes: 1024 },
+          },
+          created_at: T,
+        },
+        error: null,
+        components: {
+          total: 2,
+          returned: 2,
+          rows: [
+            {
+              component_id: 1,
+              support_node_count: 6,
+              support_measure: 540,
+              support_unit: 'area_coordinate_unit2',
+              bounds: [[60, 100], [60, 100]],
+              centroid: [82, 84],
+              value_min: 121,
+              value_max: 130,
+              value_mean: 126.4,
+              touches_grid_boundary: true,
+            },
+            {
+              component_id: 2,
+              support_node_count: 3,
+              support_measure: 270,
+              support_unit: 'area_coordinate_unit2',
+              bounds: [[0, 20], [0, 20]],
+              centroid: [10, 12],
+              value_min: 118,
+              value_max: 124,
+              value_mean: 121.1,
+              touches_grid_boundary: true,
+            },
+          ],
+        },
+        created_at: T,
+      })
+    }
+    if (path === '/professional-comparisons' && method === 'POST') {
+      const body = route.request().postDataJSON() as { first_result_id: string; second_result_id: string }
+      return json(route, {
+        first_result_id: body.first_result_id,
+        second_result_id: body.second_result_id,
+        compatible: true,
+        mismatches: [],
+        common_valid_count: 128,
+        metric_deltas: { rmse: -0.12, mae: -0.08, r2: 0.02, bias: -0.01 },
+        grid_difference_available: true,
+        grid_difference: { common_valid_count: 121, mean: 0.42, max_abs: 2.31 },
+        comparison_fingerprint: 'fp-cmp-pro-1',
       }, 201)
     }
     // ---------------------------------------------------------------- v0.5 微震

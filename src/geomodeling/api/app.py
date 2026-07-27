@@ -17,6 +17,9 @@ Integration contract (Task 10):
   swallow them;
 - ``GET /api/cases`` merges the immutable legacy cards with persisted
   upload cases (the legacy adapter never writes to SQLite);
+- the v0.6 ``professional`` router (Task 17) is registered after the
+  microseismic router and before the frontend static mount — its exact
+  prefixes never shadow legacy or microseismic routes;
 - all route errors share the v0.4 envelope
   ``{"error": {"code", "message", "details"}}`` and never leak local paths.
 """
@@ -41,7 +44,16 @@ from geomodeling.api.deps import (
     get_iserver_client,
     get_settings,
 )
-from geomodeling.api.routes import cases, datasets, demo, experiments, microseismic, results, runs
+from geomodeling.api.routes import (
+    cases,
+    datasets,
+    demo,
+    experiments,
+    microseismic,
+    professional,
+    results,
+    runs,
+)
 from geomodeling.platform import PlatformRuntime
 from geomodeling.platform.errors import (
     REDACTED_PATH,
@@ -212,6 +224,8 @@ def create_app() -> FastAPI:
     app.include_router(runs.router)
     app.include_router(results.router)
     app.include_router(microseismic.router)
+    # v0.6 专业分析路由：精确前缀，不遮蔽 legacy 与微震路由；前端挂载之前注册
+    app.include_router(professional.router)
 
     # -------------------------------------------------------- frontend
     settings = get_settings()

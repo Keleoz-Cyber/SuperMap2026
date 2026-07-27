@@ -54,7 +54,12 @@ from geomodeling.platform.schemas import (
     GridSpec,
     SpatialValidationSpec,
 )
-from geomodeling.platform.tables import DatasetVersion, RunStatus
+from geomodeling.platform.tables import (
+    CandidateResult,
+    DatasetVersion,
+    FormalSelection,
+    RunStatus,
+)
 
 UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 
@@ -150,7 +155,29 @@ def create_succeeded_candidate(runtime: PlatformRuntime, case_id: str) -> str:
     run_id = create_run(runtime, experiment_id)
     drive_run_to(runtime, run_id, RunStatus.SUCCEEDED.value)
     with runtime.session() as session:
-        return CandidateRepository(session).create(run_id, metrics={"rmse": 0.5}).id
+        candidate_id = CandidateRepository(session).create(run_id, metrics={"rmse": 0.5}).id
+    # 成功 run 产出的候选携带 succeeded 状态（与 runner 落库行为一致）：
+    # CandidateRepository.create 只登记列默认 queued，这里补齐终态。
+    set_candidate_status(runtime, candidate_id, RunStatus.SUCCEEDED.value)
+    return candidate_id
+
+
+def set_candidate_status(runtime: PlatformRuntime, candidate_id: str, status: str) -> None:
+    """直写候选状态（手工构造场景；生产路径只有 runner 会迁移候选状态）。"""
+
+    with runtime.session() as session:
+        row = session.get(CandidateResult, candidate_id)
+        row.status = status
+        session.commit()
+
+
+def formal_selection_count(runtime: PlatformRuntime, candidate_id: str) -> int:
+    with runtime.session() as session:
+        return (
+            session.query(FormalSelection)
+            .filter(FormalSelection.candidate_result_id == candidate_id)
+            .count()
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -678,6 +705,62 @@ class TestFormalSelection:
                     case_id, FormalSelectionRequest(candidate_result_id=candidate_id, note="x")
                 )
         assert excinfo.value.code == CANDIDATE_NOT_SUCCEEDED
+
+    def test_failed_candidate_of_succeeded_run_cannot_become_formal(self, runtime):
+        """run succeeded 但候选 failed → 409，且不写 FormalSelection。"""
+
+        case_id = create_case(runtime)
+        candidate_id = create_succeeded_candidate(runtime, case_id)
+        set_candidate_status(runtime, candidate_id, "failed")
+        with runtime.session() as session:
+            with pytest.raises(PlatformError) as excinfo:
+                FormalSelectionRepository(session).select(
+                    case_id,
+                    FormalSelectionRequest(candidate_result_id=candidate_id, note="尝试"),
+                )
+        assert excinfo.value.code == CANDIDATE_NOT_SUCCEEDED
+        assert excinfo.value.http_status == 409
+        assert excinfo.value.details["candidate_status"] == "failed"
+        assert formal_selection_count(runtime, candidate_id) == 0
+
+    @pytest.mark.parametrize("status", ["queued", "pending", "running"])
+    def test_unfinished_candidate_of_succeeded_run_cannot_become_formal(self, runtime, status):
+        """run succeeded 但候选未到 succeeded（queued/pending/running）→ 409 不写。"""
+
+        case_id = create_case(runtime)
+        candidate_id = create_succeeded_candidate(runtime, case_id)
+        set_candidate_status(runtime, candidate_id, status)
+        with runtime.session() as session:
+            with pytest.raises(PlatformError) as excinfo:
+                FormalSelectionRepository(session).select(
+                    case_id,
+                    FormalSelectionRequest(candidate_result_id=candidate_id, note="尝试"),
+                )
+        assert excinfo.value.code == CANDIDATE_NOT_SUCCEEDED
+        assert excinfo.value.http_status == 409
+        assert excinfo.value.details["candidate_status"] == status
+        assert formal_selection_count(runtime, candidate_id) == 0
+
+    def test_succeeded_candidate_of_failed_run_cannot_become_formal(self, runtime):
+        """手工构造：候选 succeeded 但 run failed → 409（run 状态兜底），不写。"""
+
+        case_id = create_case(runtime)
+        experiment_id = create_experiment(runtime, case_id)
+        run_id = create_run(runtime, experiment_id)
+        drive_run_to(runtime, run_id, "failed")
+        with runtime.session() as session:
+            candidate_id = CandidateRepository(session).create(run_id, metrics={}).id
+        set_candidate_status(runtime, candidate_id, "succeeded")
+        with runtime.session() as session:
+            with pytest.raises(PlatformError) as excinfo:
+                FormalSelectionRepository(session).select(
+                    case_id,
+                    FormalSelectionRequest(candidate_result_id=candidate_id, note="尝试"),
+                )
+        assert excinfo.value.code == CANDIDATE_NOT_SUCCEEDED
+        assert excinfo.value.http_status == 409
+        assert excinfo.value.details["run_status"] == "failed"
+        assert formal_selection_count(runtime, candidate_id) == 0
 
     def test_formal_selection_enforces_case_ownership(self, runtime):
         owner = create_case(runtime, name="owner")

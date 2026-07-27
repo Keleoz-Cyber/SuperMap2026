@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import threading
 from pathlib import Path
 
@@ -170,11 +171,13 @@ def test_manual_idw_run_succeeds_with_predictions_and_metrics(tmp_path):
     assert metrics["common_valid_count"] > 0
     assert metrics["candidate_valid_count"] + metrics["candidate_nodata_count"] == metrics["total_count"]
     assert metrics["runtime_seconds"] >= 0
-    # 通用数据集无 provenance 声明：指标键集合逐位不变，不出现 group_diagnostics
+    # 通用数据集无 provenance 声明：不出现 group_diagnostics；Task 9 起
+    # 候选指标固定引用折分与折外预测两个工件的 SHA-256
     assert set(metrics) == {
         "rmse", "mae", "r2", "bias", "coverage",
         "common_valid_count", "candidate_valid_count", "candidate_nodata_count",
         "total_count", "runtime_seconds", "fold_metrics",
+        "fold_assignments_sha256", "oof_predictions_sha256",
     }
     assert Path(candidate["predictions_path"]).exists()
     predictions = pd.read_parquet(candidate["predictions_path"])
@@ -316,3 +319,390 @@ def test_kriging_manual_and_auto_both_run(tmp_path):
     candidates = load_candidates(runtime, run_id)
     assert all(c["status"] == "succeeded" for c in candidates)
     assert any(c["metrics"]["rmse"] >= 0 for c in candidates)
+
+
+def test_run_persists_fold_and_oof_artifacts(tmp_path):
+    from geomodeling.modeling.runner import execute_run
+
+    runtime = make_runtime(tmp_path)
+    _target, frame = make_standardized(runtime, "c1", "ds1")
+    experiment_id = insert_experiment(runtime, "c1", "ds1", dict(SEARCH_IDW_MANUAL))
+    run_id = insert_run(runtime, experiment_id)
+
+    outcome = execute_run(runtime, run_id, threading.Event())
+    assert outcome.status == "succeeded"
+    candidate = load_candidates(runtime, run_id)[0]
+
+    # 设计 §5.3：两个工件都在候选的 professional/ 目录下
+    professional_dir = runtime.settings.professional_result_dir(candidate["id"])
+    assert professional_dir == runtime.settings.results_dir / candidate["id"] / "professional"
+    assignments_path = professional_dir / "fold_assignments.parquet"
+    oof_path = professional_dir / "out_of_fold_predictions.parquet"
+    assert assignments_path.exists()
+    assert oof_path.exists()
+
+    # 候选 metrics 引用两工件 SHA-256
+    metrics = candidate["metrics"]
+    assert metrics["fold_assignments_sha256"] == hashlib.sha256(
+        assignments_path.read_bytes()
+    ).hexdigest()
+    assert metrics["oof_predictions_sha256"] == hashlib.sha256(
+        oof_path.read_bytes()
+    ).hexdigest()
+
+    oof = pd.read_parquet(oof_path)
+    assert list(oof.columns) == [
+        "source_row", "fold_index", "x", "y", "z", "observed",
+        "predicted", "residual", "absolute_error", "squared_error", "is_nodata",
+    ]
+    assert oof["source_row"].is_unique
+    assert set(oof["source_row"]) == set(frame["source_row"])
+    assert oof["z"].isna().all()  # 2D 数据集 z 为 null
+    assert not oof["is_nodata"].any()
+    merged = oof.merge(frame[["source_row", "value"]], on="source_row")
+    assert merged["observed"].to_numpy() == pytest.approx(merged["value"].to_numpy())
+    assert merged["residual"].to_numpy() == pytest.approx(
+        merged["predicted"].to_numpy() - merged["value"].to_numpy()
+    )
+    assert merged["absolute_error"].to_numpy() == pytest.approx(
+        np.abs(merged["residual"].to_numpy())
+    )
+    assert merged["squared_error"].to_numpy() == pytest.approx(
+        merged["residual"].to_numpy() ** 2
+    )
+
+    assignments = pd.read_parquet(assignments_path)
+    assert {"fold_index", "source_row", "group_key", "role", "leakage_detected"} <= set(
+        assignments.columns
+    )
+    assert set(assignments["role"]) == {"training", "validation"}
+    assert not assignments["leakage_detected"].any()
+    validation = assignments[assignments["role"] == "validation"]
+    assert validation.groupby("source_row").size().eq(1).all()
+    # OOF 折归属与折分分配表一致
+    assert (
+        oof.set_index("source_row")["fold_index"].sort_index().to_numpy()
+        == validation.set_index("source_row")["fold_index"].sort_index().to_numpy()
+    ).all()
+
+
+def test_fold_leakage_fails_run_before_any_candidate(tmp_path, monkeypatch):
+    import geomodeling.modeling.runner as runner_mod
+    from geomodeling.modeling.contracts import Fold
+
+    runtime = make_runtime(tmp_path)
+    make_standardized(runtime, "c1", "ds1")
+    experiment_id = insert_experiment(runtime, "c1", "ds1", dict(SEARCH_IDW_MANUAL))
+    run_id = insert_run(runtime, experiment_id)
+
+    n = 36
+
+    def leaking_splits(points, dimension, spec):
+        half = len(points) // 2
+        return [
+            Fold(
+                index=0,
+                training_indices=np.arange(0, half + 2),  # 与验证重叠两行 → 泄漏
+                validation_indices=np.arange(half, n),
+            ),
+            Fold(
+                index=1,
+                training_indices=np.arange(half, n),
+                validation_indices=np.arange(0, half),
+            ),
+        ]
+
+    monkeypatch.setattr(runner_mod, "build_spatial_splits", leaking_splits)
+    outcome = runner_mod.execute_run(runtime, run_id, threading.Event())
+    assert outcome.status == "failed"
+    # 泄漏在候选行持久化之前判失败：没有任何候选记录
+    assert load_candidates(runtime, run_id) == []
+    with runtime.session() as session:
+        run = session.get(tables.Run, run_id)
+        assert run.status == "failed"
+        assert run.error_code == "FOLD_LEAKAGE_DETECTED"
+
+
+def test_oof_prediction_mismatch_fails_run_not_candidate(tmp_path, monkeypatch):
+    import geomodeling.modeling.runner as runner_mod
+    from geomodeling.platform.errors import PlatformError
+
+    runtime = make_runtime(tmp_path)
+    make_standardized(runtime, "c1", "ds1")
+    experiment_id = insert_experiment(runtime, "c1", "ds1", dict(SEARCH_IDW_MANUAL))
+    run_id = insert_run(runtime, experiment_id)
+
+    def broken_oof(frame, folds, predictions, *, dimension):
+        raise PlatformError(
+            "OOF_PREDICTION_MISMATCH", "候选预测 source_row 集合与折分计划的验证样本不一致"
+        )
+
+    monkeypatch.setattr(runner_mod, "build_oof_predictions", broken_oof)
+    outcome = runner_mod.execute_run(runtime, run_id, threading.Event())
+    assert outcome.status == "failed"
+    assert load_candidates(runtime, run_id) == []
+    with runtime.session() as session:
+        run = session.get(tables.Run, run_id)
+        assert run.status == "failed"
+        assert run.error_code == "OOF_PREDICTION_MISMATCH"
+
+
+# ---------------------------------------------------------------------------
+# Task 14：专业候选证据绑定（fold/OOF + 实际预测诊断 + 工件行）
+# ---------------------------------------------------------------------------
+
+KRIGING_AUTO_CONFIRMATION_CONFIG = {
+    "model": "spherical",
+    "parameter_strategy": "automatic_candidate",
+    "parameter_origin": "automatic_candidate",
+    "fitted_models_sha256": "e" * 64,
+    "anisotropy": {"keep_isotropic": True},
+}
+
+NEIGHBORHOOD_WIDE = {"radii": [500.0, 500.0], "min_neighbors": 2, "max_neighbors": 8}
+
+
+def insert_professional_confirmation(
+    runtime: PlatformRuntime,
+    dataset_id: str,
+    *,
+    diagnosis_id: str = "diag-1",
+    confirmation_id: str = "conf-1",
+    config: dict | None = None,
+    fingerprint: str = "f" * 64,
+) -> None:
+    with runtime.session() as session:
+        session.add(
+            tables.ProfessionalDiagnostic(
+                id=diagnosis_id,
+                dataset_version_id=dataset_id,
+                status="succeeded",
+                config_json="{}",
+                fingerprint="a" * 64,
+                manifest_json="{}",
+            )
+        )
+        session.commit()
+        session.add(
+            tables.ProfessionalConfirmation(
+                id=confirmation_id,
+                diagnostic_id=diagnosis_id,
+                config_json=tables.dumps_canonical(config or {}),
+                fingerprint=fingerprint,
+                note="确认",
+            )
+        )
+        session.commit()
+
+
+def resolve_context(runtime: PlatformRuntime, dataset_id: str, **request_kwargs) -> dict:
+    """经服务层解析专业上下文（创建校验与参数落地的真实路径）。"""
+
+    from geomodeling.platform.experiments import resolve_professional_context
+    from geomodeling.platform.repositories import DatasetRepository
+    from geomodeling.platform.schemas import ExperimentCreateRequest
+
+    algorithm = request_kwargs.pop("algorithm")
+    request = ExperimentCreateRequest(
+        case_id="c1",
+        name="专业实验",
+        algorithm=algorithm,
+        dataset_version_id=dataset_id,
+        **request_kwargs,
+    )
+    with runtime.session() as session:
+        dataset = DatasetRepository(session).get(dataset_id)
+        return resolve_professional_context(session, request, dataset)
+
+
+def attach_professional(runtime: PlatformRuntime, experiment_id: str, professional: dict) -> None:
+    """把服务层解析的专业上下文写入实验参数（模拟创建期的落库结果）。"""
+
+    with runtime.session() as session:
+        row = session.get(tables.Experiment, experiment_id)
+        params = tables.loads_canonical(row.params_json)
+        params["professional"] = professional
+        row.params_json = tables.dumps_canonical(params)
+        session.commit()
+
+
+def test_professional_kriging_run_persists_result_artifacts(tmp_path):
+    import json
+
+    from geomodeling.modeling.runner import execute_run
+    from geomodeling.platform.professional import verify_manifest
+    from geomodeling.platform.repositories import ProfessionalResultArtifactsRepository
+
+    runtime = make_runtime(tmp_path)
+    make_standardized(runtime, "c1", "ds1")
+    # 先建案例+数据集+实验（FK 前提），再挂确认并解析专业上下文
+    search = dict(SEARCH_IDW_MANUAL)
+    search["algorithm"] = "ordinary_kriging"
+    search["parameters"] = {"neighbor_count": 8}
+    experiment_id = insert_experiment(runtime, "c1", "ds1", search)
+    insert_professional_confirmation(runtime, "ds1", config=KRIGING_AUTO_CONFIRMATION_CONFIG)
+    professional = resolve_context(
+        runtime,
+        "ds1",
+        algorithm="ordinary_kriging",
+        parameters={"neighbor_count": 8},
+        professional_confirmation_id="conf-1",
+        neighborhood=NEIGHBORHOOD_WIDE,
+        empirical_uncertainty={"min_neighbors": 2, "max_neighbors": 8},
+    )
+    attach_professional(runtime, experiment_id, professional)
+    run_id = insert_run(runtime, experiment_id)
+
+    outcome = execute_run(runtime, run_id, threading.Event())
+    assert outcome.status == "succeeded"
+    candidate = load_candidates(runtime, run_id)[0]
+    assert candidate["status"] == "succeeded"
+
+    # 参数落地：确认模型/策略、规范各向同性变换与搜索邻域注入候选参数
+    params = candidate["params"]
+    assert params["variogram_model"] == "spherical"
+    assert params["variogram_mode"] == "auto"
+    assert params["anisotropy"]["dimension"] == "2d"
+    assert params["anisotropy"]["major_scale"] == 1.0
+    assert params["neighborhood"]["radii"] == [500.0, 500.0]
+
+    # 唯一专业工件行：确认引用、能力矩阵与声明文件哈希全部校验通过
+    with runtime.session() as session:
+        artifacts = ProfessionalResultArtifactsRepository(session).get_for_candidate(
+            candidate["id"]
+        )
+    assert artifacts.status == "succeeded"
+    assert artifacts.confirmation_id == "conf-1"
+    assert artifacts.capabilities["native_kriging_std"] == "supported"
+    assert artifacts.capabilities["empirical_variogram"] == "supported"
+    assert verify_manifest(artifacts.manifest)
+    assert set(artifacts.manifest["artifacts"]) >= {
+        "fold_assignments",
+        "out_of_fold_predictions",
+        "prediction_diagnostics",
+    }
+    assert artifacts.manifest["config"]["empirical_uncertainty"]["min_neighbors"] == 2
+
+    # 实际预测诊断随候选落盘：逐折聚合 + 同一变换指纹
+    diagnostics_path = (
+        runtime.settings.professional_result_dir(candidate["id"])
+        / "prediction_diagnostics.json"
+    )
+    assert diagnostics_path.exists()
+    diagnostics = json.loads(diagnostics_path.read_text(encoding="utf-8"))
+    assert diagnostics["candidate_fingerprint"] == candidate["fingerprint"]
+    assert len(diagnostics["fold_diagnostics"]) == 3
+    first = diagnostics["fold_diagnostics"][0]
+    assert first["diagnostics"]["transform_fingerprint"]
+
+
+def test_professional_idw_run_persists_artifacts_without_confirmation(tmp_path):
+    import json
+
+    from geomodeling.modeling.runner import execute_run
+    from geomodeling.platform.professional import verify_manifest
+    from geomodeling.platform.repositories import ProfessionalResultArtifactsRepository
+
+    runtime = make_runtime(tmp_path)
+    make_standardized(runtime, "c1", "ds1")
+    experiment_id = insert_experiment(runtime, "c1", "ds1", dict(SEARCH_IDW_MANUAL))
+    professional = resolve_context(
+        runtime,
+        "ds1",
+        algorithm="idw",
+        parameters={"power": 2.0, "neighbor_count": 8},
+        neighborhood=NEIGHBORHOOD_WIDE,
+        empirical_uncertainty={"min_neighbors": 2, "max_neighbors": 8},
+    )
+    attach_professional(runtime, experiment_id, professional)
+    run_id = insert_run(runtime, experiment_id)
+
+    outcome = execute_run(runtime, run_id, threading.Event())
+    assert outcome.status == "succeeded"
+    candidate = load_candidates(runtime, run_id)[0]
+    assert candidate["status"] == "succeeded"
+    # IDW 只注入搜索邻域，绝不获得 Kriging 各向异性/变异函数键
+    assert candidate["params"]["neighborhood"]["radii"] == [500.0, 500.0]
+    assert "anisotropy" not in candidate["params"]
+
+    with runtime.session() as session:
+        artifacts = ProfessionalResultArtifactsRepository(session).get_for_candidate(
+            candidate["id"]
+        )
+    assert artifacts.status == "succeeded"
+    assert artifacts.confirmation_id is None
+    # 能力矩阵：IDW 原生 Kriging 标准差为类型化「不适用」，z_scale 支持
+    assert artifacts.capabilities["native_kriging_std"] == "not_applicable"
+    assert artifacts.capabilities["z_scale_weight_distance"] == "supported"
+    assert verify_manifest(artifacts.manifest)
+
+    diagnostics_path = (
+        runtime.settings.professional_result_dir(candidate["id"])
+        / "prediction_diagnostics.json"
+    )
+    diagnostics = json.loads(diagnostics_path.read_text(encoding="utf-8"))
+    assert len(diagnostics["fold_diagnostics"]) == 3
+
+
+def test_failed_professional_candidate_never_writes_success_row(tmp_path):
+    from geomodeling.modeling.runner import execute_run
+    from geomodeling.platform.errors import PlatformError
+    from geomodeling.platform.repositories import ProfessionalResultArtifactsRepository
+
+    runtime = make_runtime(tmp_path)
+    make_standardized(runtime, "c1", "ds1")
+    parameters = [
+        {"power": 2.0, "neighbor_count": 8},
+        {"power": -1.0, "neighbor_count": 8},  # 非法参数 → 该候选失败
+    ]
+    search = dict(SEARCH_IDW_MANUAL)
+    search["search_mode"] = "grid"
+    search["parameters"] = parameters
+    experiment_id = insert_experiment(runtime, "c1", "ds1", search)
+    professional = resolve_context(
+        runtime,
+        "ds1",
+        algorithm="idw",
+        search_mode="grid",
+        parameters=parameters,
+        neighborhood=NEIGHBORHOOD_WIDE,
+    )
+    attach_professional(runtime, experiment_id, professional)
+    run_id = insert_run(runtime, experiment_id)
+
+    outcome = execute_run(runtime, run_id, threading.Event())
+    assert outcome.status == "succeeded"  # 单候选失败不拖垮整个 run
+    candidates = load_candidates(runtime, run_id)
+    failed = next(c for c in candidates if c["status"] == "failed")
+    succeeded = next(c for c in candidates if c["status"] == "succeeded")
+    # 失败候选保留结构化错误，绝不写专业成功行
+    assert failed["error"]["code"]
+    with runtime.session() as session:
+        repo = ProfessionalResultArtifactsRepository(session)
+        with pytest.raises(PlatformError) as excinfo:
+            repo.get_for_candidate(failed["id"])
+        assert excinfo.value.code == "PROFESSIONAL_ARTIFACTS_NOT_FOUND"
+        # 成功候选的专业工件行正常落库
+        assert repo.get_for_candidate(succeeded["id"]).status == "succeeded"
+    professional_dir = runtime.settings.professional_result_dir(failed["id"])
+    assert not professional_dir.exists()
+
+
+def test_legacy_run_has_no_professional_artifacts_row(tmp_path):
+    from geomodeling.modeling.runner import execute_run
+    from geomodeling.platform.errors import PlatformError
+    from geomodeling.platform.repositories import ProfessionalResultArtifactsRepository
+
+    runtime = make_runtime(tmp_path)
+    make_standardized(runtime, "c1", "ds1")
+    experiment_id = insert_experiment(runtime, "c1", "ds1", dict(SEARCH_IDW_MANUAL))
+    run_id = insert_run(runtime, experiment_id)
+
+    outcome = execute_run(runtime, run_id, threading.Event())
+    assert outcome.status == "succeeded"
+    candidate = load_candidates(runtime, run_id)[0]
+    # 旧候选不补算专业工件（§4.2）
+    with runtime.session() as session:
+        with pytest.raises(PlatformError) as excinfo:
+            ProfessionalResultArtifactsRepository(session).get_for_candidate(candidate["id"])
+    assert excinfo.value.code == "PROFESSIONAL_ARTIFACTS_NOT_FOUND"

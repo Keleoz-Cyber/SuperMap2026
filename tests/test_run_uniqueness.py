@@ -7,6 +7,7 @@ import sqlite3
 import pytest
 
 from geomodeling.platform import PlatformRuntime, tables
+from geomodeling.platform import db as platform_db
 from geomodeling.platform.errors import PlatformError
 from geomodeling.platform.repositories import RunRepository
 from test_cancel_semantics import _make_experiment
@@ -101,8 +102,8 @@ def test_v3_to_v4_migration_adds_index_and_export_column(tmp_path):
     conn.close()
 
     runtime = PlatformRuntime(tmp_path / "runtime")
-    runtime.initialize()  # 应触发 v3→v4 迁移而非报错
-    assert runtime.schema_version() == 4
+    runtime.initialize()  # 应触发 v3→当前版本 的逐步迁移而非报错
+    assert runtime.schema_version() == platform_db.SCHEMA_VERSION
 
     raw = sqlite3.connect(db_path)
     index_names = {row[1] for row in raw.execute("PRAGMA index_list('runs')")}
@@ -138,7 +139,7 @@ def test_v3_migration_flips_historical_inflight_before_index(tmp_path):
 
     runtime = PlatformRuntime(tmp_path / "runtime")
     runtime.initialize()  # 迁移不得因既有双在途而失败
-    assert runtime.schema_version() == 4
+    assert runtime.schema_version() == platform_db.SCHEMA_VERSION
 
     raw = sqlite3.connect(db_path)
     rows = dict(raw.execute("SELECT id, status FROM runs").fetchall())

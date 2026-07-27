@@ -1,6 +1,6 @@
 # Acceptance Notes
 
-适用对象：当前代码基线（v0.1.0 电阻率基线 + 微震 v0.2a 审计底座 + v0.3.1 iServer 纵向闭环 + v0.4 通用建模平台 + v0.5 微震第二案例建模闭环，后者在 `feat/v0.5-microseismic-second-case` 分支）。
+适用对象：当前代码基线（v0.1.0 电阻率基线 + 微震 v0.2a 审计底座 + v0.3.1 iServer 纵向闭环 + v0.4 通用建模平台 + v0.5 微震第二案例建模闭环（已随 v0.5.0 发布）+ v0.6 专业建模增强（`feat/v0.6-professional-modeling` 分支））。
 
 ## 验收命令
 
@@ -15,15 +15,20 @@ npm --prefix web run type-check
 npm --prefix web run build
 npm --prefix web run test:e2e
 geomodeling demo-check --json
-npm --prefix web run test:e2e:live   # 需先设置独立 GEOMODELING_DATA_DIR
+npm --prefix web run test:e2e:live   # 需先设置独立 GEOMODELING_DATA_DIR 与 GEOMODELING_MICROSEISMIC_CONFIG
 geomodeling run-all -o outputs/release_verify
 geomodeling microseismic run-audit --config config/microseismic.yaml -o outputs/microseismic_verify
 geomodeling microseismic derive --source-dir <DAT目录> -o outputs/microseismic_v05_verify   # 需真实 22 DAT
 geomodeling microseismic import-case --source-dir <DAT目录> --data-dir var/geomodeling       # 需真实 22 DAT
+geomodeling professional diagnose --data-dir var/geomodeling --dataset-id <数据版本id>
+geomodeling professional confirm --data-dir var/geomodeling --diagnosis-id <诊断id> --note "确认说明"
+geomodeling professional inspect-result --data-dir var/geomodeling --result-id <候选成果id>
+geomodeling professional extract-anomalies --data-dir var/geomodeling --result-id <候选成果id> --config-json '{"direction":"high","threshold":1.0}'
+geomodeling professional compare --data-dir var/geomodeling --first <候选A> --second <候选B>
 geomodeling verify-supermap -o outputs/release_verify
 ```
 
-当前基线（Task 14 后实测，本分支）：后端全量 `564 passed`（便携 537 / `local_data 27` 分层），前端 vitest `66 passed`，Playwright mock 冒烟 `3 passed`，Live E2E `2 passed`。测试数量只允许因真实新增测试而增加，任何减少或失败都必须调查。
+当前基线（Task 23 后实测，本分支）：后端全量 `1153 passed`（便携 1124 / `local_data 29` 分层），前端 vitest `97 passed`，Playwright mock 冒烟 `4 passed`，Live E2E `3 passed`。测试数量只允许因真实新增测试而增加，任何减少或失败都必须调查。
 
 v0.4 通用建模验收（不依赖 iServer）：
 
@@ -33,6 +38,15 @@ v0.4 通用建模验收（不依赖 iServer）：
 4. 演示数据验收：`demo/platform_demo_3d.csv` 是唯一权威样例，SHA-256 固定为 `deb9c25f…2bb3`；下载端点内容与哈希一致且不泄露本机路径。
 5. 预检验收：`geomodeling demo-check` 区分 `passed/warning/blocked`；阻断项（前端未构建、演示数据哈希不符、数据目录不可写、SQLite 失败、端口被未知占用）退出码 1；iServer/S3M/凭据缺失仅警告，退出码 0。
 6. 真实浏览器验收：启动单进程 uvicorn 后按 [v0.4 运行说明](v0.4-generic-modeling-loop.md) §1 操作，截图证据存 `docs/evidence/v0.4/`；答辩执行手册见 [v0.4.1 运行手册](v0.4.1-demo-runbook.md)。
+
+v0.6 专业建模验收（不依赖 iServer；便携测试不依赖真实数据）：
+
+1. 便携测试：`tests/test_pair_sampling.py`、`tests/test_directional_variogram.py`、`tests/test_anisotropy_*.py`、`tests/test_neighborhood_selection.py`、`tests/test_kriging_variance.py`、`tests/test_empirical_uncertainty.py`、`tests/test_anomaly_*.py`、`tests/test_professional_*.py`、`tests/test_analysis_jobs.py` 等全量通过（数学单元、合成结构、平台合同、迁移与状态机、导出 fail-closed、legacy 只读兼容）。
+2. 版本与文档合同：`python -m pytest tests/test_version_consistency.py tests/test_demo_docs.py tests/test_v06_docs.py -q`（全部版本源一致、v0.5.0 已发布事实、运行手册两层不确定性与禁止表述扫描）。
+3. CLI 真实链路：任一已通过质量门禁的数据集依次执行 `geomodeling professional diagnose`（输出 `status=succeeded` 与采样披露）→ `confirm`（不可变快照指纹）→ 运行专业实验并物化 → `inspect-result`（能力/参数来源/manifest 摘要）→ `extract-anomalies`（component 计数）→ `compare`（compatible 结论与比较指纹）；JSON 输出不含绝对路径。
+4. 前端与端到端：vitest、Mock E2E（v0.6 专业建模流程 mock 链路）、Live E2E（v0.6 真实链路：上传合成 CSV → 质量门禁 → 诊断 → 确认 → 专业 Kriging 实验 → 折分/不确定性/异常/比较 → 导出 `professional/` 证据）按上表基线通过。
+5. 浏览器真实流程：按 [v0.6 运行手册](v0.6-professional-modeling-loop.md) 执行 诊断 → 人工确认 → 专业实验 → 专业分析台 → 异常保存 → 双候选比较 → 导出（ZIP 含 `professional/` 目录，manifest 哈希一致）。
+6. 历史回归：v0.5 微震黄金哈希与 1,925/1,911 口径不变、v0.4.1 固定演示路径通过、v0.3.1 电阻率只读回归通过；iServer 离线只按现有契约警告。
 
 v0.5 微震第二案例验收（不依赖 iServer，需真实 22 DAT 完成真实回归；便携测试不依赖真实数据）：
 

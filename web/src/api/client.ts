@@ -1,12 +1,22 @@
 import type {
+  AnalysisJobRecord,
+  AnomalyExtractionAccepted,
+  AnomalyExtractionPayload,
+  AnomalyExtractionRecord,
   ApiErrorBody,
   BrowserLoadReport,
+  CandidateComparisonResult,
   CandidatesResponse,
   CaseDatasetsResponse,
   CasesResponse,
   DatasetVersionRecord,
   ExperimentCreatePayload,
   ExperimentRecord,
+  FoldEvidence,
+  ProfessionalResultEvidence,
+  ResidualEvidence,
+  UncertaintyLayerKind,
+  UncertaintyPreview,
   FieldMappingPayload,
   HealthResponse,
   InspectionResult,
@@ -19,6 +29,11 @@ import type {
   MicroseismicPointLayer,
   MicroseismicPointLayerName,
   PlatformCaseRecord,
+  ProfessionalConfirmationPayload,
+  ProfessionalConfirmationRecord,
+  ProfessionalDiagnosisAccepted,
+  ProfessionalDiagnosisRecord,
+  ProfessionalDiagnosisRequestPayload,
   PublicationRecord,
   PublishStatus,
   QualityReport,
@@ -28,6 +43,7 @@ import type {
   RhoPoints,
   RunRecord,
   SliceResponse,
+  VariogramEvidence,
   VoxelCells,
 } from './types'
 
@@ -277,4 +293,96 @@ export function fetchMicroseismicDerivationPoints(
   return getJson<MicroseismicPointLayer>(
     `/datasets/${datasetId}/derivation/points?layer=${layer}&decimate=${decimate}`,
   )
+}
+
+// ---------------------------------------------------------- v0.6 professional
+
+// 诊断/异常提取是长任务：POST 返回 202 + 任务身份（幂等成功 200，reused=true），
+// 前端只轮询任务与读取证据，绝不在浏览器计算统计结果。
+
+export function requestProfessionalDiagnosis(
+  datasetId: string,
+  payload: ProfessionalDiagnosisRequestPayload,
+): Promise<ProfessionalDiagnosisAccepted> {
+  return postJson<ProfessionalDiagnosisAccepted>(
+    `/datasets/${datasetId}/professional-diagnostics`,
+    payload,
+  )
+}
+
+export function fetchProfessionalDiagnosis(diagnosisId: string): Promise<ProfessionalDiagnosisRecord> {
+  return getJson<ProfessionalDiagnosisRecord>(`/professional-diagnostics/${diagnosisId}`)
+}
+
+export function fetchDiagnosisVariogram(diagnosisId: string, decimate = 1): Promise<VariogramEvidence> {
+  return getJson<VariogramEvidence>(
+    `/professional-diagnostics/${diagnosisId}/variogram?decimate=${decimate}`,
+  )
+}
+
+// 确认快照只新建（201）：不可变，无任何更新/编辑入口
+export function confirmProfessionalDiagnosis(
+  diagnosisId: string,
+  payload: ProfessionalConfirmationPayload,
+): Promise<ProfessionalConfirmationRecord> {
+  return postJson<ProfessionalConfirmationRecord>(
+    `/professional-diagnostics/${diagnosisId}/confirm`,
+    payload,
+  )
+}
+
+export function fetchAnalysisJob(jobId: string): Promise<AnalysisJobRecord> {
+  return getJson<AnalysisJobRecord>(`/analysis-jobs/${jobId}`)
+}
+
+// 重试产生新任务身份（retry_of_job_id 回指原任务），原记录不改写
+export function retryAnalysisJob(jobId: string): Promise<AnalysisJobRecord> {
+  return requestJson<AnalysisJobRecord>(`/analysis-jobs/${jobId}/retry`, { method: 'POST' })
+}
+
+// 成果专业证据：legacy 候选 available=false 只携带 reason，绝不伪造能力
+export function fetchProfessionalResult(resultId: string): Promise<ProfessionalResultEvidence> {
+  return getJson<ProfessionalResultEvidence>(`/results/${resultId}/professional`)
+}
+
+export function fetchResultFolds(resultId: string): Promise<FoldEvidence> {
+  return getJson<FoldEvidence>(`/results/${resultId}/folds`)
+}
+
+export function fetchResultResiduals(resultId: string, decimate = 1): Promise<ResidualEvidence> {
+  return getJson<ResidualEvidence>(`/results/${resultId}/residuals?decimate=${decimate}`)
+}
+
+// 能力不适用（IDW 请求 kriging_std）后端 409；前端按 capabilities 先验拦截，绝不伪造 0 场
+export function fetchResultUncertainty(
+  resultId: string,
+  kind: UncertaintyLayerKind,
+): Promise<UncertaintyPreview> {
+  return getJson<UncertaintyPreview>(`/results/${resultId}/uncertainty/${kind}`)
+}
+
+export function requestAnomalyExtraction(
+  resultId: string,
+  payload: AnomalyExtractionPayload,
+): Promise<AnomalyExtractionAccepted> {
+  return postJson<AnomalyExtractionAccepted>(`/results/${resultId}/anomaly-extractions`, payload)
+}
+
+export function fetchAnomalyExtraction(extractionId: string): Promise<AnomalyExtractionRecord> {
+  return getJson<AnomalyExtractionRecord>(`/anomaly-extractions/${extractionId}`)
+}
+
+// 比较结论以 comparison_fingerprint 登记（幂等）；前端不自行判断兼容
+export function createProfessionalComparison(
+  firstResultId: string,
+  secondResultId: string,
+): Promise<CandidateComparisonResult> {
+  return postJson<CandidateComparisonResult>('/professional-comparisons', {
+    first_result_id: firstResultId,
+    second_result_id: secondResultId,
+  })
+}
+
+export function fetchProfessionalComparison(fingerprint: string): Promise<CandidateComparisonResult> {
+  return getJson<CandidateComparisonResult>(`/professional-comparisons/${fingerprint}`)
 }

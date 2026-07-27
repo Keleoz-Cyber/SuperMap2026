@@ -53,6 +53,9 @@ GENERIC_METRIC_KEYS = {
     "total_count",
     "runtime_seconds",
     "fold_metrics",
+    # Task 9：候选指标固定引用折分分配与折外预测两个工件的 SHA-256
+    "fold_assignments_sha256",
+    "oof_predictions_sha256",
 }
 
 
@@ -305,7 +308,8 @@ def test_missing_provenance_declaration_leaves_generic_runs_unchanged(tmp_path):
     )
     assert outcome.status == "succeeded"
     metrics = candidates[0]["metrics"]
-    # 逐位不变：通用数据集的指标键集合与 Task 9 之前完全一致
+    # 键集合固定：通用数据集不出现 group_diagnostics，其余键与
+    # 声明 provenance 的 run 完全一致（含 Task 9 的两个工件哈希键）
     assert set(metrics) == GENERIC_METRIC_KEYS
     assert "group_diagnostics" not in metrics
 

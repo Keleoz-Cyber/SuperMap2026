@@ -37,6 +37,12 @@ EXPECTED_TABLES = {
     "formal_selections",
     "exports",
     "publications",
+    # v5: 专业建模状态表
+    "professional_diagnostics",
+    "professional_confirmations",
+    "professional_result_artifacts",
+    "anomaly_extractions",
+    "analysis_jobs",
 }
 
 

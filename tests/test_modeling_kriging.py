@@ -334,3 +334,109 @@ def test_z_scale_parameter_bounds():
             interpolator.validate_parameters({"z_scale": bad}, "3d")
     ok = interpolator.validate_parameters({"z_scale": 20.0}, "3d")
     assert ok.z_scale == 20.0
+
+
+# ---------------------------------------------------------------------------
+# v0.6 Task 3: legacy 兼容 pin —— empirical_semivariogram 重构为共享分箱核心
+# 后，12-bin 数值与 v0.5 参考输出逐位一致（参考值取自重构前实现）
+# ---------------------------------------------------------------------------
+
+
+def test_empirical_semivariogram_matches_legacy_12_bin_reference_bitwise():
+    from geomodeling.modeling.variogram import empirical_semivariogram
+
+    coords, values = plane_field_2d()
+    centers, gammas, counts = empirical_semivariogram(coords, values)
+    np.testing.assert_array_equal(
+        counts, [55, 317, 392, 325, 216, 228, 152, 100, 144, 108, 72, 36]
+    )
+    np.testing.assert_array_equal(
+        centers,
+        [
+            19.0029237516523, 57.0087712549569, 95.01461875826149,
+            133.0204662615661, 171.0263137648707, 209.0321612681753,
+            247.0380087714799, 285.0438562747845, 323.0497037780891,
+            361.0555512813937, 399.0613987846983, 437.06724628800293,
+        ],
+    )
+    np.testing.assert_array_equal(
+        gammas,
+        [
+            0.11520000000000005, 0.3978094637223975, 0.9955183673469388,
+            1.6242510769230771, 2.041422222222222, 2.820547368421053,
+            3.7822736842105265, 4.636799999999999, 5.4152000000000005,
+            6.8672, 8.5128, 10.352000000000002,
+        ],
+    )
+
+
+def test_fit_variogram_matches_legacy_reference_within_platform_tolerance():
+    from geomodeling.modeling.variogram import fit_variogram
+
+    # 参考值取自重构前实现；least_squares 的 LAPACK/BLAS 路径随平台有末位差异，
+    # 故以紧容差钉住数值（rtol=1e-7），仍能捕获算法级漂移。近零 nugget 用 atol。
+    coords, values = plane_field_2d()
+    model = fit_variogram(coords, values, "spherical")
+    assert model.nugget == pytest.approx(7.528834720767456e-20, abs=1e-12)
+    assert model.partial_sill == pytest.approx(11.568770768708706, rel=1e-7)
+    assert model.range == pytest.approx(874.1344925760058, rel=1e-7)
+
+    coords, values = smooth_field_3d()
+    model = fit_variogram(coords, values, "spherical")
+    assert model.nugget == pytest.approx(7.708953972850713e-16, abs=1e-12)
+    assert model.partial_sill == pytest.approx(1.0302351693326357, rel=1e-7)
+    assert model.range == pytest.approx(1652.575581583548, rel=1e-7)
+
+
+# ---------------------------------------------------------------------------
+# v0.6 Task 8: legacy 兼容 pin —— 未给 anisotropy/neighborhood 时现有行为
+# 逐位不变（参考值取自引入专业选项之前的实现）
+# ---------------------------------------------------------------------------
+
+
+def test_legacy_2d_prediction_pin_without_professional_options():
+    from geomodeling.modeling.kriging import OrdinaryKrigingInterpolator
+
+    rng = np.random.default_rng(42)
+    coords = np.column_stack([rng.uniform(-50, 50, 24), rng.uniform(100, 200, 24)])
+    values = np.sin(coords[:, 0] / 15.0) + 0.5 * np.cos(coords[:, 1] / 25.0) + 3.0
+    query = np.array([[-30.0, 120.0], [0.0, 150.0], [25.0, 190.0]])
+    interpolator = OrdinaryKrigingInterpolator()
+    params = interpolator.validate_parameters(
+        {"variogram_mode": "manual", "variogram_model": "spherical",
+         "nugget": 0.05, "sill": 1.2, "range": 80.0, "neighbor_count": 8},
+        "2d",
+    )
+    assert params.anisotropy is None and params.neighborhood is None
+    batch = interpolator.fit(coords, values, params).predict(query, cancel=lambda: False)
+    # 参考值取自引入专业选项之前的实现；LAPACK 求解随平台有末位差异，用紧容差锁定
+    np.testing.assert_allclose(
+        batch.values, [2.522227095913784, 3.398996313035415, 4.048265800991689],
+        rtol=1e-9, atol=1e-12,
+    )
+    np.testing.assert_array_equal(batch.is_nodata, [False, False, False])
+
+
+def test_legacy_3d_z_scale_prediction_pin_without_professional_options():
+    from geomodeling.modeling.kriging import OrdinaryKrigingInterpolator
+
+    rng = np.random.default_rng(7)
+    coords = np.column_stack(
+        [rng.uniform(-40, 40, 20), rng.uniform(0, 80, 20), rng.uniform(-200, 0, 20)]
+    )
+    values = np.cos(coords[:, 0] / 20.0) + 0.001 * coords[:, 2] + 5.0
+    query = np.array([[-10.0, 30.0, -80.0], [15.0, 60.0, -40.0]])
+    interpolator = OrdinaryKrigingInterpolator()
+    params = interpolator.validate_parameters(
+        {"variogram_mode": "manual", "variogram_model": "exponential",
+         "nugget": 0.02, "sill": 0.9, "range": 60.0, "neighbor_count": 10,
+         "z_scale": 2.0},
+        "3d",
+    )
+    assert params.anisotropy is None and params.neighborhood is None
+    batch = interpolator.fit(coords, values, params).predict(query, cancel=lambda: False)
+    # 参考值取自引入专业选项之前的实现；LAPACK 求解随平台有末位差异，用紧容差锁定
+    np.testing.assert_allclose(
+        batch.values, [5.429593345184889, 5.343671085767241], rtol=1e-9, atol=1e-12
+    )
+    np.testing.assert_array_equal(batch.is_nodata, [False, False])
