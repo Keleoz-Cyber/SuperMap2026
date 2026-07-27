@@ -59,6 +59,16 @@ jobs:
       - name: Install frontend dependencies
         run: npm --prefix web ci
 
+      # web/public/Cesium 不入库（44MB，scripts/fetch_iclient3d.py 拉取）；
+      # index.html 全局引用 ./Cesium/Cesium.js，缺失时 404——浏览器冒烟需要先取回 SDK
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Fetch iClient3D Cesium SDK
+        run: python scripts/fetch_iclient3d.py
+
       - name: Frontend build
         run: npm --prefix web run build
 
