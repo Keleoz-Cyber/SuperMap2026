@@ -28,9 +28,33 @@ function percent(value: number | undefined): string {
   return value === undefined ? '—' : `${(value * 100).toFixed(1)}%`
 }
 
+// number 精度语义：12 位有效数字截断浮点噪声长尾（0.30000000000000004 → 0.3），
+// 整数与常规小数保持原样。
+function formatParamNumber(value: number): string {
+  return Number.isFinite(value) ? String(Number(value.toPrecision(12))) : String(value)
+}
+
+// 确定性递归格式化：object 按键字典序、array 紧凑逗号分隔、null/boolean/number/string
+// 各有确定输出——专业候选的嵌套参数（neighborhood/anisotropy）绝不退化为 [object Object]。
+function formatParamValue(value: unknown): string {
+  if (value === null || value === undefined) return 'null'
+  if (typeof value === 'number') return formatParamNumber(value)
+  if (typeof value === 'boolean') return String(value)
+  if (typeof value === 'string') return value
+  if (Array.isArray(value)) return `[${value.map((item) => formatParamValue(item)).join(',')}]`
+  if (typeof value === 'object') {
+    const entries = Object.keys(value as Record<string, unknown>)
+      .sort()
+      .map((key) => `${key}:${formatParamValue((value as Record<string, unknown>)[key])}`)
+    return `{${entries.join(',')}}`
+  }
+  return String(value)
+}
+
 function paramsPreview(parameters: Record<string, unknown>): string {
-  return Object.entries(parameters)
-    .map(([key, value]) => `${key}=${Array.isArray(value) ? value.join('|') : String(value)}`)
+  return Object.keys(parameters)
+    .sort()
+    .map((key) => `${key}=${formatParamValue(parameters[key])}`)
     .join(' ')
 }
 </script>
