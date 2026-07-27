@@ -6,13 +6,14 @@
 
 ## 项目目标
 
-建设面向超图杯答辩的浏览器建模平台：用户上传 CSV、Excel 或受支持的专业文本数据，完成字段映射、质量校验、二维/三维插值调参、空间验证、成果展示和报告导出。第一版（v0.1.0）已打通地下电阻率从标准数据到 SuperMap 三维成果的闭环；当前代码还包含微震 v0.2a 数据审计底座，以及 v0.5 微震第二案例建模闭环（`feat/v0.5-microseismic-second-case` 分支）。
+建设面向超图杯答辩的浏览器建模平台：用户上传 CSV、Excel 或受支持的专业文本数据，完成字段映射、质量校验、二维/三维插值调参、空间验证、成果展示和报告导出。第一版（v0.1.0）已打通地下电阻率从标准数据到 SuperMap 三维成果的闭环；当前代码还包含微震 v0.2a 数据审计底座、已随 v0.5.0 发布的微震第二案例建模闭环，以及 v0.6 专业建模增强（`feat/v0.6-professional-modeling` 分支）。
 
 电阻率、微震、瓦斯及后续新增属性作为**独立案例**复用平台能力。没有共同坐标依据时不得空间叠加，不做无证据的多源融合。
 
 ## 当前能力
 
-- **v0.5 微震第二案例建模闭环（本分支）**：浏览器首页微震卡「导入微震 DAT」四步向导（选文件夹或 22 DAT → 核验 → 派生确认 → 质量门禁 → 建模）与 CLI 双入口（`geomodeling microseismic derive` / `import-case`）共用同一派生内核：22 DAT → 2,006 源记录 → 2,005 有限 → 一次全局 3σ（`ddof=1`）剔除 80 → 1,925 候选 → 算术平均聚合 1,911 建模节点；黄金门禁逐字节锁定两张派生表 SHA-256，不过即阻断。调参（IDW/普通克里金、`z_scale` 实验参数）、空间验证、成果工作台三层诊断图层与证据导出复用 v0.4 平台；发布登记保持 `manual_required`。运行手册见 [docs/v0.5-microseismic-loop.md](docs/v0.5-microseismic-loop.md)。
+- **v0.6 专业建模增强（本分支）**：全向/方向经验半变异函数诊断（点对确定性采样，种子=数据 SHA-256+配置，≤50,000 点对上限并披露采样率）；球状/指数/高斯三模型按 bin 点对数加权的有界最小二乘拟合证据（`weighted_sse`/收敛/边界/参数来源）；各向异性候选仅作诊断建议，**人工确认**后写入不可变快照（改参数必生成新快照）；Kriging 各向异性变换 `x′ = S Rᵀ x`（legacy `z_scale` 归一化，不叠加）；旋转椭圆/椭球+扇区搜索邻域（IDW 与普通 Kriging 共用选择器，IDW 权重仍用 `z_scale` 距离）；普通 Kriging 原生估计标准差（`σ² = λᵀγ₀ + μ`，微负钳制/显著负值 NoData/lstsq 标记）；所有算法基于折外残差的经验误差尺度（距离加权局部 RMSE，非标准误）；空间折分检查（整柱不泄漏，泄漏 fail-closed）；显式阈值异常连通区（2D 4 邻接/3D 6 邻接，Voronoi「网格支持面积/体积估计」，非储量）；单候选联动与双候选兼容比较（兼容才显示指标差）；SQLite v5 五张专业表与 `analysis_jobs` 持久化任务；专业证据 ZIP（`professional/` 目录，声明缺失或哈希不符 409 fail-closed）；能力矩阵区分 IDW 与普通 Kriging（`not_applicable` 类型化），旧候选返回 `LEGACY_RESULT_NOT_COMPUTED`。浏览器专业诊断工作台与专业分析台、API、CLI（`geomodeling professional`）三入口齐备。运行手册见 [docs/v0.6-professional-modeling-loop.md](docs/v0.6-professional-modeling-loop.md)。
+- **v0.5 微震第二案例建模闭环（已发布，v0.5.0）**：浏览器首页微震卡「导入微震 DAT」四步向导（选文件夹或 22 DAT → 核验 → 派生确认 → 质量门禁 → 建模）与 CLI 双入口（`geomodeling microseismic derive` / `import-case`）共用同一派生内核：22 DAT → 2,006 源记录 → 2,005 有限 → 一次全局 3σ（`ddof=1`）剔除 80 → 1,925 候选 → 算术平均聚合 1,911 建模节点；黄金门禁逐字节锁定两张派生表 SHA-256，不过即阻断。调参（IDW/普通克里金、`z_scale` 实验参数）、空间验证、成果工作台三层诊断图层与证据导出复用 v0.4 平台；发布登记保持 `manual_required`。运行手册见 [docs/v0.5-microseismic-loop.md](docs/v0.5-microseismic-loop.md)。
 - **v0.4 通用建模平台**：CSV/XLSX 上传（50 MiB / 50 万行上限）、字段映射（2D/3D）、质量门禁（阻断/警告+显式确认）、IDW 与普通克里金调参（手动 + ≤50 组合有限网格搜索）、空间折分验证、公共有效掩膜排行榜、SQLite 持久化任务（取消/重试/重启恢复）、成果完整场与 X/Y/Z 切片、附理由的正式选择、证据 ZIP 导出、发布登记（manual_required）。运行说明见 [docs/v0.4-generic-modeling-loop.md](docs/v0.4-generic-modeling-loop.md)。
 - **v0.3.1 内置电阻率案例（只读保留）**：FastAPI 案例/成果/发布证据链接口 + 浏览器三维工作台（模型排行榜、RHO 点云、S3M 体元缓存自定义渲染、阈值过滤、证据链、服务检查）。闭环含义、运行方式与实测证据见 [docs/v0.3-iserver-loop.md](docs/v0.3-iserver-loop.md)。
 - 电阻率数据登记与契约校验：17,549 / 15,827 / 1,722 行，训练/验证空间柱重叠 0。
@@ -103,6 +104,12 @@ geomodeling microseismic export-reports --help
 geomodeling microseismic derive --help
 geomodeling microseismic import-case --help
 geomodeling microseismic run-audit --help
+geomodeling professional --help
+geomodeling professional diagnose --help
+geomodeling professional confirm --help
+geomodeling professional inspect-result --help
+geomodeling professional extract-anomalies --help
+geomodeling professional compare --help
 ```
 
 默认配置位于 `config/default.yaml`（电阻率）和 `config/microseismic.yaml`（微震）。运行后生成数据登记、验证报告、指标复算、SuperMap 证据、问题清单、审计 JSONL 和验收摘要。
@@ -110,6 +117,7 @@ geomodeling microseismic run-audit --help
 ## 文档导航
 
 - [docs/product-blueprint.md](docs/product-blueprint.md)：浏览器建模平台的唯一产品与开发蓝图
+- [docs/v0.6-professional-modeling-loop.md](docs/v0.6-professional-modeling-loop.md)：v0.6 专业建模运行手册（诊断/确认/折分/不确定性/异常/比较/导出）
 - [docs/v0.5-microseismic-loop.md](docs/v0.5-microseismic-loop.md)：v0.5 微震第二案例运行手册（DAT 导入/派生/调参/导出/故障恢复）
 - [docs/v0.4-generic-modeling-loop.md](docs/v0.4-generic-modeling-loop.md)：v0.4 通用建模运行说明（上传/门禁/调参/成果/导出）
 - [docs/v0.3-iserver-loop.md](docs/v0.3-iserver-loop.md)：v0.3 iServer 纵向闭环运行说明与实测证据
@@ -138,7 +146,7 @@ geomodeling microseismic run-audit --help
 
 开始开发前按顺序阅读：`README.md` → [当前状态](docs/status/current-status.md) → [产品蓝图](docs/product-blueprint.md) → [SuperMap集成说明](docs/supermap-integration.md) → 对应案例数据文档。论文只作来源证据，不能覆盖这些已确认规则。
 
-发布基线：v0.4.0 已发布（tag `v0.4.0`，merge `b95f12b`）；v0.4.1 演示加固见 [运行手册](docs/v0.4.1-demo-runbook.md) 与 [通用建模契约](docs/v0.4-generic-modeling-loop.md)；v0.5 微震第二案例为发布候选（本分支，PR/tag 待批准），见 [v0.5 运行手册](docs/v0.5-microseismic-loop.md)。
+发布基线：v0.5.0 已发布（tag `v0.5.0`，merge `d37eb94`），见 [v0.5 运行手册](docs/v0.5-microseismic-loop.md)；更早基线 v0.4.1（tag `v0.4.1`）与 v0.4.0（tag `v0.4.0`，merge `b95f12b`）已发布，v0.4.1 演示加固见 [运行手册](docs/v0.4.1-demo-runbook.md) 与 [通用建模契约](docs/v0.4-generic-modeling-loop.md)；v0.6 专业建模增强为发布候选（本分支，PR/tag 待批准），见 [v0.6 运行手册](docs/v0.6-professional-modeling-loop.md)。
 
 ## 原始资料保护
 

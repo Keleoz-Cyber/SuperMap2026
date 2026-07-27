@@ -92,7 +92,7 @@ _SKIP_PREFIXES = ("http://", "https://", "mailto:", "#")
 def _markdown_files() -> list[Path]:
     roots = [Path("README.md"), Path("docs/v0.4.1-demo-runbook.md"), STATUS_DOC, BLUEPRINT,
              Path("docs/v0.4-generic-modeling-loop.md"), Path("docs/acceptance.md"),
-             Path("docs/v0.5-microseismic-loop.md")]
+             Path("docs/v0.5-microseismic-loop.md"), Path("docs/v0.6-professional-modeling-loop.md")]
     return [p for p in roots if p.exists()]
 
 
@@ -183,3 +183,21 @@ def test_contracts_document_v05_aggregation_and_three_sigma():
     assert "1,911" in text, "数据契约缺少 1,911 聚合节点口径"
     assert "算术平均" in text, "数据契约缺少算术平均聚合规则"
     assert "ddof=1" in text, "数据契约缺少 3σ 样本标准差 ddof=1 口径"
+
+
+# ---------------------------------------------------------- Task 23: v0.6 docs sync
+
+
+def test_status_records_v050_release_facts():
+    text = STATUS_DOC.read_text(encoding="utf-8")
+    assert "d37eb94" in text, "状态文档缺少 v0.5.0 merge 事实"
+    assert "v0.5.0" in text, "状态文档缺少 v0.5.0 版本号"
+    assert "feat/v0.5-microseismic-second-case` 分支，当前代码已实现，发布候选" not in text, \
+        "v0.5.0 已发布，状态文档不得仍称发布候选"
+
+
+def test_readme_release_baseline_records_v050_released():
+    text = README_DOC.read_text(encoding="utf-8")
+    assert "v0.5.0 已发布" in text, "README 发布基线缺少 v0.5.0 已发布"
+    assert "d37eb94" in text, "README 发布基线缺少 v0.5.0 merge commit"
+    assert "v0.5 微震第二案例为发布候选" not in text, "README 不得仍把 v0.5 称为发布候选"

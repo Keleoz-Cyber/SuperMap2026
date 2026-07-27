@@ -1,6 +1,6 @@
 # 当前开发状态
 
-> 更新时间：2026-07-25（v0.5 分支更新）。本文是开发人员和开发 Agent 判断“现在做到哪一步”的唯一状态入口。数据细节见 [电阻率](../data/resistivity.md)、[微震](../data/microseismic.md)、[瓦斯](../data/gas.md) 和 [数据契约](../data/contracts.md)；目标产品见 [产品蓝图](../product-blueprint.md)。
+> 更新时间：2026-07-27（v0.6 分支更新）。本文是开发人员和开发 Agent 判断“现在做到哪一步”的唯一状态入口。数据细节见 [电阻率](../data/resistivity.md)、[微震](../data/microseismic.md)、[瓦斯](../data/gas.md) 和 [数据契约](../data/contracts.md)；目标产品见 [产品蓝图](../product-blueprint.md)。
 
 ## 1. 状态分层
 
@@ -32,14 +32,22 @@
   - 候选测试基线（2026-07-25，本分支）：后端 `420 passed`、前端 vitest `43 passed`、Mock E2E `2 passed`、Live E2E `1 passed`、`local_data 23 passed`（哈希不变）。
   - 真实 Windows 彩排（2026-07-25，全新 `var/demo_v041`）：路线 A 全流程走通（IDW 与克里金各 1/1 成功，公共有效 144，导出 ZIP 七文件 1,331 行）；路线 B iServer 在线六级证据链全 `ok=True`（含 browser_report）；iServer 关闭后路线 B 如实降级、路线 A 不受影响；杀进程重启后案例/实验/成果全部恢复。截图与登记：`docs/evidence/v0.4.1/`。
 - 当前仓库瓦斯保持暂缓。
-- **v0.5 微震第二案例建模闭环（`feat/v0.5-microseismic-second-case` 分支，当前代码已实现，发布候选）**：微震从“外部派生”移入代码化。
+- **v0.5 微震第二案例建模闭环（已发布，v0.5.0）**：2026-07-26 自 merge commit `d37eb94` 发布 annotated tag `v0.5.0`；微震从“外部派生”移入代码化。
   - 派生内核：22 个正式 DAT → 2,006 源记录（823/819/364）→ 2,005 有限（822/819/364，W8 `1.#QNAN0` 唯一无效）→ 已确认局部三维（W16 原点、X 沿 L3 向 W24、Y 沿 L2 向 W20、`local_engineering_m` 非 EPSG；`depth_m=WL/2(km)×1000` 向下为正、`z_local_m=-depth_m`；规则版本 `microseismic_local_3d_v0.2b_confirmed_2026-07-20`，适配器 0.5.0）→ 一次全局 3σ（样本标准差 `ddof=1`、两遍顺序累加）剔除 80（深度 72、速度 8）→ 1,925 候选（792/783/350）→ 三 float 完全相等分组、算术平均聚合（13 冲突组/27 组内记录/坍缩 14，组内最大极差 0.913554 km/s）→ 1,911 唯一建模节点。
   - 黄金门禁：accepted/rejected 两张 canonical CSV（UTF-8 BOM + CRLF）SHA-256 逐字节锁定（`4f7a0886…ae1513` / `3752b2f6…872b1`），计数、分层、剔除原因、冲突组一并核对；任一检查失败即阻断导入，`downstream_gates` 全部保持 blocked。
   - 入口等价：浏览器首页微震卡 → `/cases/new?preset=microseismic` → 四步导入向导（选文件夹或 22 DAT → 核验 → 派生确认 → 质量门禁 → 建模）；CLI `geomodeling microseismic derive` 与 `import-case`；API `POST /api/cases/{id}/microseismic-imports`（multipart 22 DAT，201）、`GET /api/datasets/{id}/derivation`、`.../derivation/artifacts/{name}`（白名单）、`.../derivation/points?layer=accepted|rejected|aggregated&decimate=1`。导入原子化：失败补偿不留数据库行、正式目录或临时目录。
   - 平台接入：预设 `config/presets/microseismic.json`（`source=domain_adapter`、`adapter_id=microseismic_dat_v05`）；IDW 36 组合 / Kriging 27 组合网格搜索；`z_scale` 实验参数（预设 0.5/1/2，`0<z_scale≤20`，仅距离/邻域/变异函数拟合使用，不写回物理坐标）；默认 50 m 网格（X[-750,960] Y[-995,1310] Z[-4086.538,-37.5]，约 134,890 单元 < 100 万上限）；整根 XY 采样柱折分空间验证 + 按测线/测点分组诊断（不改变公共排名）。
   - 成果与导出：成果工作台三层诊断图层（1,911 节点默认开，1,925 候选与 80 剔除默认关）；导出 ZIP = 标准七文件 + `domain_evidence/` 七文件（`source_manifest.json`、`derivation_report.json`、五个分层 CSV），全部带 SHA-256；发布登记保持 `manual_required`。
   - 测试基线（Task 14 后实测，本分支）：后端 `564 passed`、前端 vitest `66 passed`、Mock E2E `3 passed`、Live E2E `2 passed`、`local_data 27 passed`。
-  - 运行手册：[../v0.5-microseismic-loop.md](../v0.5-microseismic-loop.md)。发布门说明：PR 未合并、tag/release 待用户批准。
+  - 运行手册：[../v0.5-microseismic-loop.md](../v0.5-microseismic-loop.md)。
+- **v0.6 专业建模增强（`feat/v0.6-professional-modeling` 分支，当前代码已实现（本分支），发布候选）**：
+  - 专业诊断：全向/方向经验半变异函数（点对确定性采样，种子=数据 SHA-256+诊断配置，≤50,000 点对上限，DTO/工件披露总点对、实际点对、采样率与种子来源）；球状/指数/高斯三模型按 bin 点对数加权的有界最小二乘拟合证据（`weighted_sse`/收敛/边界）；方向约定 方位角 `[0°, 180°)`、倾角 `[-90°, 90°]`（2D 无倾角），方向 bin 支持不足标记 unsupported 不外推。
+  - 各向异性：候选仅作诊断建议，人工确认写入不可变快照（改参数必新快照）；Kriging 变换 `x′ = S Rᵀ x`，legacy `z_scale` 归一化进尺度矩阵不叠加；参数来源区分 `automatic_candidate`（折内）/`final_full_data_fit`（全数据物化）/`manual_confirmed`（固定参数标记 `user_prior`）/`legacy_auto_fold_fit`（v0.5 旧候选）。
+  - 邻域与插值：旋转椭圆/椭球+扇区搜索邻域（IDW 与普通 Kriging 共用选择器；IDW 权重仍用 `z_scale` 距离，邻域方向仅采样几何）；普通 Kriging 原生方差 `σ² = λᵀγ₀ + μ`（微负钳制计诊断、显著负值/非有限 NoData、lstsq 降级标记）；所有算法输出折外残差与经验误差尺度（距离加权局部 RMSE，非标准误）；空间折分检查（整柱不泄漏，泄漏整次运行 fail-closed）。
+  - 异常与比较：显式阈值异常连通区（direction high/low、可选误差门槛、2D 4 邻接/3D 6 邻接、最小支持节点数；Voronoi「网格支持面积/体积估计」，非储量）；保存为不可变提取；双候选兼容指纹比较（兼容才显示同口径指标差，不兼容只独立查看）。
+  - 平台与入口：SQLite v5 新增五表（`professional_diagnostics`/`professional_confirmations`/`professional_result_artifacts`/`anomaly_extractions`/`analysis_jobs`，部分唯一在途索引）；诊断与异常提取走 `analysis_jobs` 持久化任务（取消/重试/重启转 `interrupted`）；能力矩阵类型化 `not_applicable`，旧候选 `LEGACY_RESULT_NOT_COMPUTED`；专业证据 ZIP（`professional/` 目录，声明缺失或哈希不符 409 fail-closed）；浏览器专业诊断工作台 + 专业分析台、API（`professional-diagnostics`/`analysis-jobs`/`professional-comparisons`/白名单工件下载）、CLI（`geomodeling professional diagnose/confirm/inspect-result/extract-anomalies/compare`）三入口。
+  - 测试基线（Task 23 后实测，本分支）：后端 `1153 passed`（便携 1124 + `local_data 29`）、前端 vitest `97 passed`、Mock E2E `4 passed`、Live E2E `3 passed`。
+  - 运行手册：[../v0.6-professional-modeling-loop.md](../v0.6-professional-modeling-loop.md)。发布门说明：PR 未合并、tag/release 待批准。
 
 ## 3. 外部派生与人工验证（尚未代码化）
 

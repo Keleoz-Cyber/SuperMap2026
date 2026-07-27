@@ -1,4 +1,4 @@
-"""Task 10/15: version consistency across Python, API, web package, lockfile and home badge."""
+"""Task 10/15/23: version consistency across Python, API, web package, lockfile and home badge."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import re
 import tomllib
 from pathlib import Path
 
-EXPECTED = "0.5.0"
+EXPECTED = "0.6.0"
 
 
 def test_pyproject_version():
