@@ -82,8 +82,14 @@ def _draw_unique_ranks(rng: np.random.Generator, total: int, count: int) -> np.n
     直接 ``rng.choice(total, replace=False)`` 会分配 ``total`` 大小的置换
     数组，不可接受；改为带放回抽取后去重并补足，超采样量远小于
     ``sqrt(total)`` 时碰撞极少，补足循环通常零次或一次。
+
+    ``count >= total`` 时抽取目标即全集，去重补足会退化为 coupon-collector
+    收集（欠额越小新 rank 越难抽中，尾部近乎停滞，实测挂起）；此时直接返回
+    ``0..total-1`` 全量 ranks，与全量路径语义一致且不消耗随机序列。
     """
 
+    if count >= total:
+        return np.arange(total, dtype=np.int64)
     draws = rng.integers(0, total, size=count, dtype=np.int64)
     unique = np.unique(draws)
     while unique.size < count:

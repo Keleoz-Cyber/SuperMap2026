@@ -12,7 +12,12 @@ import hashlib
 import numpy as np
 import pytest
 
-from geomodeling.modeling.pair_sampling import PairSample, sample_pairs, seed_from_contract
+from geomodeling.modeling.pair_sampling import (
+    PairSample,
+    _draw_unique_ranks,
+    sample_pairs,
+    seed_from_contract,
+)
 from geomodeling.platform.errors import PlatformError
 
 
@@ -164,3 +169,71 @@ def test_seed_from_contract_deterministic_and_config_sensitive():
     assert 0 <= seed < 2**64
     assert seed != seed_from_contract(sha_a, b"cfg-2")
     assert seed != seed_from_contract(sha_b, b"cfg-1")
+
+
+def test_oversample_window_completes_without_coupon_collector(monkeypatch):
+    """危险窗口回归：``max_pairs < total <= 4 * max_pairs`` 时 oversample_count == total。
+
+    旧实现用 ``rng.integers`` 带放回重抽 + ``np.unique`` 去重补足，在该窗口退化为
+    coupon-collector 循环（补足轮次随欠额减小而爆炸，实测挂起）。本测试用计数
+    generator 断言实现不依赖反复重抽：初次抽取外加偶发补足，调用次数必须有界；
+    旧实现会在第 5 次重抽时立即失败（毫秒级，跨平台，无需 signal/线程看门狗）。
+    """
+
+    n, max_pairs = 316, 49_000
+    total = n * (n - 1) // 2  # 49_770，恰落在 (max_pairs, 4×max_pairs] 窗口内
+    assert max_pairs < total <= 4 * max_pairs
+    points = _points(n)  # 在打补丁前生成，避免包装器影响 fixture
+
+    calls = 0
+    real_default_rng = np.random.default_rng
+
+    class _CountingGenerator:
+        """只拦截 ``integers`` 计数，其余方法原样委托。"""
+
+        def __init__(self, inner):
+            self._inner = inner
+
+        def integers(self, *args, **kwargs):
+            nonlocal calls
+            calls += 1
+            if calls > 4:  # 初次抽取 + 偶发补足之外的重抽即 coupon-collector 退化
+                raise AssertionError(
+                    "pair-rank oversampling degenerated into a coupon-collector loop"
+                )
+            return self._inner.integers(*args, **kwargs)
+
+        def __getattr__(self, name):
+            return getattr(self._inner, name)
+
+    monkeypatch.setattr(
+        np.random, "default_rng", lambda *a, **k: _CountingGenerator(real_default_rng(*a, **k))
+    )
+
+    result = sample_pairs(points, max_pairs=max_pairs, seed=7)
+    assert result.sampled is True
+    assert result.total_pair_count == total
+    assert result.used_pair_count == max_pairs
+    assert result.sampling_rate == pytest.approx(max_pairs / total)
+    first, second = result.indices[:, 0], result.indices[:, 1]
+    assert (first < second).all()  # 无反向点对
+    assert np.unique(result.indices, axis=0).shape[0] == max_pairs  # 无重复点对
+    order = np.lexsort((second, first))
+    assert (order == np.arange(max_pairs)).all()  # 最终 (i, j) 字典序
+    assert result.distance_strata.shape == (max_pairs,)
+    # 与全量路径语义一致：选中点对是全集枚举的子集
+    full = sample_pairs(points, max_pairs=total, seed=7)
+    full_set = {tuple(row) for row in full.indices.tolist()}
+    assert all(tuple(row) in full_set for row in result.indices.tolist())
+
+
+def test_oversample_covering_total_returns_full_rank_universe():
+    """oversample_count == total 的边界：ranks 必须是 ``0..total-1`` 全集
+    （升序、无重复），与全量路径的点对全集语义一致，且任何 seed 下相同。"""
+
+    total = 4_970
+    expected = np.arange(total, dtype=np.int64)
+    for seed in (0, 7, 2**63 - 1):
+        ranks = _draw_unique_ranks(np.random.default_rng(seed), total, total)
+        assert ranks.dtype == np.int64
+        assert np.array_equal(ranks, expected)  # 点对全集、字典序、无重复
