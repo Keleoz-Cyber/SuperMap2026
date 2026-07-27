@@ -179,6 +179,7 @@ web/src/views/VolumeDemoView.vue
 web/src/components/volume/VolumeRenderer.vue
 web/src/components/volume/volumeGrid.ts
 web/src/components/volume/volumeShaders.ts
+web/src/components/volume/volumeRuntime.ts
 ```
 
 Three.js 作为前端直接依赖使用精确版本固定，不从 CDN 动态加载。
@@ -189,6 +190,7 @@ Three.js 作为前端直接依赖使用精确版本固定，不从 CDN 动态加
 - `VolumeRenderer.vue`：Three.js 生命周期、相机、纹理、着色器和资源释放；
 - `volumeGrid.ts`：契约校验、轴排序、三线性重采样和归一化；
 - `volumeShaders.ts`：仅保存该案例使用的顶点/片元着色器。
+- `volumeRuntime.ts`：封装 Three.js/WebGL2 资源创建、动画循环、参数更新与确定性释放。
 
 现有 `/api/cases/resistivity/voxel-cells` 和后端 S3MB 解析器不修改。
 
