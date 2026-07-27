@@ -14,6 +14,9 @@ export const volumeFragmentShader = /* glsl */ `
   uniform float uThreshold;
   uniform float uOpacity;
   uniform float uStepCount;
+  // Three.js 片元着色器只内建 viewMatrix/cameraPosition，无 modelMatrix；
+  // 逆模型矩阵由 CPU 侧预计算传入（网格静态，仅创建时求逆一次）。
+  uniform mat4 uModelInverse;
   in vec3 vPosition;
   out vec4 outColor;
 
@@ -37,7 +40,7 @@ export const volumeFragmentShader = /* glsl */ `
   }
 
   void main() {
-    vec3 rayOrigin = (inverse(modelMatrix) * vec4(cameraPosition, 1.0)).xyz;
+    vec3 rayOrigin = (uModelInverse * vec4(cameraPosition, 1.0)).xyz;
     vec3 rayDirection = normalize(vPosition - rayOrigin);
     vec2 bounds = intersectBox(rayOrigin, rayDirection);
     if (bounds.x > bounds.y) discard;

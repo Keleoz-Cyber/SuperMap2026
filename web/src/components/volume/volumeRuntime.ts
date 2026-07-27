@@ -17,6 +17,8 @@ export function createVolumeRuntime(
 ): VolumeRuntime {
   const canvas = document.createElement('canvas')
   canvas.dataset.test = 'volume-canvas'
+  // inline canvas 的基线间隙会让容器随 setSize 无限长高（ResizeObserver 正反馈），必须 block
+  canvas.style.display = 'block'
   const context = canvas.getContext('webgl2', {
     alpha: true,
     antialias: true,
@@ -71,6 +73,7 @@ export function createVolumeRuntime(
       uThreshold: { value: THREE.MathUtils.clamp(threshold, 0, 0.99) },
       uOpacity: { value: THREE.MathUtils.clamp(opacity, 0.01, 1) },
       uStepCount: { value: THREE.MathUtils.clamp(Math.max(nx, ny, nz) * 3, 64, 256) },
+      uModelInverse: { value: new THREE.Matrix4() },
     }
     material = new THREE.ShaderMaterial({
       glslVersion: THREE.GLSL3,
@@ -91,6 +94,9 @@ export function createVolumeRuntime(
     const mesh = new THREE.Mesh(geometry, material)
     mesh.scale.set(spans[0] / scale, spans[1] / scale, spans[2] / scale)
     scene.add(mesh)
+    // 网格静态：创建时求一次逆模型矩阵，供片元着色器把相机变换到对象空间
+    mesh.updateMatrixWorld()
+    uniforms.uModelInverse.value.copy(mesh.matrixWorld).invert()
 
     const resize = () => {
       const width = Math.max(container.clientWidth, 1)
