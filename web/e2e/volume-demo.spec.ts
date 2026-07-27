@@ -11,6 +11,10 @@ test('renders a continuous volume and reacts to transfer controls', async ({ pag
   page.on('console', (message) => {
     if (message.type() === 'error') errors.push(message.text())
   })
+  const misses: string[] = []
+  page.on('response', (response) => {
+    if (response.status() >= 400) misses.push(`${response.status()} ${response.url()}`)
+  })
   await installMockApi(page)
   await page.goto('/#/volume-demo')
 
@@ -39,5 +43,6 @@ test('renders a continuous volume and reacts to transfer controls', async ({ pag
   expect(after.length).toBeGreaterThan(1000)
   expect(Buffer.compare(before, after)).not.toBe(0)
   console.log(`pixel evidence: before=${before.length}B after=${after.length}B differ=${Buffer.compare(before, after) !== 0}`)
+  console.log(`http>=400: ${JSON.stringify(misses)}`)
   expect(errors).toEqual([])
 })
