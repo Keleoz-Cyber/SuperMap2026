@@ -6,14 +6,23 @@ dataset_version.profile_json`` 取 ``mapping.value_name`` / ``mapping.value_unit
 ``"unknown"``。老 metadata 缺 property 字段仍可解析（语义来自数据集 profile，
 绝不改写既有工件）。
 
-所有函数都是纯查询：绝不物化成果、绝不创建文件、绝不改写数据库行。规则网格校验
-fail-closed，错误码稳定（非 3D / 轴非法 / 轴不规则 / 形状不符 / 全 NoData /
-登记哈希与实际文件哈希不符）。
+除 ``create_render_asset`` 外的查询函数都是纯查询：绝不物化成果、绝不创建文件、
+绝不改写数据库行。规则网格校验 fail-closed，错误码稳定（非 3D / 轴非法 /
+轴不规则 / 形状不符 / 全 NoData / 登记哈希与实际文件哈希不符）。
+
+``create_render_asset``（Task 6）是唯一变更入口：隐藏 stage
+（``render-assets/.{asset_id}-*``）写齐 + fsync → ``os.replace`` 单点改名 →
+``mark_ready``。rename 前 final 目录绝不可见、DB 绝不 ready；既存 final 目录
+按期望身份核验——有效复用、无效原子隔离为 ``<asset-id>.corrupt-<uuid>``。
 """
 
 from __future__ import annotations
 
 import json
+import os
+import shutil
+import tempfile
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -26,6 +35,12 @@ from geomodeling.platform.errors import (
     DATASET_NOT_FOUND,
     PlatformError,
 )
+from geomodeling.platform.netcdf_volume import (
+    RENDER_ASSET_CORRUPT,
+    fsync_tree,
+    read_package_manifest,
+    write_netcdf_package,
+)
 from geomodeling.platform.render_contracts import (
     DisplayAnchor,
     RenderGridSource,
@@ -34,6 +49,14 @@ from geomodeling.platform.render_contracts import (
 from geomodeling.platform.render_coordinates import (
     display_transform_for_bounds,
     sha256_file,
+)
+from geomodeling.platform.repositories import RenderAssetRepository
+from geomodeling.platform.schemas import (
+    FORMAT_VERSION,
+    RENDERER,
+    STATUS_CREATING,
+    STATUS_READY,
+    RenderAssetRecord,
 )
 
 # 同包私有复用（与 professional 复用 results 原子写助手同款约定）
@@ -51,6 +74,8 @@ RENDER_GRID_IRREGULAR = "RENDER_GRID_IRREGULAR"
 RENDER_GRID_SHAPE_MISMATCH = "RENDER_GRID_SHAPE_MISMATCH"
 RENDER_NO_VALID_VALUES = "RENDER_NO_VALID_VALUES"
 RENDER_GRID_IDENTITY_MISMATCH = "RENDER_GRID_IDENTITY_MISMATCH"
+RENDER_ASSET_IN_PROGRESS = "RENDER_ASSET_IN_PROGRESS"
+RENDER_ASSET_PUBLISH_FAILED = "RENDER_ASSET_PUBLISH_FAILED"
 
 # 近似规则网格判定（与 modeling/grid.py 的 derive_grid 落盘轴一致：节点即
 # linspace，允许浮点回算误差）：每轴与首尾等距参考轴比较，容差随轴跨度缩放。
@@ -299,3 +324,192 @@ def candidate_render_capability(runtime, result_id: str) -> RenderCapability:
         geolocation_status=anchor.geolocation_status,
         display_transform=transform,
     )
+
+
+# ---------------------------------------------------------------------------
+# Task 6: 原子目录发布（唯一变更入口）
+# ---------------------------------------------------------------------------
+
+
+def _require_package_identity(
+    manifest: dict[str, Any],
+    *,
+    source_kind: str,
+    source_id: str,
+    grid_sha256: str,
+    netcdf_sha256: str | None,
+    context: dict[str, Any],
+) -> None:
+    """manifest 身份字段与期望逐一比对；任何不符按 RENDER_ASSET_CORRUPT 失败。"""
+
+    expected = {
+        "format": "supermap-voxel-netcdf",
+        "version": FORMAT_VERSION,
+        "renderer": RENDERER,
+        "source_kind": source_kind,
+        "source_id": source_id,
+        "grid_sha256": grid_sha256,
+        "netcdf_sha256": netcdf_sha256,
+    }
+    mismatched = sorted(
+        key for key, value in expected.items() if manifest.get(key) != value
+    )
+    if mismatched:
+        raise PlatformError(
+            RENDER_ASSET_CORRUPT,
+            "渲染资产 manifest 身份与期望不符",
+            {**context, "mismatched": mismatched},
+            http_status=409,
+        )
+
+
+def verify_ready_asset(
+    runtime, record: RenderAssetRecord
+) -> RenderAssetRecord:
+    """ready 行的文件侧复核：重算校验清单 + 期望身份比对，全对才返回记录。
+
+    目录缺失/文件哈希不符/manifest 身份被篡改都 fail-closed，抛
+    ``RENDER_ASSET_CORRUPT``（409），绝不返回记录或字节。
+    """
+
+    package_dir = runtime.settings.render_assets_dir / record.id
+    manifest = read_package_manifest(package_dir)
+    _require_package_identity(
+        manifest,
+        source_kind=record.source_kind,
+        source_id=record.source_id,
+        grid_sha256=record.grid_sha256,
+        netcdf_sha256=record.netcdf_sha256,
+        context={"asset_id": record.id},
+    )
+    return record
+
+
+def _prepare_final_dir(
+    record: RenderAssetRecord, final_dir: Path, manifest: dict[str, Any]
+) -> dict[str, Any] | None:
+    """``os.replace`` 前核验既存 final 目录。
+
+    - 不存在：返回 None，走正常 rename 发布；
+    - 存在且与期望身份一致：复用，返回其 manifest（调用方丢弃 stage）；
+    - 存在但无效：原子改名为 ``<asset-id>.corrupt-<uuid>`` 隔离损坏证据
+      （绝不自动删除），并让本次请求以 ``RENDER_ASSET_CORRUPT`` 失败。
+    """
+
+    if not final_dir.exists():
+        return None
+    try:
+        existing = read_package_manifest(final_dir)
+        _require_package_identity(
+            existing,
+            source_kind=record.source_kind,
+            source_id=record.source_id,
+            grid_sha256=record.grid_sha256,
+            netcdf_sha256=manifest["netcdf_sha256"],
+            context={"asset_id": record.id},
+        )
+    except PlatformError as exc:
+        quarantine = final_dir.with_name(f"{record.id}.corrupt-{uuid.uuid4().hex}")
+        os.replace(final_dir, quarantine)
+        raise PlatformError(
+            RENDER_ASSET_CORRUPT,
+            "渲染资产目录与期望身份不符，已原子隔离损坏证据",
+            {
+                "asset_id": record.id,
+                "quarantine": quarantine.name,
+                "reason": exc.message,
+            },
+            http_status=409,
+        ) from exc
+    return existing
+
+
+def _mark_ready(
+    runtime, asset_id: str, *, manifest: dict[str, Any], final_dir: Path
+) -> RenderAssetRecord:
+    # asset_dir 落库为 data_dir 相对路径：内部列，不含绝对路径
+    asset_dir = final_dir.relative_to(runtime.settings.data_dir).as_posix()
+    with runtime.session() as session:
+        return RenderAssetRepository(session).mark_ready(
+            asset_id,
+            netcdf_sha256=manifest["netcdf_sha256"],
+            asset_dir=asset_dir,
+            manifest=manifest,
+        )
+
+
+def _mark_failed(
+    runtime, asset_id: str, *, code: str, message: str, details: dict[str, Any]
+) -> None:
+    with runtime.session() as session:
+        RenderAssetRepository(session).mark_failed(
+            asset_id, code=code, message=message, details=details
+        )
+
+
+def _failure_identity(exc: Exception) -> tuple[str, str, dict[str, Any]]:
+    if isinstance(exc, PlatformError):
+        return exc.code, exc.message, dict(exc.details)
+    return (
+        RENDER_ASSET_PUBLISH_FAILED,
+        f"渲染资产发布失败：{exc}",
+        {"exception_type": type(exc).__name__},
+    )
+
+
+def create_render_asset(
+    runtime, source: RenderGridSource, *, retry_failed: bool = False
+) -> tuple[RenderAssetRecord, bool]:
+    """创建（或幂等复用）source 的 NetCDF 渲染资产，返回 ``(record, created)``。
+
+    - 已 ready：``verify_ready_asset`` 复核后幂等返回同资产同 SHA（created=False）。
+    - 他方持有 creating：``RENDER_ASSET_IN_PROGRESS``（409）。
+    - failed/interrupted 且未要求重试：原样返回持久化状态（created=False）。
+    - 否则：隐藏 stage 写齐 + fsync → ``os.replace`` 单点改名 → ``mark_ready``；
+      任何异常清理 stage 并 ``mark_failed``，清理异常绝不覆盖业务异常。
+    """
+
+    grid = validate_regular_grid(source.grid_path, source.grid_sha256)
+    with runtime.session() as session:
+        record, created = RenderAssetRepository(session).claim(
+            source, retry_failed=retry_failed
+        )
+    if not created:
+        if record.status == STATUS_READY:
+            return verify_ready_asset(runtime, record), False
+        if record.status == STATUS_CREATING:
+            raise PlatformError(
+                RENDER_ASSET_IN_PROGRESS,
+                "该渲染资产正在创建中",
+                {"asset_id": record.id},
+                http_status=409,
+            )
+        return record, False
+
+    assets_dir = runtime.settings.render_assets_dir
+    assets_dir.mkdir(parents=True, exist_ok=True)
+    stage = Path(tempfile.mkdtemp(prefix=f".{record.id}-", dir=assets_dir))
+    final_dir = assets_dir / record.id
+    try:
+        manifest = write_netcdf_package(
+            stage, source, grid, runtime.settings.display_anchor
+        )
+        fsync_tree(stage)
+        reused = _prepare_final_dir(record, final_dir, manifest)
+        if reused is not None:
+            shutil.rmtree(stage, ignore_errors=True)
+            manifest = reused
+        else:
+            os.replace(stage, final_dir)
+        record = _mark_ready(runtime, record.id, manifest=manifest, final_dir=final_dir)
+        return record, True
+    except Exception as exc:
+        shutil.rmtree(stage, ignore_errors=True)
+        code, message, details = _failure_identity(exc)
+        try:
+            _mark_failed(
+                runtime, record.id, code=code, message=message, details=details
+            )
+        except Exception:
+            pass  # 清理/落库异常绝不覆盖业务异常
+        raise
