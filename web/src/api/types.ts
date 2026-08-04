@@ -224,6 +224,9 @@ export interface PublishStatus {
   }
 }
 
+// 历史 S3M 发布证据：available 只表示旧 iServer S3M 发布链路可访问，
+// 绝不作为 v0.6.1 NetCDF 原生体渲染能力，也不决定 NetCDF 资产成败；
+// 原生能力一律以 render-capability GET（RenderCapability.supported）为准。
 export interface VolumeServicePlan {
   url: string
   service_name: string

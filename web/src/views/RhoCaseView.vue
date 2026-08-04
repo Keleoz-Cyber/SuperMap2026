@@ -2,9 +2,20 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ArrowLeft, Refresh } from '@element-plus/icons-vue'
-import { fetchRhoCase, fetchRhoPoints, fetchRhoPublishStatus } from '../api/client'
-import type { PublishStatus, RhoCaseDetail, RhoPoints } from '../api/types'
-import RhoScene3D from '../components/RhoScene3D.vue'
+import {
+  createLegacyRhoRenderAsset,
+  fetchLegacyRhoRenderAsset,
+  fetchLegacyRhoRenderCapability,
+  fetchRhoCase,
+  fetchRhoPoints,
+  fetchRhoPublishStatus,
+} from '../api/client'
+import type { PublishStatus, RenderCapability, RhoCaseDetail, RhoPoints } from '../api/types'
+import NativeVolumePanel from '../components/rendering/NativeVolumePanel.vue'
+import type {
+  NativeVolumeAuxPoints,
+  NativeVolumeRenderApi,
+} from '../components/rendering/NativeVolumePanel.vue'
 import LeaderboardPanel from '../components/LeaderboardPanel.vue'
 import EvidenceChainPanel from '../components/EvidenceChainPanel.vue'
 import ServiceStatusPanel from '../components/ServiceStatusPanel.vue'
@@ -29,6 +40,47 @@ const voxelBands = computed<number | null>(() => {
   return result?.bands ?? null
 })
 
+// ---------------------------------------------------------------------------
+// v0.6.1 NetCDF 原生体渲染：legacy 能力接线
+// 原生体积能力一律以后端 render-capability GET 为准；
+// publishStatus.planned_services.volume.available 只是历史 S3M 发布证据，
+// 绝不作为原生体渲染能力，也不决定 NetCDF 资产成败。
+// ---------------------------------------------------------------------------
+
+const renderCapability = ref<RenderCapability | null>(null)
+
+// 面板数据层以回调注入：能力/资产状态一律纯 GET，创建是唯一 POST；
+// 能力响应同步到本视图，用于决定辅助视图说明的展示
+const volumeApi: NativeVolumeRenderApi = {
+  fetchCapability: async () => {
+    const cap = await fetchLegacyRhoRenderCapability()
+    renderCapability.value = cap
+    return cap
+  },
+  fetchAsset: fetchLegacyRhoRenderAsset,
+  createAsset: (retryFailed) => createLegacyRhoRenderAsset(retryFailed),
+}
+
+// 未登记规则三维网格时：测点访问保留为显式分离的辅助视图
+const showAuxOnlyNotice = computed(() => renderCapability.value?.supported === false)
+
+// 既有测点仅作为 legacy-measurements 辅助层：坐标为局部米制，
+// 由能力 GET 返回的只读 display_transform 定位，握手后由面板发送；
+// 辅助采样点绝不参与连续体渲染
+const legacyMeasurementPoints = computed<NativeVolumeAuxPoints | null>(() => {
+  const pts = lineage.value
+  if (!pts || pts.served === 0) return null
+  return {
+    id: 'legacy-measurements',
+    role: 'auxiliary',
+    x: pts.x,
+    y: pts.y,
+    z: pts.z,
+    values: pts.values,
+    style: { color: '#f59e0b', pixelSize: 5 },
+  }
+})
+
 async function loadAll() {
   loading.value = true
   loadError.value = null
@@ -36,7 +88,7 @@ async function loadAll() {
     const [d, ps, pts] = await Promise.all([
       fetchRhoCase(),
       fetchRhoPublishStatus(),
-      // 数据血统只需要元数据，重抽稀减小传输量
+      // 重抽稀减小传输量：数据血统元数据 + legacy-measurements 辅助采样点共用
       fetchRhoPoints(40),
     ])
     detail.value = d
@@ -131,8 +183,22 @@ onMounted(loadAll)
           class="iserver-alert"
           title="iServer 当前不可用：服务发布与元数据验证处于可恢复的未验证状态；模型与数据不受影响"
         />
-        <h2 class="panel-title">三维场景 · RHO 点云 + iServer 体元场景</h2>
-        <RhoScene3D :volume="publishStatus?.planned_services?.volume" />
+        <h2 class="panel-title">三维场景 · NetCDF 原生体渲染（内置电阻率）</h2>
+        <el-alert
+          v-if="showAuxOnlyNotice"
+          type="warning"
+          :closable="false"
+          class="legacy-aux-notice"
+          data-test="legacy-aux-notice"
+        >
+          <template #title>
+            <p class="aux-notice-line">
+              当前案例尚未登记可审计的规则三维网格，因此不支持 NetCDF 体渲染。
+            </p>
+            <p class="aux-notice-line">测点仅用于数据分布检查，不是体渲染。</p>
+          </template>
+        </el-alert>
+        <NativeVolumePanel :api="volumeApi" :aux-points="legacyMeasurementPoints" />
       </section>
 
       <aside v-if="!rightCollapsed" class="panel panel-right">
@@ -276,13 +342,23 @@ onMounted(loadAll)
 }
 
 .panel-center {
-  overflow: hidden;
+  /* 原生面板为普通文档流内容（含 16:9 iframe 与控件），超高时滚动而非裁剪 */
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
 }
 
 .iserver-alert {
   margin-bottom: 12px;
+}
+
+.legacy-aux-notice {
+  margin-bottom: 12px;
+}
+
+.aux-notice-line {
+  margin: 0;
+  line-height: 1.6;
 }
 
 .lineage {
