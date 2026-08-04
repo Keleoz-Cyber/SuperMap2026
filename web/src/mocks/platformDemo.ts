@@ -3,7 +3,6 @@
 
 import type { Page, Route } from '@playwright/test'
 import { WEB_VERSION } from '../version'
-import { buildVoxelDemoFixture } from './voxelDemo'
 
 const T = '2026-07-23T00:00:00Z'
 const SHA = 'ab'.repeat(32)
@@ -1200,11 +1199,6 @@ export async function installMockApi(page: Page): Promise<void> {
         confirmed: true,
         confirmed_issue_codes: [],
       })
-    }
-    // ---------------------------------------------------------------- 体渲染 PoC
-    // 公开合成夹具驱动 /volume-demo；真实契约校验在页面侧照常执行。
-    if (path === '/cases/resistivity/voxel-cells' && method === 'GET') {
-      return json(route, buildVoxelDemoFixture())
     }
     return json(route, { error: { code: 'MOCK_NOT_FOUND', message: `未 mock 的端点：${method} ${path}`, details: {} } }, 404)
   })
