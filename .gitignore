@@ -54,6 +54,11 @@ data/private/
 vendor/
 web/public/Cesium/
 
+# SuperMap3D 2026 runtime (installed via scripts/install_supermap3d.py)
+web/public/SuperMap3D-2026/
+var/geomodeling/render-assets/
+var/geomodeling/render-sources/
+
 # Playwright/browser evidence artifacts
 .playwright-mcp/
 *.png
