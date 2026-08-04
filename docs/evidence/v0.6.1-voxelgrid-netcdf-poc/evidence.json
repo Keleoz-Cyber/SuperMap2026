@@ -1,5 +1,5 @@
 {
-  "startedAtUtc": "2026-08-04T02:32:18.841Z",
+  "startedAtUtc": "2026-08-04T02:41:59.860Z",
   "baseUrl": "http://127.0.0.1:8000",
   "resultId": "35348bb3-be03-4862-b764-ee165ae0c7dc",
   "gridSha256": "54c313c9328f8c06e079efacf8099a4b07446e284121369a10b846c4b71bb69f",
@@ -17,9 +17,9 @@
     "default": 25238
   },
   "diffs": {
-    "default->threshold": 20404,
-    "threshold->opacity": 20396,
-    "opacity->slice": 20312,
+    "default->threshold": 20407,
+    "threshold->opacity": 20399,
+    "opacity->slice": 20307,
     "slice->contour": 10465
   },
   "environment": {
