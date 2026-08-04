@@ -13,6 +13,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from geomodeling.platform.render_contracts import DisplayAnchor
+
 ENV_DATA_DIR = "GEOMODELING_DATA_DIR"
 DEFAULT_DATA_DIR = "var/geomodeling"
 
@@ -57,6 +59,18 @@ class PlatformSettings:
     @property
     def exports_dir(self) -> Path:
         return self.data_dir / "exports"
+
+    @property
+    def render_sources_dir(self) -> Path:
+        return self.data_dir / "render-sources"
+
+    @property
+    def render_assets_dir(self) -> Path:
+        return self.data_dir / "render-assets"
+
+    @property
+    def display_anchor(self) -> DisplayAnchor:
+        return DisplayAnchor(longitude=120.0, latitude=30.0, height=0.0)
 
     def upload_source(self, case_id: str, dataset_id: str, suffix: str) -> Path:
         """Original uploaded file, e.g. ``uploads/{case}/{dataset}/source.csv``."""
@@ -121,4 +135,6 @@ class PlatformSettings:
             self.experiments_dir,
             self.results_dir,
             self.exports_dir,
+            self.render_sources_dir,
+            self.render_assets_dir,
         )
