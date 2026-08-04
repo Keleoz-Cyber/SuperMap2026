@@ -336,7 +336,12 @@ def test_legacy_materialize_has_no_professional_artifacts(tmp_path):
         "parameters", "dimension", "shape", "cell_count", "bounds", "resolution",
         "value_range", "nodata_count", "grid_sha256", "source_sha256",
         "standardized_sha256", "fingerprint", "validation", "created_at",
+        # v0.6.1（Task 4）：新物化成果追加 property 语义三键（取自 profile.mapping）
+        "property_name", "units", "coordinate_kind",
     }
+    assert metadata["property_name"] == "属性"
+    assert metadata["units"] == "unknown"
+    assert metadata["coordinate_kind"] == "local_linear"
 
     professional_dir = runtime.settings.professional_result_dir(candidate_id)
     # Task 9 的 run 级折证据照常落盘，但绝不自动创建任何专业物化文件

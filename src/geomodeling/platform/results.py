@@ -136,6 +136,24 @@ def _load_candidate(runtime, result_id: str):
         return candidate, run, experiment
 
 
+def _mapping_property_semantics(profile: dict[str, Any]) -> dict[str, str]:
+    """property 三键（v0.6.1 渲染语义）：property_name/units/coordinate_kind。
+
+    取自数据集 profile 的 ``mapping.value_name`` / ``mapping.value_unit`` /
+    ``mapping.coordinate_kind``，**不固定 rho 语义**（通用电阻率类与微震
+    profile 走同一映射）；``value_unit`` 缺失才回退字面 ``"unknown"``。正常
+    profile 经 FieldMapping 校验必有 value_name/coordinate_kind，回退值只
+    兜底绕过验证写入的旧 profile。
+    """
+
+    mapping = profile.get("mapping", {}) if isinstance(profile, dict) else {}
+    return {
+        "property_name": str(mapping.get("value_name") or "value"),
+        "units": str(mapping.get("value_unit") or "unknown"),
+        "coordinate_kind": str(mapping.get("coordinate_kind") or "local_linear"),
+    }
+
+
 def _result_metadata(
     *,
     result_id: str,
@@ -152,7 +170,12 @@ def _result_metadata(
     profile: dict[str, Any],
     fingerprint: str,
 ) -> dict[str, Any]:
-    """结果级 metadata（键顺序即落盘 JSON 顺序，legacy 逐字节锁定）。"""
+    """结果级 metadata（键顺序即落盘 JSON 顺序，逐位确定）。
+
+    v0.6.1（Task 4）在尾部追加 property 三键（``property_name``/``units``/
+    ``coordinate_kind``，取自 profile.mapping）；只对**新物化**成果生效——
+    幂等重读绝不改写既有 metadata.json，渲染源解析对新老 metadata 均可读。
+    """
 
     shape = grid.shape
     finite = grid_values[np.isfinite(grid_values)]
@@ -176,6 +199,8 @@ def _result_metadata(
         "fingerprint": fingerprint,
         "validation": params.get("validation"),
         "created_at": tables.utc_now_iso(),
+        # v0.6.1（Task 4）追加：渲染 property 语义三键（顺序锁定在尾部）
+        **_mapping_property_semantics(profile),
     }
 
 
