@@ -50,7 +50,7 @@ data/private/
 *.sdb
 *.sdd
 
-# SuperMap iClient3D SDK (44MB, fetched via scripts/fetch_iclient3d.py)
+# 旧 SuperMap iClient3D Cesium SDK 本地残留（v0.6.1 起切换 SuperMap3D，fetch 脚本已移除；保留忽略防误提交）
 vendor/
 web/public/Cesium/
 

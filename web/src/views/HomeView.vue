@@ -220,7 +220,7 @@ onMounted(async () => {
           <el-icon :size="22"><Monitor /></el-icon>
           <div>
             <b>浏览器三维展示</b>
-            <span>iClient3D for Cesium 点云与场景</span>
+            <span>SuperMap3D NetCDF 原生体渲染</span>
           </div>
         </div>
         <div class="iserver-status">

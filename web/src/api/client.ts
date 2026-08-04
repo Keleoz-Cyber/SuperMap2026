@@ -4,7 +4,6 @@ import type {
   AnomalyExtractionPayload,
   AnomalyExtractionRecord,
   ApiErrorBody,
-  BrowserLoadReport,
   CandidateComparisonResult,
   CandidatesResponse,
   CaseDatasetsResponse,
@@ -130,14 +129,6 @@ export function fetchRhoPoints(decimate = 4): Promise<RhoPoints> {
 
 export function fetchVoxelCells(): Promise<VoxelCells> {
   return getJson<VoxelCells>('/cases/resistivity/voxel-cells')
-}
-
-export async function postBrowserLoad(report: BrowserLoadReport): Promise<void> {
-  await requestJson('/evidence/browser-load', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(report),
-  })
 }
 
 // ---------------------------------------------------------- v0.4 platform

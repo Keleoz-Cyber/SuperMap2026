@@ -1,31 +1,11 @@
 /// <reference types="vitest/config" />
-import { createLogger, defineConfig } from 'vite'
+import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
-
-// Cesium 以全局脚本方式（public/Cesium，运行时解析）引入是既定架构，
-// Vite 对 <script src> 与 public CSS 的两条提示属于预期行为，在此精确过滤以保持构建零警告。
-const CESIUM_HTML_NOTES = [
-  'Cesium/Cesium.js',
-  "doesn't exist at build time",
-]
-const logger = createLogger()
-const rawWarn = logger.warn
-const rawWarnOnce = logger.warnOnce
-const isCesiumNote = (msg: string) => CESIUM_HTML_NOTES.some((s) => msg.includes(s))
-logger.warn = (msg, options) => {
-  if (isCesiumNote(msg)) return
-  rawWarn(msg, options)
-}
-logger.warnOnce = (msg, options) => {
-  if (isCesiumNote(msg)) return
-  rawWarnOnce(msg, options)
-}
 
 // 构建产物由 FastAPI StaticFiles 托管，因此 base 使用相对路径；
 // 开发时 /api 代理到本机 FastAPI。
 export default defineConfig({
   base: './',
-  customLogger: logger,
   plugins: [vue()],
   test: {
     environment: 'jsdom',

@@ -284,18 +284,6 @@ export interface RhoPoints {
   z_range: [number, number]
 }
 
-export interface BrowserLoadReport {
-  case_id: string
-  result_id: string
-  service_url: string
-  scene_name: string
-  layer_count: number
-  success: boolean
-  render_kind: 'iserver_scene' | 's3m_voxel_cache' | 'fallback_points'
-  validated_count: number
-  note: string
-}
-
 // ---------------- v0.4 通用建模平台契约（与后端 schemas 一一对应） ----------------
 
 export interface ApiErrorBody {
