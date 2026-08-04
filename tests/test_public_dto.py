@@ -108,8 +108,9 @@ def test_export_and_publication_responses_have_no_internal_paths(tmp_path):
     assert body["status"] == "succeeded"
     candidate = client.get(f"/api/experiments/{experiment_id}/candidates").json()["candidates"][0]
 
-    materialized = client.get(f"/api/results/{candidate['id']}")
-    assert materialized.status_code == 200, materialized.text
+    # v0.6.1（Task 7）：GET 不再隐式物化，先显式 POST materialize
+    materialized = client.post(f"/api/results/{candidate['id']}/materialize")
+    assert materialized.status_code in (200, 201), materialized.text
     assert_no_path_leak(materialized.json(), "$.result_metadata")
 
     export = client.post(f"/api/results/{candidate['id']}/exports")

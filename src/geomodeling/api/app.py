@@ -20,6 +20,9 @@ Integration contract (Task 10):
 - the v0.6 ``professional`` router (Task 17) is registered after the
   microseismic router and before the frontend static mount — its exact
   prefixes never shadow legacy or microseismic routes;
+- the v0.6.1 ``rendering`` router (Task 7) is registered after the result
+  routes and before the frontend static mount — capability/status/manifest/
+  NetCDF GETs are pure queries, POSTs are the only explicit mutations;
 - all route errors share the v0.4 envelope
   ``{"error": {"code", "message", "details"}}`` and never leak local paths.
 """
@@ -51,6 +54,7 @@ from geomodeling.api.routes import (
     experiments,
     microseismic,
     professional,
+    rendering,
     results,
     runs,
 )
@@ -226,6 +230,9 @@ def create_app() -> FastAPI:
     app.include_router(microseismic.router)
     # v0.6 专业分析路由：精确前缀，不遮蔽 legacy 与微震路由；前端挂载之前注册
     app.include_router(professional.router)
+    # v0.6.1 原生体渲染路由：显式 POST 变异 + 纯查询 GET；结果路由之后、
+    # 前端静态挂载之前注册，精确前缀不遮蔽 legacy 与微震路由
+    app.include_router(rendering.router)
 
     # -------------------------------------------------------- frontend
     settings = get_settings()

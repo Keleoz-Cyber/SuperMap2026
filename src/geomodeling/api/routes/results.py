@@ -1,4 +1,9 @@
-"""Result materialization, preview, slices, formal selection, exports, publications."""
+"""Result materialization, preview, slices, formal selection, exports, publications.
+
+v0.6.1（Task 7）：``GET /api/results/{id}``、``/preview``、``/slices`` 是纯
+查询——只读已物化工件，未物化 404 ``RESULT_NOT_MATERIALIZED``；
+``POST /materialize`` 是唯一创建操作。
+"""
 
 from __future__ import annotations
 
@@ -13,7 +18,12 @@ from geomodeling.platform.errors import PlatformError
 from geomodeling.platform.exports import build_export
 from geomodeling.platform.publications import request_publication
 from geomodeling.platform.repositories import FormalSelectionRepository
-from geomodeling.platform.results import materialize, preview, serve_slice
+from geomodeling.platform.results import (
+    materialize,
+    preview,
+    read_materialized_metadata,
+    serve_slice,
+)
 from geomodeling.platform.schemas import FormalSelectionBody, FormalSelectionRequest
 
 router = APIRouter(tags=["v0.4-results"])
@@ -32,8 +42,8 @@ def get_result(
     result_id: str,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
-    metadata = materialize(runtime, result_id)  # 幂等：已生成则直接读
-    return metadata
+    # 纯查询：只读已物化 metadata；未物化 404，绝不隐式物化
+    return read_materialized_metadata(runtime, result_id)
 
 
 @router.get("/api/results/{result_id}/preview")
@@ -41,7 +51,6 @@ def get_result_preview(
     result_id: str,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
-    materialize(runtime, result_id)
     return preview(runtime, result_id)
 
 
@@ -52,7 +61,6 @@ def get_result_slice(
     index: int = Query(..., ge=0),
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
-    materialize(runtime, result_id)
     return serve_slice(runtime, result_id, axis, index)
 
 

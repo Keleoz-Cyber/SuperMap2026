@@ -396,3 +396,44 @@ def test_export_cleanup_failure_does_not_mask_original_error(tmp_path, monkeypat
         "export staging cleanup failed" in record.getMessage() and record.exc_info is not None
         for record in caplog.records
     )
+
+
+def test_result_gets_are_pure_queries_until_materialized(tmp_path, monkeypatch):
+    """v0.6.1（Task 7）：GET 结果/preview/slices 是纯查询，绝不隐式物化。
+
+    未物化一律 404 ``RESULT_NOT_MATERIALIZED`` 且不落盘任何文件；显式
+    POST /materialize（唯一创建操作）后 GET 只读既有工件，不重算、不改写。
+    """
+
+    client, runtime = make_client(tmp_path)
+    _, _, _, candidate_id = prepare_completed_run(client)
+    grid_path = runtime.settings.result_grid(candidate_id)
+
+    # 未物化：GET 一律 404 RESULT_NOT_MATERIALIZED，且绝不创建工件
+    for url in (
+        f"/api/results/{candidate_id}",
+        f"/api/results/{candidate_id}/preview",
+        f"/api/results/{candidate_id}/slices?axis=z&index=0",
+    ):
+        resp = client.get(url)
+        assert resp.status_code == 404, url
+        assert resp.json()["error"]["code"] == "RESULT_NOT_MATERIALIZED"
+        assert not grid_path.exists(), url
+
+    # 显式物化后：GET 只读既有工件
+    assert client.post(f"/api/results/{candidate_id}/materialize").status_code in (200, 201)
+    mtime = grid_path.stat().st_mtime_ns
+
+    # 证明 GET 路径不调用 materialize：炸掉路由层引用后 GET 仍正常
+    import geomodeling.api.routes.results as results_routes
+
+    def bomb(*_args, **_kwargs):
+        raise AssertionError("GET 绝不调用 materialize")
+
+    monkeypatch.setattr(results_routes, "materialize", bomb)
+    resp = client.get(f"/api/results/{candidate_id}")
+    assert resp.status_code == 200
+    assert resp.json()["grid_sha256"]
+    assert client.get(f"/api/results/{candidate_id}/preview").status_code == 200
+    assert client.get(f"/api/results/{candidate_id}/slices?axis=z&index=0").status_code == 200
+    assert grid_path.stat().st_mtime_ns == mtime  # 工件未被重写

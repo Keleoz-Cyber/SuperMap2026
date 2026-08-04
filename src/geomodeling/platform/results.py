@@ -6,6 +6,10 @@ all validated rows and evaluated on the persisted rule grid, written as
 Previews are deterministically decimated at 50,000 cells; slices always
 read the persisted artifact — they never rerun interpolation.
 
+v0.6.1（Task 7）：结果 metadata/preview/slices 的 GET 路径是纯查询——
+``POST /materialize`` 是唯一创建操作；``read_materialized_metadata`` 与
+``load_grid`` 只读既有工件，绝不隐式物化。
+
 v0.6 专业候选（Task 15，设计 §5.3/§6.4/§9/§10）：物化在同一事务式目录
 流水中额外落盘专业不确定性网格——Kriging 原生标准差（能力按算法矩阵，
 IDW 为 ``not_applicable`` 且绝不生成空文件占位）与全算法经验误差尺度
@@ -765,6 +769,24 @@ def _verify_professional_materialization(
         if artifacts_row is not None and tables.loads_canonical(artifacts_row.manifest_json) != manifest:
             artifacts_row.manifest_json = tables.dumps_canonical(manifest)
             session.commit()
+
+
+def read_materialized_metadata(runtime: PlatformRuntime, result_id: str) -> dict[str, Any]:
+    """纯读取已物化成果的 metadata（v0.6.1 Task 7）。
+
+    未物化 404 ``RESULT_NOT_MATERIALIZED``；绝不创建文件、绝不改写工件——
+    ``POST /materialize`` 是唯一创建操作，GET 结果元数据只读既有落盘。
+    """
+
+    metadata_path = runtime.settings.result_grid(result_id).parent / "metadata.json"
+    if not metadata_path.is_file():
+        raise PlatformError(
+            RESULT_NOT_MATERIALIZED,
+            "成果尚未生成",
+            {"result_id": result_id},
+            http_status=404,
+        )
+    return json.loads(metadata_path.read_text(encoding="utf-8"))
 
 
 def load_grid(runtime: PlatformRuntime, result_id: str) -> GridResult:
