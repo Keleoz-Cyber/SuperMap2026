@@ -98,10 +98,11 @@ test('真实链路：上传 → 映射 → 质量 → IDW → 排行榜 → 成�
   const firstRow = page.getByTestId('candidate-row').first()
   await expect(firstRow).toContainText(/\d+\.\d{3}/)
 
-  // 6. 打开成果：完整场 + X/Y/Z 切片（真实坐标标签为数值）
+  // 6. 打开成果：完整场（NetCDF 原生体渲染面板）+ X/Y/Z 切片（真实坐标标签为数值）
   await page.getByTestId('open-result').first().click()
   await expect(page).toHaveURL(/#\/results\/[0-9a-f-]+/)
-  await expect(page.getByTestId('preview-count')).toContainText(/\d+ \/ \d+/, { timeout: 30_000 })
+  await expect(page.getByTestId('native-volume-panel')).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByTestId('create-asset')).toBeVisible({ timeout: 30_000 })
   await page.getByTestId('tab-slices').click()
   await expect(page.getByTestId('slice-label')).toContainText(/Z = -?\d+(\.\d+)? m/)
   await page.getByTestId('axis-x').click()
@@ -211,10 +212,11 @@ test.describe('v0.5 微震第二案例（真实链路）', () => {
       { timeout: 30_000 },
     )
 
-    // 8. 成果：完整场 + X/Y/Z 切片（真实坐标标签为数值）
+    // 8. 成果：完整场（NetCDF 原生体渲染面板）+ X/Y/Z 切片（真实坐标标签为数值）
     await page.getByTestId('open-result').first().click()
     await expect(page).toHaveURL(/#\/results\/[0-9a-f-]+/)
-    await expect(page.getByTestId('preview-count')).toContainText(/\d+ \/ \d+/, { timeout: 30_000 })
+    await expect(page.getByTestId('native-volume-panel')).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByTestId('create-asset')).toBeVisible({ timeout: 30_000 })
     await page.getByTestId('tab-slices').click()
     await expect(page.getByTestId('slice-label')).toContainText(/Z = -?\d+(\.\d+)? m/)
     await page.getByTestId('axis-x').click()
