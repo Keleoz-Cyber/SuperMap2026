@@ -37,6 +37,8 @@ import type {
   PublicationRecord,
   PublishStatus,
   QualityReport,
+  RenderAssetRecord,
+  RenderCapability,
   ResultMetadata,
   ResultPreview,
   RhoCaseDetail,
@@ -385,4 +387,41 @@ export function createProfessionalComparison(
 
 export function fetchProfessionalComparison(fingerprint: string): Promise<CandidateComparisonResult> {
   return getJson<CandidateComparisonResult>(`/professional-comparisons/${fingerprint}`)
+}
+
+// ---------------------------------------------------------- v0.6.1 native volume rendering
+
+// POST 是唯一显式变异（物化/资产创建/失败重试）；能力与资产状态刷新一律纯 GET，
+// 绝不隐式 POST。failed/interrupted 资产只在 retry_failed=true 时重建。
+
+export function materializeResult(resultId: string): Promise<ResultMetadata> {
+  return requestJson<ResultMetadata>(`/results/${resultId}/materialize`, { method: 'POST' })
+}
+
+export function fetchResultRenderCapability(resultId: string): Promise<RenderCapability> {
+  return getJson<RenderCapability>(`/results/${resultId}/render-capability`)
+}
+
+export function createResultRenderAsset(resultId: string, retryFailed = false): Promise<RenderAssetRecord> {
+  return postJson<RenderAssetRecord>(`/results/${resultId}/render-assets/netcdf`, {
+    retry_failed: retryFailed,
+  })
+}
+
+export function fetchResultRenderAsset(resultId: string): Promise<RenderAssetRecord> {
+  return getJson<RenderAssetRecord>(`/results/${resultId}/render-assets/netcdf`)
+}
+
+export function fetchLegacyRhoRenderCapability(): Promise<RenderCapability> {
+  return getJson<RenderCapability>('/cases/resistivity/render-capability')
+}
+
+export function createLegacyRhoRenderAsset(retryFailed = false): Promise<RenderAssetRecord> {
+  return postJson<RenderAssetRecord>('/cases/resistivity/render-assets/netcdf', {
+    retry_failed: retryFailed,
+  })
+}
+
+export function fetchLegacyRhoRenderAsset(): Promise<RenderAssetRecord> {
+  return getJson<RenderAssetRecord>('/cases/resistivity/render-assets/netcdf')
 }

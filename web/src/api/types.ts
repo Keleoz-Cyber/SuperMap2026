@@ -1168,3 +1168,89 @@ export interface CandidateComparisonResult {
   grid_difference: GridDifferenceSummary | null
   comparison_fingerprint: string
 }
+
+// ---------------- v0.6.1 NetCDF 原生体渲染契约（与 routes/rendering.py + 设计 §2.3/§2.4 一一对应） ----------------
+
+export type RenderSourceKind = 'candidate_result' | 'builtin_legacy'
+
+export type RenderAssetStatus = 'creating' | 'ready' | 'failed' | 'interrupted'
+
+// 显示锚点变换：wgs84_display_anchor_v1 只是显示变换，绝不代表真实地理配准
+export interface DisplayTransform {
+  contract: 'wgs84_display_anchor_v1'
+  origin_x: number
+  origin_y: number
+  anchor_longitude: number
+  anchor_latitude: number
+  anchor_height: number
+  metres_per_degree_lon: number
+  metres_per_degree_lat: number
+}
+
+// GET 渲染能力响应：supported=false 携带稳定 reason_code；display_transform 可能为 null
+// （无可用网格也无测点时前端只做文本诊断，不挂载 iframe）
+export interface RenderCapability {
+  source_kind: RenderSourceKind
+  source_id: string
+  supported: boolean
+  reason_code: string | null
+  reason: string | null
+  dimension: string | null
+  grid_kind: string | null
+  property_name: string | null
+  units: string | null
+  geolocation_status: string
+  display_transform: DisplayTransform | null
+}
+
+export interface RenderAssetError {
+  code: string
+  message: string
+  details: Record<string, unknown>
+}
+
+// 渲染资产公共记录：服务端内部 asset_dir 绝不下发，只有按 id 派生的相对 URL
+export interface RenderAssetRecord {
+  id: string
+  source_kind: RenderSourceKind
+  source_id: string
+  renderer: 'supermap_voxelgrid_netcdf'
+  status: RenderAssetStatus
+  grid_sha256: string
+  netcdf_sha256: string | null
+  manifest_url: string | null
+  netcdf_url: string | null
+  error: RenderAssetError | null
+}
+
+// 子帧 RENDER_STATE 携带的渲染身份（camelCase，§2.4 协议字段名逐字一致）
+export interface RenderIdentity {
+  sourceKind: RenderSourceKind
+  sourceId: string
+  gridSha256: string
+  netcdfSha256: string
+}
+
+export type PointLayerId = 'grid-samples' | 'aggregated' | 'accepted' | 'rejected' | 'legacy-measurements'
+
+export interface PointLayerStyle {
+  color?: string
+  pixelSize: number
+  outlineColor?: string
+  outlineWidth?: number
+}
+
+// 辅助/证据点层：坐标恒为局部米制（'local'），由子帧按 INIT.displayTransform 变换；
+// 点层是辅助采样/证据层，绝不参与连续体渲染
+export interface PointLayerPayload {
+  id: PointLayerId
+  visible: boolean
+  role: 'auxiliary' | 'evidence'
+  coordinates: 'local'
+  x: number[]
+  y: number[]
+  z: number[]
+  values?: number[]
+  isNodata?: boolean[]
+  style: PointLayerStyle
+}
