@@ -113,3 +113,7 @@
 - 插值成功、文件导出成功、iServer发布成功、浏览器加载成功是四个独立状态。
 - 三类案例没有共同控制点，不得叠加或描述成同一研究区多源融合。
 - 瓦斯三维暂缓不能阻塞电阻率纵向闭环和通用平台开发。
+
+## 9. v0.6.1 VoxelGridLayer3D + NetCDF POC（2026-08-04，已验证）
+
+浏览器原生体素渲染路线验通（`voxelgrid_netcdf_poc_verified`）：固定三维成果 `35348bb3`（IDW，11³）经确定性 NetCDF classic/v3 导出（`supermap_voxel_netcdf.py`，API 四端点）后，由 SuperMap3D 12.1（12i 2026，SVN 50939，WebGL2）`VoxelGridLayer3D` 直接彩色连续体渲染；色带/阈值/不透明度/Slice/ContourValue 均有像素级响应（Playwright live 规格，噪声基线 0，变化 4.2 万–6.2 万像素）。实测构建包事实：`startRender` 需首帧后、layerBounds 裸角度赋值、`opaqueRate` 为 no-op（透明度走 opacityTransferFunction）。坐标仍为显示锚点（`display_anchor_only`），不代表真实配准。证据：docs/evidence/v0.6.1-voxelgrid-netcdf-poc/verification.md。
