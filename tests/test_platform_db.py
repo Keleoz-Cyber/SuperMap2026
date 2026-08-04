@@ -43,6 +43,8 @@ EXPECTED_TABLES = {
     "professional_result_artifacts",
     "anomaly_extractions",
     "analysis_jobs",
+    # v6: NetCDF 渲染资产状态表
+    "render_assets",
 }
 
 

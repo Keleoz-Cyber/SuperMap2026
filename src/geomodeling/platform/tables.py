@@ -7,6 +7,7 @@ and timestamps are UTC ISO-8601 strings.
 
 v5 增加专业建模状态表：诊断、不可变确认快照、按候选唯一的专业工件、
 幂等异常提取与持久化分析任务（设计 §5.1）。
+v6 增加 NetCDF 渲染资产状态表 render_assets（v0.6.1 设计 §2.2）。
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
-from sqlalchemy import ForeignKey, Index, String, Text, UniqueConstraint, text
+from sqlalchemy import CheckConstraint, ForeignKey, Index, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -320,3 +321,54 @@ class AnalysisJob(Base):
     updated_at: Mapped[str] = mapped_column(Text, default=utc_now_iso, onupdate=utc_now_iso)
     started_at: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     finished_at: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+
+
+# ---------------------------------------------------------------------------
+# v6: NetCDF render asset state
+# ---------------------------------------------------------------------------
+
+
+class RenderAsset(Base):
+    """v0.6.1 NetCDF 渲染资产（设计 §2.2）。
+
+    五元身份（source_kind, source_id, grid_sha256, renderer, format_version）
+    唯一；状态机 creating→ready/failed（→interrupted 仅由启动恢复写入），
+    全部迁移由仓储 compare-and-update 驱动。
+    """
+
+    __tablename__ = "render_assets"
+    __table_args__ = (
+        # 同一渲染源身份最多一行：唯一约束兜底并发 claim 竞态，
+        # 撞约束方回滚后重读胜出者。
+        UniqueConstraint(
+            "source_kind",
+            "source_id",
+            "grid_sha256",
+            "renderer",
+            "format_version",
+            name="uq_render_assets_source_identity",
+        ),
+        CheckConstraint(
+            "status IN ('creating', 'ready', 'failed', 'interrupted')",
+            name="ck_render_assets_status",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    source_kind: Mapped[str] = mapped_column(String(32))
+    source_id: Mapped[str] = mapped_column(String(128))
+    # 可空：candidate_result 源挂既有候选；builtin_legacy 源为 NULL
+    candidate_result_id: Mapped[str | None] = mapped_column(
+        String(128), ForeignKey("candidate_results.id"), nullable=True, default=None
+    )
+    renderer: Mapped[str] = mapped_column(String(64))
+    format_version: Mapped[int] = mapped_column()
+    status: Mapped[str] = mapped_column(String(32))
+    grid_sha256: Mapped[str] = mapped_column(String(64))
+    netcdf_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True, default=None)
+    # 服务端内部目录；公共 DTO 序列化永不暴露
+    asset_dir: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    manifest_json: Mapped[str] = mapped_column(Text, default="{}")
+    error_json: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    created_at: Mapped[str] = mapped_column(Text, default=utc_now_iso)
+    updated_at: Mapped[str] = mapped_column(Text, default=utc_now_iso, onupdate=utc_now_iso)

@@ -44,7 +44,13 @@ from geomodeling.platform.errors import (
     RUN_NOT_RETRYABLE,
     PlatformError,
 )
+from geomodeling.platform.render_contracts import RenderGridSource
 from geomodeling.platform.schemas import (
+    FORMAT_VERSION,
+    RENDERER,
+    STATUS_CREATING,
+    STATUS_FAILED,
+    STATUS_READY,
     AnalysisJobRecord,
     AnomalyExtractionRecord,
     CandidateResultRecord,
@@ -59,7 +65,9 @@ from geomodeling.platform.schemas import (
     ProfessionalConfirmationRecord,
     ProfessionalDiagnosticRecord,
     ProfessionalResultArtifactsRecord,
+    RenderAssetRecord,
     RunRecord,
+    render_asset_id,
 )
 from geomodeling.platform.tables import (
     AnalysisJob,
@@ -72,6 +80,7 @@ from geomodeling.platform.tables import (
     ProfessionalConfirmation,
     ProfessionalDiagnostic,
     ProfessionalResultArtifacts,
+    RenderAsset,
     Run,
     RunStatus,
 )
@@ -1323,3 +1332,226 @@ class AnalysisJobRepository:
                 http_status=409,
             ) from exc
         return _analysis_job_record(new_row)
+
+
+# ---------------------------------------------------------------------------
+# v0.6.1 render asset repository (SQLite v6)
+# ---------------------------------------------------------------------------
+
+
+def _render_asset_record(row: RenderAsset) -> RenderAssetRecord:
+    """ORM 行 → 公共 DTO；``asset_dir`` 等内部列在此边界被截断。
+
+    相对 URL 仅在 ready 状态暴露（文件 GET 要求 ready 行，设计 §2.3）。
+    """
+
+    ready = row.status == STATUS_READY
+    return RenderAssetRecord(
+        id=row.id,
+        source_kind=row.source_kind,
+        source_id=row.source_id,
+        renderer=row.renderer,
+        status=row.status,
+        grid_sha256=row.grid_sha256,
+        netcdf_sha256=row.netcdf_sha256 if ready else None,
+        manifest_url=f"/api/render-assets/{row.id}/manifest" if ready else None,
+        netcdf_url=f"/api/render-assets/{row.id}/volume.nc" if ready else None,
+        error=tables.loads_canonical(row.error_json) if row.error_json is not None else None,
+    )
+
+
+class RenderAssetRepository:
+    """NetCDF 渲染资产状态机：五元身份幂等，全部迁移为 compare-and-update。"""
+
+    def __init__(self, session: Session) -> None:
+        self._s = session
+
+    def _get_row(self, asset_id: str) -> RenderAsset:
+        row = self._s.get(RenderAsset, asset_id)
+        if row is None:
+            raise PlatformError(
+                "RENDER_ASSET_NOT_FOUND",
+                "渲染资产不存在",
+                {"asset_id": asset_id},
+                http_status=404,
+            )
+        return row
+
+    def _get_by_identity(self, source: RenderGridSource) -> RenderAsset | None:
+        return self._s.scalar(
+            select(RenderAsset).where(
+                RenderAsset.source_kind == source.source_kind,
+                RenderAsset.source_id == source.source_id,
+                RenderAsset.grid_sha256 == source.grid_sha256,
+                RenderAsset.renderer == RENDERER,
+                RenderAsset.format_version == FORMAT_VERSION,
+            )
+        )
+
+    def claim(
+        self, source: RenderGridSource, *, retry_failed: bool
+    ) -> tuple[RenderAssetRecord, bool]:
+        """认领 source 的创建权，返回 ``(record, created)``。
+
+        - 无行：插入 creating 行（created=True）；并发插入撞五列唯一约束时
+          回滚并重读胜出者（created=False），绝不覆盖既有行。
+        - creating：他方正持有创建权，原样返回（created=False）。
+        - ready：幂等复用（created=False）；ready→creating 被禁止，
+          ``retry_failed=True`` 也不会把 ready 行翻回。
+        - failed/interrupted：仅 ``retry_failed=True`` 时以 CAS 翻回
+          creating（created=True），否则原样返回持久化的失败/中断。
+        """
+
+        row = self._get_by_identity(source)
+        if row is None:
+            row = RenderAsset(
+                id=render_asset_id(
+                    source_kind=source.source_kind,
+                    source_id=source.source_id,
+                    grid_sha256=source.grid_sha256,
+                ),
+                source_kind=source.source_kind,
+                source_id=source.source_id,
+                candidate_result_id=(
+                    source.source_id if source.source_kind == "candidate_result" else None
+                ),
+                renderer=RENDERER,
+                format_version=FORMAT_VERSION,
+                status=STATUS_CREATING,
+                grid_sha256=source.grid_sha256,
+            )
+            self._s.add(row)
+            try:
+                self._s.commit()
+            except IntegrityError:
+                self._s.rollback()
+                winner = self._get_by_identity(source)
+                if winner is None:
+                    # 非唯一性竞态（如候选外键违例）：不伪装成竞态，原样抛出
+                    raise
+                return _render_asset_record(winner), False
+            return _render_asset_record(row), True
+        if row.status in (STATUS_CREATING, STATUS_READY):
+            return _render_asset_record(row), False
+        if not retry_failed:
+            return _render_asset_record(row), False
+        # failed/interrupted → creating：以读到的状态为比较条件原子翻转，
+        # 并清除失败残留，避免过期身份随重试存活。
+        result = self._s.execute(
+            update(RenderAsset)
+            .where(RenderAsset.id == row.id, RenderAsset.status == row.status)
+            .values(
+                status=STATUS_CREATING,
+                error_json=None,
+                netcdf_sha256=None,
+                asset_dir=None,
+                manifest_json="{}",
+                updated_at=tables.utc_now_iso(),
+            )
+        )
+        if result.rowcount != 1:
+            # 并发改写：回滚重读现状，由调用方按当前状态处理
+            self._s.rollback()
+            return _render_asset_record(self._get_row(row.id)), False
+        self._s.commit()
+        return _render_asset_record(self._get_row(row.id)), True
+
+    def _cas_transition(
+        self,
+        asset_id: str,
+        *,
+        values: dict[str, Any],
+        message: str,
+    ) -> RenderAssetRecord:
+        """仅 creating 可迁移的原子比较并更新；不匹配时不覆盖现状，抛 409。"""
+
+        values.setdefault("updated_at", tables.utc_now_iso())
+        result = self._s.execute(
+            update(RenderAsset)
+            .where(RenderAsset.id == asset_id, RenderAsset.status == STATUS_CREATING)
+            .values(**values)
+        )
+        if result.rowcount != 1:
+            self._s.rollback()
+            actual = self._get_row(asset_id).status  # RENDER_ASSET_NOT_FOUND if absent
+            raise PlatformError(
+                INVALID_STATUS_TRANSITION,
+                message,
+                {"asset_id": asset_id, "expected": [STATUS_CREATING], "actual": actual},
+                http_status=409,
+            )
+        self._s.commit()
+        return _render_asset_record(self._get_row(asset_id))
+
+    def mark_ready(
+        self,
+        asset_id: str,
+        *,
+        netcdf_sha256: str,
+        asset_dir: str,
+        manifest: dict[str, Any],
+    ) -> RenderAssetRecord:
+        return self._cas_transition(
+            asset_id,
+            values={
+                "status": STATUS_READY,
+                "netcdf_sha256": netcdf_sha256,
+                "asset_dir": asset_dir,
+                "manifest_json": tables.dumps_canonical(manifest),
+                "error_json": None,
+            },
+            message="渲染资产已不在创建中，就绪结果不会覆盖当前状态",
+        )
+
+    def mark_failed(
+        self,
+        asset_id: str,
+        *,
+        code: str,
+        message: str,
+        details: dict[str, Any],
+    ) -> RenderAssetRecord:
+        return self._cas_transition(
+            asset_id,
+            values={
+                "status": STATUS_FAILED,
+                "error_json": tables.dumps_canonical(
+                    {"code": code, "message": message, "details": details}
+                ),
+            },
+            message="渲染资产已不在创建中，失败结果不会覆盖当前状态",
+        )
+
+    def get_for_source(self, source_kind: str, source_id: str) -> RenderAssetRecord:
+        """返回该源最新的渲染资产；从未创建过时 404。"""
+
+        row = self._s.scalar(
+            select(RenderAsset)
+            .where(
+                RenderAsset.source_kind == source_kind,
+                RenderAsset.source_id == source_id,
+            )
+            .order_by(RenderAsset.created_at.desc())
+            .limit(1)
+        )
+        if row is None:
+            raise PlatformError(
+                "RENDER_ASSET_NOT_FOUND",
+                "该渲染源尚未创建渲染资产",
+                {"source_kind": source_kind, "source_id": source_id},
+                http_status=404,
+            )
+        return _render_asset_record(row)
+
+    def get_ready(self, asset_id: str) -> RenderAssetRecord:
+        """文件下发前的就绪门禁：只有 ready 行可以读文件。"""
+
+        row = self._get_row(asset_id)
+        if row.status != STATUS_READY:
+            raise PlatformError(
+                "RENDER_ASSET_NOT_READY",
+                "渲染资产尚未就绪",
+                {"asset_id": asset_id, "status": row.status},
+                http_status=409,
+            )
+        return _render_asset_record(row)
