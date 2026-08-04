@@ -53,6 +53,9 @@ data/private/
 # SuperMap iClient3D SDK (44MB, fetched via scripts/fetch_iclient3d.py)
 vendor/
 web/public/Cesium/
+web/public/SuperMap3D-2026/
+# VoxelGridLayer3D POC 探针 .nc 测试产物（生成脚本在 docs/evidence/v0.6.1-voxelgrid-netcdf-poc/）
+web/public/supermap-voxel-netcdf/probe/
 
 # Playwright/browser evidence artifacts
 .playwright-mcp/

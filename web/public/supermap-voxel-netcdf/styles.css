@@ -1,0 +1,15 @@
+#container { position: absolute; inset: 0; background: #05070a; }
+#panel {
+  position: absolute; top: 10px; left: 10px; z-index: 9;
+  background: rgba(13,19,26,.92); color: #9fb3c8;
+  font: 12px/1.5 monospace; padding: 10px 12px; border-radius: 8px;
+  max-width: 44%; max-height: 92%; overflow: auto;
+}
+#panel h1 { font-size: 13px; margin: 0 0 8px; color: #e2e8f0; }
+#controls { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; margin-bottom: 8px; }
+#controls label { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+#controls input[type="number"] { width: 90px; }
+#controls button, #controls select, #controls input[type="number"] {
+  background: #0d131a; color: #9fb3c8; border: 1px solid #2a3a4a; border-radius: 4px; padding: 2px 6px;
+}
+#status { margin: 0; white-space: pre-wrap; }

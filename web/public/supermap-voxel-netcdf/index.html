@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8" />
+<title>v0.6.1 VoxelGridLayer3D + NetCDF POC</title>
+<link rel="stylesheet" href="/SuperMap3D-2026/Widgets/widgets.css" />
+<link rel="stylesheet" href="./styles.css" />
+<script>window.CESIUM_BASE_URL = '/SuperMap3D-2026/';</script>
+<script src="/SuperMap3D-2026/SuperMap3D.js"></script>
+</head>
+<body>
+<div id="container"></div>
+<div id="panel">
+  <h1>VoxelGridLayer3D + NetCDF POC</h1>
+  <div id="controls">
+    <label>渲染模式
+      <select id="ctl-mode" data-test="ctl-mode">
+        <option value="VolumeRendering" selected>VolumeRendering</option>
+        <option value="Slice">Slice</option>
+        <option value="ContourValue">ContourValue</option>
+      </select>
+    </label>
+    <label>最小过滤值 <input id="ctl-min" type="number" step="any" data-test="ctl-min" /></label>
+    <label>最大过滤值 <input id="ctl-max" type="number" step="any" data-test="ctl-max" /></label>
+    <label>总体不透明度 <input id="ctl-opacity" type="range" min="0.05" max="1" step="0.05" value="1" data-test="ctl-opacity" /></label>
+    <label><input id="ctl-gradient" type="checkbox" checked data-test="ctl-gradient" /> 梯度不透明度</label>
+    <label><input id="ctl-lighting" type="checkbox" checked data-test="ctl-lighting" /> 光照</label>
+    <button id="ctl-reset" data-test="ctl-reset">恢复默认参数</button>
+    <button id="ctl-zoom" data-test="ctl-zoom">缩放至体数据</button>
+  </div>
+  <pre id="status" data-test="status">boot…</pre>
+</div>
+<script src="./app.js"></script>
+</body>
+</html>

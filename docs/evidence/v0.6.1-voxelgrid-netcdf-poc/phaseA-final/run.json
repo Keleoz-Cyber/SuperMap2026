@@ -1,0 +1,173 @@
+{
+  "url": "http://127.0.0.1:8000/supermap-voxel-netcdf/index.html?source=probe&clean=1",
+  "finalPhase": "rendered",
+  "pocState": {
+    "phase": "rendered",
+    "identity": {
+      "resultId": "phase-a-probe",
+      "gridSha256": "n/a",
+      "netcdfSha256": "n/a"
+    },
+    "layerType": "VoxelGridLayer3D",
+    "renderMode": "VolumeRendering",
+    "thresholds": {
+      "min": 10,
+      "max": 610
+    },
+    "errors": []
+  },
+  "layerDump": {
+    "type": "VoxelGridLayer3D",
+    "visible": true,
+    "_startRender": true,
+    "minFiltration": 10,
+    "maxFiltration": 610,
+    "minValue": -9999,
+    "maxValue": 553,
+    "volumeRenderMode": 0,
+    "opaqueRate": 1,
+    "useGradientOpacity": true,
+    "gradientOpacityMinOpacity": 0,
+    "gradientOpacityMaxOpacity": 1,
+    "gradientOpacityMinValue": 0,
+    "gradientOpacityMaxValue": 1,
+    "fillStyle": 0,
+    "enableLighting": true,
+    "scale": {
+      "x": 1,
+      "y": 1,
+      "z": 1
+    },
+    "contourValue": 0,
+    "frameStateMode": 3,
+    "zBounds": [
+      -810,
+      -90
+    ],
+    "hasVoxelGridTile": true,
+    "tile_floor": -9999,
+    "tile_ceil": 553,
+    "tile_nWidth": 4,
+    "tile_nHeight": 5,
+    "tile_nDepth": 6,
+    "tile_nSideBlockCount": 3,
+    "tile_nBlockLength": 7,
+    "tile_nLength": 32,
+    "tileVolTextures": 1,
+    "tileOutputKeys": [
+      "array",
+      "maxValue",
+      "minValue",
+      "xDimSize",
+      "yDimSize",
+      "zDimSize",
+      "timeDimSize"
+    ],
+    "tileOutputDims": [
+      4,
+      5,
+      6,
+      -9999,
+      553
+    ],
+    "tileBoundingSphere": [
+      {
+        "x": -2763777.5793578844,
+        "y": 4787003.188267582,
+        "z": 3169968.7353836372
+      },
+      1947.2962036523481
+    ],
+    "tileHasVolumeBoxCommand": true,
+    "cmdBoundingVolume": [
+      {
+        "x": -2763777.5793578844,
+        "y": 4787003.188267582,
+        "z": 3169968.7353836372
+      },
+      1947.2962036523481
+    ],
+    "cmdPrimitiveType": 4,
+    "cmdCount": 36,
+    "cmdCull": true,
+    "cmdPass": 14,
+    "cmdHasShaderProgram": true,
+    "glError": 0,
+    "glLost": false,
+    "tileHasOutlineCommand": true,
+    "tileHasContourCommand": false,
+    "camera": {
+      "x": -631.7773019480519,
+      "y": -923.4663217137568,
+      "z": 1409.988437329419
+    }
+  },
+  "execProbe": {
+    "ok": true,
+    "frames": 60,
+    "tileUpdate": 60,
+    "pushes": 0,
+    "volumeBoxExecute": 0,
+    "recreated": 0,
+    "passesRender": true,
+    "passesPick": false,
+    "cmdInList": false,
+    "listLength": 0
+  },
+  "gpu": {
+    "webgl2": true,
+    "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+    "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/149.0.7827.55 Safari/537.36",
+    "dpr": 1
+  },
+  "badResponses": [],
+  "sdkRequests": [
+    "http://127.0.0.1:8000/SuperMap3D-2026/Widgets/widgets.css",
+    "http://127.0.0.1:8000/SuperMap3D-2026/SuperMap3D.js",
+    "http://127.0.0.1:8000/SuperMap3D-2026/Assets/approximateTerrainHeights.json",
+    "http://127.0.0.1:8000/SuperMap3D-2026/Widgets/Images/ZoomIndicator/zoom_Identifiers.png",
+    "http://127.0.0.1:8000/supermap-voxel-netcdf/probe/probe-4x5x6.nc",
+    "http://127.0.0.1:8000/SuperMap3D-2026/Widgets/Images/Navigation/tilt.png",
+    "http://127.0.0.1:8000/SuperMap3D-2026/Widgets/Images/Navigation/tiltbar.png",
+    "http://127.0.0.1:8000/SuperMap3D-2026/Widgets/Images/Navigation/compass_active.png",
+    "http://127.0.0.1:8000/SuperMap3D-2026/Widgets/Images/Navigation/ring.png",
+    "http://127.0.0.1:8000/SuperMap3D-2026/Widgets/Images/Navigation/zoom.png",
+    "http://127.0.0.1:8000/SuperMap3D-2026/Widgets/Images/Navigation/zoombar.png",
+    "http://127.0.0.1:8000/SuperMap3D-2026/Widgets/Images/cur/Pan.cur",
+    "http://127.0.0.1:8000/SuperMap3D-2026/Assets/IAU2006_XYS/IAU2006_XYS_18.json",
+    "http://127.0.0.1:8000/SuperMap3D-2026/Assets/Images/logo.png",
+    "http://127.0.0.1:8000/SuperMap3D-2026/Assets/Textures/EnvironmentMapping_512.hdr",
+    "http://127.0.0.1:8000/SuperMap3D-2026/Assets/Textures/EnvironmentMapping_512.hdr",
+    "http://127.0.0.1:8000/SuperMap3D-2026/Assets/Textures/GlobalBkLayer.jpg"
+  ],
+  "console": [
+    {
+      "type": "info",
+      "text": "**********超图三维产品SDK包版本信息**********"
+    },
+    {
+      "type": "info",
+      "text": "产品名称: iClient3D; 大版本号: 12.1.0; SVN版本号: 50939"
+    },
+    {
+      "type": "info",
+      "text": "**********超图三维产品SDK包版本信息**********"
+    },
+    {
+      "type": "warning",
+      "text": "[.WebGL-0x4eac00196600]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels"
+    },
+    {
+      "type": "warning",
+      "text": "[.WebGL-0x4eac00196600]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels"
+    },
+    {
+      "type": "warning",
+      "text": "[.WebGL-0x4eac00196600]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels"
+    },
+    {
+      "type": "warning",
+      "text": "[.WebGL-0x4eac00196600]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels (this message will no longer repeat)"
+    }
+  ]
+}
