@@ -107,8 +107,10 @@ jobs:
       - name: Install Chromium for Playwright
         run: npx --prefix web playwright install chromium
 
+      # 专有 SuperMap3D SDK 不入库，SDK 依赖的 live 门（supermap-volume-frame-live、
+      # supermap-native-volume-live）仅作本机发布门；CI 只跑平台 live 流程。
       - name: Live E2E (real FastAPI + isolated SQLite)
-        run: npm --prefix web run test:e2e:live
+        run: npm --prefix web run test:e2e:live -- e2e-live/platform-live.spec.ts
 
       - name: Upload live failure evidence
         if: failure()
