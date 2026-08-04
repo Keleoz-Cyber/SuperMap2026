@@ -1,0 +1,37 @@
+{
+  "dir": "docs\\evidence\\v0.6.1-voxelgrid-netcdf-poc\\phaseC",
+  "panel_mask": [
+    0,
+    0,
+    680,
+    560
+  ],
+  "steps": {
+    "baseline": {
+      "non_background_pixels": 66428,
+      "total_pixels": 913959
+    },
+    "threshold": {
+      "non_background_pixels": 66421,
+      "total_pixels": 913959
+    },
+    "opacity": {
+      "non_background_pixels": 66585,
+      "total_pixels": 913959
+    },
+    "slice": {
+      "non_background_pixels": 47156,
+      "total_pixels": 913959
+    },
+    "contour": {
+      "non_background_pixels": 5060,
+      "total_pixels": 913959
+    }
+  },
+  "diffs": {
+    "baseline->threshold": 61633,
+    "threshold->opacity": 61622,
+    "opacity->slice": 61538,
+    "slice->contour": 42096
+  }
+}

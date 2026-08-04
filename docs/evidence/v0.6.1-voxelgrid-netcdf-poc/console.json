@@ -1,0 +1,30 @@
+[
+  {
+    "type": "info",
+    "text": "**********超图三维产品SDK包版本信息**********"
+  },
+  {
+    "type": "info",
+    "text": "产品名称: iClient3D; 大版本号: 12.1.0; SVN版本号: 50939"
+  },
+  {
+    "type": "info",
+    "text": "**********超图三维产品SDK包版本信息**********"
+  },
+  {
+    "type": "warning",
+    "text": "[.WebGL-0xc94001a7c00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels"
+  },
+  {
+    "type": "warning",
+    "text": "[.WebGL-0xc94001a7c00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels"
+  },
+  {
+    "type": "warning",
+    "text": "[.WebGL-0xc94001a7c00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels"
+  },
+  {
+    "type": "warning",
+    "text": "[.WebGL-0xc94001a7c00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels (this message will no longer repeat)"
+  }
+]

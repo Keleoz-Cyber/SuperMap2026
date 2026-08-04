@@ -1,0 +1,60 @@
+{
+  "downloadedBytes": 6516,
+  "downloadedSha256": "278db7e67908fc74ea720b02048c0d61fabb32d92c8f0b23c7480141549a1bad",
+  "netcdfVersion": "classic (v3, scipy netcdf_file version=1)",
+  "dimensions": {
+    "x": 11,
+    "y": 11,
+    "z": 11
+  },
+  "variables": {
+    "x": {
+      "dtype": ">f4",
+      "dimensions": [
+        "x"
+      ]
+    },
+    "y": {
+      "dtype": ">f4",
+      "dimensions": [
+        "y"
+      ]
+    },
+    "z": {
+      "dtype": ">f4",
+      "dimensions": [
+        "z"
+      ]
+    },
+    "rho": {
+      "dtype": ">f4",
+      "dimensions": [
+        "x",
+        "y",
+        "z"
+      ]
+    }
+  },
+  "fillValue": {
+    "value": -9999.0,
+    "dtype": "float32"
+  },
+  "missingValue": -9999.0,
+  "fillCellCount": 0,
+  "validCellCount": 1331,
+  "valueRangeReadback": [
+    6.284669876098633,
+    105.35639953613281
+  ],
+  "axisMonotonic": {
+    "x": true,
+    "y": true,
+    "z": true
+  },
+  "globalAttrs": {
+    "Conventions": "CF-1.8",
+    "coordinate_contract": "wgs84_display_anchor_v1",
+    "geolocation_status": "display_anchor_only",
+    "generator": "geomodeling-platform supermap_voxel_netcdf v1"
+  }
+}

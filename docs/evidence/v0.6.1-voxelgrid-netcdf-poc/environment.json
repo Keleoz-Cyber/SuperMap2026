@@ -1,0 +1,18 @@
+{
+  "utc": "2026-08-04T02:32:18.841Z",
+  "gitCommit": "1ac5ce8ee66867111ab7f6c6bce8ffbd4188bb26",
+  "dirtyWorktree": true,
+  "supermap3dVersion": "SuperMap3D 12.1.0 (SVN 50939, iClient3D 12i 2026)",
+  "sdkFileSha256": "d69dadab01fc452a79f1fa88a46aced3cf29885df7bf4febbd6f24ce5b578120",
+  "browser": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/149.0.7827.55 Safari/537.36",
+  "gpuRenderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+  "webglContextType": 2,
+  "viewport": [
+    1280,
+    720
+  ],
+  "devicePixelRatio": 1,
+  "resultId": "35348bb3-be03-4862-b764-ee165ae0c7dc",
+  "gridSha256": "54c313c9328f8c06e079efacf8099a4b07446e284121369a10b846c4b71bb69f",
+  "netcdfSha256": "278db7e67908fc74ea720b02048c0d61fabb32d92c8f0b23c7480141549a1bad"
+}

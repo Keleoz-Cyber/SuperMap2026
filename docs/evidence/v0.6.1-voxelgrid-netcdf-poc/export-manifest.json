@@ -1,0 +1,46 @@
+{
+  "format": "supermap-voxel-netcdf",
+  "version": 1,
+  "candidate_result_id": "35348bb3-be03-4862-b764-ee165ae0c7dc",
+  "grid_sha256": "54c313c9328f8c06e079efacf8099a4b07446e284121369a10b846c4b71bb69f",
+  "netcdf_file": "volume.nc",
+  "netcdf_version": "classic",
+  "variable_name": "rho",
+  "dimension_names": [
+    "x",
+    "y",
+    "z"
+  ],
+  "shape": [
+    11,
+    11,
+    11
+  ],
+  "dtype": "float32",
+  "fill_value": -9999,
+  "valid_count": 1331,
+  "nodata_count": 0,
+  "value_range": [
+    6.284669896754732,
+    105.3564
+  ],
+  "encoded_value_range": [
+    6.284669876098633,
+    105.35639953613281
+  ],
+  "layer_bounds_degrees": {
+    "west": 119.99937814993133,
+    "south": 29.998015379769292,
+    "east": 120.00062185006867,
+    "north": 30.001984620230708
+  },
+  "z_bounds_metres": [
+    -833.0047143,
+    -19.5999
+  ],
+  "render_coordinate_contract": "wgs84_display_anchor_v1",
+  "geolocation_status": "display_anchor_only",
+  "sdk_target": "SuperMap3D 12.1.0",
+  "exporter_version": 1,
+  "netcdf_sha256": "278db7e67908fc74ea720b02048c0d61fabb32d92c8f0b23c7480141549a1bad"
+}

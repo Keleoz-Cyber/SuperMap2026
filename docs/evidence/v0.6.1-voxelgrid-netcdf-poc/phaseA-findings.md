@@ -28,4 +28,4 @@ NetCDF v3 → `VoxelGridLayer3D` → VolumeRendering 彩色连续体渲染成立
 5. **色带分量为 0–1 浮点**（`addRGBPoint(value, r, g, b)`），0–255 量纲会得到近黑体。
 6. **阈值 `minFiltration/maxFiltration` 经 uniform 闭包实时读取**，赋值即生效，无需重建命令。
 
-另：命令执行经 `derivedCommands` 链（logDepth → … → hdr.command，frameState `_hdr=true`）逐帧真实执行——"命令不执行"的假象来自挂钩对象选错，排查记录见各 phaseA-diag*/run.json。
+另：命令执行经 `derivedCommands` 链（logDepth → … → hdr.command，frameState `_hdr=true`）逐帧真实执行——"命令不执行"的假象来自挂钩对象选错（Proxy/逐级挂钩实证）。
