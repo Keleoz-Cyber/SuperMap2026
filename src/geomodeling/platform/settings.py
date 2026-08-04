@@ -15,6 +15,12 @@ from pathlib import Path
 
 ENV_DATA_DIR = "GEOMODELING_DATA_DIR"
 DEFAULT_DATA_DIR = "var/geomodeling"
+ENV_SUPERMAP_ANCHOR_LON = "GEOMODELING_SUPERMAP_ANCHOR_LON"
+ENV_SUPERMAP_ANCHOR_LAT = "GEOMODELING_SUPERMAP_ANCHOR_LAT"
+ENV_SUPERMAP_ANCHOR_HEIGHT = "GEOMODELING_SUPERMAP_ANCHOR_HEIGHT"
+DEFAULT_SUPERMAP_ANCHOR_LON = 120.0
+DEFAULT_SUPERMAP_ANCHOR_LAT = 30.0
+DEFAULT_SUPERMAP_ANCHOR_HEIGHT = 0.0
 
 DB_FILENAME = "platform.sqlite3"
 
@@ -29,10 +35,26 @@ class PlatformSettings:
     data_dir: Path
     max_upload_bytes: int = DEFAULT_MAX_UPLOAD_BYTES
     max_upload_rows: int = DEFAULT_MAX_UPLOAD_ROWS
+    supermap_anchor_lon: float = DEFAULT_SUPERMAP_ANCHOR_LON
+    supermap_anchor_lat: float = DEFAULT_SUPERMAP_ANCHOR_LAT
+    supermap_anchor_height: float = DEFAULT_SUPERMAP_ANCHOR_HEIGHT
 
     @classmethod
     def resolve(cls) -> "PlatformSettings":
-        return cls(data_dir=Path(os.environ.get(ENV_DATA_DIR, DEFAULT_DATA_DIR)))
+        return cls(
+            data_dir=Path(os.environ.get(ENV_DATA_DIR, DEFAULT_DATA_DIR)),
+            supermap_anchor_lon=float(
+                os.environ.get(ENV_SUPERMAP_ANCHOR_LON, DEFAULT_SUPERMAP_ANCHOR_LON)
+            ),
+            supermap_anchor_lat=float(
+                os.environ.get(ENV_SUPERMAP_ANCHOR_LAT, DEFAULT_SUPERMAP_ANCHOR_LAT)
+            ),
+            supermap_anchor_height=float(
+                os.environ.get(
+                    ENV_SUPERMAP_ANCHOR_HEIGHT, DEFAULT_SUPERMAP_ANCHOR_HEIGHT
+                )
+            ),
+        )
 
     @property
     def db_path(self) -> Path:
@@ -113,6 +135,22 @@ class PlatformSettings:
     def export_package(self, export_id: str) -> Path:
         return self.exports_dir / export_id / "result-package.zip"
 
+    @property
+    def supermap_volume_dir(self) -> Path:
+        return self.data_dir / "supermap-volume"
+
+    def supermap_volume_package(self, export_id: str) -> Path:
+        return self.supermap_volume_dir / export_id / "supermap-volume.zip"
+
+    @property
+    def supermap_voxel_netcdf_dir(self) -> Path:
+        """v0.6.1 VoxelGridLayer3D NetCDF 导出根目录（独立格式，不复用 GeoTIFF 目录）。"""
+
+        return self.data_dir / "supermap-voxel-netcdf"
+
+    def supermap_voxel_netcdf_export_dir(self, export_id: str) -> Path:
+        return self.supermap_voxel_netcdf_dir / export_id
+
     def runtime_directories(self) -> tuple[Path, ...]:
         return (
             self.data_dir,
@@ -121,4 +159,6 @@ class PlatformSettings:
             self.experiments_dir,
             self.results_dir,
             self.exports_dir,
+            self.supermap_volume_dir,
+            self.supermap_voxel_netcdf_dir,
         )

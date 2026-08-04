@@ -6,6 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import FileResponse
+from pathlib import Path
 
 from geomodeling.api.deps import get_platform_runtime
 from geomodeling.platform import PlatformRuntime, tables
@@ -15,6 +16,8 @@ from geomodeling.platform.publications import request_publication
 from geomodeling.platform.repositories import FormalSelectionRepository
 from geomodeling.platform.results import materialize, preview, serve_slice
 from geomodeling.platform.schemas import FormalSelectionBody, FormalSelectionRequest
+from geomodeling.platform.supermap_volume import export_supermap_volume
+from geomodeling.platform.supermap_voxel_netcdf import export_supermap_voxel_netcdf
 
 router = APIRouter(tags=["v0.4-results"])
 
@@ -126,6 +129,85 @@ def create_export(
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
     return build_export(runtime, result_id)
+
+
+@router.post("/api/results/{result_id}/supermap-volume-export", status_code=201)
+def create_supermap_volume_export(
+    result_id: str,
+    runtime: PlatformRuntime = Depends(get_platform_runtime),
+) -> dict[str, Any]:
+    """Create an idempotent iDesktopX DatasetVolume input package."""
+
+    return export_supermap_volume(runtime, result_id)
+
+
+@router.get("/api/results/{result_id}/supermap-volume-export")
+def get_supermap_volume_export(
+    result_id: str,
+    runtime: PlatformRuntime = Depends(get_platform_runtime),
+) -> dict[str, Any]:
+    return export_supermap_volume(runtime, result_id)
+
+
+@router.get("/api/supermap-volume-exports/{export_id}/download")
+def download_supermap_volume_export(
+    export_id: str,
+    runtime: PlatformRuntime = Depends(get_platform_runtime),
+) -> FileResponse:
+    if not export_id or any(char not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-" for char in export_id):
+        raise PlatformError("VOLUME_EXPORT_INVALID", "体元导出 ID 无效", http_status=400)
+    package_path = runtime.settings.supermap_volume_package(export_id)
+    if not package_path.is_file():
+        raise PlatformError("VOLUME_EXPORT_NOT_FOUND", "体元导出不存在", {"export_id": export_id}, http_status=404)
+    return FileResponse(package_path, media_type="application/zip", filename="supermap-volume.zip")
+
+
+@router.post("/api/results/{result_id}/supermap-voxel-netcdf-export", status_code=201)
+def create_supermap_voxel_netcdf_export(
+    result_id: str,
+    runtime: PlatformRuntime = Depends(get_platform_runtime),
+) -> dict[str, Any]:
+    """v0.6.1 POC：确定性 NetCDF classic/v3 导出（VoxelGridLayer3D 直读）。"""
+
+    return export_supermap_voxel_netcdf(runtime, result_id)
+
+
+@router.get("/api/results/{result_id}/supermap-voxel-netcdf-export")
+def get_supermap_voxel_netcdf_export(
+    result_id: str,
+    runtime: PlatformRuntime = Depends(get_platform_runtime),
+) -> dict[str, Any]:
+    return export_supermap_voxel_netcdf(runtime, result_id)
+
+
+_VOXEL_NC_SAFE_EXPORT_ID = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
+
+
+def _voxel_netcdf_export_file(runtime: PlatformRuntime, export_id: str, filename: str) -> Path:
+    if not export_id or any(char not in _VOXEL_NC_SAFE_EXPORT_ID for char in export_id):
+        raise PlatformError("VOXEL_NC_RESULT_INVALID", "NetCDF 导出 ID 无效", http_status=400)
+    file_path = runtime.settings.supermap_voxel_netcdf_export_dir(export_id) / filename
+    if not file_path.is_file():
+        raise PlatformError("VOXEL_NC_NOT_FOUND", "NetCDF 导出不存在", {"export_id": export_id}, http_status=404)
+    return file_path
+
+
+@router.get("/api/supermap-voxel-netcdf-exports/{export_id}/manifest")
+def get_supermap_voxel_netcdf_manifest(
+    export_id: str,
+    runtime: PlatformRuntime = Depends(get_platform_runtime),
+) -> FileResponse:
+    file_path = _voxel_netcdf_export_file(runtime, export_id, "manifest.json")
+    return FileResponse(file_path, media_type="application/json; charset=utf-8", filename="manifest.json")
+
+
+@router.get("/api/supermap-voxel-netcdf-exports/{export_id}/volume.nc")
+def download_supermap_voxel_netcdf(
+    export_id: str,
+    runtime: PlatformRuntime = Depends(get_platform_runtime),
+) -> FileResponse:
+    file_path = _voxel_netcdf_export_file(runtime, export_id, "volume.nc")
+    return FileResponse(file_path, media_type="application/x-netcdf", filename="volume.nc")
 
 
 @router.get("/api/exports/{export_id}/download")
