@@ -374,16 +374,18 @@ def test_fit_variogram_matches_legacy_reference_within_platform_tolerance():
     from geomodeling.modeling.variogram import fit_variogram
 
     # 参考值取自重构前实现；least_squares 的 LAPACK/BLAS 路径随平台有末位差异，
-    # 故以紧容差钉住数值（rtol=1e-7），仍能捕获算法级漂移。近零 nugget 用 atol。
+    # 故以紧容差钉住数值（rtol=1e-7），仍能捕获算法级漂移。近零 nugget 用 atol：
+    # 拟合在 sill 量级数据上的近零 nugget 在不同 BLAS 下可到 1e-9 量级（仍为物理零），
+    # atol=1e-6 远比任何算法级变化严格，同时吸收平台噪声。
     coords, values = plane_field_2d()
     model = fit_variogram(coords, values, "spherical")
-    assert model.nugget == pytest.approx(7.528834720767456e-20, abs=1e-12)
+    assert model.nugget == pytest.approx(7.528834720767456e-20, abs=1e-6)
     assert model.partial_sill == pytest.approx(11.568770768708706, rel=1e-7)
     assert model.range == pytest.approx(874.1344925760058, rel=1e-7)
 
     coords, values = smooth_field_3d()
     model = fit_variogram(coords, values, "spherical")
-    assert model.nugget == pytest.approx(7.708953972850713e-16, abs=1e-12)
+    assert model.nugget == pytest.approx(7.708953972850713e-16, abs=1e-6)
     assert model.partial_sill == pytest.approx(1.0302351693326357, rel=1e-7)
     assert model.range == pytest.approx(1652.575581583548, rel=1e-7)
 
