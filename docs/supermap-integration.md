@@ -1,6 +1,32 @@
 # SuperMap iServer 与浏览器集成说明
 
-> 更新时间：2026-07-22。本文是开发阶段阅读SuperMap文档、探测本机环境和实现发布闭环的入口，不代表当前已经发布成功。
+> 更新时间：2026-08-04（v0.6.1 增补 SuperMap3D 原生体渲染事实）。本文是开发阶段阅读SuperMap文档、探测本机环境和实现发布闭环的入口，不代表当前已经发布成功。
+
+## 0. SuperMap3D 12.1 原生体渲染（v0.6.1，与 iServer 发布链相互独立）
+
+v0.6.1 起，浏览器连续体渲染不再依赖 iServer/S3M 发布链，而是平台后端直接产出
+确定性 NetCDF classic/v3 体包，由 SuperMap3D 12.1 `VoxelGridLayer3D` 在同源
+iframe 中原生渲染：
+
+- **SDK 获取与预检**：SuperMap3D 运行时由 `scripts/install_supermap3d.py` 安装到
+  `web/public/SuperMap3D-2026`（本机资产，git-ignored 不入库），`SuperMap3D.js`
+  的 SHA-256 钉死为
+  `d69dadab01fc452a79f1fa88a46aced3cf29885df7bf4febbd6f24ce5b578120`；
+  `--verify-only` 预检核验钉住哈希与完整资源树，fail-closed。前端 build 后
+  live 验收加载 `web/dist/SuperMap3D-2026/SuperMap3D.js`。
+- **运行时边界**：SuperMap3D 只在体渲染 iframe
+  （`web/public/supermap-volume-frame/`）内加载，经 `gmp-supermap-volume/v1`
+  postMessage 协议与 Vue 父页通信（握手、加载、filter/opacity/Slice/Contour
+  命令、rendered/error 回执）；Vue 父页不加载任何旧全局 Cesium。
+- **数据链**：FastAPI `POST .../render-assets/netcdf` 显式创建不可变资产
+  （`render_assets` 表，SQLite v6），`GET /api/render-assets/{id}/volume.nc`
+  下发前重算哈希双向核验；坐标为 `wgs84_display_anchor_v1` 显示锚点
+  （120°E / 30°N）的显示变换，页面显示 `display_anchor_only`，不宣称真实配准。
+- **与 iServer 链的区分**：本路径不发布 iServer 服务、不生成 S3M 缓存、不使用
+  iDesktopX `DatasetVolume`；iServer 发布链（下文）保持既有证据语义不变，
+  `manual_required` 不变。被取代的 `/volume-demo` 自研 WebGL2 光线步进 POC
+  （main 分支 PR #10，已合并入 main）不是产品路由。
+- 安装、验收与诊断命令见 [v0.6.1 运行手册](v0.6.1-netcdf-native-rendering-runbook.md)。
 
 ## 1. 职责边界
 

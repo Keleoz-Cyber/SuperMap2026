@@ -1,6 +1,6 @@
 # 当前开发状态
 
-> 更新时间：2026-07-27（v0.6 分支更新）。本文是开发人员和开发 Agent 判断“现在做到哪一步”的唯一状态入口。数据细节见 [电阻率](../data/resistivity.md)、[微震](../data/microseismic.md)、[瓦斯](../data/gas.md) 和 [数据契约](../data/contracts.md)；目标产品见 [产品蓝图](../product-blueprint.md)。
+> 更新时间：2026-08-04（v0.6.1 分支更新）。本文是开发人员和开发 Agent 判断“现在做到哪一步”的唯一状态入口。数据细节见 [电阻率](../data/resistivity.md)、[微震](../data/microseismic.md)、[瓦斯](../data/gas.md) 和 [数据契约](../data/contracts.md)；目标产品见 [产品蓝图](../product-blueprint.md)。
 
 ## 1. 状态分层
 
@@ -48,7 +48,19 @@
   - 平台与入口：SQLite v5 新增五表（`professional_diagnostics`/`professional_confirmations`/`professional_result_artifacts`/`anomaly_extractions`/`analysis_jobs`，部分唯一在途索引）；诊断与异常提取走 `analysis_jobs` 持久化任务（取消/重试/重启转 `interrupted`）；能力矩阵类型化 `not_applicable`，旧候选 `LEGACY_RESULT_NOT_COMPUTED`；专业证据 ZIP（`professional/` 目录，声明缺失或哈希不符 409 fail-closed）；浏览器专业诊断工作台 + 专业分析台、API（`professional-diagnostics`/`analysis-jobs`/`professional-comparisons`/白名单工件下载）、CLI（`geomodeling professional diagnose/confirm/inspect-result/extract-anomalies/compare`）三入口。
   - 测试基线（Task 23 后实测，本分支）：后端 `1153 passed`（便携 1124 + `local_data 29`）、前端 vitest `97 passed`、Mock E2E `4 passed`、Live E2E `3 passed`。
   - 运行手册：[../v0.6-professional-modeling-loop.md](../v0.6-professional-modeling-loop.md)。发布门说明：PR 未合并、tag/release 待批准。
-- **连续体渲染 POC（`feat/volume-rendering-poc` 分支，本分支验证通过，PR 未合并）**：独立 `/volume-demo`（仅直接 URL，无首页/导航入口）把电阻率 S3M 缓存采样（7×21×48/7,056，采样值域 2.291–127.281）经三线性可视化重采样为 7×23×42 纹理，用 WebGL2 光线步进渲染为连续半透明体。本机真实缓存验收通过（Chrome 150 + ANGLE D3D11）：旋转连续、阈值/透明度像素变化、控制台零错误、进出 10 次无资源累积。边界：纹理是可视化重采样，不是 VOLUME 精确逐单元导出（登记精确值域 1.418283–133.146194 不冒充）；不构成新正式成果；验收中发现并修复片元 `modelMatrix` 未声明与高 DPR ResizeObserver 正反馈两个真实缺陷。证据：[../evidence/volume-rendering-poc/verification.md](../evidence/volume-rendering-poc/verification.md)。
+- **连续体渲染 POC（已合并入 main，已被 v0.6.1 取代）**：独立 `/volume-demo` 曾把电阻率 S3M 缓存采样（7×21×48/7,056，采样值域 2.291–127.281）经三线性可视化重采样渲染为连续半透明体，本机验收通过。该 POC 已被 v0.6.1 的 SuperMap3D NetCDF 原生体渲染取代，其产品代码不进入 v0.6.1（Task 16 集成分支删除）；历史证据保留于 `docs/evidence/volume-rendering-poc/`。
+
+- **v0.6.1 NetCDF 原生体渲染（`feat/v0.6.1-netcdf-native-rendering` 分支，当前代码已实现（本分支），发布候选）**：
+  - 渲染器收敛：浏览器内唯一连续体渲染器为 SuperMap3D 12.1 `VoxelGridLayer3D` + 确定性 NetCDF classic/v3 体包（`volume.nc` + manifest v2 + checksums，同身份逐字节相同）；SuperMap3D 只加载于同源体渲染 iframe（`web/public/supermap-volume-frame/`，postMessage 协议 `gmp-supermap-volume/v1`），Vue 父页只持有业务状态与控件、不加载任何旧全局 Cesium。点元只是显式标注的 auxiliary points（辅助/证据层），与体共用同一显示变换，绝不把失败的体渲染变成成功；失败语义为 no silent fallback，不存在任何回退渲染器。
+  - 坐标契约：`wgs84_display_anchor_v1` 显示锚点（120°E / 30°N）把局部米制网格映射到规则 WGS84 显示网格；页面必须显示 `display_anchor_only`，不宣称真实地理配准。
+  - 资产与 API：`render_assets` 表（SQLite v5→v6 事务迁移）；候选 `GET render-capability` / `POST|GET render-assets/netcdf`、legacy `GET /api/cases/resistivity/render-capability` / `POST|GET render-assets/netcdf`、不可变资产 `GET /api/render-assets/{id}/manifest` 与 `/volume.nc`；POST 是唯一创建路径（首个成功 201、ready 幂等 200、creating 409、failed/interrupted 须 `retry_failed=true` 显式重试），所有 GET 纯查询；manifest/grid/NetCDF 哈希双向核验，损坏资产原子隔离不自动删除（`RENDER_ASSET_CORRUPT`）。
+  - legacy 边界：内置电阻率需经 `python -m geomodeling.render_cli import-csv` 登记权威规则网格才支持体渲染；未登记显示 `LEGACY_RENDER_SOURCE_NOT_REGISTERED` + auxiliary points 测点辅助层，绝不从散点自动重建正式网格、绝不重跑 Kriging。
+  - 能力 fail-closed：2D、不规则轴、无源、全 NoData 源返回稳定能力/错误码；渲染源属性/单位来自数据集 profile（不固定 rho 语义）。
+  - 取代关系：main 分支 PR #10 已合并入 main，其 `/volume-demo` 是被本方案取代的自研 WebGL2 光线步进 POC，属非产品路由（Task 16 集成分支将删除其产品代码）；自研光线步进渲染路径已被取代，旧 `Field3D`/`RhoScene3D` 与 index.html 旧全局 Cesium 已退出产品代码（`tests/test_v061_rendering_contract.py` 防护）。
+  - 性能事实（Task 14 参考机实测，RTX 4070 Laptop）：32^3 与 64^3 真实 SDK 渲染 rendered <2s、交互稳定 <0.5s（远低于 30s/5s 发布门）；filter/opacity/Slice/Contour 四命令像素响应均超静帧噪声；证据存 `docs/evidence/v0.6.1-netcdf-native/`。
+  - 明确不做：真实 CRS 配准、WebGPU、128^3、iServer/S3M 分发、iDesktopX DatasetVolume、移动端、散点自动重建正式网格、任何形式的回退渲染器。
+  - 测试基线（Task 14 后实测，本分支）：后端便携 `1274 passed`、前端 vitest `157 passed`、Mock E2E `5 passed`、Live E2E 真实 SDK 32^3/64^3 各 `1 passed` + 既有 `3 passed`。
+  - 运行手册：[../v0.6.1-netcdf-native-rendering-runbook.md](../v0.6.1-netcdf-native-rendering-runbook.md)。发布门说明：本分支实现完成，tag/release 待批准。
 
 ## 3. 外部派生与人工验证（尚未代码化）
 
