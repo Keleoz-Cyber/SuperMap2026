@@ -30,11 +30,17 @@ const requestId = newFrameRequestId()
 const frameUrl = computed(() => buildFrameUrl(requestId))
 const iframeRef = ref<HTMLIFrameElement | null>(null)
 
+// postMessage 走结构化克隆：Vue 响应式 Proxy 不可克隆（DataCloneError）。
+// 协议消息本就是纯 JSON 形态，出站一律深拷贝为纯数据后再发送。
+function toWire(msg: ParentMessage): ParentMessage {
+  return JSON.parse(JSON.stringify(msg)) as ParentMessage
+}
+
 function post(msg: ParentMessage) {
   const target = iframeRef.value?.contentWindow
   if (!target) return
   // 目标 origin 恒为本源，绝不 "*"
-  target.postMessage(msg, window.location.origin)
+  target.postMessage(toWire(msg), window.location.origin)
 }
 
 function sendInit() {
@@ -53,9 +59,11 @@ function onMessage(event: MessageEvent) {
   const msg = parseChildMessage(event.data)
   if (!msg) return
   if (msg.type === 'FRAME_READY') {
-    emit('ready', { sdkVersion: msg.sdkVersion, contextType: msg.contextType })
-    // 每次新的 FRAME_READY 恰好触发一次 INIT（重发只发生在新的握手之后）
+    // 每次新的 FRAME_READY 恰好触发一次 INIT（重发只发生在新的握手之后）。
+    // INIT 必须先于 'ready' 事件发出：父级 ready 回调会立即推送点层，
+    // 子帧要求 INIT 先于 SET_POINT_LAYER（否则 POINT_LAYER_INVALID）。
     sendInit()
+    emit('ready', { sdkVersion: msg.sdkVersion, contextType: msg.contextType })
     return
   }
   if (msg.type === 'RENDER_STATE') {

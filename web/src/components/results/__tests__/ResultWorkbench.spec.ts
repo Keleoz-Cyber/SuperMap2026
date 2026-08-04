@@ -4,10 +4,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ElementPlus from 'element-plus'
 import type {
   DatasetPoints,
+  DisplayTransform,
   ExportRecord,
   ExperimentRecord,
   FormalSelectionRecord,
   PublicationRecord,
+  RenderAssetRecord,
+  RenderCapability,
   ResultMetadata,
   ResultPreview,
   SliceResponse,
@@ -20,6 +23,7 @@ vi.mock('../../../api/client', async (importOriginal) => {
   return {
     ...actual,
     fetchResult: vi.fn(),
+    materializeResult: vi.fn(),
     fetchResultPreview: vi.fn(),
     fetchResultSlice: vi.fn(),
     fetchExperiment: vi.fn(),
@@ -30,6 +34,9 @@ vi.mock('../../../api/client', async (importOriginal) => {
     fetchDatasetPoints: vi.fn(),
     fetchMicroseismicDerivation: vi.fn(),
     fetchMicroseismicDerivationPoints: vi.fn(),
+    fetchResultRenderCapability: vi.fn(),
+    fetchResultRenderAsset: vi.fn(),
+    createResultRenderAsset: vi.fn(),
   }
 })
 
@@ -126,6 +133,44 @@ const PREVIEW_3D: ResultPreview = {
   value_range: [10, 20],
 }
 
+const TRANSFORM: DisplayTransform = {
+  contract: 'wgs84_display_anchor_v1',
+  origin_x: -150,
+  origin_y: 260,
+  anchor_longitude: 120,
+  anchor_latitude: 30,
+  anchor_height: 0,
+  metres_per_degree_lon: 96486.3,
+  metres_per_degree_lat: 110852.4,
+}
+
+const CAPABILITY_3D: RenderCapability = {
+  source_kind: 'candidate_result',
+  source_id: 'r1',
+  supported: true,
+  reason_code: null,
+  reason: null,
+  dimension: '3d',
+  grid_kind: 'regular',
+  property_name: 'rho',
+  units: 'unknown',
+  geolocation_status: 'display_anchor_only',
+  display_transform: TRANSFORM,
+}
+
+const ASSET_READY: RenderAssetRecord = {
+  id: `nc-${'a'.repeat(32)}`,
+  source_kind: 'candidate_result',
+  source_id: 'r1',
+  renderer: 'supermap_voxelgrid_netcdf',
+  status: 'ready',
+  grid_sha256: 'cd'.repeat(32),
+  netcdf_sha256: 'ef'.repeat(32),
+  manifest_url: `/api/render-assets/nc-${'a'.repeat(32)}/manifest`,
+  netcdf_url: `/api/render-assets/nc-${'a'.repeat(32)}/volume.nc`,
+  error: null,
+}
+
 const SELECTION: FormalSelectionRecord = {
   id: 'sel1',
   case_id: 'c1',
@@ -158,24 +203,30 @@ const PUBLICATION: PublicationRecord = {
 }
 
 async function mountWorkbench(metadata: ResultMetadata) {
-  vi.mocked(client.fetchResult).mockResolvedValue(metadata)
+  vi.mocked(client.materializeResult).mockResolvedValue(metadata)
   vi.mocked(client.fetchExperiment).mockResolvedValue(EXP)
   vi.mocked(client.fetchResultSlice).mockResolvedValue(SLICE_2D)
   vi.mocked(client.fetchResultPreview).mockResolvedValue(PREVIEW_3D)
   vi.mocked(client.fetchDatasetPoints).mockResolvedValue(POINTS)
   vi.mocked(client.fetchFormalSelections).mockResolvedValue({ case_id: 'c1', selections: [] })
+  vi.mocked(client.fetchResultRenderCapability).mockResolvedValue(CAPABILITY_3D)
+  vi.mocked(client.fetchResultRenderAsset).mockRejectedValue(
+    new client.ApiError('RENDER_ASSET_NOT_FOUND', '该渲染源尚未创建渲染资产', 404),
+  )
+  vi.mocked(client.createResultRenderAsset).mockResolvedValue(ASSET_READY)
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
       { path: '/', name: 'home', component: { template: '<div />' } },
       { path: '/experiments/:experimentId', name: 'experiment-detail', component: { template: '<div />' } },
       { path: '/results/:resultId', name: 'result-workbench', component: ResultWorkbenchView },
+      { path: '/results/:resultId/professional', name: 'professional-analysis', component: { template: '<div />' } },
     ],
   })
   await router.push('/results/r1')
   const wrapper = mount(ResultWorkbenchView, { global: { plugins: [router, ElementPlus] } })
   await flushPromises()
-  return wrapper
+  return { wrapper, router }
 }
 
 beforeEach(() => {
@@ -187,25 +238,54 @@ beforeEach(() => {
 })
 
 describe('ResultWorkbenchView', () => {
-  it('2D：整场热力图与实测点叠加', async () => {
-    const wrapper = await mountWorkbench(makeMetadata('2d'))
+  it('3D：显式 POST materialize 一次，完整场 tab 使用 NativeVolumePanel', async () => {
+    const { wrapper } = await mountWorkbench(makeMetadata('3d'))
+    // 物化是唯一显式变异：POST 一次，绝不把 fetchResult 当创建捷径
+    expect(client.materializeResult).toHaveBeenCalledTimes(1)
+    expect(client.materializeResult).toHaveBeenCalledWith('r1')
+    expect(client.fetchResult).not.toHaveBeenCalled()
+    // 预览只在物化成功后获取
+    expect(client.fetchResultPreview).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(client.materializeResult).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(client.fetchResultPreview).mock.invocationCallOrder[0],
+    )
+
+    // 完整场 tab = NativeVolumePanel；Field3D/Cesium 降级已移除
+    expect(wrapper.find('[data-test="native-volume-panel"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="field-3d"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="cesium-fallback"]').exists()).toBe(false)
+    // 未创建资产前无 iframe
+    expect(wrapper.find('iframe').exists()).toBe(false)
+
+    // 显式资产创建后挂载隔离 SuperMap iframe
+    await wrapper.find('[data-test="create-asset"]').trigger('click')
+    await flushPromises()
+    expect(client.createResultRenderAsset).toHaveBeenCalledTimes(1)
+    expect(client.createResultRenderAsset).toHaveBeenCalledWith('r1', false)
+    const iframe = wrapper.find('iframe')
+    expect(iframe.exists()).toBe(true)
+    expect(iframe.attributes('src')).toContain('/supermap-volume-frame/index.html?request_id=')
+  })
+
+  it('2D：无 iframe、无原生体渲染面板，保留整场热力图切片行为', async () => {
+    const { wrapper } = await mountWorkbench(makeMetadata('2d'))
+    expect(client.materializeResult).toHaveBeenCalledTimes(1)
+    expect(client.fetchResult).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-test="native-volume-panel"]').exists()).toBe(false)
+    expect(wrapper.find('iframe').exists()).toBe(false)
+    // 切片只在物化成功后获取，热力图与实测点叠加保持既有口径
     expect(client.fetchResultSlice).toHaveBeenCalledWith('r1', 'z', 0)
+    expect(vi.mocked(client.materializeResult).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(client.fetchResultSlice).mock.invocationCallOrder[0],
+    )
     expect(wrapper.find('[data-test="field-2d"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="overlay-count"]').text()).toContain('3')
     // 6 单元 1 NoData → 5 个有效图元
     expect(wrapper.find('[data-test="valid-cells"]').text()).toContain('5')
   })
 
-  it('3D：抽稀完整场点云（预览计数来自服务端）', async () => {
-    const wrapper = await mountWorkbench(makeMetadata('3d'))
-    expect(client.fetchResultPreview).toHaveBeenCalledWith('r1')
-    expect(wrapper.find('[data-test="preview-count"]').text()).toContain('1331 / 1331')
-    // jsdom 无 Cesium → 明确的降级提示而非空白
-    expect(wrapper.find('[data-test="cesium-fallback"]').exists()).toBe(true)
-  })
-
   it('通用成果不显示微震证据图层控制组，也不请求领域图层', async () => {
-    const wrapper = await mountWorkbench(makeMetadata('3d'))
+    const { wrapper } = await mountWorkbench(makeMetadata('3d'))
     // 派生元数据是 source_kind 唯一探测手段；409 后绝不发领域图层请求
     expect(client.fetchMicroseismicDerivation).toHaveBeenCalledWith('ds1')
     expect(client.fetchMicroseismicDerivationPoints).not.toHaveBeenCalled()
@@ -213,7 +293,7 @@ describe('ResultWorkbenchView', () => {
   })
 
   it('正式选择必须填写理由', async () => {
-    const wrapper = await mountWorkbench(makeMetadata('2d'))
+    const { wrapper } = await mountWorkbench(makeMetadata('2d'))
     await wrapper.find('[data-test="selection-submit"]').trigger('click')
     await flushPromises()
     expect(client.selectFormal).not.toHaveBeenCalled()
@@ -231,7 +311,7 @@ describe('ResultWorkbenchView', () => {
   it('导出与发布状态相互独立', async () => {
     vi.mocked(client.createExport).mockResolvedValue(EXPORT)
     vi.mocked(client.createPublication).mockResolvedValue(PUBLICATION)
-    const wrapper = await mountWorkbench(makeMetadata('2d'))
+    const { wrapper } = await mountWorkbench(makeMetadata('2d'))
 
     expect(wrapper.find('[data-test="publication-status"]').text()).toContain('未请求')
     await wrapper.find('[data-test="export-button"]').trigger('click')
@@ -249,6 +329,16 @@ describe('ResultWorkbenchView', () => {
     expect(wrapper.find('[data-test="publication-status"]').text()).toContain('manual_required')
     expect(wrapper.find('[data-test="publication-instruction"]').text()).toContain('手动发布')
   })
+
+  it('专业分析入口保留并跳转专业分析台', async () => {
+    const { wrapper, router } = await mountWorkbench(makeMetadata('3d'))
+    await wrapper.get('[data-test="professional-entry"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value).toMatchObject({
+      name: 'professional-analysis',
+      params: { resultId: 'r1' },
+    })
+  })
 })
 
 describe('导航', () => {
@@ -262,7 +352,7 @@ describe('导航', () => {
       ],
     })
     const metadata = makeMetadata('2d')
-    vi.mocked(client.fetchResult).mockResolvedValue(metadata)
+    vi.mocked(client.materializeResult).mockResolvedValue(metadata)
     vi.mocked(client.fetchExperiment).mockResolvedValue(EXP)
     vi.mocked(client.fetchResultSlice).mockResolvedValue(SLICE_2D)
     vi.mocked(client.fetchDatasetPoints).mockResolvedValue(POINTS)
@@ -285,8 +375,10 @@ describe('导航', () => {
     expect(router.currentRoute.value.name).toBe('home')
   })
 
-  it('成果加载失败时仍能返回首页', async () => {
-    vi.mocked(client.fetchResult).mockRejectedValue(new client.ApiError('CANDIDATE_NOT_FOUND', '不存在', 404))
+  it('物化失败：显示错误页且不取切片/预览，仍能返回首页', async () => {
+    vi.mocked(client.materializeResult).mockRejectedValue(
+      new client.ApiError('CANDIDATE_NOT_FOUND', '不存在', 404),
+    )
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [
@@ -298,6 +390,9 @@ describe('导航', () => {
     const wrapper = mount(ResultWorkbenchView, { global: { plugins: [router, ElementPlus] } })
     await flushPromises()
     expect(wrapper.text()).toContain('成果加载失败')
+    // 物化失败绝不继续取切片/预览
+    expect(client.fetchResultSlice).not.toHaveBeenCalled()
+    expect(client.fetchResultPreview).not.toHaveBeenCalled()
     await wrapper.get('[data-test="nav-home"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.name).toBe('home')
@@ -307,7 +402,7 @@ describe('导航', () => {
 describe('导出下载', () => {
   it('下载链接使用返回的 export id 而非 result id', async () => {
     vi.mocked(client.createExport).mockResolvedValue(EXPORT)
-    const wrapper = await mountWorkbench(makeMetadata('2d'))
+    const { wrapper } = await mountWorkbench(makeMetadata('2d'))
     await wrapper.find('[data-test="export-button"]').trigger('click')
     await flushPromises()
     const link = wrapper.get('[data-test="export-download"]')

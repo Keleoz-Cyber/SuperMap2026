@@ -702,6 +702,77 @@ export async function installMockApi(page: Page): Promise<void> {
         },
       }, 201)
     }
+    // ---------------------------------------------------------------- v0.6.1 NetCDF 原生体渲染
+    // 物化是唯一显式变异（POST）；能力/资产状态一律纯 GET，绝不隐式 POST。
+    if (path === '/results/cand-1/materialize' && method === 'POST') {
+      return json(route, {
+        result_id: 'cand-1',
+        run_id: 'run-e2e',
+        experiment_id: 'exp-e2e',
+        dataset_version_id: 'ds-e2e',
+        algorithm: 'idw',
+        parameters: { power: 1.5, neighbor_count: 8 },
+        dimension: '3d',
+        shape: [11, 11, 11],
+        cell_count: 1331,
+        bounds: [[-150, -60], [260, 580], [-800, -200]],
+        resolution: [9, 32, 60],
+        value_range: [10, 60],
+        nodata_count: 0,
+        grid_sha256: SHA,
+        source_sha256: SHA,
+        standardized_sha256: SHA,
+        fingerprint: 'fp-1',
+        validation: { folds: 5 },
+        created_at: T,
+      })
+    }
+    if (path === '/results/cand-1/render-capability' && method === 'GET') {
+      return json(route, {
+        source_kind: 'candidate_result',
+        source_id: 'cand-1',
+        supported: true,
+        reason_code: null,
+        reason: null,
+        dimension: '3d',
+        grid_kind: 'regular',
+        property_name: '电阻率',
+        units: 'unknown',
+        geolocation_status: 'display_anchor_only',
+        display_transform: {
+          contract: 'wgs84_display_anchor_v1',
+          origin_x: -150,
+          origin_y: 260,
+          anchor_longitude: 120,
+          anchor_latitude: 30,
+          anchor_height: 0,
+          metres_per_degree_lon: 96486.3,
+          metres_per_degree_lat: 110852.4,
+        },
+      })
+    }
+    if (path === '/results/cand-1/render-assets/netcdf' && method === 'GET') {
+      return json(
+        route,
+        { error: { code: 'RENDER_ASSET_NOT_FOUND', message: '该渲染源尚未创建渲染资产', details: {} } },
+        404,
+      )
+    }
+    if (path === '/results/cand-1/render-assets/netcdf' && method === 'POST') {
+      const assetId = `nc-${'ab'.repeat(16)}`
+      return json(route, {
+        id: assetId,
+        source_kind: 'candidate_result',
+        source_id: 'cand-1',
+        renderer: 'supermap_voxelgrid_netcdf',
+        status: 'ready',
+        grid_sha256: SHA,
+        netcdf_sha256: MICRO_SHA,
+        manifest_url: `/api/render-assets/${assetId}/manifest`,
+        netcdf_url: `/api/render-assets/${assetId}/volume.nc`,
+        error: null,
+      }, 201)
+    }
     // ---------------------------------------------------------------- v0.6 专业建模
     if (path === '/datasets/ds-e2e/professional-diagnostics' && method === 'POST') {
       return json(
@@ -864,6 +935,29 @@ export async function installMockApi(page: Page): Promise<void> {
       })
     }
     if (path === '/results/cand-pro-1' && method === 'GET') {
+      return json(route, {
+        result_id: 'cand-pro-1',
+        run_id: 'run-pro',
+        experiment_id: 'exp-pro',
+        dataset_version_id: 'ds-e2e',
+        algorithm: 'ordinary_kriging',
+        parameters: { variogram_model: 'spherical', neighbor_count: 16 },
+        dimension: '2d',
+        shape: [11, 11],
+        cell_count: 121,
+        bounds: [[0, 100], [0, 100]],
+        resolution: [10, 10],
+        value_range: [90, 130],
+        nodata_count: 0,
+        grid_sha256: PRO_SHA,
+        source_sha256: SHA,
+        standardized_sha256: SHA,
+        fingerprint: 'fp-pro-1',
+        validation: { folds: 5 },
+        created_at: T,
+      })
+    }
+    if (path === '/results/cand-pro-1/materialize' && method === 'POST') {
       return json(route, {
         result_id: 'cand-pro-1',
         run_id: 'run-pro',

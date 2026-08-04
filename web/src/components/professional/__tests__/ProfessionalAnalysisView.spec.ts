@@ -24,6 +24,7 @@ vi.mock('../../../api/client', async (importOriginal) => {
   return {
     ...actual,
     fetchResult: vi.fn(),
+    materializeResult: vi.fn(),
     fetchExperiment: vi.fn(),
     fetchCandidates: vi.fn(),
     fetchResultPreview: vi.fn(),
@@ -743,7 +744,8 @@ describe('只读性与导航契约', () => {
 
 describe('ResultWorkbenchView 专业分析入口', () => {
   it('成果工作台显示专业分析链接并跳转，现有切片行为不变', async () => {
-    vi.mocked(client.fetchResult).mockResolvedValue(META_R1)
+    // v0.6.1：成果工作台挂载时显式物化（POST），不再走 fetchResult
+    vi.mocked(client.materializeResult).mockResolvedValue(META_R1)
     vi.mocked(client.fetchExperiment).mockResolvedValue(EXP)
     vi.mocked(client.fetchDatasetPoints).mockResolvedValue({
       dataset_id: 'ds1',
