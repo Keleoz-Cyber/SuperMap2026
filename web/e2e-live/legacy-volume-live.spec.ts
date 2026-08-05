@@ -4,31 +4,28 @@ import { createHash, randomUUID } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { LEGACY_GRID_SHAPE, syntheticLegacyGridCsv } from './fixtures/legacyGrid'
 
 /**
- * v0.6.1 合并前审查补充：内置电阻率 legacy 渲染源的真实 SDK live 门。
+ * v0.6.1 合并前审查补充：内置电阻率 legacy 体渲染的**产品页**真实 SDK live 门。
  *
- * 与 32³/64³ 门（supermap-native-volume-live.spec.ts）同一口径，但走的是
- * legacy 产品链路：隔离运行时初始未登记 → GET capability 必须
- * supported=false + LEGACY_RENDER_SOURCE_NOT_REGISTERED → 产品页
- * /#/case/resistivity 页内导入入口（multipart 上传合成确定性规则网格 CSV，
- * 绝不依赖机外私有数据）→ 页内登记身份 → 资产纯查询 404 →
- * 显式 POST 资产 → SuperMap3D iframe 握手 rendered → 身份/像素/错误门。
+ * 与 32³/64³ 门（supermap-native-volume-live.spec.ts）同一像素口径；与
+ * supermap-volume-frame-live.spec.ts（CLI 登记 + 隔离裸帧）互补——本规格验收
+ * /#/case/resistivity 产品页：capability → 资产确保 → 页面自动 rendered →
+ * 协议身份 → 体积/Slice/Contour 像素门 → 错误门。
  *
- * 合成网格 8×12×20（非立方，回应电阻率 7×23×42 的细长物理比例），
- * 值域平滑有限、零 NoData；真实 RHO 网格的视觉验收见同目录
- * run-*-legacy-rho-demo 证据（演示运行时实拍）。
- *
- * 断言：
- *   导入 201 且登记身份（shape/property/units/grid SHA）与 CSV 内容一致；
- *   重复导入幂等 200 且登记不被改写；资产 POST 首个成功 201；
- *   manifest shape 与 grid/NetCDF 哈希匹配；
- *   iframe 30 秒内 rendered，RENDER_STATE 身份 = builtin_legacy/resistivity
- *   + grid/NetCDF 哈希；中央画布体积非背景像素 > 2000；
- *   Slice/Contour 各自非背景像素 > 500 且与上一模式像素差超静帧噪声；
- *   无协议错误/页面错误/资源失败（白名单仅资产创建前状态查询 404）。
+ * 共享单例纪律：live 套件共用一个隔离 GEOMODELING_DATA_DIR，
+ * builtin_legacy/resistivity 注册是单例。本规格与 frame-live 使用
+ * fixtures/legacyGrid.ts 的同一 CSV 字节，beforeAll 经 render_cli import-csv
+ * 幂等确保登记（同网格同身份，任意执行顺序/并发均不冲突）；随后用一份
+ * 不同网格断言覆盖保护（409 LEGACY_RENDER_SOURCE_CONFLICT 且登记不被改写）。
+ * 未登记 fresh 状态的页内导入 UI 由 Mock E2E 覆盖（见
+ * web/e2e/supermap-native-volume.spec.ts「内置电阻率」用例），本规格不依赖
+ * 执行顺序。
  *
  * 证据写入 docs/evidence/v0.6.1-netcdf-native/<run-id>/（仅测试运行时创建）。
+ * 真实 RHO 网格（7×23×42）的视觉证据见 run-*-legacy-rho-demo（演示运行时实拍，
+ * 其 provenance 字段如实标注）。
  */
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
@@ -38,36 +35,6 @@ const SDK_DIST_PATH = path.join(REPO_ROOT, 'web', 'dist', 'SuperMap3D-2026', 'Su
 const EVIDENCE_ROOT = path.join(REPO_ROOT, 'docs', 'evidence', 'v0.6.1-netcdf-native')
 const VIEWPORT = { width: 1280, height: 800 }
 const RENDERED_GATE_MS = 30_000
-
-// 确定性合成 legacy 网格：8×12×20 非立方、Z 向下为负（与电阻率约定一致）。
-const GRID_SHAPE: [number, number, number] = [8, 12, 20]
-const GRID_STEP_M = 25
-
-function syntheticValue(ix: number, iy: number, iz: number): number {
-  return (
-    60 +
-    30 * Math.sin((ix * GRID_STEP_M) / 100) * Math.cos((iy * GRID_STEP_M) / 150) +
-    (iz * 40) / (GRID_SHAPE[2] - 1)
-  )
-}
-
-function buildLegacyCsv(): { csv: string; vmin: number; vmax: number; csvSha256: string } {
-  const lines = ['X,Y,Z,RHO']
-  let vmin = Number.POSITIVE_INFINITY
-  let vmax = Number.NEGATIVE_INFINITY
-  for (let iz = 0; iz < GRID_SHAPE[2]; iz += 1) {
-    for (let iy = 0; iy < GRID_SHAPE[1]; iy += 1) {
-      for (let ix = 0; ix < GRID_SHAPE[0]; ix += 1) {
-        const v = syntheticValue(ix, iy, iz)
-        vmin = Math.min(vmin, v)
-        vmax = Math.max(vmax, v)
-        lines.push(`${ix * GRID_STEP_M},${iy * GRID_STEP_M},${-iz * GRID_STEP_M},${v}`)
-      }
-    }
-  }
-  const csv = `${lines.join('\n')}\n`
-  return { csv, vmin, vmax, csvSha256: createHash('sha256').update(csv).digest('hex') }
-}
 
 function assertIsolatedDataDir(): string {
   const dir = process.env.GEOMODELING_DATA_DIR
@@ -88,6 +55,17 @@ function sha256File(file: string): string {
 function isoRunId(): string {
   const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, 'Z')
   return `run-${stamp}-${randomUUID().slice(0, 8)}`
+}
+
+function csvValueRange(csv: string): [number, number] {
+  let vmin = Number.POSITIVE_INFINITY
+  let vmax = Number.NEGATIVE_INFINITY
+  for (const line of csv.trim().split('\n').slice(1)) {
+    const v = Number(line.split(',')[3])
+    vmin = Math.min(vmin, v)
+    vmax = Math.max(vmax, v)
+  }
+  return [vmin, vmax]
 }
 
 // ---------------------------------------------------------------------------
@@ -181,31 +159,18 @@ const evidenceDir = path.join(EVIDENCE_ROOT, runId)
 let gitCommit = ''
 let sdkSha256 = ''
 let browserVersion = ''
+let registration: { grid_sha256: string; shape: number[] } | null = null
 
-interface LegacyRecord {
-  registration: Record<string, unknown>
-  identity: Record<string, unknown>
-  pixelStats: Record<string, unknown>
-  timings: Record<string, unknown>
-  network: { method: string; path: string; status: number }[]
-  networkFailures: string[]
-  console: { type: string; text: string; location: string }[]
-  sdkVersion: string | null
-  gpuRenderer: string | null
-  dpr: number | null
-}
-
-const record: LegacyRecord = {
-  registration: {},
-  identity: {},
-  pixelStats: {},
-  timings: {},
-  network: [],
-  networkFailures: [],
-  console: [],
-  sdkVersion: null,
-  gpuRenderer: null,
-  dpr: null,
+const record = {
+  identity: {} as Record<string, unknown>,
+  pixelStats: {} as Record<string, unknown>,
+  timings: {} as Record<string, unknown>,
+  network: [] as { method: string; path: string; status: number }[],
+  networkFailures: [] as string[],
+  console: [] as { type: string; text: string; location: string }[],
+  sdkVersion: null as string | null,
+  gpuRenderer: null as string | null,
+  dpr: null as number | null,
 }
 
 function evidencePath(name: string): string {
@@ -226,7 +191,7 @@ function commonEnvelope() {
       legacy: {
         source_kind: 'builtin_legacy',
         source_id: 'resistivity',
-        grid_sha256: record.registration['grid_sha256'] ?? null,
+        grid_sha256: registration?.grid_sha256 ?? null,
         netcdf_sha256: record.identity['netcdf_sha256'] ?? null,
         asset_id: record.identity['asset_id'] ?? null,
       },
@@ -251,11 +216,46 @@ function writeEvidenceJson(name: string, body: Record<string, unknown>) {
 // 与 32³/64³ 门一致：真实 GPU（--use-angle=gl），SwiftShader 下时序不可靠。
 test.use({ launchOptions: { args: ['--use-angle=gl'] } })
 
-test.describe('v0.6.1 合并前审查：内置电阻率 legacy 体渲染 live 门', () => {
+test.describe('v0.6.1 合并前审查：内置电阻率 legacy 产品页体渲染 live 门', () => {
   test.describe.configure({ mode: 'serial' })
 
   test.beforeAll(() => {
-    assertIsolatedDataDir()
+    const dataDir = assertIsolatedDataDir()
+    const fixtureDir = path.join(dataDir, 'live-fixtures')
+    mkdirSync(fixtureDir, { recursive: true })
+    const csvPath = path.join(fixtureDir, 'legacy-resistivity-grid.csv')
+    writeFileSync(csvPath, syntheticLegacyGridCsv(), 'utf8')
+    // 与 frame-live 同一 CSV 字节：幂等确保登记（任意执行顺序/并发均同身份）
+    const stdout = execFileSync(
+      process.env.PYTHON ?? 'python',
+      [
+        '-m',
+        'geomodeling.render_cli',
+        'import-csv',
+        '--source-id',
+        'resistivity',
+        '--csv',
+        csvPath,
+        '--x',
+        'x',
+        '--y',
+        'y',
+        '--z',
+        'z',
+        '--value',
+        'value',
+        '--property-name',
+        'RHO',
+        '--units',
+        'ohm-m',
+        '--data-dir',
+        dataDir,
+      ],
+      { cwd: REPO_ROOT, encoding: 'utf8', timeout: 120_000 },
+    )
+    registration = JSON.parse(stdout)
+    expect(registration!.grid_sha256).toMatch(/^[0-9a-f]{64}$/)
+    expect(registration!.shape).toEqual([...LEGACY_GRID_SHAPE])
     gitCommit = execFileSync('git', ['rev-parse', 'HEAD'], {
       cwd: REPO_ROOT,
       encoding: 'utf8',
@@ -264,7 +264,7 @@ test.describe('v0.6.1 合并前审查：内置电阻率 legacy 体渲染 live �
     mkdirSync(evidenceDir, { recursive: true })
   })
 
-  test('legacy 产品流：导入 → 资产 → rendered → 像素/身份/错误门', async ({
+  test('legacy 产品页：capability → 资产 → rendered → 像素/身份/错误门', async ({
     page,
     request,
     browser,
@@ -272,22 +272,115 @@ test.describe('v0.6.1 合并前审查：内置电阻率 legacy 体渲染 live �
     test.setTimeout(300_000)
     const t0 = Date.now()
     browserVersion = browser.version()
-    const grid = buildLegacyCsv()
+    const csv = syntheticLegacyGridCsv()
+    const [expectVmin, expectVmax] = csvValueRange(csv)
 
-    // --- 真实 FastAPI：未登记 → 导入 → 登记身份 ------------------------------
+    // --- 真实 FastAPI：登记态 capability -------------------------------------
     const health = await request.get('/api/health')
     expect(health.ok()).toBe(true)
 
-    const preCap = await request.get('/api/cases/resistivity/render-capability')
-    expect(preCap.ok()).toBe(true)
-    const preCapability = await preCap.json()
-    expect(preCapability.supported).toBe(false)
-    expect(preCapability.reason_code).toBe('LEGACY_RENDER_SOURCE_NOT_REGISTERED')
+    const capResp = await request.get('/api/cases/resistivity/render-capability')
+    expect(capResp.ok()).toBe(true)
+    const capability = await capResp.json()
+    expect(capability.supported).toBe(true)
+    expect(capability.source_kind).toBe('builtin_legacy')
+    expect(capability.source_id).toBe('resistivity')
+    expect(capability.dimension).toBe('3d')
+    expect(capability.grid_kind).toBe('regular')
+    expect(capability.property_name).toBe('RHO')
+    expect(capability.units).toBe('ohm-m')
+    expect(capability.geolocation_status).toBe('display_anchor_only')
+    expect(capability.display_transform?.contract).toBe('wgs84_display_anchor_v1')
 
-    // 页内导入成功后由 POST 响应填取（注册身份供后续资产/身份断言复用）
-    let registration: any = null
+    // --- 覆盖保护：不同网格必须 409 且登记不被改写 ----------------------------
+    // 冲突网格必须仍是完整笛卡尔网格（否则 422 校验先于 409 身份冲突）：
+    // 同一形状/值公式，x 轴整体平移 50 m → 轴不同即身份不同。
+    const conflictRows = ['x,y,z,value']
+    for (let ix = 0; ix < LEGACY_GRID_SHAPE[0]; ix += 1) {
+      for (let iy = 0; iy < LEGACY_GRID_SHAPE[1]; iy += 1) {
+        for (let iz = 0; iz < LEGACY_GRID_SHAPE[2]; iz += 1) {
+          const x = ix * 100 + 50
+          const y = iy * 100
+          const z = -800 + iz * 100
+          const value = 310 + 280 * Math.sin(x / 220) * Math.cos(y / 260) + 20 * Math.sin(z / 90)
+          conflictRows.push(`${x},${y},${z},${value.toFixed(6)}`)
+        }
+      }
+    }
+    const conflictCsv = `${conflictRows.join('\n')}\n`
+    const conflict = await request.post('/api/cases/resistivity/render-sources/import', {
+      multipart: {
+        file: { name: 'other.csv', mimeType: 'text/csv', buffer: Buffer.from(conflictCsv) },
+        x_column: 'x',
+        y_column: 'y',
+        z_column: 'z',
+        value_column: 'value',
+        property_name: 'RHO',
+        units: 'ohm-m',
+      },
+    })
+    expect(conflict.status()).toBe(409)
+    const conflictBody = await conflict.json()
+    expect(conflictBody.error?.code ?? conflictBody.code).toBe('LEGACY_RENDER_SOURCE_CONFLICT')
+    const capAfter = await (await request.get('/api/cases/resistivity/render-capability')).json()
+    expect(capAfter.supported).toBe(true)
 
-    // --- 产品页：显式 POST（唯一变异入口）→ iframe 30s 内 rendered ----------
+    // --- 资产确保：404 → 显式 POST；并发创建 409 → 轮询 ready ----------------
+    let asset: any = null
+    const preAsset = await request.get('/api/cases/resistivity/render-assets/netcdf')
+    if (preAsset.status() === 404) {
+      const postResp = await request.post('/api/cases/resistivity/render-assets/netcdf', {
+        data: {},
+      })
+      if (postResp.status() === 409) {
+        // 套件内并发创建（frame-live）：轮询直至 ready，绝不改写他人资产
+        const pollStart = Date.now()
+        while (Date.now() - pollStart < 60_000) {
+          const st = await request.get('/api/cases/resistivity/render-assets/netcdf')
+          if (st.ok()) {
+            const body = await st.json()
+            if (body.status === 'ready') {
+              asset = body
+              break
+            }
+            if (body.status === 'failed') break
+          }
+          await new Promise((r) => setTimeout(r, 500))
+        }
+      } else {
+        expect([200, 201]).toContain(postResp.status())
+        asset = await postResp.json()
+      }
+    } else {
+      expect(preAsset.ok()).toBe(true)
+      asset = await preAsset.json()
+    }
+    expect(asset, '资产必须达到 ready').toBeTruthy()
+    expect(asset.status).toBe('ready')
+    expect(asset.id).toMatch(/^nc-[0-9a-f]{32}$/)
+    expect(asset.renderer).toBe('supermap_voxelgrid_netcdf')
+    expect(asset.grid_sha256).toBe(registration!.grid_sha256)
+    expect(asset.netcdf_sha256).toMatch(/^[0-9a-f]{64}$/)
+
+    // manifest shape 与哈希匹配（值域与 CSV 实算一致）
+    const manifestResp = await request.get(asset.manifest_url)
+    expect(manifestResp.ok()).toBe(true)
+    const manifest = await manifestResp.json()
+    expect(manifest.source_kind).toBe('builtin_legacy')
+    expect(manifest.source_id).toBe('resistivity')
+    expect(manifest.shape).toEqual([...LEGACY_GRID_SHAPE])
+    expect(manifest.grid_sha256).toBe(registration!.grid_sha256)
+    expect(manifest.netcdf_sha256).toBe(asset.netcdf_sha256)
+    expect(manifest.variable_name).toBe('RHO')
+    expect(manifest.dimension_names).toEqual(['x', 'y', 'z'])
+    expect(manifest.nodata_count).toBe(0)
+    expect(manifest.display_transform).toEqual(capability.display_transform)
+    const [vmin, vmax] = manifest.encoded_value_range ?? manifest.value_range
+    expect(vmax).toBeGreaterThan(vmin)
+    expect(Math.abs(vmin - expectVmin)).toBeLessThan(1e-4)
+    expect(Math.abs(vmax - expectVmax)).toBeLessThan(1e-4)
+
+    // --- 产品页：协议探针 + 网络/控制台监听 ----------------------------------
     await page.addInitScript((proto: string) => {
       const w = window as any
       w.__liveProbe = { messages: [] as any[] }
@@ -305,8 +398,7 @@ test.describe('v0.6.1 合并前审查：内置电阻率 legacy 体渲染 live �
       })
     }, PROTOCOL)
 
-    // 良性 4xx 白名单：建资产前的资产状态 404（产品页既有行为）
-    const benign4xx = ['/api/cases/resistivity/render-assets/netcdf']
+    const benign4xx: string[] = []
     const pathOf = (url: string) => {
       try {
         return new URL(url).pathname
@@ -338,127 +430,13 @@ test.describe('v0.6.1 合并前审查：内置电阻率 legacy 体渲染 live �
     await page.setViewportSize(VIEWPORT)
     await page.goto('/#/case/resistivity', { waitUntil: 'load', timeout: 60_000 })
     await expect(page.getByTestId('native-volume-panel')).toBeVisible({ timeout: 60_000 })
-
-    // 未登记：稳定原因码 + 显式导入入口；绝无创建资产入口
-    await expect(page.getByTestId('unsupported-reason')).toContainText(
-      'LEGACY_RENDER_SOURCE_NOT_REGISTERED',
-      { timeout: 60_000 },
-    )
-    await expect(page.getByTestId('legacy-import')).toBeVisible()
-    await expect(page.getByTestId('create-asset')).toHaveCount(0)
-
-    // 产品内导入真实链路：页内选择 CSV → multipart POST → 登记身份展示
-    const csvPath = test.info().outputPath('legacy-grid.csv')
-    writeFileSync(csvPath, grid.csv, 'utf8')
-    await page.getByTestId('legacy-import-file').setInputFiles(csvPath)
-    await page.getByTestId('import-units').fill('demo.unit')
-    const [importResp] = await Promise.all([
-      page.waitForResponse(
-        (r) =>
-          r.request().method() === 'POST' &&
-          pathOf(r.url()) === '/api/cases/resistivity/render-sources/import',
-        { timeout: 120_000 },
-      ),
-      page.getByTestId('legacy-import-submit').click(),
-    ])
-    expect(importResp.status()).toBe(201)
-    registration = await importResp.json()
-    expect(registration.source_kind).toBe('builtin_legacy')
-    expect(registration.source_id).toBe('resistivity')
-    expect(registration.shape).toEqual([...GRID_SHAPE])
-    expect(registration.property_name).toBe('RHO')
-    expect(registration.units).toBe('demo.unit')
-    expect(registration.grid_sha256).toMatch(/^[0-9a-f]{64}$/)
-    expect(registration.import_source_sha256).toBe(grid.csvSha256)
-    expect(String(registration.artifact_dir)).not.toMatch(/^[A-Za-z]:[\\/]/)
-    expect(String(registration.artifact_dir)).not.toContain('..')
-    record.registration = registration
-
-    // 登记身份页内可见；导入入口消失；面板翻转为可创建资产
-    const identityBanner = page.getByTestId('legacy-import-identity')
-    await expect(identityBanner).toBeVisible({ timeout: 60_000 })
-    await expect(identityBanner).toContainText('8×12×20')
-    await expect(identityBanner).toContainText(registration.grid_sha256.slice(0, 16))
+    // 已登记：绝不出现导入入口；资产 ready → 面板自动进入渲染
     await expect(page.getByTestId('legacy-import')).toHaveCount(0)
 
-    // 同网格重导入（API）：幂等 200，登记身份逐字不改写
-    const reimport = await request.post('/api/cases/resistivity/render-sources/import', {
-      multipart: {
-        file: { name: 'grid.csv', mimeType: 'text/csv', buffer: Buffer.from(grid.csv) },
-        x_column: 'X',
-        y_column: 'Y',
-        z_column: 'Z',
-        value_column: 'RHO',
-        property_name: 'RHO',
-        units: 'demo.unit',
-      },
-    })
-    expect(reimport.status()).toBe(200)
-    expect(await reimport.json()).toEqual(registration)
-
-    const capResp = await request.get('/api/cases/resistivity/render-capability')
-    expect(capResp.ok()).toBe(true)
-    const capability = await capResp.json()
-    expect(capability.supported).toBe(true)
-    expect(capability.source_kind).toBe('builtin_legacy')
-    expect(capability.source_id).toBe('resistivity')
-    expect(capability.dimension).toBe('3d')
-    expect(capability.grid_kind).toBe('regular')
-    expect(capability.property_name).toBe('RHO')
-    expect(capability.units).toBe('demo.unit')
-    expect(capability.geolocation_status).toBe('display_anchor_only')
-    expect(capability.display_transform?.contract).toBe('wgs84_display_anchor_v1')
-
-    // 资产尚未创建：纯查询 404，绝不隐式创建
-    const preAsset = await request.get('/api/cases/resistivity/render-assets/netcdf')
-    expect(preAsset.status()).toBe(404)
-
-    const createButton = page.getByTestId('create-asset')
-    await expect(createButton).toBeVisible({ timeout: 60_000 })
-
-    const postStart = Date.now()
-    const [postResp] = await Promise.all([
-      page.waitForResponse(
-        (r) =>
-          r.request().method() === 'POST' &&
-          pathOf(r.url()) === '/api/cases/resistivity/render-assets/netcdf',
-        { timeout: 120_000 },
-      ),
-      createButton.click(),
-    ])
-    const postMs = Date.now() - postStart
-    expect([200, 201]).toContain(postResp.status())
-    const asset = await postResp.json()
-    expect(asset.id).toMatch(/^nc-[0-9a-f]{32}$/)
-    expect(asset.status).toBe('ready')
-    expect(asset.renderer).toBe('supermap_voxelgrid_netcdf')
-    expect(asset.source_kind).toBe('builtin_legacy')
-    expect(asset.source_id).toBe('resistivity')
-    expect(asset.grid_sha256).toBe(registration.grid_sha256)
-    expect(asset.netcdf_sha256).toMatch(/^[0-9a-f]{64}$/)
-
-    // manifest shape 与哈希匹配
-    const manifestResp = await request.get(asset.manifest_url)
-    expect(manifestResp.ok()).toBe(true)
-    const manifest = await manifestResp.json()
-    expect(manifest.source_kind).toBe('builtin_legacy')
-    expect(manifest.source_id).toBe('resistivity')
-    expect(manifest.shape).toEqual([...GRID_SHAPE])
-    expect(manifest.grid_sha256).toBe(registration.grid_sha256)
-    expect(manifest.netcdf_sha256).toBe(asset.netcdf_sha256)
-    expect(manifest.variable_name).toBe('RHO')
-    expect(manifest.dimension_names).toEqual(['x', 'y', 'z'])
-    expect(manifest.nodata_count).toBe(0)
-    expect(manifest.display_transform).toEqual(capability.display_transform)
-    const [vmin, vmax] = manifest.encoded_value_range ?? manifest.value_range
-    expect(vmax).toBeGreaterThan(vmin)
-    expect(Math.abs(vmin - grid.vmin)).toBeLessThan(1e-4)
-    expect(Math.abs(vmax - grid.vmax)).toBeLessThan(1e-4)
-
-    // iframe 30 秒内到 rendered（实测耗时记录到 timings）
     const phaseLocator = page.getByTestId('volume-phase')
+    const renderStart = Date.now()
     await expect(phaseLocator).toHaveText('已渲染', { timeout: RENDERED_GATE_MS })
-    const renderedMs = Date.now() - postStart
+    const renderedMs = Date.now() - renderStart
 
     // 协议身份：RENDER_STATE.rendered 的 identity 与源/网格/NetCDF 哈希一致
     const messages: any[] = await page.evaluate(() => (window as any).__liveProbe.messages)
@@ -467,7 +445,7 @@ test.describe('v0.6.1 合并前审查：内置电阻率 legacy 体渲染 live �
     const expectedIdentity = {
       sourceKind: 'builtin_legacy',
       sourceId: 'resistivity',
-      gridSha256: registration.grid_sha256,
+      gridSha256: registration!.grid_sha256,
       netcdfSha256: asset.netcdf_sha256,
     }
     expect(renderedMsg.identity).toEqual(expectedIdentity)
@@ -629,7 +607,6 @@ test.describe('v0.6.1 合并前审查：内置电阻率 legacy 体渲染 live �
       },
     }
     record.timings = {
-      post_ms: postMs,
       rendered_ms: renderedMs,
       rendered_gate_ms: RENDERED_GATE_MS,
       commands: commandTimings,
@@ -638,7 +615,7 @@ test.describe('v0.6.1 合并前审查：内置电阻率 legacy 体渲染 live �
 
     console.log(
       `[legacy-volume-live] sdk=${record.sdkVersion} gpu=${record.gpuRenderer} ` +
-        `POST=${postMs}ms rendered=${renderedMs}ms 非背景=${baseStats.nonBg} 噪声=${noiseDiff} ` +
+        `rendered=${renderedMs}ms 非背景=${baseStats.nonBg} 噪声=${noiseDiff} ` +
         `阈值=${pixelThreshold} slice非背景=${sliceStats.nonBg} contour非背景=${contourStats.nonBg} ` +
         `差异: slice=${diffs.slice} contour=${diffs.contour} 总耗时=${((Date.now() - t0) / 1000).toFixed(1)}s`,
     )
@@ -650,9 +627,9 @@ test.describe('v0.6.1 合并前审查：内置电阻率 legacy 体渲染 live �
       created_at: new Date().toISOString(),
       platform: `${process.platform}/${process.arch}`,
       node: process.version,
-      grid_source: 'synthetic-deterministic-8x12x20',
+      grid_source: 'fixtures/legacyGrid.ts synthetic-6x7x8（与 frame-live 同字节）',
     })
-    writeEvidenceJson('identity.json', { legacy: record.identity, registration: record.registration })
+    writeEvidenceJson('identity.json', { legacy: record.identity, registration })
     writeEvidenceJson('network.json', {
       legacy: { requests: record.network, failures: record.networkFailures },
     })

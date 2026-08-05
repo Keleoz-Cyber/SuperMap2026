@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { syntheticLegacyGridCsv } from './fixtures/legacyGrid'
 
 /**
  * v0.6.1 Task 9 live 验收：隔离 SuperMap3D iframe 运行时 + gmp-supermap-volume/v1 协议。
@@ -37,22 +38,8 @@ function assertIsolatedDataDir(): string {
   return dir
 }
 
-// 便携合成规则网格：6×7×8 笛卡尔格点，光滑三维场（约 [10, 610]）。
-function syntheticGridCsv(): string {
-  const rows = ['x,y,z,value']
-  for (let ix = 0; ix < 6; ix += 1) {
-    for (let iy = 0; iy < 7; iy += 1) {
-      for (let iz = 0; iz < 8; iz += 1) {
-        const x = ix * 100
-        const y = iy * 100
-        const z = -800 + iz * 100
-        const value = 310 + 280 * Math.sin(x / 220) * Math.cos(y / 260) + 20 * Math.sin(z / 90)
-        rows.push(`${x},${y},${z},${value.toFixed(6)}`)
-      }
-    }
-  }
-  return `${rows.join('\n')}\n`
-}
+// 便携合成规则网格改自共享夹具（fixtures/legacyGrid.ts）：与 legacy-volume-live
+// 产品页门共用同一 CSV 字节，保证共享隔离库下登记幂等。
 
 // 轻量 parent harness：同一路由满足（route.fulfill）的同源空页，内嵌 iframe 并执行
 // §2.4 父侧协议校验（origin/source/protocol/requestId），收到的不合规消息记入 errors。
@@ -185,7 +172,7 @@ test.beforeAll(() => {
   const fixtureDir = path.join(dataDir, 'live-fixtures')
   mkdirSync(fixtureDir, { recursive: true })
   const csvPath = path.join(fixtureDir, 'legacy-resistivity-grid.csv')
-  writeFileSync(csvPath, syntheticGridCsv(), 'utf8')
+  writeFileSync(csvPath, syntheticLegacyGridCsv(), 'utf8')
   // Task 5 真实登记链路：便携 CSV → 原子登记 render-sources/builtin_legacy/resistivity
   const stdout = execFileSync(
     process.env.PYTHON ?? 'python',
