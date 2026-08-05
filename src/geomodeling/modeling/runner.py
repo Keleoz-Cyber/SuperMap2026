@@ -91,6 +91,19 @@ def _interpolator(algorithm: str):
     return _INTERPOLATORS[Algorithm(algorithm).value]
 
 
+def _finite_valid_mask(frame: pd.DataFrame) -> np.ndarray:
+    """「声明有效且值有限」的行掩膜。
+
+    有效行口径在 ``is_numeric_valid`` 之外再查 ``value`` 有限性：标记有效
+    但值为 NaN/inf 的行（未声明的非有限值）绝不进入建模与真值。折分构建
+    与候选评估必须使用同一口径，两处统一走此函数。
+    """
+
+    declared = frame["is_numeric_valid"].to_numpy(dtype=bool)
+    finite = np.isfinite(frame["value"].to_numpy(dtype="float64"))
+    return declared & finite
+
+
 def _load_experiment(runtime, run_id: str) -> tuple[Any, dict[str, Any]]:
     with runtime.session() as session:
         run = session.get(tables.Run, run_id)
@@ -123,7 +136,7 @@ def _evaluate_candidate(
     predictions_path: Path,
     cancel: Event,
 ) -> dict[str, Any]:
-    valid = frame.loc[frame["is_numeric_valid"]].reset_index(drop=True)
+    valid = frame.loc[_finite_valid_mask(frame)].reset_index(drop=True)
     coord_cols = ["x", "y"] + (["z"] if dimension == "3d" else [])
     points = valid[coord_cols].to_numpy(dtype="float64")
     values = valid["value"].to_numpy(dtype="float64")
@@ -355,7 +368,14 @@ def execute_run(runtime, run_id: str, cancel: Event) -> RunOutcome:
     data_sha256 = profile.get("standardized_sha256") or sha256_file(
         runtime.settings.standardized_dataset(experiment.case_id, dataset_id)
     )
-    valid_frame = frame.loc[frame["is_numeric_valid"]].reset_index(drop=True)
+    declared_valid_count = int(frame["is_numeric_valid"].to_numpy(dtype=bool).sum())
+    valid_frame = frame.loc[_finite_valid_mask(frame)].reset_index(drop=True)
+    # 数据质量诊断：披露「标记有效但值非有限」被排除的行数（有界计数），
+    # 排除后不足建模下限时由现有折分失败通道（SPLIT_INSUFFICIENT_GROUPS）
+    # fail-closed；计数随 progress 落库，成功/失败路径均可见。
+    progress["data_quality"] = {
+        "nonfinite_valid_value_excluded_count": declared_valid_count - len(valid_frame)
+    }
     coord_cols = ["x", "y"] + (["z"] if dimension == "3d" else [])
     valid_points = valid_frame[coord_cols].to_numpy(dtype="float64")
     try:

@@ -706,3 +706,90 @@ def test_legacy_run_has_no_professional_artifacts_row(tmp_path):
         with pytest.raises(PlatformError) as excinfo:
             ProfessionalResultArtifactsRepository(session).get_for_candidate(candidate["id"])
     assert excinfo.value.code == "PROFESSIONAL_ARTIFACTS_NOT_FOUND"
+
+
+def make_standardized_with_undeclared_nan(
+    runtime: PlatformRuntime, case_id: str, dataset_id: str, nan_rows: int = 4
+):
+    """构造「is_numeric_valid=true 但 value=NaN」的未声明非有限行数据集。"""
+
+    target, frame = make_standardized(runtime, case_id, dataset_id)
+    frame.loc[np.arange(nan_rows), "value"] = np.nan
+    frame.to_parquet(target, index=False)
+    return target, frame
+
+
+def load_run_metrics(runtime: PlatformRuntime, run_id: str) -> dict:
+    with runtime.session() as session:
+        return tables.loads_canonical(session.get(tables.Run, run_id).metrics_json)
+
+
+def test_undeclared_nan_rows_are_excluded_and_metrics_stay_finite(tmp_path):
+    """标记有效但值为 NaN 的行不得进入建模：run 成功、指标有限、排除计数可见。"""
+
+    from geomodeling.modeling.runner import execute_run
+
+    runtime = make_runtime(tmp_path)
+    make_standardized_with_undeclared_nan(runtime, "c1", "ds1", nan_rows=4)
+    experiment_id = insert_experiment(runtime, "c1", "ds1", dict(SEARCH_IDW_MANUAL))
+    run_id = insert_run(runtime, experiment_id)
+
+    outcome = execute_run(runtime, run_id, threading.Event())
+    assert outcome.status == "succeeded"
+
+    candidates = load_candidates(runtime, run_id)
+    assert len(candidates) == 1
+    metrics = candidates[0]["metrics"]
+    assert candidates[0]["status"] == "succeeded"
+    # 有公共有效点时 RMSE/MAE/Bias 必须是有限数值（不得为 null/NaN）
+    for key in ("rmse", "mae", "bias", "r2"):
+        assert metrics[key] is not None
+        assert np.isfinite(metrics[key])
+    assert metrics["common_valid_count"] > 0
+    # 非有限行绝不进入预测真值
+    predictions = pd.read_parquet(candidates[0]["predictions_path"])
+    assert np.isfinite(predictions["truth"].to_numpy(dtype="float64")).all()
+    assert len(predictions) == 32  # 36 - 4 行未声明 NaN
+
+    run_metrics = load_run_metrics(runtime, run_id)
+    assert run_metrics["data_quality"]["nonfinite_valid_value_excluded_count"] == 4
+    public = run_metrics["public_metrics"]
+    for key in ("rmse", "mae", "bias"):
+        assert public[key] is not None
+        assert np.isfinite(public[key])
+
+
+def test_run_without_undeclared_nan_reports_zero_exclusions(tmp_path):
+    """常规全有限数据集的排除计数为零，公开指标行为不变。"""
+
+    from geomodeling.modeling.runner import execute_run
+
+    runtime = make_runtime(tmp_path)
+    make_standardized(runtime, "c1", "ds1")
+    experiment_id = insert_experiment(runtime, "c1", "ds1", dict(SEARCH_IDW_MANUAL))
+    run_id = insert_run(runtime, experiment_id)
+
+    outcome = execute_run(runtime, run_id, threading.Event())
+    assert outcome.status == "succeeded"
+    run_metrics = load_run_metrics(runtime, run_id)
+    assert run_metrics["data_quality"]["nonfinite_valid_value_excluded_count"] == 0
+
+
+def test_all_nonfinite_values_fail_via_existing_split_channel(tmp_path):
+    """排除后不足建模下限 → 走现有失败通道（SPLIT_INSUFFICIENT_GROUPS）。"""
+
+    from geomodeling.modeling.runner import execute_run
+
+    runtime = make_runtime(tmp_path)
+    make_standardized_with_undeclared_nan(runtime, "c1", "ds1", nan_rows=36)
+    experiment_id = insert_experiment(runtime, "c1", "ds1", dict(SEARCH_IDW_MANUAL))
+    run_id = insert_run(runtime, experiment_id)
+
+    outcome = execute_run(runtime, run_id, threading.Event())
+    assert outcome.status == "failed"
+    with runtime.session() as session:
+        run = session.get(tables.Run, run_id)
+        assert run.error_code == "SPLIT_INSUFFICIENT_GROUPS"
+        run_metrics = tables.loads_canonical(run.metrics_json)
+    assert run_metrics["data_quality"]["nonfinite_valid_value_excluded_count"] == 36
+    assert load_candidates(runtime, run_id) == []

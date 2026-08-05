@@ -90,3 +90,74 @@ def test_zero_common_valid_is_safe():
     assert not mask.any()
     with pytest.raises(Exception):
         compute_metrics(np.array([1.0, 2.0]), np.array([1.0, 2.0]), mask)
+
+
+def test_all_finite_input_reports_zero_exclusions():
+    """全有限输入与既有行为逐位一致，且排除计数为零。"""
+
+    from geomodeling.modeling.metrics import compute_metrics
+
+    truth = np.array([10.0, 20.0, 30.0, 40.0])
+    prediction = np.array([11.0, 19.0, 33.0, 37.0])
+    mask = np.array([True, True, True, True])
+    summary = compute_metrics(truth, prediction, mask)
+    assert summary.truth_excluded_count == 0
+    assert summary.prediction_excluded_count == 0
+    errors = prediction - truth
+    assert summary.rmse == float(np.sqrt((errors**2).mean()))
+    assert summary.mae == float(np.abs(errors).mean())
+    assert summary.bias == float(errors.mean())
+
+
+def test_nonfinite_truth_is_excluded_and_counted():
+    """掩膜内的非有限 truth 不得毒化指标：排除、计数披露、指标有限。"""
+
+    from geomodeling.modeling.metrics import compute_metrics
+
+    truth = np.array([10.0, np.nan, 30.0, 40.0])
+    prediction = np.array([11.0, 19.0, 33.0, 37.0])
+    mask = np.array([True, True, True, True])
+    summary = compute_metrics(truth, prediction, mask)
+    assert summary.truth_excluded_count == 1
+    assert summary.prediction_excluded_count == 0
+    assert summary.common_valid_count == 3
+    assert summary.total_count == 4
+    kept = np.array([0, 2, 3])
+    errors = prediction[kept] - truth[kept]
+    assert summary.mae == pytest.approx(np.abs(errors).mean())
+    assert summary.rmse == pytest.approx(np.sqrt((errors**2).mean()))
+    assert summary.bias == pytest.approx(errors.mean())
+    for value in (summary.mae, summary.rmse, summary.r2, summary.bias):
+        assert np.isfinite(value)
+
+
+def test_nonfinite_prediction_is_excluded_and_counted():
+    """掩膜内的非有限 prediction 同样排除并披露（不只看 NoData 标记）。"""
+
+    from geomodeling.modeling.metrics import compute_metrics
+
+    truth = np.array([10.0, 20.0, 30.0, 40.0])
+    prediction = np.array([11.0, np.nan, 33.0, 37.0])
+    mask = np.array([True, True, True, True])
+    summary = compute_metrics(truth, prediction, mask)
+    assert summary.truth_excluded_count == 0
+    assert summary.prediction_excluded_count == 1
+    assert summary.common_valid_count == 3
+    kept = np.array([0, 2, 3])
+    errors = prediction[kept] - truth[kept]
+    assert summary.rmse == pytest.approx(np.sqrt((errors**2).mean()))
+    assert np.isfinite(summary.bias)
+
+
+def test_all_nonfinite_truth_still_fails_closed():
+    """排除后公共集合为空 → 仍以 METRICS_EMPTY_COMMON_VALID fail-closed。"""
+
+    from geomodeling.modeling.metrics import METRICS_EMPTY_COMMON_VALID, compute_metrics
+    from geomodeling.platform.errors import PlatformError
+
+    truth = np.array([np.nan, np.nan])
+    prediction = np.array([1.0, 2.0])
+    mask = np.array([True, True])
+    with pytest.raises(PlatformError) as exc:
+        compute_metrics(truth, prediction, mask)
+    assert exc.value.code == METRICS_EMPTY_COMMON_VALID

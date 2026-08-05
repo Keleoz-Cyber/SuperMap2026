@@ -10,7 +10,10 @@
 NetCDF Float32 存储，[0,1] 米级跨度在 120°E 会坍缩（Float32 步长
 ≈7.6e-6°），回读严格递增校验 fail-closed，米制百米跨度是真实管线的
 最小诚实尺度。角落 2×2×2 共 8 个单元为确定性 NoData
-（is_nodata=True 且值置 NaN）。每个尺寸在平台仓储中建立完整归属链：
+（is_nodata=True 且值置 NaN）；4×4×4 建模样本子集排除命中 NoData 的
+抽样点（样本数由 64 如实缩减），标准化帧 ``is_numeric_valid`` 按值的
+真实有限性逐行计算，profile 有效/无效计数按帧统计——未声明的 NaN
+绝不进入建模输入。每个尺寸在平台仓储中建立完整归属链：
 case → dataset version（含真实标准化 parquet profile）→ experiment →
 succeeded run → succeeded candidate，并手工落盘 ``grid.npz`` +
 ``metadata.json``、更新 ``candidate_results.grid_path``（与
@@ -101,8 +104,13 @@ def _write_source_and_standardized(
     dataset_id: str,
     axes: tuple[np.ndarray, ...],
     values: np.ndarray,
-) -> tuple[str, str, str, Path]:
-    """确定性 4×4×4 抽样子集：source.csv + 标准化 parquet，返回三哈希与路径。"""
+) -> tuple[str, str, str, Path, pd.DataFrame]:
+    """确定性 4×4×4 抽样子集：source.csv + 标准化 parquet，返回三哈希、路径与帧。
+
+    抽样子集排除 NoData 单元（命中角落的抽样点在写出前丢弃，样本数由
+    64 如实缩减），``is_numeric_valid`` 按帧内值的真实有限性逐行计算——
+    未声明的 NaN 绝不进入建模输入。
+    """
 
     n = values.shape[0]
     picks = np.linspace(0, n - 1, 4).round().astype(int)
@@ -118,6 +126,9 @@ def _write_source_and_standardized(
                         float(values[i, j, k]),
                     )
                 )
+    # 排除 NoData 单元：抽样命中角落 2×2×2 的行不进入 source/标准化帧
+    rows = [row for row in rows if np.isfinite(row[3])]
+    sampled_values = np.array([r[3] for r in rows], dtype="float64")
     frame = pd.DataFrame(
         {
             "source_row": np.arange(1, len(rows) + 1),
@@ -125,7 +136,8 @@ def _write_source_and_standardized(
             "y": [r[1] for r in rows],
             "z": [r[2] for r in rows],
             "value": [r[3] for r in rows],
-            "is_numeric_valid": True,
+            # 防御性：按真实有限性计算，绝不硬编码 True 配 NaN
+            "is_numeric_valid": np.isfinite(sampled_values),
         }
     )
     source_path = runtime.settings.upload_source(case_id, dataset_id, "csv")
@@ -139,7 +151,7 @@ def _write_source_and_standardized(
     frame.to_parquet(standardized_path, index=False)
     source_sha = hashlib.sha256(source_path.read_bytes()).hexdigest()
     standardized_sha = hashlib.sha256(standardized_path.read_bytes()).hexdigest()
-    return source_sha, standardized_sha, str(source_path), standardized_path
+    return source_sha, standardized_sha, str(source_path), standardized_path, frame
 
 
 def _seed_size(runtime: PlatformRuntime, n: int) -> dict:
@@ -155,9 +167,11 @@ def _seed_size(runtime: PlatformRuntime, n: int) -> dict:
     fingerprint = hashlib.sha256(f"v0.6.1-volume-benchmark-{n}".encode()).hexdigest()
 
     axes, values, is_nodata = _benchmark_grid(n)
-    source_sha, standardized_sha, source_path, standardized_path = (
+    source_sha, standardized_sha, source_path, standardized_path, frame = (
         _write_source_and_standardized(runtime, case_id, dataset_id, axes, values)
     )
+    # 质量计数按标准化帧真实统计写入 profile，门禁不得谎报
+    valid_row_count = int(frame["is_numeric_valid"].to_numpy(dtype=bool).sum())
 
     profile = {
         "source_kind": "csv_upload",
@@ -172,9 +186,9 @@ def _seed_size(runtime: PlatformRuntime, n: int) -> dict:
             "value_unit": UNITS,
             "coordinate_kind": "local_linear",
         },
-        "row_count": 64,
-        "valid_row_count": 64,
-        "invalid_row_count": 0,
+        "row_count": int(len(frame)),
+        "valid_row_count": valid_row_count,
+        "invalid_row_count": int(len(frame)) - valid_row_count,
         "source_sha256": source_sha,
         "standardized_sha256": standardized_sha,
         "standardized_path": str(standardized_path),
