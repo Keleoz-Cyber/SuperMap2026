@@ -449,37 +449,3 @@ describe('CaseCreateView · microseismic preset', () => {
     expect(router.currentRoute.value.path).toBe('/cases/c9/microseismic/import')
   })
 })
-
-describe('HomeView · 微震案例卡', () => {
-  it('微震卡片可进入并路由到 /cases/new?preset=microseismic', async () => {
-    vi.mocked(client.fetchCases).mockResolvedValue({
-      cases: [
-        {
-          case_id: 'resistivity',
-          title: '地下电阻率',
-          status: 'active',
-          data_form: '三维 X/Y/Z/RHO',
-          links: { detail: '/api/cases/resistivity', publish_status: null },
-        },
-        {
-          case_id: 'microseismic',
-          title: '微震速度',
-          status: 'audit_only',
-          data_form: '三维 X/Y/Z/Vx',
-          links: { detail: null, publish_status: null },
-        },
-      ],
-    })
-    const router = makeTestRouter()
-    await router.push('/')
-    const wrapper = mount(HomeView, { global: { plugins: [router, ElementPlus] } })
-    await flushPromises()
-
-    const card = wrapper.findAll('.case-card').find((c) => c.text().includes('微震速度'))
-    expect(card).toBeDefined()
-    await card!.trigger('click')
-    await flushPromises()
-    expect(router.currentRoute.value.path).toBe('/cases/new')
-    expect(router.currentRoute.value.query.preset).toBe('microseismic')
-  })
-})

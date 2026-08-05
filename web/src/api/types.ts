@@ -21,6 +21,16 @@ export interface CaseSummary {
   created_at?: string
   // v0.6.1：上传案例卡的主打成果直达链接；无成果为 null，legacy 卡片不携带
   featured_result?: FeaturedResultLink | null
+  // v0.7.0：统一工作台身份与能力（所有卡片均携带；旧客户端可按 source_kind 回退）
+  workspace_kind?: 'builtin_legacy' | 'builtin_preset' | 'user_upload'
+  capabilities?: {
+    data_summary: boolean
+    experiments: boolean
+    official_result: boolean
+    native_volume: boolean
+  }
+  official_result?: FeaturedResultLink | null
+  provenance_summary?: Record<string, unknown>
   links: {
     detail: string | null
     publish_status: string | null

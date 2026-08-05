@@ -30,12 +30,6 @@ const CASE_META: Record<string, CaseMeta> = {
     badgeType: 'success',
     badgeText: '内置 v0.3.1 稳定案例',
   },
-  microseismic: {
-    icon: Bell,
-    enterable: true,
-    badgeType: 'success',
-    badgeText: '原始 DAT 导入 · 第二案例',
-  },
   gas: {
     icon: Lock,
     enterable: false,
@@ -64,29 +58,52 @@ const loading = ref(true)
 const loadError = ref<string | null>(null)
 const iserverOnline = ref<boolean | null>(null)
 
+type WorkspaceKind = 'builtin_legacy' | 'builtin_preset' | 'user_upload'
+
+// v0.7.0：身份与动作只读 DTO（workspace_kind/capabilities/official_result），
+// 不再按 case_id 分支业务流程；旧客户端缺少新字段时按 source_kind 回退。
+function kindOf(c: CaseSummary): WorkspaceKind {
+  if (c.workspace_kind) return c.workspace_kind
+  return c.source_kind === 'upload' ? 'user_upload' : 'builtin_legacy'
+}
+
 function meta(c: CaseSummary): CaseMeta {
-  if (c.source_kind === 'upload') return UPLOAD_META
+  const kind = kindOf(c)
+  if (kind === 'user_upload') return UPLOAD_META
+  if (kind === 'builtin_preset') {
+    return {
+      icon: Bell,
+      enterable: true,
+      badgeType: 'success',
+      badgeText: String(
+        c.provenance_summary?.badge ?? 'CSV 预置 · 官方普通克里金成果',
+      ),
+    }
+  }
   return CASE_META[c.case_id] ?? { ...FALLBACK_META, badgeText: c.status }
 }
 
 function enter(c: CaseSummary) {
-  if (c.source_kind === 'upload') {
-    void router.push(`/cases/${c.case_id}/experiments/new`)
+  if (!meta(c).enterable) return
+  const kind = kindOf(c)
+  // legacy（非暂缓）与预置卡：统一进入案例工作台
+  if (kind !== 'user_upload') {
+    void router.push(`/cases/${c.case_id}`)
     return
   }
-  if (c.case_id === 'resistivity') {
-    void router.push('/case/resistivity')
-    return
-  }
-  if (c.case_id === 'microseismic') {
-    void router.push({ path: '/cases/new', query: { preset: 'microseismic' } })
-  }
+  void router.push(`/cases/${c.case_id}/experiments/new`)
 }
 
 // v0.6.1：有主打成果的上传卡提供「查看体渲染成果」直达入口，与新建实验分离
 function openFeaturedResult(c: CaseSummary) {
   if (!c.featured_result) return
   void router.push(c.featured_result.url)
+}
+
+// v0.7.0：预置卡的官方成果直达（与进入工作台主命令分离）
+function openOfficialResult(c: CaseSummary) {
+  if (!c.official_result) return
+  void router.push(c.official_result.url)
 }
 
 onMounted(async () => {
@@ -146,9 +163,14 @@ onMounted(async () => {
             </el-tag>
           </div>
           <div class="case-body">
-            <template v-if="c.source_kind === 'upload'">
+            <template v-if="kindOf(c) === 'user_upload'">
               <p><span>案例类型</span>{{ c.case_type ?? 'generic' }}</p>
               <p><span>创建时间</span>{{ (c.created_at ?? '').slice(0, 19).replace('T', ' ') }}</p>
+            </template>
+            <template v-else-if="kindOf(c) === 'builtin_preset'">
+              <p><span>数据形态</span>{{ c.provenance_summary?.data_form }}</p>
+              <p><span>坐标</span>{{ c.provenance_summary?.coordinate_kind }}</p>
+              <p><span>单位</span>{{ c.provenance_summary?.value_unit }}</p>
             </template>
             <template v-else>
               <p><span>数据形态</span>{{ c.data_form }}</p>
@@ -158,15 +180,31 @@ onMounted(async () => {
           </div>
           <div v-if="c.v03_stage" class="case-stage">{{ c.v03_stage }}</div>
           <div class="case-foot">
-            <el-button v-if="c.case_id === 'resistivity'" type="primary">
-              进入三维工作台
+            <template v-if="kindOf(c) === 'builtin_preset'">
+              <el-button type="primary" data-test="enter-case-workspace" @click.stop="enter(c)">
+                进入案例工作台
+                <el-icon style="margin-left: 4px"><ArrowRight /></el-icon>
+              </el-button>
+              <el-button
+                v-if="c.official_result"
+                size="small"
+                text
+                data-test="open-official-result"
+                @click.stop="openOfficialResult(c)"
+              >
+                查看官方成果
+              </el-button>
+            </template>
+            <el-button
+              v-else-if="kindOf(c) === 'builtin_legacy' && meta(c).enterable"
+              type="primary"
+              data-test="enter-case-workspace"
+              @click.stop="enter(c)"
+            >
+              进入案例工作台
               <el-icon style="margin-left: 4px"><ArrowRight /></el-icon>
             </el-button>
-            <el-button v-else-if="c.case_id === 'microseismic'" type="primary" data-test="enter-microseismic">
-              导入微震 DAT
-              <el-icon style="margin-left: 4px"><ArrowRight /></el-icon>
-            </el-button>
-            <template v-else-if="c.source_kind === 'upload'">
+            <template v-else-if="kindOf(c) === 'user_upload'">
               <template v-if="c.featured_result">
                 <el-button
                   type="primary"

@@ -43,6 +43,46 @@ const PLAIN_UPLOAD_CASE: CaseSummary = {
   links: { detail: '/api/cases/case-plain', publish_status: null },
 }
 
+// v0.7.0：微震 CSV 预置卡（builtin_preset 工作台身份）
+const PRESET_CASE: CaseSummary = {
+  case_id: 'builtin-microseismic-vx-1911',
+  title: '微震速度',
+  status: 'active',
+  workspace_kind: 'builtin_preset',
+  capabilities: {
+    data_summary: true,
+    experiments: true,
+    official_result: true,
+    native_volume: true,
+  },
+  official_result: { result_id: 'r-1', url: '/results/r-1', materialized: true },
+  provenance_summary: {
+    badge: 'CSV 预置 · 官方普通克里金成果',
+    data_form: '三维 X/Y/Z/Vx（局部测线坐标）',
+    value_unit: 'km/s',
+    coordinate_kind: 'local_linear',
+  },
+  links: { detail: null, publish_status: null },
+}
+
+const RESISTIVITY_CARD: CaseSummary = {
+  case_id: 'resistivity',
+  title: '地下电阻率',
+  data_form: '三维 X/Y/Z/RHO（局部工程坐标）',
+  status: 'active',
+  coordinate: '局部工程坐标，EPSG 未确认',
+  unit_note: 'RHO 单位待来源确认',
+  source_kind: 'builtin_legacy',
+  workspace_kind: 'builtin_legacy',
+  capabilities: {
+    data_summary: true,
+    experiments: false,
+    official_result: false,
+    native_volume: true,
+  },
+  links: { detail: '/api/cases/resistivity', publish_status: null },
+}
+
 async function mountHome(cases: CaseSummary[]) {
   vi.mocked(client.fetchCases).mockResolvedValue({ cases })
   vi.mocked(client.fetchRhoPublishStatus).mockRejectedValue(new Error('iServer offline'))
@@ -51,6 +91,7 @@ async function mountHome(cases: CaseSummary[]) {
     routes: [
       { path: '/', name: 'home', component: HomeView },
       { path: '/results/:resultId', name: 'result-workbench', component: { template: '<div />' } },
+      { path: '/cases/:caseId', name: 'case-workspace', component: { template: '<div />' } },
       {
         path: '/cases/:caseId/experiments/new',
         name: 'experiment-create',
@@ -112,5 +153,37 @@ describe('HomeView featured_result 入口', () => {
     await wrapper.find('.case-card').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.path).toBe('/cases/case-plain/experiments/new')
+  })
+})
+
+describe('HomeView v0.7.0 工作台入口', () => {
+  it('routes every enterable card to its workspace and gives a preset an official-result shortcut', async () => {
+    const { wrapper, router } = await mountHome([PRESET_CASE, RESISTIVITY_CARD])
+
+    // 无 DAT 文案；预置徽标为 CSV 预置说明
+    expect(wrapper.text()).not.toContain('导入微震 DAT')
+    expect(wrapper.text()).toContain('CSV 预置 · 官方普通克里金成果')
+
+    // 预置卡主命令：进入工作台
+    const buttons = wrapper.findAll('[data-test="enter-case-workspace"]')
+    expect(buttons.length).toBe(2)
+    await buttons[0].trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe(`/cases/${PRESET_CASE.case_id}`)
+
+    // 预置卡次命令：官方成果直达
+    await router.push('/')
+    const official = wrapper.find('[data-test="open-official-result"]')
+    expect(official.exists()).toBe(true)
+    await official.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/results/r-1')
+  })
+
+  it('卡片点击同样进入统一工作台（预置）', async () => {
+    const { wrapper, router } = await mountHome([PRESET_CASE])
+    await wrapper.find('.case-card').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe(`/cases/${PRESET_CASE.case_id}`)
   })
 })
