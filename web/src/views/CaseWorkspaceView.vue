@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import { ApiError, fetchCaseWorkspace } from '../api/client'
@@ -74,8 +74,11 @@ function createExperiment() {
   })
 }
 
-onMounted(async () => {
+async function loadWorkspace() {
   loading.value = true
+  workspace.value = null
+  loadError.value = null
+  notInitialized.value = false
   try {
     workspace.value = await fetchCaseWorkspace(caseId.value)
   } catch (exc) {
@@ -87,6 +90,14 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
+}
+
+onMounted(loadWorkspace)
+
+// 同一组件实例在 /cases/:caseId 之间复用：参数变化必须重新加载，
+// 绝不显示上一个案例的 stale 内容
+watch(caseId, (next, prev) => {
+  if (next !== prev) void loadWorkspace()
 })
 </script>
 

@@ -97,6 +97,7 @@ describe('CaseWorkspaceView', () => {
     await flushPromises()
     expect(router.currentRoute.value.path).toBe('/results/r-1')
     await router.push(`/cases/${PRESET_ID}`)
+    await flushPromises()
     await wrapper.find('[data-test="new-experiment"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.path).toBe(`/cases/${PRESET_ID}/experiments/new`)
@@ -123,6 +124,20 @@ describe('CaseWorkspaceView', () => {
     await wrapper.find('[data-test="back-home"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.path).toBe('/')
+  })
+
+  it('路由参数变化时重新加载目标案例（不得显示上一个案例的 stale 内容）', async () => {
+    vi.mocked(client.fetchCaseWorkspace).mockImplementation(async (id: string) =>
+      id === 'resistivity' ? workspaceOf('builtin_legacy') : workspaceOf('builtin_preset'),
+    )
+    const { wrapper, router } = await mountWorkspace('/cases/resistivity')
+    expect(wrapper.find('[data-test="case-workspace-header"]').text()).toContain('地下电阻率')
+
+    await router.push(`/cases/${PRESET_ID}`)
+    await flushPromises()
+    expect(client.fetchCaseWorkspace).toHaveBeenCalledWith(PRESET_ID)
+    expect(wrapper.find('[data-test="case-workspace-header"]').text()).toContain('微震速度')
+    expect(wrapper.find('[data-test="case-workspace-header"]').text()).not.toContain('地下电阻率')
   })
 
   it('user_upload with featured result: 查看成果 primary + results section shows 主打成果', async () => {
