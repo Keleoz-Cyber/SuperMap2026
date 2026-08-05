@@ -22,6 +22,7 @@ from geomodeling.platform.microseismic_preset import (
     analyze_preset_candidates,
     load_microseismic_preset,
     report_to_json,
+    seed_microseismic_preset,
 )
 from geomodeling.platform.tables import dumps_canonical
 
@@ -58,6 +59,62 @@ def analyze_microseismic(
                     "candidate_report_sha256": report.sha256,
                     "candidate_count": len(report.candidates),
                     "common_valid_count": report.common_valid_count,
+                },
+                ensure_ascii=False,
+            )
+        )
+    except PlatformError as exc:
+        typer.echo(json.dumps(exc.public_payload(), ensure_ascii=False))
+        raise typer.Exit(code=1) from exc
+    except Exception as exc:  # noqa: BLE001 - 统一错误封套
+        payload = {"error": {"code": PRESET_CLI_UNEXPECTED_ERROR, "message": str(exc), "details": {}}}
+        typer.echo(json.dumps(payload, ensure_ascii=False))
+        raise typer.Exit(code=1) from exc
+
+
+def main() -> None:
+    preset_app()
+
+
+@preset_app.command("seed-microseismic")
+def seed_microseismic(
+    data_dir: Path = typer.Option(
+        None,
+        "--data-dir",
+        help="平台运行时数据目录（默认 GEOMODELING_DATA_DIR 或 var/geomodeling）",
+    ),
+) -> None:
+    """经正常生命周期 seed 官方微震成果（幂等；唯一生产 seed 入口）。
+
+    首建走完整 Case→DatasetVersion→Experiment→Run→CandidateResult→
+    materialize→FormalSelection 链；同身份同指纹已存在时只查询复用，
+    绝不重算或改写。NetCDF 资产只能经既有显式渲染资产服务另行创建。
+    """
+
+    from geomodeling.platform import PlatformRuntime
+    from geomodeling.platform.settings import PlatformSettings
+
+    try:
+        settings = (
+            PlatformSettings(data_dir=data_dir) if data_dir else PlatformSettings.resolve()
+        )
+        runtime = PlatformRuntime(settings=settings)
+        runtime.initialize()
+        try:
+            record = seed_microseismic_preset(runtime)
+        finally:
+            runtime.close()
+        typer.echo(
+            json.dumps(
+                {
+                    "case_id": record.case_id,
+                    "workspace_kind": record.workspace_kind,
+                    "dataset_version_id": record.dataset_version_id,
+                    "experiment_id": record.experiment_id,
+                    "run_id": record.run_id,
+                    "official_result": record.official_result.model_dump(mode="json"),
+                    "source_sha256": record.source_sha256,
+                    "baseline_sha256": record.baseline_sha256,
                 },
                 ensure_ascii=False,
             )

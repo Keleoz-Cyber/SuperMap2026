@@ -263,3 +263,160 @@ def test_baseline_grid_within_max_cells_and_covers_source_range(preset_csv: Path
     for idx, col in enumerate(("X_LOCAL_M", "Y_LOCAL_M", "Z_LOCAL_M")):
         assert bounds[idx][0] <= float(source.frame[col].min())
         assert bounds[idx][1] >= float(source.frame[col].max())
+
+
+# ---------------------------------------------------------------------------
+# Task 3：官方成果 seed（常规生命周期链）
+# ---------------------------------------------------------------------------
+
+import threading  # noqa: E402
+
+from geomodeling.platform import PlatformRuntime, tables  # noqa: E402
+from geomodeling.platform.microseismic_preset import (  # noqa: E402
+    seed_microseismic_preset,
+)
+from geomodeling.platform.repositories import featured_result_for_case  # noqa: E402
+
+
+@pytest.fixture()
+def runtime(tmp_path: Path):
+    rt = PlatformRuntime(tmp_path / "runtime")
+    rt.initialize()
+    yield rt
+    rt.close()
+
+
+def _case_config(runtime, case_id: str) -> dict:
+    with runtime.session() as session:
+        case = session.get(tables.Case, case_id)
+        return tables.loads_canonical(case.config_json) if case is not None else {}
+
+
+def test_seed_creates_validated_dataset_official_result_and_formal_selection(runtime):
+    seeded = seed_microseismic_preset(runtime)
+    assert seeded.case_id == PRESET_CASE_ID
+    assert seeded.workspace_kind == "builtin_preset"
+    assert seeded.official_result.materialized is True
+    assert seeded.official_result.url == f"/results/{seeded.official_result.result_id}"
+
+    with runtime.session() as session:
+        dataset = session.get(tables.DatasetVersion, seeded.dataset_version_id)
+        assert dataset.status == "validated"
+        profile = tables.loads_canonical(dataset.profile_json)
+        assert profile["mapping"]["value_name"] == "Vx"
+        assert profile["mapping"]["value_unit"] == "km/s"
+        assert profile["mapping"]["coordinate_kind"] == "local_linear"
+        assert profile["row_count"] == 1911
+        assert profile["valid_row_count"] == 1911
+
+        candidate = session.get(tables.CandidateResult, seeded.official_result.result_id)
+        assert candidate.status == "succeeded"
+        assert candidate.grid_path is not None
+        params = tables.loads_canonical(candidate.params_json)
+        assert params["variogram_model"] == "exponential"
+        assert params["neighbor_count"] == 12
+        assert params["z_scale"] == 2.0
+
+        selections = (
+            session.query(tables.FormalSelection)
+            .filter(tables.FormalSelection.case_id == PRESET_CASE_ID)
+            .all()
+        )
+        assert len(selections) == 1
+        assert selections[0].candidate_result_id == seeded.official_result.result_id
+
+    config = _case_config(runtime, PRESET_CASE_ID)
+    assert config["workspace_kind"] == "builtin_preset"
+    assert config["preset_version"] == PRESET_VERSION
+    assert config["read_only"] is True
+    assert config["source_sha256"] == TRACKED_CSV_SHA256
+
+    featured = None
+    with runtime.session() as session:
+        featured = featured_result_for_case(session, PRESET_CASE_ID)
+    assert featured is not None and featured.materialized is True
+
+
+def test_seed_is_idempotent_and_never_replaces_existing_official_selection(runtime):
+    first = seed_microseismic_preset(runtime)
+    second = seed_microseismic_preset(runtime)
+    assert second.official_result.result_id == first.official_result.result_id
+    with runtime.session() as session:
+        assert (
+            session.query(tables.FormalSelection)
+            .filter(tables.FormalSelection.case_id == PRESET_CASE_ID)
+            .count()
+            == 1
+        )
+        assert (
+            session.query(tables.Run)
+            .filter(tables.Run.experiment_id == first.experiment_id)
+            .count()
+            == 1
+        )
+
+
+def test_seed_concurrent_calls_never_create_double_selection(runtime):
+    outcomes = []
+
+    def worker():
+        outcomes.append(seed_microseismic_preset(runtime).official_result.result_id)
+
+    threads = [threading.Thread(target=worker) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=600)
+    assert len(set(outcomes)) == 1
+    with runtime.session() as session:
+        assert (
+            session.query(tables.FormalSelection)
+            .filter(tables.FormalSelection.case_id == PRESET_CASE_ID)
+            .count()
+            == 1
+        )
+
+
+def test_seed_refuses_to_overwrite_when_fingerprints_differ(runtime):
+    seeded = seed_microseismic_preset(runtime)
+    with runtime.session() as session:
+        case = session.get(tables.Case, PRESET_CASE_ID)
+        config = tables.loads_canonical(case.config_json)
+        config["baseline_sha256"] = "0" * 64
+        case.config_json = tables.dumps_canonical(config)
+        session.commit()
+    with pytest.raises(PlatformError) as excinfo:
+        seed_microseismic_preset(runtime)
+    assert excinfo.value.code == PRESET_BASELINE_INVALID
+    # 原正式选择保持不变
+    with runtime.session() as session:
+        selections = (
+            session.query(tables.FormalSelection)
+            .filter(tables.FormalSelection.case_id == PRESET_CASE_ID)
+            .all()
+        )
+        assert len(selections) == 1
+        assert selections[0].candidate_result_id == seeded.official_result.result_id
+
+
+def test_seed_failure_leaves_no_partial_state(runtime, monkeypatch):
+    import geomodeling.modeling.runner as runner_module
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("injected runner failure")
+
+    monkeypatch.setattr(runner_module, "execute_run", boom)
+    monkeypatch.setattr(
+        "geomodeling.platform.microseismic_preset.execute_run", boom, raising=False
+    )
+    with pytest.raises(Exception):
+        seed_microseismic_preset(runtime)
+    with runtime.session() as session:
+        assert session.get(tables.Case, PRESET_CASE_ID) is None
+        assert session.query(tables.DatasetVersion).count() == 0
+        assert session.query(tables.Experiment).count() == 0
+        assert session.query(tables.Run).count() == 0
+        assert session.query(tables.CandidateResult).count() == 0
+        assert session.query(tables.FormalSelection).count() == 0
+    dataset_dir = runtime.settings.datasets_dir / PRESET_CASE_ID
+    assert not dataset_dir.exists()

@@ -441,3 +441,343 @@ def verify_official_baseline(
         ranked = rank_preset_candidates(report.candidates)
         if not ranked or ranked[0]["params"] != winner_params:
             reject("winner_not_report_top")
+
+
+
+# ---------------------------------------------------------------------------
+# Task 3：官方成果 seed（常规 Case→Dataset→Experiment→Run→Candidate→Selection 链）
+# ---------------------------------------------------------------------------
+
+import os  # noqa: E402
+import shutil  # noqa: E402
+import tempfile  # noqa: E402
+import threading  # noqa: E402
+import uuid  # noqa: E402
+
+from sqlalchemy.exc import IntegrityError  # noqa: E402
+
+from geomodeling.modeling.runner import execute_run  # noqa: E402
+from geomodeling.platform import tables  # noqa: E402
+from geomodeling.platform.ingest import standardize  # noqa: E402
+from geomodeling.platform.repositories import (  # noqa: E402
+    FormalSelectionRepository,
+    featured_result_for_case,
+)
+from geomodeling.platform.results import materialize  # noqa: E402
+from geomodeling.platform.schemas import (  # noqa: E402
+    FeaturedResultLink,
+    FieldMapping,
+    FormalSelectionRequest,
+)
+
+_PRESET_NAMESPACE = uuid.UUID("c5f7a2e1-4b8d-4e6a-9f0c-1d2b3a4c5e6f")
+# 进程内线程锁：并发 seed 串行化；跨进程由确定性主键唯一约束兜底。
+_SEED_LOCK = threading.Lock()
+
+SEED_SELECTED_BY = "preset-seed"
+SEED_NOTE = (
+    "官方普通克里金基线（v0.7.0 微震 CSV 预置）：候选矩阵空间验证与选择理由见 "
+    "config/presets/microseismic-official-baseline.json；用户实验不得改写本选择。"
+)
+
+
+@dataclass(frozen=True)
+class PresetSeedRecord:
+    """seed 结果身份（只含逻辑 ID/链接/指纹，绝无本机路径）。"""
+
+    case_id: str
+    workspace_kind: str
+    dataset_version_id: str
+    experiment_id: str
+    run_id: str
+    official_result: FeaturedResultLink
+    source_sha256: str
+    baseline_sha256: str
+
+
+def _preset_ids() -> dict[str, str]:
+    return {
+        "dataset": str(uuid.uuid5(_PRESET_NAMESPACE, f"{PRESET_VERSION}/dataset")),
+        "experiment": str(uuid.uuid5(_PRESET_NAMESPACE, f"{PRESET_VERSION}/experiment")),
+        "run": str(uuid.uuid5(_PRESET_NAMESPACE, f"{PRESET_VERSION}/run")),
+    }
+
+
+def load_and_verify_official_baseline(source: PresetSource) -> OfficialBaseline:
+    baseline = load_official_baseline(DEFAULT_BASELINE_PATH)
+    verify_official_baseline(source, baseline)
+    return baseline
+
+
+def _record_from_rows(runtime, source_sha256: str, baseline_sha256: str) -> PresetSeedRecord:
+    ids = _preset_ids()
+    with runtime.session() as session:
+        featured = featured_result_for_case(session, PRESET_CASE_ID)
+    if featured is None:
+        raise PlatformError(
+            PRESET_BASELINE_INVALID,
+            "预置案例正式成果链不完整",
+            {"reason": "partial_chain"},
+            http_status=409,
+        )
+    return PresetSeedRecord(
+        case_id=PRESET_CASE_ID,
+        workspace_kind="builtin_preset",
+        dataset_version_id=ids["dataset"],
+        experiment_id=ids["experiment"],
+        run_id=ids["run"],
+        official_result=featured,
+        source_sha256=source_sha256,
+        baseline_sha256=baseline_sha256,
+    )
+
+
+def find_matching_preset_seed(
+    runtime, source_sha256: str, baseline_sha256: str
+) -> PresetSeedRecord | None:
+    """已有同身份同指纹的完整 seed → 直接返回；指纹不同/链不完整 → fail-closed。"""
+
+    with runtime.session() as session:
+        case = session.get(tables.Case, PRESET_CASE_ID)
+        if case is None:
+            return None
+        config = tables.loads_canonical(case.config_json or "{}")
+    if config.get("workspace_kind") != "builtin_preset":
+        raise PlatformError(
+            PRESET_BASELINE_INVALID,
+            "预置案例身份冲突：已存在同 ID 非预置案例",
+            {"reason": "workspace_kind"},
+            http_status=409,
+        )
+    if config.get("preset_version") != PRESET_VERSION:
+        raise PlatformError(
+            PRESET_BASELINE_INVALID,
+            "预置版本不一致，绝不覆盖既有成果",
+            {"reason": "preset_version"},
+            http_status=409,
+        )
+    if (
+        config.get("source_sha256") != source_sha256
+        or config.get("baseline_sha256") != baseline_sha256
+    ):
+        raise PlatformError(
+            PRESET_BASELINE_INVALID,
+            "预置源/基线指纹不一致，绝不覆盖既有成果",
+            {"reason": "fingerprint"},
+            http_status=409,
+        )
+    return _record_from_rows(runtime, source_sha256, baseline_sha256)
+
+
+def seed_microseismic_preset(runtime) -> PresetSeedRecord:
+    """幂等 seed：同指纹完整链直接复用；否则经正常生命周期全链创建。"""
+
+    with _SEED_LOCK:
+        source = load_microseismic_preset(DEFAULT_PRESET_CSV)
+        baseline = load_and_verify_official_baseline(source)
+        existing = find_matching_preset_seed(runtime, source.sha256, baseline.sha256)
+        if existing is not None:
+            return existing
+        return _create_preset_chain(runtime, source, baseline)
+
+
+def _stage_source_csv(runtime, dataset_id: str, source: PresetSource) -> Path:
+    """受控 CSV 原子复制进运行时（临时文件 + 回读校验 + os.replace）。"""
+
+    target = runtime.settings.upload_source(PRESET_CASE_ID, dataset_id, "csv")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(prefix="preset-source-", suffix=".csv", dir=target.parent)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(DEFAULT_PRESET_CSV.read_bytes())
+        if hashlib.sha256(Path(tmp_name).read_bytes()).hexdigest() != source.sha256:
+            raise PlatformError(
+                PRESET_SOURCE_INVALID,
+                "预置源复制校验失败",
+                {"reason": "copy_sha_mismatch"},
+                http_status=409,
+            )
+        os.replace(tmp_name, target)
+    except BaseException:
+        Path(tmp_name).unlink(missing_ok=True)
+        raise
+    return target
+
+
+def _create_preset_chain(runtime, source: PresetSource, baseline: OfficialBaseline):
+    ids = _preset_ids()
+    dataset_id = ids["dataset"]
+    experiment_id = ids["experiment"]
+    run_id = ids["run"]
+    created_candidate_id: str | None = None
+
+    try:
+        source_path = _stage_source_csv(runtime, dataset_id, source)
+        mapping = FieldMapping(
+            dimension="3d",
+            x="X_LOCAL_M",
+            y="Y_LOCAL_M",
+            z="Z_LOCAL_M",
+            value="VX_KM_S",
+            value_name="Vx",
+            value_unit="km/s",
+            coordinate_kind="local_linear",
+        )
+        summary = standardize(
+            runtime.settings, PRESET_CASE_ID, dataset_id, source_path, "csv", mapping
+        )
+
+        config = {
+            "workspace_kind": "builtin_preset",
+            "preset_version": PRESET_VERSION,
+            "read_only": True,
+            "source_sha256": source.sha256,
+            "baseline_sha256": baseline.sha256,
+            "candidate_report_sha256": baseline.candidate_report_sha256,
+        }
+        profile = {
+            "source_kind": "builtin_preset",
+            "dimension": "3d",
+            "mapping": {
+                "dimension": "3d",
+                "x": "X_LOCAL_M",
+                "y": "Y_LOCAL_M",
+                "z": "Z_LOCAL_M",
+                "value": "VX_KM_S",
+                "value_name": "Vx",
+                "value_unit": "km/s",
+                "coordinate_kind": "local_linear",
+            },
+            "row_count": summary["row_count"],
+            "valid_row_count": summary["valid_row_count"],
+            "invalid_row_count": summary["invalid_row_count"],
+            "source_sha256": source.sha256,
+            "standardized_sha256": summary["standardized_sha256"],
+            "standardized_path": summary["standardized_path"],
+            "quality": {"status": "passed", "confirmed": True},
+        }
+        experiment_params = {
+            "algorithm": "ordinary_kriging",
+            "dataset_version_id": dataset_id,
+            "search_mode": "manual",
+            "parameters": baseline.winner["parameters"],
+            "validation": baseline.validation,
+            "grid": baseline.grid,
+        }
+        try:
+            with runtime.session() as session:
+                session.add(
+                    tables.Case(
+                        id=PRESET_CASE_ID,
+                        name="微震速度",
+                        case_type="generic",
+                        config_json=tables.dumps_canonical(config),
+                    )
+                )
+                session.add(
+                    tables.DatasetVersion(
+                        id=dataset_id,
+                        case_id=PRESET_CASE_ID,
+                        version=1,
+                        status="validated",
+                        source_path=str(source_path),
+                        standardized_path=summary["standardized_path"],
+                        profile_json=tables.dumps_canonical(profile),
+                    )
+                )
+                session.add(
+                    tables.Experiment(
+                        id=experiment_id,
+                        case_id=PRESET_CASE_ID,
+                        name="官方普通克里金基线",
+                        params_json=tables.dumps_canonical(experiment_params),
+                    )
+                )
+                session.add(tables.Run(id=run_id, experiment_id=experiment_id, status="queued"))
+                session.commit()
+        except IntegrityError:
+            # 并发/重复 seed 已由其他进程创建同身份链：回读复用或 fail-closed
+            existing = find_matching_preset_seed(runtime, source.sha256, baseline.sha256)
+            if existing is not None:
+                return existing
+            raise
+
+        outcome = execute_run(runtime, run_id, threading.Event())
+        if outcome.status != "succeeded":
+            raise PlatformError(
+                PRESET_BASELINE_INVALID,
+                "官方候选执行未成功",
+                {"reason": "run_not_succeeded", "status": outcome.status},
+                http_status=409,
+            )
+        with runtime.session() as session:
+            candidates = (
+                session.query(tables.CandidateResult)
+                .filter(tables.CandidateResult.run_id == run_id)
+                .all()
+            )
+        succeeded = [c for c in candidates if c.status == "succeeded"]
+        if len(succeeded) != 1:
+            raise PlatformError(
+                PRESET_BASELINE_INVALID,
+                "官方候选数量合同不一致",
+                {"reason": "candidate_count", "count": len(succeeded)},
+                http_status=409,
+            )
+        created_candidate_id = succeeded[0].id
+
+        materialize(runtime, created_candidate_id)
+
+        with runtime.session() as session:
+            FormalSelectionRepository(session).select(
+                PRESET_CASE_ID,
+                FormalSelectionRequest(
+                    candidate_result_id=created_candidate_id,
+                    note=SEED_NOTE,
+                    selected_by=SEED_SELECTED_BY,
+                ),
+            )
+        return _record_from_rows(runtime, source.sha256, baseline.sha256)
+    except BaseException:
+        _compensate_seed(runtime, ids, created_candidate_id)
+        raise
+
+
+def _compensate_seed(runtime, ids: dict[str, str], candidate_id: str | None) -> None:
+    """seed 失败补偿：删行 + 删工件目录；清理异常只记录，绝不覆盖原异常。"""
+
+    import logging
+
+    logger = logging.getLogger("geomodeling.platform")
+    try:
+        with runtime.session() as session:
+            session.query(tables.FormalSelection).filter(
+                tables.FormalSelection.case_id == PRESET_CASE_ID
+            ).delete(synchronize_session=False)
+            session.query(tables.CandidateResult).filter(
+                tables.CandidateResult.run_id == ids["run"]
+            ).delete(synchronize_session=False)
+            for model, row_id in (
+                (tables.Run, ids["run"]),
+                (tables.Experiment, ids["experiment"]),
+                (tables.DatasetVersion, ids["dataset"]),
+                (tables.Case, PRESET_CASE_ID),
+            ):
+                row = session.get(model, row_id)
+                if row is not None:
+                    session.delete(row)
+            session.commit()
+    except Exception:  # noqa: BLE001 - 清理失败只记录
+        logger.exception("预置 seed 补偿：数据库行清理失败")
+    for path in (
+        runtime.settings.datasets_dir / PRESET_CASE_ID,
+        runtime.settings.uploads_dir / PRESET_CASE_ID,
+        runtime.settings.experiments_dir / ids["experiment"],
+        (runtime.settings.results_dir / candidate_id) if candidate_id else None,
+    ):
+        if path is None:
+            continue
+        try:
+            shutil.rmtree(path, ignore_errors=True)
+        except Exception:  # noqa: BLE001 - 清理失败只记录
+            logger.exception("预置 seed 补偿：工件目录清理失败 %s", path)
