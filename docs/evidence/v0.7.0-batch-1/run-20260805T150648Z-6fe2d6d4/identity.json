@@ -1,0 +1,56 @@
+{
+  "run_id": "run-20260805T150648Z-6fe2d6d4",
+  "git_commit": "6e0c05d0c2a833205198003016d6d9495bd62012",
+  "sdk_sha256": "d69dadab01fc452a79f1fa88a46aced3cf29885df7bf4febbd6f24ce5b578120",
+  "sdk_version": "12.1.0",
+  "browser": {
+    "name": "chromium",
+    "version": "149.0.7827.55"
+  },
+  "gpu_renderer": "ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 4070 Laptop GPU/PCIe/SSE2, OpenGL 4.5.0)",
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "device_pixel_ratio": 1,
+  "results": {
+    "preset": {
+      "case_id": "builtin-microseismic-vx-1911",
+      "official_result_id": "a98b6e3d-3f89-4074-b889-c66a007a186d",
+      "grid_sha256": "9a141ac6ca62dbf55ca3099e54ef55c62aa10b5e7848dca8f9f2f6811f72221b",
+      "netcdf_sha256": "f764d08601e5fb85e64d72fee5391ffc6df9aafafb5ff1d478ad892653347c12",
+      "asset_id": "nc-3d87b2ce9df62de7430837faa2c1ced9"
+    }
+  },
+  "preset": {
+    "asset_id": "nc-3d87b2ce9df62de7430837faa2c1ced9",
+    "renderer": "supermap_voxelgrid_netcdf",
+    "grid_sha256": "9a141ac6ca62dbf55ca3099e54ef55c62aa10b5e7848dca8f9f2f6811f72221b",
+    "netcdf_sha256": "f764d08601e5fb85e64d72fee5391ffc6df9aafafb5ff1d478ad892653347c12",
+    "manifest_shape": [
+      35,
+      47,
+      82
+    ],
+    "variable_name": "Vx",
+    "rendered_identity": {
+      "sourceKind": "candidate_result",
+      "sourceId": "a98b6e3d-3f89-4074-b889-c66a007a186d",
+      "gridSha256": "9a141ac6ca62dbf55ca3099e54ef55c62aa10b5e7848dca8f9f2f6811f72221b",
+      "netcdfSha256": "f764d08601e5fb85e64d72fee5391ffc6df9aafafb5ff1d478ad892653347c12"
+    },
+    "diag_layer_type": "VoxelGridLayer3D",
+    "sdk_version": "12.1.0"
+  },
+  "seed": {
+    "case_id": "builtin-microseismic-vx-1911",
+    "dataset_version_id": "d25d3cf9-55a1-55e8-9c92-999a7e9c2477",
+    "experiment_id": "f2399db7-8470-5175-8948-6e7596ee80d5",
+    "run_id": "4ecd4794-fa9f-54d7-b746-3302ab8420ac",
+    "result_id": "a98b6e3d-3f89-4074-b889-c66a007a186d",
+    "official_url": "/results/a98b6e3d-3f89-4074-b889-c66a007a186d",
+    "materialized": true,
+    "source_sha256": "ea3917c2ee228953f39122fc52b864d802de9c9835f07a57c4c88585a501e510",
+    "baseline_sha256": "ba101d92f0d4162489f9e9657db3accfe9dbb2bab69a6b4747b2c1d4685102c0"
+  }
+}
