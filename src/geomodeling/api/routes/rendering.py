@@ -44,6 +44,7 @@ from geomodeling.platform import PlatformRuntime
 from geomodeling.platform import render_assets
 from geomodeling.platform import results as platform_results
 from geomodeling.platform import slice_analysis
+from geomodeling.platform import slice_exports
 from geomodeling.platform.errors import PlatformError, sanitize_public_details
 from geomodeling.platform.legacy_render_sources import (
     LEGACY_RENDER_SOURCE_NOT_REGISTERED,
@@ -55,6 +56,10 @@ from geomodeling.platform.netcdf_volume import RENDER_ASSET_CORRUPT
 from geomodeling.platform.render_contracts import DisplayAnchor
 from geomodeling.platform.render_coordinates import display_transform_for_bounds
 from geomodeling.platform.render_profiles import build_render_profile
+from geomodeling.platform.slice_exports import (
+    MAX_SLICE_IMAGE_BYTES,
+    SLICE_EXPORT_UPLOAD_TOO_LARGE,
+)
 from geomodeling.platform.repositories import RenderAssetRepository
 from geomodeling.platform.schemas import (
     STATUS_READY,
@@ -470,6 +475,40 @@ def _verified_ready_package(runtime: PlatformRuntime, asset_id: str) -> tuple[Re
         )
     render_assets.verify_ready_asset(runtime, record)
     return record, package_dir
+
+
+@router.post("/api/render-assets/{asset_id}/slice-exports", status_code=201)
+async def create_slice_export(
+    asset_id: str,
+    axis: str = Form(...),
+    index: int = Form(...),
+    image: UploadFile = File(...),
+    runtime: PlatformRuntime = Depends(get_platform_runtime),
+) -> dict[str, Any]:
+    """权威剖面分析 ZIP 导出（原子封包；CSV/统计/manifest 全部由服务端重算）。
+
+    客户端只提交 axis/index 与 ECharts PNG（展示工件）；服务端不接受任何
+    矩阵、统计或 manifest。失败不留 Export 行、半成品 ZIP 或临时文件。
+    """
+
+    chunks: list[bytes] = []
+    total = 0
+    try:
+        while chunk := await image.read(1 << 20):
+            total += len(chunk)
+            if total > MAX_SLICE_IMAGE_BYTES + 1:
+                raise PlatformError(
+                    SLICE_EXPORT_UPLOAD_TOO_LARGE,
+                    "剖面图片超过大小上限（5 MiB）",
+                    {"max_bytes": MAX_SLICE_IMAGE_BYTES},
+                    http_status=413,
+                )
+            chunks.append(chunk)
+    finally:
+        await image.close()
+    return slice_exports.build_slice_export(
+        runtime, asset_id, axis, index, b"".join(chunks), image.content_type
+    )
 
 
 @router.get("/api/render-assets/{asset_id}/slice-analysis")
