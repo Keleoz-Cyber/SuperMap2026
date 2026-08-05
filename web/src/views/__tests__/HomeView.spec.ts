@@ -142,17 +142,33 @@ describe('HomeView featured_result 入口', () => {
     expect(router.currentRoute.value.path).toBe('/cases/case-bench-32/experiments/new')
   })
 
-  it('无 featured_result 的上传卡：保持「进入调参实验室」原入口', async () => {
+  it('无 featured_result 的上传卡：主入口进入统一工作台（不再有调参实验室语义）', async () => {
     const { wrapper, router } = await mountHome([PLAIN_UPLOAD_CASE])
 
     expect(wrapper.find('[data-test="open-featured-result"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="new-experiment"]').exists()).toBe(false)
-    expect(wrapper.text()).toContain('进入调参实验室')
+    // v0.7.0：不再出现「进入调参实验室」产品语义
+    expect(wrapper.text()).not.toContain('进入调参实验室')
 
-    // 卡片点击行为不变：进入调参实验室
+    // 主命令：进入统一工作台
+    const primary = wrapper.find('[data-test="enter-case-workspace"]')
+    expect(primary.exists()).toBe(true)
+    await primary.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/cases/case-plain')
+  })
+
+  it('有 featured_result 的上传卡：卡片点击也进入统一工作台', async () => {
+    const { wrapper, router } = await mountHome([BENCH_CASE])
+
+    // 按钮行为不回归：主入口直达成果、次操作新建实验
+    expect(wrapper.find('[data-test="open-featured-result"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="new-experiment"]').exists()).toBe(true)
+
+    // 卡片点击（非按钮区）→ 统一工作台
     await wrapper.find('.case-card').trigger('click')
     await flushPromises()
-    expect(router.currentRoute.value.path).toBe('/cases/case-plain/experiments/new')
+    expect(router.currentRoute.value.path).toBe('/cases/case-bench-32')
   })
 })
 

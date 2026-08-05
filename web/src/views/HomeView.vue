@@ -85,12 +85,12 @@ function meta(c: CaseSummary): CaseMeta {
 
 function enter(c: CaseSummary) {
   if (!meta(c).enterable) return
-  const kind = kindOf(c)
-  // legacy（非暂缓）与预置卡：统一进入案例工作台
-  if (kind !== 'user_upload') {
-    void router.push(`/cases/${c.case_id}`)
-    return
-  }
+  // v0.7.0：三类案例卡片点击统一进入案例工作台；实验/成果只走显式按钮
+  void router.push(`/cases/${c.case_id}`)
+}
+
+// v0.7.0：上传卡的「新建实验」显式次操作（与查看成果/进入工作台分离）
+function newExperiment(c: CaseSummary) {
   void router.push(`/cases/${c.case_id}/experiments/new`)
 }
 
@@ -218,13 +218,18 @@ onMounted(async () => {
                   size="small"
                   text
                   data-test="new-experiment"
-                  @click.stop="enter(c)"
+                  @click.stop="newExperiment(c)"
                 >
                   新建实验
                 </el-button>
               </template>
-              <el-button v-else type="primary">
-                进入调参实验室
+              <el-button
+                v-else
+                type="primary"
+                data-test="enter-case-workspace"
+                @click.stop="enter(c)"
+              >
+                进入案例工作台
                 <el-icon style="margin-left: 4px"><ArrowRight /></el-icon>
               </el-button>
             </template>
