@@ -224,9 +224,31 @@ test('隔离 SuperMap 帧：真实 NetCDF 体渲染 + 协议控制像素响应',
   expect(capability.property_name).toBe('RHO')
   expect(capability.display_transform?.contract).toBe('wgs84_display_anchor_v1')
 
+  // legacy 资产是套件共享单例（legacy-volume-live 产品页门也会确保该资产）：
+  // 首个创建返回 201，幂等返回 200，并发创建返回 409（creating）后轮询 ready。
+  // 「首成 201/幂等 200/creating 409」的严格时序由后端 API 测试确定性覆盖，
+  // live 门只断言最终 ready 与身份一致。
+  let asset: any = null
   const postResp = await request.post('/api/cases/resistivity/render-assets/netcdf', { data: {} })
-  expect(postResp.status()).toBe(201)
-  const asset = await postResp.json()
+  if (postResp.status() === 409) {
+    const pollStart = Date.now()
+    while (Date.now() - pollStart < 60_000) {
+      const st = await request.get('/api/cases/resistivity/render-assets/netcdf')
+      if (st.ok()) {
+        const body = await st.json()
+        if (body.status === 'ready') {
+          asset = body
+          break
+        }
+        if (body.status === 'failed') break
+      }
+      await new Promise((r) => setTimeout(r, 500))
+    }
+  } else {
+    expect([200, 201]).toContain(postResp.status())
+    asset = await postResp.json()
+  }
+  expect(asset, 'legacy 资产必须达到 ready').toBeTruthy()
   expect(asset.id).toMatch(/^nc-[0-9a-f]{32}$/)
   expect(asset.status).toBe('ready')
   expect(asset.renderer).toBe('supermap_voxelgrid_netcdf')
