@@ -7,7 +7,8 @@ import { fileURLToPath } from 'node:url'
 import { syntheticLegacyGridCsv } from './fixtures/legacyGrid'
 
 /**
- * v0.6.1 Task 9 live 验收：隔离 SuperMap3D iframe 运行时 + gmp-supermap-volume/v1 协议。
+ * v0.6.1 Task 9 live 验收 + v0.7.0 第二批 Task 8：隔离 SuperMap3D iframe 运行时 +
+ * gmp-supermap-volume/v2 协议（完整状态 + revision + 回执）。
  *
  * 真实链路：便携合成规则网格 CSV → Task 5 CLI 原子登记（隔离 GEOMODELING_DATA_DIR）
  * → 真实 FastAPI capability/POST/manifest（Task 6/7）→ 轻量 parent harness 打开
@@ -23,7 +24,7 @@ import { syntheticLegacyGridCsv } from './fixtures/legacyGrid'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = path.resolve(HERE, '../..')
-const PROTOCOL = 'gmp-supermap-volume/v1'
+const PROTOCOL = 'gmp-supermap-volume/v2'
 const FRAME_PATH = '/supermap-volume-frame/index.html'
 
 function assertIsolatedDataDir(): string {
@@ -206,6 +207,39 @@ test.beforeAll(() => {
   expect(registration!.shape).toEqual([6, 7, 8])
 })
 
+interface RenderStateWire {
+  revision: number
+  mode: 'volume' | 'slice' | 'contour'
+  filter: { min: number; max: number }
+  opacity: number
+  colorTransferFunction: { value: number; color: string }[]
+  lighting: boolean
+  gradientOpacity: boolean
+  boundingBox: boolean
+  slice?: { axis: 'x' | 'y' | 'z'; index: number; coordinate: number; relativePosition: number }
+  contourValue?: number
+}
+
+function makeState(revision: number, overrides: Partial<RenderStateWire> = {}): RenderStateWire {
+  return {
+    revision,
+    mode: 'volume',
+    filter: { min: 10, max: 610 },
+    opacity: 1,
+    colorTransferFunction: [
+      { value: 10, color: '#1a40d9' },
+      { value: 160, color: '#1acccc' },
+      { value: 310, color: '#f2d926' },
+      { value: 460, color: '#f2591a' },
+      { value: 610, color: '#a60d1a' },
+    ],
+    lighting: true,
+    gradientOpacity: true,
+    boundingBox: true,
+    ...overrides,
+  }
+}
+
 test('隔离 SuperMap 帧：真实 NetCDF 体渲染 + 协议控制像素响应', async ({ page, request }) => {
   test.setTimeout(300_000)
   const t0 = Date.now()
@@ -317,10 +351,10 @@ test('隔离 SuperMap 帧：真实 NetCDF 体渲染 + 协议控制像素响应',
   expect(frameReady.contextType).toBe(2)
   expect(String(frameReady.sdkVersion)).toMatch(/\d+/)
 
-  // INIT：真实资产 + capability displayTransform
+  // INIT：真实资产 + capability displayTransform + 完整初始渲染状态（v2）
   await page.evaluate(
-    ([a, t]) => (window as any).__send({ type: 'INIT', asset: a, displayTransform: t }),
-    [asset, capability.display_transform],
+    ([a, t, st]) => (window as any).__send({ type: 'INIT', asset: a, displayTransform: t, state: st }),
+    [asset, capability.display_transform, makeState(1)],
   )
   await page.waitForFunction(
     () =>
@@ -368,49 +402,125 @@ test('隔离 SuperMap 帧：真实 NetCDF 体渲染 + 协议控制像素响应',
   const baseStats = await countNonBg(page, shotDefault)
   expect(baseStats.nonBg).toBeGreaterThan(5000)
 
-  const sendAndWaitAck = async (msg: Record<string, unknown>) => {
+  // v2 命令通道：APPLY_RENDER_STATE（revision 单调）→ STATE_APPLIED 回执
+  let revision = 1 // INIT 已应用 revision=1
+  let commandSeq = 0
+  const applyState = async (overrides: Partial<RenderStateWire>) => {
+    revision += 1
+    commandSeq += 1
+    const commandId = `live-cmd-${commandSeq}`
     const before: number = await page.evaluate(() => (window as any).__harness.received.length)
-    await page.evaluate((m) => (window as any).__send(m), msg)
-    await page.waitForFunction((n) => (window as any).__harness.received.length > n, before, {
-      timeout: 30_000,
-    })
+    await page.evaluate(
+      ([m, c]) => (window as any).__send({ ...m, commandId: c }),
+      [{ type: 'APPLY_RENDER_STATE', state: makeState(revision, overrides) }, commandId] as const,
+    )
+    await page.waitForFunction(
+      ([n, cmd, rev]) =>
+        (window as any).__harness.received.some(
+          (m: any) =>
+            m.type === 'STATE_APPLIED' && m.commandId === cmd && m.revision === rev,
+        ),
+      [before, commandId, revision] as const,
+      { timeout: 30_000 },
+    )
     const errors = await receivedOf("m.type === 'ERROR'")
     expect(errors).toEqual([])
   }
 
   // filter：最小过滤值提到中位区间（实时更新）
-  await sendAndWaitAck({ type: 'SET_FILTER', min: vmin + (vmax - vmin) * 0.55, max: vmax })
+  await applyState({ filter: { min: vmin + (vmax - vmin) * 0.55, max: vmax } })
   await waitFrames(frame, 45)
   const shotThreshold = await page.screenshot()
   const diffThreshold = await countDiff(page, shotDefault, shotThreshold)
   expect(diffThreshold).toBeGreaterThan(pixelThreshold)
 
   // opacity：整体不透明度压到 0.12（走 opacityTransferFunction）
-  await sendAndWaitAck({ type: 'SET_OPACITY', opacity: 0.12 })
+  await applyState({ opacity: 0.12 })
   await waitFrames(frame, 45)
   const shotOpacity = await page.screenshot()
   const diffOpacity = await countDiff(page, shotThreshold, shotOpacity)
   expect(diffOpacity).toBeGreaterThan(pixelThreshold)
 
-  // slice 模式
-  await sendAndWaitAck({ type: 'SET_MODE', mode: 'slice' })
+  // slice 模式（Z 轴单切面：Task 1 负坐标隐藏技术经 v2 状态下发）
+  await applyState({
+    mode: 'slice',
+    slice: { axis: 'z', index: 4, coordinate: -400, relativePosition: 0.5 },
+  })
   await waitFrames(frame, 45)
   const shotSlice = await page.screenshot()
   const diffSlice = await countDiff(page, shotOpacity, shotSlice)
   expect(diffSlice).toBeGreaterThan(pixelThreshold)
 
+  // X/Y 轴单切面：每个轴都必须是单切面（设计 §8.3 语义固定）
+  for (const axis of ['x', 'y'] as const) {
+    await applyState({
+      mode: 'slice',
+      slice: { axis, index: 3, coordinate: 0, relativePosition: 0.5 },
+    })
+    await waitFrames(frame, 45)
+    const shotAxis = await page.screenshot()
+    expect(await countNonBg(page, shotAxis)).toHaveProperty('nonBg')
+    const axisStats = await countNonBg(page, shotAxis)
+    expect(axisStats.nonBg).toBeGreaterThan(500)
+  }
+
   // contour 模式
-  await sendAndWaitAck({ type: 'SET_MODE', mode: 'contour' })
+  await applyState({ mode: 'contour', contourValue: (vmin + vmax) / 2 })
   await waitFrames(frame, 45)
   const shotContour = await page.screenshot()
   const diffContour = await countDiff(page, shotSlice, shotContour)
   expect(diffContour).toBeGreaterThan(pixelThreshold)
 
-  // 恢复 volume + RESET_VIEW + 点层冒烟（协议面完整，无错误即可）
-  await sendAndWaitAck({ type: 'SET_MODE', mode: 'volume' })
-  await sendAndWaitAck({ type: 'RESET_VIEW' })
-  await sendAndWaitAck({
+  // 光照/渐变透明度/包围盒运行时可调（体积模式像素响应）
+  await applyState({ mode: 'volume' })
+  await waitFrames(frame, 30)
+  await applyState({ lighting: false })
+  await waitFrames(frame, 30)
+  const shotNoLight = await page.screenshot()
+  expect(await countDiff(page, shotContour, shotNoLight)).toBeGreaterThan(pixelThreshold)
+  await applyState({ gradientOpacity: false })
+  await waitFrames(frame, 30)
+  const shotNoGradient = await page.screenshot()
+  expect(await countDiff(page, shotNoLight, shotNoGradient)).toBeGreaterThan(pixelThreshold)
+  await applyState({ boundingBox: false })
+  await waitFrames(frame, 30)
+  const shotNoBox = await page.screenshot()
+  expect(await countDiff(page, shotNoGradient, shotNoBox)).toBeGreaterThan(0)
+
+  // stale revision（<= lastAppliedRevision）整体忽略：无回执、无像素变化
+  {
+    const before: number = await page.evaluate(() => (window as any).__harness.received.length)
+    await page.evaluate(
+      (m) => (window as any).__send(m),
+      { type: 'APPLY_RENDER_STATE', commandId: 'live-cmd-stale', state: makeState(1, { opacity: 0.01 }) },
+    )
+    await waitFrames(frame, 20)
+    const staleApplied = await receivedOf(
+      "m.type === 'STATE_APPLIED' && m.commandId === 'live-cmd-stale'",
+    )
+    expect(staleApplied).toEqual([])
+    const shotStale = await page.screenshot()
+    expect(await countDiff(page, shotNoBox, shotStale)).toBeLessThanOrEqual(
+      Math.max(50, noiseDiff * 2 + 20),
+    )
+  }
+
+  // RESET_VIEW 回执 + 点层冒烟（协议面完整，无错误即可）
+  await page.evaluate((m) => (window as any).__send(m), {
+    type: 'RESET_VIEW',
+    commandId: 'live-cmd-reset',
+  })
+  await page.waitForFunction(
+    () =>
+      (window as any).__harness.received.some(
+        (m: any) => m.type === 'COMMAND_APPLIED' && m.commandId === 'live-cmd-reset',
+      ),
+    undefined,
+    { timeout: 30_000 },
+  )
+  await page.evaluate((m) => (window as any).__send(m), {
     type: 'SET_POINT_LAYER',
+    commandId: 'live-cmd-points',
     layer: {
       id: 'grid-samples',
       visible: true,
@@ -422,6 +532,14 @@ test('隔离 SuperMap 帧：真实 NetCDF 体渲染 + 协议控制像素响应',
       style: { color: '#ff3333', pixelSize: 6 },
     },
   })
+  await page.waitForFunction(
+    () =>
+      (window as any).__harness.received.some(
+        (m: any) => m.type === 'COMMAND_APPLIED' && m.commandId === 'live-cmd-points',
+      ),
+    undefined,
+    { timeout: 30_000 },
+  )
   await waitFrames(frame, 30)
   const diagAfter = await frame!.evaluate(() => (window as any).__GMP_VOLUME_FRAME__)
   expect(diagAfter.phase).toBe('rendered')

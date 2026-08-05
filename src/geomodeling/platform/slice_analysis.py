@@ -180,14 +180,11 @@ def analyze_grid_slice(
 
 # ---------------------------------------------------------------------------
 # Task 4：RenderAsset → 权威网格解析与公开剖面服务
+#
+# render_assets/legacy_render_sources/repositories 依赖 results.py，而
+# results.py 复用本模块的公共抽取——相关导入必须保持在函数级，避免
+# results → slice_analysis → render_assets → results 循环。
 # ---------------------------------------------------------------------------
-
-from geomodeling.platform import render_assets as _render_assets  # noqa: E402
-from geomodeling.platform.legacy_render_sources import (  # noqa: E402
-    resolve_legacy_render_source as _resolve_legacy_render_source,
-)
-from geomodeling.platform.render_profiles import build_render_profile as _build_render_profile  # noqa: E402
-from geomodeling.platform.repositories import RenderAssetRepository as _RenderAssetRepository  # noqa: E402
 
 RENDER_ASSET_SOURCE_UNSUPPORTED = "RENDER_ASSET_SOURCE_UNSUPPORTED"
 RENDER_GRID_IDENTITY_MISMATCH = "RENDER_GRID_IDENTITY_MISMATCH"
@@ -200,6 +197,12 @@ def load_ready_asset_grid(runtime, asset_id: str):
     → 按来源类型解析权威网格 → 资产/网格身份一致（RENDER_GRID_IDENTITY_MISMATCH）
     → 落盘网格完整校验。
     """
+
+    from geomodeling.platform import render_assets as _render_assets
+    from geomodeling.platform.legacy_render_sources import (
+        resolve_legacy_render_source as _resolve_legacy_render_source,
+    )
+    from geomodeling.platform.repositories import RenderAssetRepository as _RenderAssetRepository
 
     with runtime.session() as session:
         record = _RenderAssetRepository(session).get_ready(asset_id)
@@ -224,6 +227,14 @@ def load_ready_asset_grid(runtime, asset_id: str):
         )
     grid = _render_assets.validate_regular_grid(source.grid_path, source.grid_sha256)
     return record, source, grid
+
+
+def _profile(source_kind: str, valid_min: float, valid_max: float, *, property_name: str, unit):
+    from geomodeling.platform.render_profiles import build_render_profile
+
+    return build_render_profile(
+        source_kind, valid_min, valid_max, property_name=property_name, unit=unit
+    ).to_public()
 
 
 def analyze_render_asset_slice(runtime, asset_id: str, axis: str, index: int) -> dict[str, Any]:
@@ -251,11 +262,11 @@ def analyze_render_asset_slice(runtime, asset_id: str, axis: str, index: int) ->
         },
         "slice": slice_payload,
         "statistics": analysis.statistics,
-        "render_profile": _build_render_profile(
+        "render_profile": _profile(
             record.source_kind,
             grid.valid_min,
             grid.valid_max,
             property_name=source.property_name,
             unit=source.units,
-        ).to_public(),
+        ),
     }
