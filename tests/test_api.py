@@ -125,8 +125,12 @@ def test_cases_cards(tmp_path):
     body = client.get("/api/cases").json()
     by_id = {c["case_id"]: c for c in body["cases"]}
     assert by_id["resistivity"]["status"] == "active"
-    assert by_id["microseismic"]["status"] == "audit_only"
     assert by_id["gas"]["status"] == "parked"
+    # v0.7.0：旧 DAT 微震卡由 builtin_preset 预置描述符取代（未 seed 时可见但能力全 false）
+    assert "microseismic" not in by_id
+    preset = by_id["builtin-microseismic-vx-1911"]
+    assert preset["workspace_kind"] == "builtin_preset"
+    assert preset["status"] == "initialization_required"
 
 
 def test_resistivity_detail_leaderboard_uses_metric_summaries(tmp_path):

@@ -67,8 +67,9 @@ def test_cases_merges_legacy_card_and_upload_cases(tmp_path, monkeypatch):
     by_id = {c["case_id"]: c for c in body["cases"]}
     assert by_id["resistivity"]["source_kind"] == "builtin_legacy"
     assert by_id["resistivity"]["status"] == "active"
-    # v0.3.1 卡片语义保留
-    assert by_id["microseismic"]["status"] == "audit_only"
+    # v0.7.0：旧 DAT 微震卡由预置描述符取代；v0.3.1 其余卡片语义保留
+    assert "microseismic" not in by_id
+    assert by_id["builtin-microseismic-vx-1911"]["workspace_kind"] == "builtin_preset"
     assert by_id["gas"]["status"] == "parked"
     uploaded = by_id[case_id]
     assert uploaded["title"] == "集成上传案例"

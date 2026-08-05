@@ -60,12 +60,24 @@ from geomodeling.api.routes import (
 )
 from geomodeling.platform import PlatformRuntime
 from geomodeling.platform.errors import (
+    CASE_NOT_FOUND,
+    PRESET_NOT_INITIALIZED,
     REDACTED_PATH,
     PlatformError,
     platform_error_handler,
 )
-from geomodeling.platform.legacy_adapter import merged_case_cards
-from geomodeling.platform.repositories import CaseRepository, featured_result_for_case
+from geomodeling.platform.legacy_adapter import (
+    legacy_case_cards,
+    merged_case_cards,
+    workspace_case_card,
+)
+from geomodeling.platform.microseismic_preset import PRESET_CASE_ID, PRESET_VERSION
+from geomodeling.platform.public_dto import public_dataset
+from geomodeling.platform.repositories import (
+    CaseRepository,
+    DatasetRepository,
+    featured_result_for_case,
+)
 from geomodeling.platform.worker import JobWorker
 from geomodeling.publishing import (
     IServerClient,
@@ -114,6 +126,16 @@ async def platform_lifespan(app: FastAPI):
         runtime.close()
 
 
+def _latest_validated_public_dataset(dataset_repo, case_id: str) -> dict | None:
+    """案例最新已验证数据版本的白名单公开 DTO；没有则 None。"""
+
+    versions = dataset_repo.list_for_case(case_id)
+    validated = [record for record in versions if record.status == "validated"]
+    if not validated:
+        return None
+    return public_dataset(validated[-1])
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title="GeoModelingPlatform API", version=PROJECT_VERSION, lifespan=platform_lifespan)
 
@@ -157,15 +179,61 @@ def create_app() -> FastAPI:
         runtime = getattr(request.app.state, "platform_runtime", None)
         records = []
         featured = {}
+        primary_datasets = {}
         if runtime is not None:
             with runtime.session() as session:
                 records = CaseRepository(session).list_all()
+                dataset_repo = DatasetRepository(session)
                 # v0.6.1：每张上传卡少量查询给出主打成果直达链接（正式选择优先）
                 featured = {
                     record.id: featured_result_for_case(session, record.id)
                     for record in records
                 }
-        return {"cases": merged_case_cards(records, featured)}
+                # v0.7.0：最新已验证数据版本作为工作台 primary_dataset（白名单 DTO）
+                primary_datasets = {
+                    record.id: _latest_validated_public_dataset(dataset_repo, record.id)
+                    for record in records
+                }
+        return {"cases": merged_case_cards(records, featured, primary_datasets)}
+
+    @app.get("/api/cases/{case_id}/workspace")
+    def case_workspace(case_id: str, request: Request) -> dict:
+        """统一案例工作台 DTO（legacy/预置/上传同一公共形态）。
+
+        未 seed 的预置案例返回类型化 ``PRESET_NOT_INITIALIZED``（409）；
+        未知案例 404；响应只含相对链接与脱敏元数据。
+        """
+
+        for card in legacy_case_cards():
+            if card["case_id"] == case_id:
+                return card
+
+        runtime = getattr(request.app.state, "platform_runtime", None)
+        record = None
+        if runtime is not None:
+            with runtime.session() as session:
+                try:
+                    record = CaseRepository(session).get(case_id)
+                except PlatformError as exc:
+                    if exc.code != CASE_NOT_FOUND:
+                        raise
+                if record is not None:
+                    featured = featured_result_for_case(session, record.id)
+                    primary = _latest_validated_public_dataset(
+                        DatasetRepository(session), record.id
+                    )
+                    return workspace_case_card(
+                        record, featured_result=featured, primary_dataset=primary
+                    )
+        if case_id == PRESET_CASE_ID:
+            raise PlatformError(
+                PRESET_NOT_INITIALIZED,
+                "微震预置案例尚未初始化：需由维护者执行文档化 seed 命令",
+                {"preset_version": PRESET_VERSION},
+                http_status=409,
+            )
+        raise PlatformError(CASE_NOT_FOUND, "案例不存在", {"case_id": case_id}, http_status=404)
+
 
     @app.get("/api/cases/resistivity")
     def resistivity(
