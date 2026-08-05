@@ -710,8 +710,19 @@ def featured_result_for_case(session: Session, case_id: str) -> FeaturedResultLi
             if selection is not None
             else None
         )
-        # 官方锚点必须仍归属本案例且状态有效，否则视为缺失（不回退到污染行）
-        if candidate is None or candidate.status != RunStatus.SUCCEEDED.value:
+        # 官方锚点必须校验完整归属链：Candidate → Run → Experiment.case_id，
+        # 且候选与 Run 均为 succeeded；任一环节异常 fail-closed 返回 None，
+        # 绝不回退到污染行或跨案例候选
+        run = session.get(Run, candidate.run_id) if candidate is not None else None
+        experiment = session.get(Experiment, run.experiment_id) if run is not None else None
+        if (
+            candidate is None
+            or candidate.status != RunStatus.SUCCEEDED.value
+            or run is None
+            or run.status != RunStatus.SUCCEEDED.value
+            or experiment is None
+            or experiment.case_id != case_id
+        ):
             return None
         return FeaturedResultLink(
             result_id=candidate.id,

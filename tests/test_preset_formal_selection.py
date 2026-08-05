@@ -307,3 +307,91 @@ def test_formal_selections_endpoint_exposes_selection_allowed(preset_client, tmp
     _build_upload_result(runtime, "up-allowed", formal=True)
     body = client.get("/api/cases/up-allowed/formal-selections").json()
     assert body["selection_allowed"] is True
+
+
+# ---------------------------------------------------------------------------
+# 复审 Medium：官方锚点必须校验完整归属链（Candidate→Run→Experiment）
+# ---------------------------------------------------------------------------
+
+def _insert_aged_pollution_selection(
+    client, candidate_id: str, *, created_at: str = "2020-01-01T00:00:00+00:00"
+) -> None:
+    """插入一条时间戳早于官方选择的污染选择（夹具行为，非产品 API）。"""
+
+    from geomodeling.platform import tables
+
+    runtime = client.app.state.platform_runtime
+    with runtime.session() as session:
+        session.add(
+            tables.FormalSelection(
+                id=str(uuid.uuid4()),
+                case_id=PRESET_CASE_ID,
+                candidate_result_id=candidate_id,
+                selected_by="pollution-fixture",
+                note="早于官方选择的污染行",
+                created_at=created_at,
+            )
+        )
+        session.commit()
+
+
+def test_anchor_returns_none_when_earliest_selection_points_to_other_case(preset_client):
+    from geomodeling.platform.repositories import featured_result_for_case
+    from test_case_workspace_api import _build_upload_result  # noqa: PLC0415
+
+    runtime = preset_client.app.state.platform_runtime
+    # 其他案例的成功候选（归属链不属于预置案例）
+    _, foreign_candidate = _build_upload_result(runtime, "up-foreign", formal=False)
+    _insert_aged_pollution_selection(preset_client, foreign_candidate)
+
+    with runtime.session() as session:
+        featured = featured_result_for_case(session, PRESET_CASE_ID)
+    assert featured is None
+    workspace = preset_client.get(f"/api/cases/{PRESET_CASE_ID}/workspace").json()
+    assert workspace["official_result"] is None
+
+
+def test_anchor_returns_none_when_earliest_selection_run_not_succeeded(preset_client):
+    from geomodeling.platform import tables
+    from geomodeling.platform.microseismic_preset import SEED_SELECTED_BY
+    from geomodeling.platform.repositories import featured_result_for_case
+
+    runtime = preset_client.app.state.platform_runtime
+    # 官方候选直接从 seed 登记的选择读取（不受其他测试污染行影响）
+    with runtime.session() as session:
+        seed_selection = (
+            session.query(tables.FormalSelection)
+            .filter(
+                tables.FormalSelection.case_id == PRESET_CASE_ID,
+                tables.FormalSelection.selected_by == SEED_SELECTED_BY,
+            )
+            .one()
+        )
+        official = seed_selection.candidate_result_id
+    with runtime.session() as session:
+        candidate = session.get(tables.CandidateResult, official)
+        run = session.get(tables.Run, candidate.run_id)
+        run.status = "failed"
+        session.commit()
+        session.add(
+            tables.FormalSelection(
+                id=str(uuid.uuid4()),
+                case_id=PRESET_CASE_ID,
+                candidate_result_id=official,
+                selected_by="pollution-fixture",
+                note="Run 非成功的早置污染行",
+                created_at="2020-01-01T00:00:00+00:00",
+            )
+        )
+        session.commit()
+
+    with runtime.session() as session:
+        featured = featured_result_for_case(session, PRESET_CASE_ID)
+    assert featured is None
+
+    # 恢复 Run 状态，避免影响同模块其他测试
+    with runtime.session() as session:
+        candidate = session.get(tables.CandidateResult, official)
+        run = session.get(tables.Run, candidate.run_id)
+        run.status = "succeeded"
+        session.commit()
