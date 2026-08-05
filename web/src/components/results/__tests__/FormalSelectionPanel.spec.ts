@@ -48,6 +48,19 @@ describe('FormalSelectionPanel read_only 防护', () => {
     expect(client.selectFormal).not.toHaveBeenCalled()
   })
 
+  it('能力请求失败：保持隐藏写控件（能力未知不默认可写）', async () => {
+    vi.mocked(client.fetchFormalSelections).mockRejectedValue(new Error('network down'))
+    const wrapper = mount(FormalSelectionPanel, {
+      props: { resultId: 'cand-1', caseId: 'c1' },
+      global: { plugins: [ElementPlus] },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="selection-submit"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="selection-note"]').exists()).toBe(false)
+    expect(client.selectFormal).not.toHaveBeenCalled()
+  })
+
   it('selection_allowed=true：保留可写表单（普通案例不回归）', async () => {
     mockSelections(true)
     const wrapper = mount(FormalSelectionPanel, {

@@ -9,17 +9,22 @@ const props = defineProps<{
 }>()
 
 const selections = ref<FormalSelectionRecord[]>([])
-// 后端显式能力：read_only 官方案例隐藏可写选择控件（默认允许，加载失败不阻断）
-const selectionAllowed = ref(true)
+// 能力未知默认不可写：仅成功响应明确允许后才显示选择表单；
+// 请求失败保持隐藏（后端 409 仍是最终防线）
+const selectionAllowed = ref(false)
 const note = ref('')
 const selectedBy = ref('')
 const error = ref<string | null>(null)
 const submitting = ref(false)
 
 async function refresh() {
-  const body = await fetchFormalSelections(props.caseId)
-  selections.value = body.selections
-  selectionAllowed.value = body.selection_allowed !== false
+  try {
+    const body = await fetchFormalSelections(props.caseId)
+    selections.value = body.selections
+    selectionAllowed.value = body.selection_allowed !== false
+  } catch {
+    // 列表/能力加载失败：保持不可写，不阻塞只读展示
+  }
 }
 
 onMounted(async () => {
