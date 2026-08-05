@@ -80,8 +80,12 @@ test('真实链路：上传 → 映射 → 质量 → IDW → 排行榜 → 成�
   await expect(page.getByTestId('quality-banner')).toContainText('质量校验通过', {
     timeout: 30_000,
   })
-  await page.getByTestId('start-experiment').click()
-  await expect(page).toHaveURL(/#\/cases\/[0-9a-f-]+\/experiments\/new/)
+  // 3b. v0.7.0：向导完成 → 统一工作台 → 显式「新建实验」命令（真实 workspace API）
+  await page.getByTestId('enter-workspace').click()
+  await expect(page).toHaveURL(/#\/cases\/[0-9a-f-]+$/)
+  await expect(page.getByTestId('case-workspace-header')).toBeVisible({ timeout: 30_000 })
+  await page.getByTestId('new-experiment').click()
+  await expect(page).toHaveURL(/#\/cases\/[0-9a-f-]+\/experiments\/new\?dataset=[0-9a-f-]+/)
 
   // 4. 手动 IDW 单组（power=2, neighbor_count=16 默认）
   await page.getByTestId('exp-name').fill('Live IDW')
@@ -198,8 +202,10 @@ test.describe('v0.6 专业建模流程（真实链路）', () => {
       timeout: 30_000,
     })
 
-    // 4. 诊断入口（质量门禁通过后才可用）
-    await page.getByTestId('start-experiment').click()
+    // 4. 诊断入口（质量门禁通过后才可用；v0.7.0 经统一工作台进入实验创建页）
+    await page.getByTestId('enter-workspace').click()
+    await expect(page).toHaveURL(/#\/cases\/[0-9a-f-]+$/)
+    await page.getByTestId('new-experiment').click()
     await expect(page).toHaveURL(/#\/cases\/[0-9a-f-]+\/experiments\/new\?dataset=[0-9a-f-]+/)
     await page.getByTestId('professional-entry').click()
     await expect(page).toHaveURL(/#\/datasets\/[0-9a-f-]+\/professional-diagnosis\?case=[0-9a-f-]+/)

@@ -67,7 +67,11 @@ function openOfficialResult() {
   if (url) router.push(url)
 }
 function createExperiment() {
-  router.push(`/cases/${caseId.value}/experiments/new`)
+  const datasetId = workspace.value?.primary_dataset?.id
+  void router.push({
+    path: `/cases/${caseId.value}/experiments/new`,
+    query: datasetId ? { dataset: datasetId } : {},
+  })
 }
 
 onMounted(async () => {

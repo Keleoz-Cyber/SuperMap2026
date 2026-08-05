@@ -27,8 +27,12 @@ test.describe('v0.4 通用建模流程（mock API）', () => {
     await page.getByTestId('mapping-value-name').fill('电阻率')
     await page.getByTestId('mapping-submit').click()
     await expect(page.getByTestId('quality-banner')).toContainText('质量校验通过')
-    await page.getByTestId('start-experiment').click()
-    await expect(page).toHaveURL(/#\/cases\/case-e2e\/experiments\/new/)
+    // v0.7.0：向导完成 → 统一工作台 → 显式「新建实验」命令
+    await page.getByTestId('enter-workspace').click()
+    await expect(page).toHaveURL(/#\/cases\/case-e2e$/)
+    await expect(page.getByTestId('case-workspace-header')).toContainText('E2E 案例')
+    await page.getByTestId('new-experiment').click()
+    await expect(page).toHaveURL(/#\/cases\/case-e2e\/experiments\/new\?dataset=ds-e2e/)
 
     // 实验：默认 IDW 手动 → 提交 → 自动跳详情并轮询到终态
     await expect(page.getByTestId('param-editor')).toBeVisible()
@@ -125,7 +129,9 @@ test.describe('v0.6 专业建模流程（mock API）', () => {
     await expect(page.getByTestId('quality-banner')).toContainText('质量校验通过')
 
     // 诊断入口：实验创建页的专业入口（质量门禁通过后才可用）
-    await page.getByTestId('start-experiment').click()
+    await page.getByTestId('enter-workspace').click()
+    await expect(page).toHaveURL(/#\/cases\/case-e2e$/)
+    await page.getByTestId('new-experiment').click()
     await expect(page).toHaveURL(/#\/cases\/case-e2e\/experiments\/new\?dataset=ds-e2e/)
     await page.getByTestId('professional-entry').click()
     await expect(page).toHaveURL(/#\/datasets\/ds-e2e\/professional-diagnosis\?case=case-e2e/)

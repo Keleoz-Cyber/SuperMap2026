@@ -137,10 +137,9 @@ async function onConfirmWarnings() {
 }
 
 function onStart() {
-  void router.push({
-    path: `/cases/${caseId.value}/experiments/new`,
-    query: { dataset: datasetId.value },
-  })
+  // v0.7.0：上传/映射/质量流程完成后进入统一案例工作台；
+  // 新建实验由工作台的显式命令进入
+  void router.push(`/cases/${caseId.value}`)
 }
 </script>
 

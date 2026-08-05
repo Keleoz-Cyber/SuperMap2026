@@ -100,6 +100,7 @@ describe('CaseWorkspaceView', () => {
     await wrapper.find('[data-test="new-experiment"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.path).toBe(`/cases/${PRESET_ID}/experiments/new`)
+    expect(router.currentRoute.value.query.dataset).toBe('ds-1')
   })
 
   it('legacy: no new-experiment command (experiments capability false)', async () => {
@@ -163,5 +164,6 @@ describe('CaseWorkspaceView', () => {
     await wrapper.find('[data-test="new-experiment"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.path).toBe('/cases/up-1/experiments/new')
+    expect(router.currentRoute.value.query.dataset).toBe('ds-1')
   })
 })

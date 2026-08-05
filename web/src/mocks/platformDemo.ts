@@ -443,8 +443,54 @@ export async function installMockApi(page: Page): Promise<void> {
         links: { detail: '/api/cases/resistivity', publish_status: '/api/cases/resistivity/publish-status' },
       })
     }
-    if (path === '/cases/builtin-microseismic-vx-1911/workspace' && method === 'GET') {
+    if (path === '/cases/case-e2e/workspace' && method === 'GET') {
       return json(route, {
+        case_id: 'case-e2e',
+        title: 'E2E 案例',
+        case_type: 'generic',
+        status: 'active',
+        source_kind: 'upload',
+        workspace_kind: 'user_upload',
+        created_at: T,
+        updated_at: T,
+        capabilities: {
+          data_summary: true,
+          experiments: true,
+          official_result: false,
+          native_volume: false,
+        },
+        primary_dataset: {
+          id: 'ds-e2e',
+          case_id: 'case-e2e',
+          version: 1,
+          status: 'validated',
+          created_at: T,
+          profile: {
+            mapping: {
+              dimension: '3d',
+              x: 'x',
+              y: 'y',
+              z: 'z',
+              value: 'rho',
+              value_name: '电阻率',
+              value_unit: 'unknown',
+              coordinate_kind: 'local_linear',
+            },
+            row_count: 1722,
+            valid_row_count: 1722,
+            invalid_row_count: 0,
+          },
+        },
+        official_result: null,
+        provenance_summary: {
+          value_name: '电阻率',
+          value_unit: 'unknown',
+          coordinate_kind: 'local_linear',
+        },
+        links: { detail: '/api/cases/case-e2e', publish_status: null },
+      })
+    }
+    if (path === '/cases/builtin-microseismic-vx-1911/workspace' && method === 'GET') {      return json(route, {
         case_id: 'builtin-microseismic-vx-1911',
         title: '微震速度',
         case_type: 'generic',

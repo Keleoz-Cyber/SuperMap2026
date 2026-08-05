@@ -195,7 +195,7 @@ describe('DatasetWizardView', () => {
     const { wrapper } = await mountWizard(makeDataset('blocked'), makeQuality('blocked'))
     const text = wrapper.text()
     expect(text).toContain('MISSING_NUMERIC')
-    const start = wrapper.find('[data-test="start-experiment"]')
+    const start = wrapper.find('[data-test="enter-workspace"]')
     expect(start.exists()).toBe(true)
     expect((start.element as HTMLButtonElement).disabled).toBe(true)
   })
@@ -203,7 +203,7 @@ describe('DatasetWizardView', () => {
   it('requires exact warning confirmation before start is enabled', async () => {
     const warnings = makeQuality('warnings')
     const { wrapper } = await mountWizard(makeDataset('validated'), warnings)
-    const start = wrapper.find('[data-test="start-experiment"]')
+    const start = wrapper.find('[data-test="enter-workspace"]')
     expect((start.element as HTMLButtonElement).disabled).toBe(true)
 
     vi.mocked(client.confirmWarnings).mockResolvedValue({
@@ -215,23 +215,23 @@ describe('DatasetWizardView', () => {
     await flushPromises()
 
     expect(client.confirmWarnings).toHaveBeenCalledWith('ds1', ['DUPLICATE_ROWS', 'SPARSE_POINTS'])
-    expect((wrapper.find('[data-test="start-experiment"]').element as HTMLButtonElement).disabled).toBe(false)
+    expect((wrapper.find('[data-test="enter-workspace"]').element as HTMLButtonElement).disabled).toBe(false)
   })
 
   it('restores ready state from the server after reload', async () => {
     const { wrapper } = await mountWizard(makeDataset('validated'), makeQuality('passed'))
     expect(client.fetchQuality).toHaveBeenCalledWith('ds1')
     expect(wrapper.find('[data-test="step-quality"]').exists()).toBe(true)
-    const start = wrapper.find('[data-test="start-experiment"]')
+    const start = wrapper.find('[data-test="enter-workspace"]')
     expect((start.element as HTMLButtonElement).disabled).toBe(false)
   })
 
-  it('navigates to experiment creation when quality is ready', async () => {
+  it('navigates to the unified case workspace when quality is ready', async () => {
     const { wrapper, router } = await mountWizard(makeDataset('validated'), makeQuality('passed'))
-    await wrapper.find('[data-test="start-experiment"]').trigger('click')
+    await wrapper.find('[data-test="enter-workspace"]').trigger('click')
     await flushPromises()
-    expect(router.currentRoute.value.path).toBe('/cases/c1/experiments/new')
-    expect(router.currentRoute.value.query.dataset).toBe('ds1')
+    expect(router.currentRoute.value.path).toBe('/cases/c1')
+    expect(router.currentRoute.value.query).toEqual({})
   })
 })
 
