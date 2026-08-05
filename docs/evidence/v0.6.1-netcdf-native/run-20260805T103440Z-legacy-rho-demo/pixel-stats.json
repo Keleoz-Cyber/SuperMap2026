@@ -1,0 +1,45 @@
+{
+  "run_id": "run-20260805T103440Z-legacy-rho-demo",
+  "git_commit": "6bdd597806691d170f3cd5e69f34a25368f4605c",
+  "sdk_sha256": "d69dadab01fc452a79f1fa88a46aced3cf29885df7bf4febbd6f24ce5b578120",
+  "sdk_version": null,
+  "browser": {
+    "name": "chromium",
+    "version": "149.0.7827.55"
+  },
+  "gpu_renderer": "ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 4070 Laptop GPU/PCIe/SSE2, OpenGL 4.5.0)",
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "device_pixel_ratio": 1,
+  "provenance": "ad-hoc Playwright capture against local demo runtime http://127.0.0.1:8000 (GEOMODELING_DATA_DIR=.runtime/v061-demo)；真实 RHO_KRIG_FINAL_20M_40 规则网格 7×23×42 经 iObjectsPy 从 expore1.udbx 逐位提取并登记；非隔离环境，可重复门见 e2e-live/legacy-volume-live.spec.ts（合成网格同口径）。",
+  "results": {
+    "legacy": {
+      "source_kind": "builtin_legacy",
+      "source_id": "resistivity",
+      "grid_sha256": "df72f492e1f42ec484689c04d5f7ebe41bf82984ac2738749b48c3d659834e80",
+      "netcdf_sha256": "76e495d2af80945c1ba4bd4819746edfd70bc62a45fdf94f570dff35e443c14d",
+      "asset_id": "nc-c8b8279fd56a894457e149bd3c952db5"
+    }
+  },
+  "legacy": {
+    "clip": {
+      "x": 336,
+      "y": 289.890625,
+      "width": 610,
+      "height": 341
+    },
+    "noise_diff": 56,
+    "base_non_bg": 51933,
+    "base_total": 208010,
+    "slice_non_bg": 32671,
+    "contour_non_bg": 6791,
+    "rendered_ms": 1066,
+    "total_ms": 5460,
+    "gates_reference": {
+      "base_non_bg_min": 2000,
+      "mode_non_bg_min": 500
+    }
+  }
+}
