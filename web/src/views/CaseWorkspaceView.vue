@@ -145,7 +145,7 @@ onMounted(async () => {
               data-test="open-official-result"
               @click="openOfficialResult"
             >
-              查看官方成果
+              {{ workspace.workspace_kind === 'builtin_preset' ? '查看官方成果' : '查看成果' }}
             </el-button>
             <el-button
               v-if="canCreateExperiment"
@@ -192,12 +192,15 @@ onMounted(async () => {
         <section class="workspace-section" data-test="workspace-results">
           <h2 class="section-title">成果</h2>
           <p v-if="workspace.official_result">
-            官方成果：<el-link type="primary" @click="openOfficialResult">
+            {{ workspace.workspace_kind === 'builtin_preset' ? '官方成果' : '主打成果' }}：
+            <el-link type="primary" @click="openOfficialResult">
               {{ workspace.official_result.url }}
             </el-link>
             （{{ workspace.official_result.materialized ? '已物化' : '未物化' }}）
           </p>
-          <p v-else-if="workspace.workspace_kind !== 'builtin_legacy'">暂无官方或主打成果。</p>
+          <p v-else-if="workspace.workspace_kind !== 'builtin_legacy'" data-test="results-empty">
+            暂无成果。
+          </p>
           <div v-if="isResistivity" class="rho-block" data-test="workspace-rho-block">
             <RhoCaseView embedded />
           </div>

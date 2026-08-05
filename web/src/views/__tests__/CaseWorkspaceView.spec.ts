@@ -123,4 +123,45 @@ describe('CaseWorkspaceView', () => {
     await flushPromises()
     expect(router.currentRoute.value.path).toBe('/')
   })
+
+  it('user_upload with featured result: 查看成果 primary + results section shows 主打成果', async () => {
+    const ws = workspaceOf('user_upload')
+    ws.capabilities = {
+      data_summary: true,
+      experiments: true,
+      official_result: true,
+      native_volume: true,
+    }
+    ws.official_result = { result_id: 'up-r1', url: '/results/up-r1', materialized: true }
+    vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(ws)
+    const { wrapper, router } = await mountWorkspace('/cases/up-1')
+
+    const primary = wrapper.find('[data-test="open-official-result"]')
+    expect(primary.exists()).toBe(true)
+    expect(primary.text()).toContain('查看成果')
+    expect(primary.text()).not.toContain('官方')
+    await primary.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/results/up-r1')
+
+    const results = wrapper.find('[data-test="workspace-results"]')
+    expect(results.text()).toContain('主打成果')
+    expect(results.text()).toContain('已物化')
+    expect(wrapper.find('[data-test="new-experiment"]').exists()).toBe(true)
+  })
+
+  it('user_upload without result: results section shows 暂无成果 and offers 新建实验', async () => {
+    const ws = workspaceOf('user_upload')
+    vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(ws)
+    const { wrapper, router } = await mountWorkspace('/cases/up-1')
+
+    expect(wrapper.find('[data-test="open-official-result"]').exists()).toBe(false)
+    const results = wrapper.find('[data-test="workspace-results"]')
+    expect(results.text()).toContain('暂无成果')
+    // 不恢复「进入调参实验室」语义；新建实验为显式命令
+    expect(wrapper.text()).not.toContain('调参实验室')
+    await wrapper.find('[data-test="new-experiment"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/cases/up-1/experiments/new')
+  })
 })
