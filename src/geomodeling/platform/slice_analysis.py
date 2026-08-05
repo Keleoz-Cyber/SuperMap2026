@@ -176,3 +176,86 @@ def analyze_grid_slice(
         nodata_mask=effective_mask,
         statistics=_statistics(matrix, effective_mask),
     )
+
+
+# ---------------------------------------------------------------------------
+# Task 4：RenderAsset → 权威网格解析与公开剖面服务
+# ---------------------------------------------------------------------------
+
+from geomodeling.platform import render_assets as _render_assets  # noqa: E402
+from geomodeling.platform.legacy_render_sources import (  # noqa: E402
+    resolve_legacy_render_source as _resolve_legacy_render_source,
+)
+from geomodeling.platform.render_profiles import build_render_profile as _build_render_profile  # noqa: E402
+from geomodeling.platform.repositories import RenderAssetRepository as _RenderAssetRepository  # noqa: E402
+
+RENDER_ASSET_SOURCE_UNSUPPORTED = "RENDER_ASSET_SOURCE_UNSUPPORTED"
+RENDER_GRID_IDENTITY_MISMATCH = "RENDER_GRID_IDENTITY_MISMATCH"
+
+
+def load_ready_asset_grid(runtime, asset_id: str):
+    """解析 ready RenderAsset 到其权威规则网格（纯查询，不建文件不改行）。
+
+    顺序即防线：ready 门禁（404/409）→ 文件侧哈希复核（RENDER_ASSET_CORRUPT）
+    → 按来源类型解析权威网格 → 资产/网格身份一致（RENDER_GRID_IDENTITY_MISMATCH）
+    → 落盘网格完整校验。
+    """
+
+    with runtime.session() as session:
+        record = _RenderAssetRepository(session).get_ready(asset_id)
+    _render_assets.verify_ready_asset(runtime, record)
+    if record.source_kind == "candidate_result":
+        source = _render_assets.resolve_candidate_render_source(runtime, record.source_id)
+    elif record.source_kind == "builtin_legacy":
+        source = _resolve_legacy_render_source(runtime, record.source_id)
+    else:
+        raise PlatformError(
+            RENDER_ASSET_SOURCE_UNSUPPORTED,
+            "不支持的渲染源类型",
+            {"source_kind": record.source_kind},
+            http_status=409,
+        )
+    if source.grid_sha256 != record.grid_sha256:
+        raise PlatformError(
+            RENDER_GRID_IDENTITY_MISMATCH,
+            "渲染资产与权威网格身份不一致",
+            {"asset_id": asset_id},
+            http_status=409,
+        )
+    grid = _render_assets.validate_regular_grid(source.grid_path, source.grid_sha256)
+    return record, source, grid
+
+
+def analyze_render_asset_slice(runtime, asset_id: str, axis: str, index: int) -> dict[str, Any]:
+    """公开剖面分析：资产身份 + 三轴坐标 + 图表方向剖面 + 权威统计 + render_profile。"""
+
+    record, source, grid = load_ready_asset_grid(runtime, asset_id)
+    analysis = analyze_grid_slice(grid.axes, grid.values, grid.is_nodata, axis, index)
+    slice_payload = analysis.to_json_slice()
+    return {
+        "asset_identity": {
+            "asset_id": record.id,
+            "source_kind": record.source_kind,
+            "source_id": record.source_id,
+            "grid_sha256": record.grid_sha256,
+            "netcdf_sha256": record.netcdf_sha256,
+        },
+        "property": {"name": source.property_name, "unit": source.units or "unknown"},
+        "axes": {
+            name: {
+                "length": int(len(coords)),
+                "coordinates": [float(v) for v in coords],
+                "unit": "m",
+            }
+            for name, coords in zip(("x", "y", "z"), grid.axes, strict=True)
+        },
+        "slice": slice_payload,
+        "statistics": analysis.statistics,
+        "render_profile": _build_render_profile(
+            record.source_kind,
+            grid.valid_min,
+            grid.valid_max,
+            property_name=source.property_name,
+            unit=source.units,
+        ).to_public(),
+    }

@@ -34,7 +34,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, Form, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Query, Response, UploadFile
 from fastapi.responses import FileResponse
 
 from geomodeling.api import case_service
@@ -43,6 +43,7 @@ from geomodeling.config import AppConfig
 from geomodeling.platform import PlatformRuntime
 from geomodeling.platform import render_assets
 from geomodeling.platform import results as platform_results
+from geomodeling.platform import slice_analysis
 from geomodeling.platform.errors import PlatformError, sanitize_public_details
 from geomodeling.platform.legacy_render_sources import (
     LEGACY_RENDER_SOURCE_NOT_REGISTERED,
@@ -469,6 +470,22 @@ def _verified_ready_package(runtime: PlatformRuntime, asset_id: str) -> tuple[Re
         )
     render_assets.verify_ready_asset(runtime, record)
     return record, package_dir
+
+
+@router.get("/api/render-assets/{asset_id}/slice-analysis")
+def get_render_asset_slice_analysis(
+    asset_id: str,
+    axis: str = Query(...),
+    index: int = Query(...),
+    runtime: PlatformRuntime = Depends(get_platform_runtime),
+) -> dict[str, Any]:
+    """RenderAsset 权威剖面分析（纯查询：不建文件、不改行、不经浏览器像素）。
+
+    三来源（candidate_result / builtin_legacy / 预置即候选）共用同一权威
+    网格口径；轴/索引错误 422，资产缺失 404，非 ready 409。
+    """
+
+    return slice_analysis.analyze_render_asset_slice(runtime, asset_id, axis, index)
 
 
 @router.get("/api/render-assets/{asset_id}/manifest")
