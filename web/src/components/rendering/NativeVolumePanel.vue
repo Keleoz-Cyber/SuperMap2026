@@ -28,7 +28,8 @@ import { Aim } from '@element-plus/icons-vue'
 import { ApiError } from '../../api/client'
 import type { PointLayerPayload, RenderIdentity } from '../../api/types'
 import SuperMapVolumeFrame from './SuperMapVolumeFrame.vue'
-import type { VolumeMode } from './renderProtocol'
+import { buildColorStops } from './renderTransferFunctions'
+import type { RenderStateV2, VolumeMode } from './renderProtocol'
 
 const props = withDefaults(
   defineProps<{
@@ -70,15 +71,20 @@ function formatError(e: unknown): string {
 
 // frame 初始化载荷：仅在有能力 + 显示变换时挂载；
 // supported 时只在 ready 资产后挂载，unsupported 时以 asset=null 进入点云专用初始化
-const frameInit = computed<{ asset: RenderAssetRecord | null; transform: NonNullable<RenderCapability['display_transform']> } | null>(() => {
+const frameInit = computed<{
+  asset: RenderAssetRecord | null
+  transform: NonNullable<RenderCapability['display_transform']>
+  initialState: RenderStateV2
+} | null>(() => {
   const cap = capability.value
   const transform = cap?.display_transform
   if (!cap || !transform) return null
+  const initialState = currentRenderState()
   if (cap.supported) {
     const record = asset.value
-    return record && record.status === 'ready' ? { asset: record, transform } : null
+    return record && record.status === 'ready' ? { asset: record, transform, initialState } : null
   }
-  return { asset: null, transform }
+  return { asset: null, transform, initialState }
 })
 
 // 体积控件门禁：能力支持 + ready 资产 + frame 报告 rendered，三者缺一不可
@@ -183,29 +189,78 @@ function onFrameFailed(error: { code: string; message: string }) {
   phase.value = 'failed'
 }
 
-function selectMode(next: VolumeMode) {
-  mode.value = next
-  if (controlsEnabled.value) {
-    const contourValue = Number(contourValueInput.value)
-    frameRef.value?.setMode(next, {
-      sliceCoordinate: { x: 0.5, y: 0.5, z: sliceZ.value },
-      ...(Number.isFinite(contourValue) && contourValueInput.value.trim() !== '' ? { contourValue } : {}),
-    })
+// v0.7.0 第二批 Task 7 桥接适配：控件状态组装为完整 v2 渲染状态。
+// 默认值来自 capability.render_profile（色带/标度经 Task 6 纯函数展开）；
+// 缺省（点云专用初始化）使用固定安全默认。Task 9/10/11 将把这些控件拆分为
+// VolumeRenderToolbar 与 OrthogonalSliceControls，并以剖面 API 的真实
+// index/coordinate 取代本处的相对位置占位（index/coordinate 暂为 0）。
+const renderRevision = ref(1)
+
+function profileDefaults() {
+  const profile = capability.value?.render_profile ?? null
+  const range: [number, number] = profile ? profile.value_range : [0, 1]
+  return {
+    range,
+    stops: buildColorStops(profile?.default_palette ?? 'viridis', profile?.default_scale ?? 'linear', range),
+    lighting: profile?.lighting ?? true,
+    gradientOpacity: profile?.gradient_opacity ?? true,
+    boundingBox: profile?.bounding_box ?? true,
+    opacity: profile?.opacity ?? 1,
   }
 }
 
-function applySliceCoordinate() {
+function currentRenderState(mutate?: (state: RenderStateV2) => void): RenderStateV2 {
+  const defaults = profileDefaults()
+  const state: RenderStateV2 = {
+    revision: renderRevision.value,
+    mode: mode.value,
+    filter: { min: defaults.range[0], max: defaults.range[1] },
+    opacity: defaults.opacity,
+    colorTransferFunction: defaults.stops,
+    lighting: defaults.lighting,
+    gradientOpacity: defaults.gradientOpacity,
+    boundingBox: defaults.boundingBox,
+  }
+  if (mode.value === 'slice') {
+    state.slice = { axis: 'z', index: 0, coordinate: 0, relativePosition: sliceZ.value }
+  }
+  if (mode.value === 'contour') {
+    const contourValue = Number(contourValueInput.value)
+    if (Number.isFinite(contourValue) && contourValueInput.value.trim() !== '') {
+      state.contourValue = contourValue
+    }
+  }
+  mutate?.(state)
+  return state
+}
+
+function pushRenderState(mutate?: (state: RenderStateV2) => void) {
   if (!controlsEnabled.value) return
-  frameRef.value?.setMode('slice', {
-    sliceCoordinate: { x: 0.5, y: 0.5, z: sliceZ.value },
+  const state = currentRenderState(mutate)
+  if (frameRef.value?.applyRenderState(state)) {
+    renderRevision.value += 1
+  }
+}
+
+function selectMode(next: VolumeMode) {
+  mode.value = next
+  pushRenderState()
+}
+
+function applySliceCoordinate() {
+  pushRenderState((state) => {
+    state.mode = 'slice'
+    state.slice = { axis: 'z', index: 0, coordinate: 0, relativePosition: sliceZ.value }
   })
 }
 
 function applyContourValue() {
-  if (!controlsEnabled.value) return
   const contourValue = Number(contourValueInput.value)
   if (!Number.isFinite(contourValue)) return
-  frameRef.value?.setMode('contour', { contourValue })
+  pushRenderState((state) => {
+    state.mode = 'contour'
+    state.contourValue = contourValue
+  })
 }
 
 function applyFilter() {
@@ -218,11 +273,15 @@ function applyFilter() {
     return
   }
   filterError.value = null
-  frameRef.value?.setFilter(min, max)
+  pushRenderState((state) => {
+    state.filter = { min, max }
+  })
 }
 
 function onOpacityInput() {
-  if (controlsEnabled.value) frameRef.value?.setOpacity(opacity.value)
+  pushRenderState((state) => {
+    state.opacity = opacity.value
+  })
 }
 
 function onResetView() {
@@ -321,6 +380,7 @@ onMounted(() => {
         :key="frameInit.asset ? frameInit.asset.id : 'point-only'"
         :asset="frameInit.asset"
         :display-transform="frameInit.transform"
+        :initial-state="frameInit.initialState"
         @ready="onFrameReady"
         @rendered="onFrameRendered"
         @failed="onFrameFailed"

@@ -95,9 +95,7 @@ const AUX_POINTS = {
 
 // frame stub：记录 props，暴露与真实组件同名的命令方法
 let frameExposed: {
-  setMode: ReturnType<typeof vi.fn>
-  setFilter: ReturnType<typeof vi.fn>
-  setOpacity: ReturnType<typeof vi.fn>
+  applyRenderState: ReturnType<typeof vi.fn>
   setPointLayer: ReturnType<typeof vi.fn>
   resetView: ReturnType<typeof vi.fn>
 }
@@ -107,13 +105,12 @@ const FrameStub = defineComponent({
   props: {
     asset: { type: Object, default: null },
     displayTransform: { type: Object, required: true },
+    initialState: { type: Object, required: true },
   },
   emits: ['ready', 'rendered', 'failed'],
   setup(_props, { expose }) {
     frameExposed = {
-      setMode: vi.fn(),
-      setFilter: vi.fn(),
-      setOpacity: vi.fn(),
+      applyRenderState: vi.fn().mockReturnValue(true),
       setPointLayer: vi.fn(),
       resetView: vi.fn(),
     }
@@ -305,13 +302,18 @@ describe('NativeVolumePanel 控件', () => {
     }
 
     await wrapper.find('[data-test="mode-slice"]').trigger('click')
-    expect(frameExposed.setMode).toHaveBeenCalledWith('slice', {
-      sliceCoordinate: { x: 0.5, y: 0.5, z: 0.5 },
-    })
+    expect(frameExposed.applyRenderState).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mode: 'slice',
+        slice: { axis: 'z', index: 0, coordinate: 0, relativePosition: 0.5 },
+      }),
+    )
 
     const slider = wrapper.find('[data-test="opacity-slider"]')
     await slider.setValue('0.5')
-    expect(frameExposed.setOpacity).toHaveBeenCalledWith(0.5)
+    expect(frameExposed.applyRenderState).toHaveBeenCalledWith(
+      expect.objectContaining({ opacity: 0.5 }),
+    )
 
     await wrapper.find('[data-test="reset-view"]').trigger('click')
     expect(frameExposed.resetView).toHaveBeenCalledTimes(1)
@@ -326,12 +328,14 @@ describe('NativeVolumePanel 控件', () => {
     await wrapper.find('[data-test="filter-min"]').setValue('10')
     await wrapper.find('[data-test="filter-max"]').setValue('2')
     await wrapper.find('[data-test="filter-apply"]').trigger('click')
-    expect(frameExposed.setFilter).not.toHaveBeenCalled()
+    expect(frameExposed.applyRenderState).not.toHaveBeenCalled()
     expect(wrapper.find('[data-test="filter-error"]').exists()).toBe(true)
 
     await wrapper.find('[data-test="filter-max"]').setValue('20')
     await wrapper.find('[data-test="filter-apply"]').trigger('click')
-    expect(frameExposed.setFilter).toHaveBeenCalledWith(10, 20)
+    expect(frameExposed.applyRenderState).toHaveBeenCalledWith(
+      expect.objectContaining({ filter: { min: 10, max: 20 } }),
+    )
   })
 
   it('模式选项只有 体积/切片/等值线：体积绝不被名为「点」的显示模式隐藏', async () => {
