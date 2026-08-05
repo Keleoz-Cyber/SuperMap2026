@@ -74,21 +74,31 @@ function createExperiment() {
   })
 }
 
+// 单调递增请求序号：只有最新一次 loadWorkspace 可以写状态；
+// 快速连切时旧请求无论成功、失败还是 finally 都不得覆盖新请求
+let workspaceRequestSeq = 0
+
 async function loadWorkspace() {
+  const targetId = caseId.value
+  const seq = ++workspaceRequestSeq
+  const isCurrent = () => seq === workspaceRequestSeq && targetId === caseId.value
   loading.value = true
   workspace.value = null
   loadError.value = null
   notInitialized.value = false
   try {
-    workspace.value = await fetchCaseWorkspace(caseId.value)
+    const result = await fetchCaseWorkspace(targetId)
+    if (!isCurrent()) return
+    workspace.value = result
   } catch (exc) {
+    if (!isCurrent()) return
     if (exc instanceof ApiError && exc.code === 'PRESET_NOT_INITIALIZED') {
       notInitialized.value = true
     } else {
       loadError.value = exc instanceof Error ? exc.message : String(exc)
     }
   } finally {
-    loading.value = false
+    if (isCurrent()) loading.value = false
   }
 }
 

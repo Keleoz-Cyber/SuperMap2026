@@ -126,6 +126,83 @@ describe('CaseWorkspaceView', () => {
     expect(router.currentRoute.value.path).toBe('/')
   })
 
+  it('快速 A→B→A 连切：stale 响应不得覆盖当前案例状态', async () => {
+    // 可控 deferred：B 挂起，第二个 A 先完成，B 最后完成
+    const wsA = workspaceOf('builtin_legacy')
+    wsA.official_result = { result_id: 'a-r1', url: '/results/a-r1', materialized: true }
+    wsA.capabilities = { data_summary: true, experiments: true, official_result: true, native_volume: true }
+    const wsB = workspaceOf('builtin_preset')
+    const pending = new Map<string, { resolve: (v: CaseWorkspaceSummary) => void; reject: (e: unknown) => void }>()
+    vi.mocked(client.fetchCaseWorkspace).mockImplementation((id: string) => {
+      if (id === 'resistivity' && pending.size === 0 && !pending.has('a2') && !pending.has('b')) {
+        return Promise.resolve(wsA) // 首个 A 立即完成
+      }
+      return new Promise<CaseWorkspaceSummary>((resolve, reject) => {
+        pending.set(id === 'resistivity' ? 'a2' : 'b', { resolve, reject })
+      })
+    })
+
+    const { wrapper, router } = await mountWorkspace('/cases/resistivity')
+    expect(wrapper.find('[data-test="case-workspace-header"]').text()).toContain('地下电阻率')
+
+    // 切到 B（请求挂起）→ 立即切回 A（第二个 A 也挂起）
+    await router.push(`/cases/${PRESET_ID}`)
+    await router.push('/cases/resistivity')
+    expect(pending.has('b')).toBe(true)
+    expect(pending.has('a2')).toBe(true)
+
+    // 第二个 A 先完成 → 页面显示 A
+    pending.get('a2')!.resolve(wsA)
+    await flushPromises()
+    expect(wrapper.find('[data-test="case-workspace-header"]').text()).toContain('地下电阻率')
+
+    // B 最后完成 → 不得覆盖 A 的内容与命令
+    pending.get('b')!.resolve(wsB)
+    await flushPromises()
+    const header = wrapper.find('[data-test="case-workspace-header"]')
+    expect(header.text()).toContain('地下电阻率')
+    expect(header.text()).not.toContain('微震速度')
+    expect(wrapper.find('[data-test="workspace-not-initialized"]').exists()).toBe(false)
+
+    // 命令仍使用当前 URL 案例（A）的成果与数据集
+    await wrapper.find('[data-test="open-official-result"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/results/a-r1')
+  })
+
+  it('stale rejection 不显示错误页，stale finally 不提前结束 loading', async () => {
+    const wsA = workspaceOf('builtin_legacy')
+    const pending = new Map<string, { resolve: (v: CaseWorkspaceSummary) => void; reject: (e: unknown) => void }>()
+    let firstA = true
+    vi.mocked(client.fetchCaseWorkspace).mockImplementation((id: string) => {
+      if (id === 'resistivity' && firstA) {
+        firstA = false
+        return Promise.resolve(wsA)
+      }
+      return new Promise<CaseWorkspaceSummary>((resolve, reject) => {
+        pending.set(id === 'resistivity' ? 'a2' : 'b', { resolve, reject })
+      })
+    })
+
+    const { wrapper, router } = await mountWorkspace('/cases/resistivity')
+    await router.push(`/cases/${PRESET_ID}`)
+    expect(pending.has('b')).toBe(true)
+    // B 仍在途：页面处于 loading（不得被后续 stale finally 影响）
+    await router.push('/cases/resistivity')
+    expect(pending.has('a2')).toBe(true)
+
+    // stale B 失败 → 不得显示错误页
+    pending.get('b')!.reject(new Error('network down'))
+    await flushPromises()
+    expect(wrapper.find('[data-test="workspace-load-error"]').exists()).toBe(false)
+
+    // 当前 A 完成前 loading 不得被 stale finally 结束；完成后正常显示
+    pending.get('a2')!.resolve(wsA)
+    await flushPromises()
+    expect(wrapper.find('[data-test="case-workspace-header"]').text()).toContain('地下电阻率')
+    expect(wrapper.find('[data-test="workspace-load-error"]').exists()).toBe(false)
+  })
+
   it('路由参数变化时重新加载目标案例（不得显示上一个案例的 stale 内容）', async () => {
     vi.mocked(client.fetchCaseWorkspace).mockImplementation(async (id: string) =>
       id === 'resistivity' ? workspaceOf('builtin_legacy') : workspaceOf('builtin_preset'),
