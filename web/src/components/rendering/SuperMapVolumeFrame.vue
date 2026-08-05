@@ -8,6 +8,7 @@ import {
   newFrameRequestId,
   parseChildMessage,
   type ParentMessage,
+  type SliceCoordinate,
   type VolumeMode,
 } from './renderProtocol'
 
@@ -85,8 +86,11 @@ onBeforeUnmount(() => {
 // 命令方法（父级经模板引用调用；非法输入在出站前拦截，与子帧守卫同语义）
 // ---------------------------------------------------------------------------
 
-function setMode(mode: VolumeMode) {
-  post({ protocol: VOLUME_FRAME_PROTOCOL, type: 'SET_MODE', requestId, mode })
+function setMode(
+  mode: VolumeMode,
+  options: { sliceCoordinate?: SliceCoordinate; contourValue?: number } = {},
+) {
+  post({ protocol: VOLUME_FRAME_PROTOCOL, type: 'SET_MODE', requestId, mode, ...options })
 }
 
 function setFilter(min: number, max: number) {

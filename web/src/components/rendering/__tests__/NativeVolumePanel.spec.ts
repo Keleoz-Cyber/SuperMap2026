@@ -305,7 +305,9 @@ describe('NativeVolumePanel 控件', () => {
     }
 
     await wrapper.find('[data-test="mode-slice"]').trigger('click')
-    expect(frameExposed.setMode).toHaveBeenCalledWith('slice')
+    expect(frameExposed.setMode).toHaveBeenCalledWith('slice', {
+      sliceCoordinate: { x: 0.5, y: 0.5, z: 0.5 },
+    })
 
     const slider = wrapper.find('[data-test="opacity-slider"]')
     await slider.setValue('0.5')

@@ -217,6 +217,23 @@ describe('SuperMapVolumeFrame 命令方法', () => {
     expect(lastPost(postSpy)).toMatchObject({ type: 'RESET_VIEW', requestId })
   })
 
+  it('setMode 可携带 Slice/Contour 的 SDK 参数', () => {
+    const { wrapper, iframe, postSpy, requestId } = mountFrame()
+    frameReady(iframe, requestId)
+    ;(wrapper.vm as unknown as {
+      setMode: (m: string, options: Record<string, unknown>) => void
+    }).setMode('slice', { sliceCoordinate: { x: 0.5, y: 0.5, z: 0.25 } })
+    expect(lastPost(postSpy)).toMatchObject({
+      type: 'SET_MODE',
+      mode: 'slice',
+      sliceCoordinate: { x: 0.5, y: 0.5, z: 0.25 },
+    })
+    ;(wrapper.vm as unknown as {
+      setMode: (m: string, options: Record<string, unknown>) => void
+    }).setMode('contour', { contourValue: 42 })
+    expect(lastPost(postSpy)).toMatchObject({ type: 'SET_MODE', mode: 'contour', contourValue: 42 })
+  })
+
   it('setOpacity clamp 到 0..1', () => {
     const { wrapper, iframe, postSpy, requestId } = mountFrame()
     frameReady(iframe, requestId)

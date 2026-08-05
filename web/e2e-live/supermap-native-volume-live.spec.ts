@@ -572,6 +572,8 @@ test.describe('v0.6.1 Task 14：32³/64³ 原生体渲染 live 门', () => {
     const slice = await runCommand('slice', async () => {
       await page.getByTestId('mode-slice').click()
     })
+    const sliceStats = await countNonBg(page, slice.central)
+    expect(sliceStats.nonBg, `${size}³ Slice 必须有非背景体数据像素`).toBeGreaterThan(500)
     diffs.slice = await countDiff(page, opacity.central, slice.central)
     expect(diffs.slice).toBeGreaterThan(pixelThreshold)
     commandTimings.slice = slice.timing
@@ -583,6 +585,8 @@ test.describe('v0.6.1 Task 14：32³/64³ 原生体渲染 live 门', () => {
     const contour = await runCommand('contour', async () => {
       await page.getByTestId('mode-contour').click()
     })
+    const contourStats = await countNonBg(page, contour.central)
+    expect(contourStats.nonBg, `${size}³ Contour 必须有非背景等值面像素`).toBeGreaterThan(500)
     diffs.contour = await countDiff(page, slice.central, contour.central)
     expect(diffs.contour).toBeGreaterThan(pixelThreshold)
     commandTimings.contour = contour.timing
@@ -623,6 +627,8 @@ test.describe('v0.6.1 Task 14：32³/64³ 原生体渲染 live 门', () => {
       pixel_threshold: pixelThreshold,
       base_non_bg: baseStats.nonBg,
       base_total: baseStats.total,
+      slice_non_bg: sliceStats.nonBg,
+      contour_non_bg: contourStats.nonBg,
       diffs,
       gates: {
         base_non_bg_min: 2000,

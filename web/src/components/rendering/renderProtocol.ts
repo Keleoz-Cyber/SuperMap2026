@@ -23,6 +23,11 @@ import type {
 export const VOLUME_FRAME_PROTOCOL = 'gmp-supermap-volume/v1' as const
 
 export type VolumeMode = 'volume' | 'slice' | 'contour'
+export interface SliceCoordinate {
+  x: number
+  y: number
+  z: number
+}
 
 export type RenderPhase = 'loading' | 'rendered' | 'failed' | 'unsupported'
 
@@ -43,6 +48,8 @@ export interface SetModeMessage {
   type: 'SET_MODE'
   requestId: string
   mode: VolumeMode
+  sliceCoordinate?: SliceCoordinate
+  contourValue?: number
 }
 
 export interface SetFilterMessage {

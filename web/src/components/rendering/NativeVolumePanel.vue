@@ -56,6 +56,8 @@ const identity = ref<RenderIdentity | null>(null)
 const frameError = ref<{ code: string; message: string } | null>(null)
 
 const mode = ref<VolumeMode>('volume')
+const sliceZ = ref(0.5)
+const contourValueInput = ref('')
 const opacity = ref(1)
 const filterMinInput = ref('')
 const filterMaxInput = ref('')
@@ -183,7 +185,27 @@ function onFrameFailed(error: { code: string; message: string }) {
 
 function selectMode(next: VolumeMode) {
   mode.value = next
-  if (controlsEnabled.value) frameRef.value?.setMode(next)
+  if (controlsEnabled.value) {
+    const contourValue = Number(contourValueInput.value)
+    frameRef.value?.setMode(next, {
+      sliceCoordinate: { x: 0.5, y: 0.5, z: sliceZ.value },
+      ...(Number.isFinite(contourValue) && contourValueInput.value.trim() !== '' ? { contourValue } : {}),
+    })
+  }
+}
+
+function applySliceCoordinate() {
+  if (!controlsEnabled.value) return
+  frameRef.value?.setMode('slice', {
+    sliceCoordinate: { x: 0.5, y: 0.5, z: sliceZ.value },
+  })
+}
+
+function applyContourValue() {
+  if (!controlsEnabled.value) return
+  const contourValue = Number(contourValueInput.value)
+  if (!Number.isFinite(contourValue)) return
+  frameRef.value?.setMode('contour', { contourValue })
 }
 
 function applyFilter() {
@@ -344,6 +366,40 @@ onMounted(() => {
           >
             <Aim />
           </button>
+        </div>
+
+        <div class="control-row">
+          <label class="control-label" for="slice-coordinate">切片位置 Z</label>
+          <input
+            id="slice-coordinate"
+            v-model.number="sliceZ"
+            class="opacity-slider"
+            data-test="slice-coordinate"
+            type="range"
+            min="0"
+            max="1"
+            step="0.01"
+            :disabled="!controlsEnabled"
+            @input="applySliceCoordinate"
+          />
+          <span class="control-value">{{ sliceZ.toFixed(2) }}</span>
+        </div>
+
+        <div class="control-row">
+          <label class="control-label" for="contour-value">等值面值</label>
+          <input
+            id="contour-value"
+            v-model="contourValueInput"
+            class="number-input"
+            data-test="contour-value"
+            type="number"
+            :disabled="!controlsEnabled"
+            @change="applyContourValue"
+          />
+          <button class="link-button" data-test="contour-apply" :disabled="!controlsEnabled" @click="applyContourValue">
+            应用等值面
+          </button>
+          <span class="style-note">留空使用数据值域中点</span>
         </div>
 
         <div class="control-row">

@@ -492,6 +492,24 @@ function handleSetMode(msg) {
       : msg.mode === 'slice'
         ? SuperMap3D.VolumeRenderMode.Slice
         : SuperMap3D.VolumeRenderMode.ContourValue
+  if (msg.sliceCoordinate !== undefined) {
+    const c = msg.sliceCoordinate
+    if (
+      !c ||
+      typeof c !== 'object' ||
+      !['x', 'y', 'z'].every((key) => isFiniteNumber(c[key]) && c[key] >= 0 && c[key] <= 1)
+    ) {
+      throw new Error('INVALID_SLICE_COORDINATE：x/y/z 必须是 [0,1] 内的有限数值')
+    }
+    layer.sliceCoordinate = new SuperMap3D.Cartesian3(c.x, c.y, c.z)
+  } else if (msg.mode === 'slice') {
+    layer.sliceCoordinate = new SuperMap3D.Cartesian3(0.5, 0.5, 0.5)
+  }
+  if (msg.mode === 'contour') {
+    const requested = msg.contourValue === undefined ? (valueRange[0] + valueRange[1]) / 2 : msg.contourValue
+    if (!isFiniteNumber(requested)) throw new Error('INVALID_CONTOUR_VALUE：必须是有限数值')
+    layer.contourValue = Math.min(valueRange[1], Math.max(valueRange[0], requested))
+  }
   layer.volumeRenderMode = mode
   diag.mode = msg.mode
   publishDiag()
