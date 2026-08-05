@@ -270,3 +270,32 @@ test.describe('v0.6 专业建模流程（mock API）', () => {
     await expect(page.getByTestId('grid-difference')).toContainText('121')
   })
 })
+
+// ---------------------------------------------------------------------------
+// v0.6.1 体积基准卡直达成果（mock API）：featured_result 主入口与新建实验
+// 次操作分离，点击主入口进入真实成果工作台路由。
+// ---------------------------------------------------------------------------
+test.describe('v0.6.1 体积基准卡直达成果（mock API）', () => {
+  test('首页基准卡：查看体渲染成果主入口 + 新建实验次操作', async ({ page }) => {
+    await installMockApi(page)
+
+    await page.goto('/')
+    // 主入口与次操作同时存在、文案不混淆
+    const primary = page.getByTestId('open-featured-result')
+    await expect(primary).toBeVisible()
+    await expect(primary).toContainText('查看体渲染成果')
+    const secondary = page.getByTestId('new-experiment')
+    await expect(secondary).toBeVisible()
+    await expect(secondary).toContainText('新建实验')
+
+    // 次操作：新建实验 → 实验创建页（与查看已有成果互不混淆）
+    await secondary.click()
+    await expect(page).toHaveURL(/#\/cases\/case-bench-32\/experiments\/new/)
+
+    // 主入口：查看体渲染成果 → 成果工作台真实加载（复用 cand-1 演示成果夹具）
+    await page.goto('/')
+    await primary.click()
+    await expect(page).toHaveURL(/#\/results\/cand-1/)
+    await expect(page.getByTestId('tab-slices')).toBeVisible()
+  })
+})

@@ -19,10 +19,19 @@ export interface CaseSummary {
   source_kind?: 'builtin_legacy' | 'upload'
   case_type?: string
   created_at?: string
+  // v0.6.1：上传案例卡的主打成果直达链接；无成果为 null，legacy 卡片不携带
+  featured_result?: FeaturedResultLink | null
   links: {
     detail: string | null
     publish_status: string | null
   }
+}
+
+export interface FeaturedResultLink {
+  result_id: string
+  // 前端路由（非 API 路径），如 /results/{id}
+  url: string
+  materialized: boolean
 }
 
 export interface CasesResponse {

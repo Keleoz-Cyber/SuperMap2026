@@ -65,7 +65,7 @@ from geomodeling.platform.errors import (
     platform_error_handler,
 )
 from geomodeling.platform.legacy_adapter import merged_case_cards
-from geomodeling.platform.repositories import CaseRepository
+from geomodeling.platform.repositories import CaseRepository, featured_result_for_case
 from geomodeling.platform.worker import JobWorker
 from geomodeling.publishing import (
     IServerClient,
@@ -156,10 +156,16 @@ def create_app() -> FastAPI:
         # 运行时缺失（如未进入 lifespan 的纯 legacy 测试）时只回 legacy 卡片
         runtime = getattr(request.app.state, "platform_runtime", None)
         records = []
+        featured = {}
         if runtime is not None:
             with runtime.session() as session:
                 records = CaseRepository(session).list_all()
-        return {"cases": merged_case_cards(records)}
+                # v0.6.1：每张上传卡少量查询给出主打成果直达链接（正式选择优先）
+                featured = {
+                    record.id: featured_result_for_case(session, record.id)
+                    for record in records
+                }
+        return {"cases": merged_case_cards(records, featured)}
 
     @app.get("/api/cases/resistivity")
     def resistivity(

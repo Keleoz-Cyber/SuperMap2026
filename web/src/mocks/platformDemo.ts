@@ -438,6 +438,23 @@ export async function installMockApi(page: Page): Promise<void> {
             source_kind: 'builtin_legacy',
             links: { detail: null, publish_status: null },
           },
+          {
+            // v0.6.1：体积基准上传卡，携带 featured_result 直达体渲染成果
+            // （复用 cand-1 演示成果夹具，成果页路由与真实基准卡一致）
+            case_id: 'case-bench-32',
+            title: '体积基准 32³',
+            case_type: 'generic',
+            status: 'active',
+            source_kind: 'upload',
+            created_at: T,
+            updated_at: T,
+            featured_result: {
+              result_id: 'cand-1',
+              url: '/results/cand-1',
+              materialized: true,
+            },
+            links: { detail: '/api/cases/case-bench-32', publish_status: null },
+          },
         ],
       })
     }

@@ -301,6 +301,14 @@ class FormalSelectionRecord(ContractModel):
     created_at: str
 
 
+class FeaturedResultLink(ContractModel):
+    """首页上传案例卡的主打成果链接。``url`` 为前端路由（非 API 路径）。"""
+
+    result_id: str
+    url: str
+    materialized: bool
+
+
 # ---------------------------------------------------------------------------
 # v0.6 professional modeling records (SQLite v5)
 # ---------------------------------------------------------------------------

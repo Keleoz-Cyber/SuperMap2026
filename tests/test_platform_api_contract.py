@@ -15,7 +15,15 @@ from fastapi.testclient import TestClient
 
 from geomodeling.api.app import create_app
 from geomodeling.api.deps import ApiSettings, get_app_config, get_iserver_client, get_settings
+from geomodeling.platform.repositories import FormalSelectionRepository
+from geomodeling.platform.schemas import FormalSelectionRequest
+from geomodeling.platform.tables import CandidateResult
 from test_api import FakeIServer, LIVE_RESPONSES, make_config
+from test_platform_repositories import (
+    create_case,
+    create_succeeded_candidate,
+    set_candidate_status,
+)
 
 
 def make_integrated_app(
@@ -169,3 +177,101 @@ def test_lifespan_shutdown_stops_worker_and_closes_runtime(tmp_path, monkeypatch
         worker._executor.submit(lambda: None)
     with pytest.raises(RuntimeError):
         _ = runtime.engine
+
+
+# ---------------------------------------------------------------------------
+# v0.6.1 featured_result：上传案例卡的主打成果直达链接
+# ---------------------------------------------------------------------------
+
+
+def _set_candidate_row(runtime, candidate_id: str, **fields) -> None:
+    """直写候选行（手工构造时序/物化场景；生产路径只有 runner 会迁移状态）。"""
+
+    with runtime.session() as session:
+        row = session.get(CandidateResult, candidate_id)
+        for key, value in fields.items():
+            setattr(row, key, value)
+        session.commit()
+
+
+def _upload_card(client: TestClient, case_id: str) -> dict:
+    body = client.get("/api/cases").json()
+    return next(c for c in body["cases"] if c["case_id"] == case_id)
+
+
+def test_upload_card_featured_result_prefers_formal_selection(tmp_path, monkeypatch):
+    """正式选择优先：即使存在更新的成功候选，featured_result 仍指向正式成果。"""
+
+    app = make_integrated_app(tmp_path, monkeypatch)
+    with TestClient(app) as client:
+        runtime = app.state.platform_runtime
+        case_id = create_case(runtime, name="体积基准 32³")
+        selected = create_succeeded_candidate(runtime, case_id)
+        newer = create_succeeded_candidate(runtime, case_id)
+        _set_candidate_row(
+            runtime,
+            selected,
+            created_at="2026-08-01T00:00:00+00:00",
+            grid_path="/grids/selected/grid.npz",
+        )
+        _set_candidate_row(runtime, newer, created_at="2026-08-02T00:00:00+00:00")
+        with runtime.session() as session:
+            FormalSelectionRepository(session).select(
+                case_id,
+                FormalSelectionRequest(
+                    candidate_result_id=selected,
+                    note="基准预置成果",
+                    selected_by="seed",
+                ),
+            )
+        featured = _upload_card(client, case_id)["featured_result"]
+    assert featured["result_id"] == selected
+    assert featured["url"] == f"/results/{selected}"
+    assert featured["materialized"] is True
+
+
+def test_upload_card_featured_result_falls_back_to_latest_succeeded(tmp_path, monkeypatch):
+    """无正式选择时回退到本案例最新 succeeded 候选；他案例与未成功候选不参与。"""
+
+    app = make_integrated_app(tmp_path, monkeypatch)
+    with TestClient(app) as client:
+        runtime = app.state.platform_runtime
+        case_id = create_case(runtime, name="体积基准 64³")
+        older = create_succeeded_candidate(runtime, case_id)
+        latest = create_succeeded_candidate(runtime, case_id)
+        failed = create_succeeded_candidate(runtime, case_id)
+        set_candidate_status(runtime, failed, "failed")
+        other_case_id = create_case(runtime, name="无关案例")
+        other = create_succeeded_candidate(runtime, other_case_id)
+        _set_candidate_row(runtime, older, created_at="2026-08-01T00:00:00+00:00")
+        _set_candidate_row(runtime, latest, created_at="2026-08-02T00:00:00+00:00")
+        # 更新的失败候选与本案例无关的候选都不得胜出
+        _set_candidate_row(runtime, failed, created_at="2026-08-03T00:00:00+00:00")
+        _set_candidate_row(runtime, other, created_at="2026-08-04T00:00:00+00:00")
+        featured = _upload_card(client, case_id)["featured_result"]
+    assert featured["result_id"] == latest
+    assert featured["url"] == f"/results/{latest}"
+    assert featured["materialized"] is False
+
+
+def test_upload_card_featured_result_null_without_candidates(tmp_path, monkeypatch):
+    """没有任何候选的上传案例：featured_result 字段保留但为 null。"""
+
+    app = make_integrated_app(tmp_path, monkeypatch)
+    with TestClient(app) as client:
+        case_id = client.post("/api/cases", json={"name": "空案例"}).json()["id"]
+        card = _upload_card(client, case_id)
+    assert card["source_kind"] == "upload"
+    assert card["featured_result"] is None
+
+
+def test_legacy_cards_carry_no_featured_result(tmp_path, monkeypatch):
+    """legacy 内置卡片不受 featured_result 扩展影响。"""
+
+    app = make_integrated_app(tmp_path, monkeypatch)
+    with TestClient(app) as client:
+        body = client.get("/api/cases").json()
+    legacy = [c for c in body["cases"] if c["source_kind"] == "builtin_legacy"]
+    assert legacy, "应至少有一张 legacy 卡片"
+    for card in legacy:
+        assert card.get("featured_result") is None

@@ -60,6 +60,7 @@ from geomodeling.platform.schemas import (
     DatasetVersionRecord,
     ExperimentCreateRequest,
     ExperimentRecord,
+    FeaturedResultLink,
     FormalSelectionRecord,
     FormalSelectionRequest,
     ProfessionalConfirmationRecord,
@@ -675,6 +676,48 @@ class FormalSelectionRepository:
         self._s.add(row)
         self._s.commit()
         return _formal_selection_record(row)
+
+
+def featured_result_for_case(session: Session, case_id: str) -> FeaturedResultLink | None:
+    """首页上传案例卡的主打成果：正式选择优先，其次本案例最新成功候选。
+
+    选取规则：① 案例级正式选择（最新一条）对应的候选直接胜出；② 否则在
+    candidate → run → experiment 归属链内取本案例最新 succeeded 候选
+    （created_at 倒序，id 兜底决胜）；两者皆无返回 None。``materialized``
+    以候选 ``grid_path`` 已登记为准——``results.materialize`` 与基准种子
+    都是网格落盘后才写回该列，与幂等重读的判定口径一致。
+    """
+
+    selection = (
+        session.query(FormalSelection)
+        .filter(FormalSelection.case_id == case_id)
+        .order_by(FormalSelection.created_at.desc(), FormalSelection.id.desc())
+        .first()
+    )
+    candidate = (
+        session.get(CandidateResult, selection.candidate_result_id)
+        if selection is not None
+        else None
+    )
+    if candidate is None:
+        candidate = (
+            session.query(CandidateResult)
+            .join(Run, CandidateResult.run_id == Run.id)
+            .join(Experiment, Run.experiment_id == Experiment.id)
+            .filter(
+                Experiment.case_id == case_id,
+                CandidateResult.status == RunStatus.SUCCEEDED.value,
+            )
+            .order_by(CandidateResult.created_at.desc(), CandidateResult.id.desc())
+            .first()
+        )
+    if candidate is None:
+        return None
+    return FeaturedResultLink(
+        result_id=candidate.id,
+        url=f"/results/{candidate.id}",
+        materialized=candidate.grid_path is not None,
+    )
 
 
 # ---------------------------------------------------------------------------

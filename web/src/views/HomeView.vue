@@ -83,6 +83,12 @@ function enter(c: CaseSummary) {
   }
 }
 
+// v0.6.1：有主打成果的上传卡提供「查看体渲染成果」直达入口，与新建实验分离
+function openFeaturedResult(c: CaseSummary) {
+  if (!c.featured_result) return
+  void router.push(c.featured_result.url)
+}
+
 onMounted(async () => {
   try {
     const resp = await fetchCases()
@@ -160,10 +166,30 @@ onMounted(async () => {
               导入微震 DAT
               <el-icon style="margin-left: 4px"><ArrowRight /></el-icon>
             </el-button>
-            <el-button v-else-if="c.source_kind === 'upload'" type="primary">
-              进入调参实验室
-              <el-icon style="margin-left: 4px"><ArrowRight /></el-icon>
-            </el-button>
+            <template v-else-if="c.source_kind === 'upload'">
+              <template v-if="c.featured_result">
+                <el-button
+                  type="primary"
+                  data-test="open-featured-result"
+                  @click.stop="openFeaturedResult(c)"
+                >
+                  查看体渲染成果
+                  <el-icon style="margin-left: 4px"><ArrowRight /></el-icon>
+                </el-button>
+                <el-button
+                  size="small"
+                  text
+                  data-test="new-experiment"
+                  @click.stop="enter(c)"
+                >
+                  新建实验
+                </el-button>
+              </template>
+              <el-button v-else type="primary">
+                进入调参实验室
+                <el-icon style="margin-left: 4px"><ArrowRight /></el-icon>
+              </el-button>
+            </template>
             <span v-else-if="c.case_id === 'gas'" class="enter-hint">
               体元加载触发 iDesktopX 崩溃，暂缓接入
             </span>
