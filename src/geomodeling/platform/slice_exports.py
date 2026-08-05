@@ -117,18 +117,27 @@ def validate_slice_image(png_bytes: bytes, declared_mime: str | None) -> bytes:
 
 
 def _slice_csv_rows(analysis: dict[str, Any]) -> str:
-    """行优先 CSV：外层 row_coordinates，内层 column_coordinates，固定轴重复。"""
+    """行优先 CSV：外层 row_coordinates，内层 column_coordinates，固定轴重复。
+
+    列序恒为真实轴名 x,y,z（设计 §6.2）：每个坐标值必须落在自己轴的列里，
+    绝不按 (列,行,固定) 位置顺序冒充 x,y,z。
+    """
 
     slice_payload = analysis["slice"]
+    fixed_axis = slice_payload["fixed_axis"]
+    row_axis = slice_payload["row_axis"]
+    column_axis = slice_payload["column_axis"]
     fixed = slice_payload["coordinate"]
     rows = ["x,y,z,value,is_nodata"]
     for r, row_coord in enumerate(slice_payload["row_coordinates"]):
         for c, col_coord in enumerate(slice_payload["column_coordinates"]):
+            coords = {fixed_axis: fixed, row_axis: row_coord, column_axis: col_coord}
+            xyz = f"{coords['x']},{coords['y']},{coords['z']}"
             if slice_payload["nodata_mask"][r][c]:
-                rows.append(f"{col_coord},{row_coord},{fixed},,true")
+                rows.append(f"{xyz},,true")
             else:
                 value = slice_payload["values"][r][c]
-                rows.append(f"{col_coord},{row_coord},{fixed},{value},false")
+                rows.append(f"{xyz},{value},false")
     return "\n".join(rows) + "\n"
 
 

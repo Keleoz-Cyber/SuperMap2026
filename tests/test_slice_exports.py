@@ -130,6 +130,11 @@ def test_slice_export_csv_row_major_and_nodata_blank(tmp_path, monkeypatch):
             f"/api/render-assets/{asset['id']}/slice-analysis?axis=x&index=0"
         ).json()
         lines = archive.read("slice.csv").decode("utf-8").splitlines()
+        # 列必须按真实轴名标注（设计 §6.2：x,y,z 列序 + 固定轴坐标每行重复）：
+        # 行优先遍历不变，但每个坐标值必须落在自己轴的列里
+        fixed_axis = api["slice"]["fixed_axis"]
+        row_axis = api["slice"]["row_axis"]
+        col_axis = api["slice"]["column_axis"]
         fixed_coord = api["slice"]["coordinate"]
         row_coords = api["slice"]["row_coordinates"]
         col_coords = api["slice"]["column_coordinates"]
@@ -138,11 +143,37 @@ def test_slice_export_csv_row_major_and_nodata_blank(tmp_path, monkeypatch):
         expected = ["x,y,z,value,is_nodata"]
         for r, rc in enumerate(row_coords):
             for c, cc in enumerate(col_coords):
+                coords = {fixed_axis: fixed_coord, row_axis: rc, col_axis: cc}
+                xyz = f"{coords['x']},{coords['y']},{coords['z']}"
                 if mask[r][c]:
-                    expected.append(f"{cc},{rc},{fixed_coord},,true")
+                    expected.append(f"{xyz},,true")
                 else:
-                    expected.append(f"{cc},{rc},{fixed_coord},{values[r][c]},false")
+                    expected.append(f"{xyz},{values[r][c]},false")
         assert lines == expected
+
+
+def test_slice_export_csv_true_axis_columns_for_y_slice(tmp_path, monkeypatch):
+    """y 轴剖面同样按真实轴名落列：x=列坐标、y=固定坐标、z=行坐标。"""
+
+    app = make_app(tmp_path, monkeypatch)
+    with TestClient(app) as client:
+        asset = _create_candidate_asset(client)
+        resp = _post_export(client, asset["id"], axis="y", index=0)
+        assert resp.status_code == 201, resp.text
+        download = client.get(f"/api/exports/{resp.json()['id']}/download")
+        archive = zipfile.ZipFile(io.BytesIO(download.content))
+        api = client.get(
+            f"/api/render-assets/{asset['id']}/slice-analysis?axis=y&index=0"
+        ).json()
+        assert api["slice"]["row_axis"] == "z"
+        assert api["slice"]["column_axis"] == "x"
+        lines = archive.read("slice.csv").decode("utf-8").splitlines()
+        assert lines[0] == "x,y,z,value,is_nodata"
+        # 首行数据：r=0/c=0 → x=col[0]、y=固定坐标、z=row[0]
+        first = lines[1].split(",")
+        assert first[0] == str(api["slice"]["column_coordinates"][0])
+        assert first[1] == str(api["slice"]["coordinate"])
+        assert first[2] == str(api["slice"]["row_coordinates"][0])
 
 
 def test_legacy_slice_export_has_no_candidate(tmp_path, monkeypatch):
