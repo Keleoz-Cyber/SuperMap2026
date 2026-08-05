@@ -28,6 +28,9 @@ jobs:
       - name: Run portable tests
         run: python -m pytest -q -m "not local_data"
 
+      - name: SuperMap3D installer help smoke
+        run: python scripts/install_supermap3d.py --help
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -58,16 +61,6 @@ jobs:
 
       - name: Install frontend dependencies
         run: npm --prefix web ci
-
-      # web/public/Cesium 不入库（44MB，scripts/fetch_iclient3d.py 拉取）；
-      # index.html 全局引用 ./Cesium/Cesium.js，缺失时 404——浏览器冒烟需要先取回 SDK
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Fetch iClient3D Cesium SDK
-        run: python scripts/fetch_iclient3d.py
 
       - name: Frontend build
         run: npm --prefix web run build
@@ -114,8 +107,10 @@ jobs:
       - name: Install Chromium for Playwright
         run: npx --prefix web playwright install chromium
 
+      # 专有 SuperMap3D SDK 不入库，SDK 依赖的 live 门（supermap-volume-frame-live、
+      # supermap-native-volume-live）仅作本机发布门；CI 只跑平台 live 流程。
       - name: Live E2E (real FastAPI + isolated SQLite)
-        run: npm --prefix web run test:e2e:live
+        run: npm --prefix web run test:e2e:live -- e2e-live/platform-live.spec.ts
 
       - name: Upload live failure evidence
         if: failure()

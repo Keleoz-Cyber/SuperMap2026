@@ -1,13 +1,17 @@
 import { flushPromises, mount } from '@vue/test-utils'
+import { defineComponent, h } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ElementPlus from 'element-plus'
 import type {
   DatasetPoints,
+  DisplayTransform,
   ExperimentRecord,
   FormalSelectionRecord,
   MicroseismicDerivation,
   MicroseismicPointLayer,
+  RenderAssetRecord,
+  RenderCapability,
   ResultMetadata,
   ResultPreview,
 } from '../../../api/types'
@@ -19,6 +23,7 @@ vi.mock('../../../api/client', async (importOriginal) => {
   return {
     ...actual,
     fetchResult: vi.fn(),
+    materializeResult: vi.fn(),
     fetchResultPreview: vi.fn(),
     fetchResultSlice: vi.fn(),
     fetchExperiment: vi.fn(),
@@ -29,115 +34,79 @@ vi.mock('../../../api/client', async (importOriginal) => {
     fetchDatasetPoints: vi.fn(),
     fetchMicroseismicDerivation: vi.fn(),
     fetchMicroseismicDerivationPoints: vi.fn(),
+    fetchResultRenderCapability: vi.fn(),
+    fetchResultRenderAsset: vi.fn(),
+    createResultRenderAsset: vi.fn(),
   }
 })
 
 // ---------------------------------------------------------------------------
-// 最小 Cesium mock：只覆盖 Field3D 实际使用的 API 面。
-// PointPrimitiveCollection 记录 add/removeAll，用于断言渲染集合计数；
-// 图层可见性必须走 removeAll + 内存重建（v0.3.1 实证结论），断言即基于此。
+// SuperMapVolumeFrame stub：记录命令方法（setPointLayer 等），并渲染一个真实
+// iframe 元素，让视图的协议监听器可以做 origin/source/protocol 三重校验。
+// Cesium mock 已随 Field3D 一并移除：证据层断言全部落在桥接载荷上。
 // ---------------------------------------------------------------------------
 
-interface AddedPoint {
-  position: unknown
-  pixelSize: number
-  outlineWidth?: number
-  outlineColor?: unknown
-  [key: string]: unknown
+let frameExposed: {
+  setMode: ReturnType<typeof vi.fn>
+  setFilter: ReturnType<typeof vi.fn>
+  setOpacity: ReturnType<typeof vi.fn>
+  setPointLayer: ReturnType<typeof vi.fn>
+  resetView: ReturnType<typeof vi.fn>
 }
 
-class MockPointPrimitiveCollection {
-  length = 0
-  items: AddedPoint[] = []
-
-  add(options: AddedPoint): AddedPoint {
-    this.items.push(options)
-    this.length += 1
-    return options
-  }
-
-  removeAll(): void {
-    this.items = []
-    this.length = 0
-  }
-}
-
-const createdCollections: MockPointPrimitiveCollection[] = []
-
-class MockViewer {
-  imageryLayers = { removeAll: vi.fn() }
-
-  scene = {
-    mode: 0,
-    skyBox: { show: true },
-    skyAtmosphere: { show: true },
-    sun: { show: true },
-    moon: { show: true },
-    backgroundColor: null as unknown,
-    globe: { baseColor: null as unknown },
-    camera: { setView: vi.fn() },
-    primitives: {
-      add: (collection: MockPointPrimitiveCollection) => {
-        createdCollections.push(collection)
-        return collection
-      },
-    },
-  }
-
-  isDestroyed(): boolean {
-    return false
-  }
-
-  destroy(): void {
-    // no-op
-  }
-}
-
-class MockCartographic {
-  constructor(
-    public longitude: number,
-    public latitude: number,
-    public height: number,
-  ) {}
-}
-
-class MockCartesian3 {
-  constructor(
-    public x: number,
-    public y: number,
-    public z: number,
-  ) {}
-}
-
-const CesiumMock = {
-  Viewer: MockViewer,
-  SceneMode: { COLUMBUS_VIEW: 1 },
-  PointPrimitiveCollection: MockPointPrimitiveCollection,
-  Color: {
-    fromCssColorString: (css: string) => ({ css }),
-    fromHsl: (h: number, s: number, l: number, a: number) => ({ h, s, l, a }),
-    BLACK: { css: '#000000' },
+const FrameStub = defineComponent({
+  name: 'SuperMapVolumeFrame',
+  props: {
+    asset: { type: Object, default: null },
+    displayTransform: { type: Object, required: true },
   },
-  Ellipsoid: {
-    WGS84: {
-      cartographicToCartesian: (c: MockCartographic) => ({
-        lon: c.longitude,
-        lat: c.latitude,
-        h: c.height,
-      }),
-    },
+  emits: ['ready', 'rendered', 'failed'],
+  setup(_props, { expose }) {
+    frameExposed = {
+      setMode: vi.fn(),
+      setFilter: vi.fn(),
+      setOpacity: vi.fn(),
+      setPointLayer: vi.fn(),
+      resetView: vi.fn(),
+    }
+    expose(frameExposed)
+    return () =>
+      h('div', { 'data-test': 'volume-frame-stub' }, [h('iframe', { 'data-test': 'frame-bridge-stub' })])
   },
-  Cartographic: MockCartographic,
-  Cartesian3: MockCartesian3,
-  Math: { toRadians: (deg: number) => (deg * 3.141592653589793) / 180 },
+})
+
+// 模拟子帧握手：以 stub iframe 的 contentWindow 为 source 派发 FRAME_READY，
+// 视图延迟一个任务后重发全部已加载证据层
+async function simulateFrameHandshake(wrapper: ReturnType<typeof mount>) {
+  const frame = wrapper.findComponent(FrameStub)
+  frame.vm.$emit('ready', { sdkVersion: '12.1.0', contextType: 2 })
+  const iframeEl = wrapper.find('[data-test="frame-bridge-stub"]')
+  const source = (iframeEl.element as HTMLIFrameElement).contentWindow
+  const event = new MessageEvent('message', {
+    data: {
+      protocol: 'gmp-supermap-volume/v1',
+      type: 'FRAME_READY',
+      requestId: 'req-stub',
+      sdkVersion: '12.1.0',
+      contextType: 2,
+    },
+    origin: window.location.origin,
+    source,
+  })
+  if (event.source !== source) Object.defineProperty(event, 'source', { value: source })
+  window.dispatchEvent(event)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  await flushPromises()
 }
 
-function totalRendered(): number {
-  return createdCollections.reduce((sum, c) => sum + c.length, 0)
+function pointLayerCalls(): Record<string, unknown>[] {
+  return frameExposed.setPointLayer.mock.calls.map((call) => call[0] as Record<string, unknown>)
 }
 
-function addedItems(): AddedPoint[] {
-  return createdCollections.flatMap((c) => c.items)
+function lastLayerPayload(id: string): Record<string, unknown> | undefined {
+  return pointLayerCalls()
+    .filter((layer) => layer.id === id)
+    .at(-1)
 }
 
 // ---------------------------------------------------------------------------
@@ -217,6 +186,44 @@ const DATASET_POINTS: DatasetPoints = {
   value_range: [10, 60],
   value_name: 'Vx',
   source_sha256: 'ab'.repeat(32),
+}
+
+const TRANSFORM: DisplayTransform = {
+  contract: 'wgs84_display_anchor_v1',
+  origin_x: -150,
+  origin_y: 260,
+  anchor_longitude: 120,
+  anchor_latitude: 30,
+  anchor_height: 0,
+  metres_per_degree_lon: 96486.3,
+  metres_per_degree_lat: 110852.4,
+}
+
+const CAPABILITY_3D: RenderCapability = {
+  source_kind: 'candidate_result',
+  source_id: 'r-micro',
+  supported: true,
+  reason_code: null,
+  reason: null,
+  dimension: '3d',
+  grid_kind: 'regular',
+  property_name: 'Vx',
+  units: 'km/s',
+  geolocation_status: 'display_anchor_only',
+  display_transform: TRANSFORM,
+}
+
+const ASSET_READY: RenderAssetRecord = {
+  id: `nc-${'a'.repeat(32)}`,
+  source_kind: 'candidate_result',
+  source_id: 'r-micro',
+  renderer: 'supermap_voxelgrid_netcdf',
+  status: 'ready',
+  grid_sha256: 'cd'.repeat(32),
+  netcdf_sha256: 'ef'.repeat(32),
+  manifest_url: `/api/render-assets/nc-${'a'.repeat(32)}/manifest`,
+  netcdf_url: `/api/render-assets/nc-${'a'.repeat(32)}/volume.nc`,
+  error: null,
 }
 
 const DERIVATION: MicroseismicDerivation = {
@@ -326,11 +333,14 @@ const SELECTION: FormalSelectionRecord = {
 type DerivationBehavior = 'micro' | 'not_micro' | 'server_error'
 
 async function mountWorkbench(behavior: DerivationBehavior) {
-  vi.mocked(client.fetchResult).mockResolvedValue(META_3D)
+  vi.mocked(client.materializeResult).mockResolvedValue(META_3D)
   vi.mocked(client.fetchExperiment).mockResolvedValue(EXP_MICRO)
   vi.mocked(client.fetchResultPreview).mockResolvedValue(PREVIEW_3D)
   vi.mocked(client.fetchDatasetPoints).mockResolvedValue(DATASET_POINTS)
   vi.mocked(client.fetchFormalSelections).mockResolvedValue({ case_id: 'c1', selections: [] })
+  vi.mocked(client.fetchResultRenderCapability).mockResolvedValue(CAPABILITY_3D)
+  vi.mocked(client.fetchResultRenderAsset).mockResolvedValue(ASSET_READY)
+  vi.mocked(client.createResultRenderAsset).mockResolvedValue(ASSET_READY)
   if (behavior === 'micro') {
     vi.mocked(client.fetchMicroseismicDerivation).mockResolvedValue(DERIVATION)
   } else if (behavior === 'not_micro') {
@@ -355,18 +365,19 @@ async function mountWorkbench(behavior: DerivationBehavior) {
       { path: '/', name: 'home', component: { template: '<div />' } },
       { path: '/experiments/:experimentId', name: 'experiment-detail', component: { template: '<div />' } },
       { path: '/results/:resultId', name: 'result-workbench', component: ResultWorkbenchView },
+      { path: '/results/:resultId/professional', name: 'professional-analysis', component: { template: '<div />' } },
     ],
   })
   await router.push('/results/r-micro')
-  const wrapper = mount(ResultWorkbenchView, { global: { plugins: [router, ElementPlus] } })
+  const wrapper = mount(ResultWorkbenchView, {
+    global: { plugins: [router, ElementPlus], stubs: { SuperMapVolumeFrame: FrameStub } },
+  })
   await flushPromises()
   return wrapper
 }
 
 beforeEach(() => {
   vi.clearAllMocks()
-  createdCollections.length = 0
-  ;(window as unknown as { Cesium: unknown }).Cesium = CesiumMock
 })
 
 describe('微震证据图层', () => {
@@ -376,20 +387,18 @@ describe('微震证据图层', () => {
     expect(client.fetchMicroseismicDerivation).toHaveBeenCalledWith('ds-micro')
     expect(client.fetchMicroseismicDerivationPoints).not.toHaveBeenCalled()
     expect(wrapper.find('[data-test="evidence-layers"]').exists()).toBe(false)
-    // 主点云不受探测失败影响
-    expect(wrapper.find('[data-test="field-3d"]').exists()).toBe(true)
-    expect(totalRendered()).toBe(2)
+    // 原生体渲染面板不受探测失败影响
+    expect(wrapper.find('[data-test="native-volume-panel"]').exists()).toBe(true)
   })
 
   it('派生证据服务异常时静默降级，不阻塞成果工作台', async () => {
     const wrapper = await mountWorkbench('server_error')
     expect(client.fetchMicroseismicDerivationPoints).not.toHaveBeenCalled()
     expect(wrapper.find('[data-test="evidence-layers"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="preview-count"]').text()).toContain('1331 / 1331')
-    expect(totalRendered()).toBe(2)
+    expect(wrapper.find('[data-test="native-volume-panel"]').exists()).toBe(true)
   })
 
-  it('微震成果默认只加载聚合节点层，候选与剔除层默认关', async () => {
+  it('微震成果保留 aggregated/accepted/rejected 控件，默认只加载聚合节点层', async () => {
     const wrapper = await mountWorkbench('micro')
     expect(client.fetchMicroseismicDerivation).toHaveBeenCalledWith('ds-micro')
     expect(client.fetchMicroseismicDerivationPoints).toHaveBeenCalledTimes(1)
@@ -405,52 +414,87 @@ describe('微震证据图层', () => {
     expect(accepted.text()).toContain('1,925 条3σ候选来源')
     expect(rejected.text()).toContain('[off]')
     expect(rejected.text()).toContain('80 条3σ剔除诊断')
-
-    // 渲染集合 = 主点云 2 有效单元 + 聚合层 2 点
-    expect(totalRendered()).toBe(4)
   })
 
-  it('开关图层改变渲染集合计数，剔除层用描边符号区分', async () => {
+  it('证据点层载荷按既有样式经桥接发送到 iframe', async () => {
     const wrapper = await mountWorkbench('micro')
-    expect(totalRendered()).toBe(4)
+    await simulateFrameHandshake(wrapper)
 
+    // 握手后重发已加载层：聚合层默认可见，绿色样式
+    expect(lastLayerPayload('aggregated')).toMatchObject({
+      id: 'aggregated',
+      visible: true,
+      role: 'evidence',
+      coordinates: 'local',
+      x: AGGREGATED.x,
+      y: AGGREGATED.y,
+      z: AGGREGATED.z,
+      style: { color: '#22c55e', pixelSize: 7 },
+    })
+
+    // 打开候选层：蓝色样式；关闭后以 visible=false 重发
     await wrapper.get('[data-test="layer-toggle-accepted"]').trigger('click')
     await flushPromises()
     expect(client.fetchMicroseismicDerivationPoints).toHaveBeenCalledWith('ds-micro', 'accepted')
-    expect(totalRendered()).toBe(7)
+    expect(lastLayerPayload('accepted')).toMatchObject({
+      id: 'accepted',
+      visible: true,
+      role: 'evidence',
+      coordinates: 'local',
+      x: ACCEPTED.x,
+      y: ACCEPTED.y,
+      z: ACCEPTED.z,
+      style: { color: '#38bdf8', pixelSize: 4 },
+    })
 
     await wrapper.get('[data-test="layer-toggle-accepted"]').trigger('click')
     await flushPromises()
-    expect(totalRendered()).toBe(4)
+    expect(lastLayerPayload('accepted')).toMatchObject({ id: 'accepted', visible: false })
 
-    // 再开不重复请求：图层数据驻留内存，可见性只靠 removeAll + 重建
+    // 再开不重复请求：图层数据驻留内存，只经桥接更新可见性
     await wrapper.get('[data-test="layer-toggle-accepted"]').trigger('click')
     await flushPromises()
     expect(client.fetchMicroseismicDerivationPoints).toHaveBeenCalledTimes(2)
-    expect(totalRendered()).toBe(7)
+    expect(lastLayerPayload('accepted')).toMatchObject({ id: 'accepted', visible: true })
 
+    // 剔除层：既有红色填充 + 浅色描边样式逐字保留
     await wrapper.get('[data-test="layer-toggle-rejected"]').trigger('click')
     await flushPromises()
     expect(client.fetchMicroseismicDerivationPoints).toHaveBeenCalledWith('ds-micro', 'rejected')
-    expect(totalRendered()).toBe(8)
-
-    const outlined = addedItems().filter((item) => (item.outlineWidth ?? 0) > 0)
-    expect(outlined.length).toBeGreaterThan(0)
+    expect(lastLayerPayload('rejected')).toMatchObject({
+      id: 'rejected',
+      visible: true,
+      role: 'evidence',
+      coordinates: 'local',
+      x: REJECTED.x,
+      y: REJECTED.y,
+      z: REJECTED.z,
+      style: { color: '#ef4444', pixelSize: 6, outlineColor: '#f8fafc', outlineWidth: 2 },
+    })
   })
 
-  it('剔除层不改变网格值域、预览计数、指标或正式选择', async () => {
+  it('剔除层不改变网格值域、渲染成功态或正式选择', async () => {
     const wrapper = await mountWorkbench('micro')
+    await simulateFrameHandshake(wrapper)
+    // 体积已渲染
+    const frame = wrapper.findComponent(FrameStub)
+    frame.vm.$emit('rendered', {
+      sourceKind: 'candidate_result',
+      sourceId: 'r-micro',
+      gridSha256: 'cd'.repeat(32),
+      netcdfSha256: 'ef'.repeat(32),
+    })
+    await flushPromises()
+    expect(wrapper.get('[data-test="volume-phase"]').text()).toContain('已渲染')
     const headerBefore = wrapper.get('.page-sub').text()
-    const previewBefore = wrapper.get('[data-test="preview-count"]').text()
 
     await wrapper.get('[data-test="layer-toggle-rejected"]').trigger('click')
     await flushPromises()
-    expect(totalRendered()).toBe(5)
 
-    // 值域与完整场计数保持成果本身口径
+    // 值域与渲染成功态保持成果本身口径：证据层绝不触碰过滤器/身份/成功态
     expect(wrapper.get('.page-sub').text()).toBe(headerBefore)
     expect(wrapper.get('.page-sub').text()).toContain('1.4 ~ 133.1')
-    expect(wrapper.get('[data-test="preview-count"]').text()).toBe(previewBefore)
+    expect(wrapper.get('[data-test="volume-phase"]').text()).toContain('已渲染')
 
     // 正式选择流程不受剔除点影响
     vi.mocked(client.selectFormal).mockResolvedValue(SELECTION)
@@ -463,5 +507,24 @@ describe('微震证据图层', () => {
 
     // 剔除层开启后值域仍然不变
     expect(wrapper.get('.page-sub').text()).toContain('1.4 ~ 133.1')
+  })
+
+  it('原生渲染失败保持可见，点控件仍标注为辅助/证据', async () => {
+    const wrapper = await mountWorkbench('micro')
+    const frame = wrapper.findComponent(FrameStub)
+    frame.vm.$emit('ready', { sdkVersion: '12.1.0', contextType: 2 })
+    frame.vm.$emit('failed', { code: 'VOXEL_LAYER_LOAD_FAILED', message: '600 帧内 _frameState 未就绪' })
+    await flushPromises()
+
+    // 失败显式可见，绝不切换到任何替代渲染
+    expect(wrapper.get('[data-test="frame-error"]').text()).toContain('VOXEL_LAYER_LOAD_FAILED')
+    expect(wrapper.get('[data-test="volume-phase"]').text()).toContain('原生渲染失败')
+    expect(wrapper.text()).not.toMatch(/fallback|回退|降级为点|替代渲染/)
+
+    // 点控件仍明确标注为证据/辅助：不伪装成体渲染
+    expect(wrapper.get('[data-test="evidence-layers"]').text()).toContain('微震证据图层')
+    expect(wrapper.get('[data-test="layer-toggle-aggregated"]').text()).toContain('1,911 个唯一建模节点')
+    expect(wrapper.get('[data-test="layer-toggle-rejected"]').text()).toContain('80 条3σ剔除诊断')
+    expect(wrapper.get('[data-test="truth-labels"]').text()).toContain('辅助采样点：不参与连续体渲染')
   })
 })

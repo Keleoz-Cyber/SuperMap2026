@@ -3,11 +3,11 @@ project:
   version: "0.1.0"
 
 paths:
-  standardized: "../超图杯资料/标准化数据/地下电阻率节点_标准化.csv"
-  training: "../超图杯资料/标准化数据/地下电阻率节点_训练集90.csv"
-  validation: "../超图杯资料/标准化数据/地下电阻率节点_验证集10.csv"
-  metrics_baseline: "../超图杯资料/标准化数据/插值精度对比_总体指标.csv"
-  analysis_summary: "../超图杯资料/标准化数据/插值精度对比_分析摘要.json"
+  standardized: "超图杯资料/标准化数据/地下电阻率节点_标准化.csv"
+  training: "超图杯资料/标准化数据/地下电阻率节点_训练集90.csv"
+  validation: "超图杯资料/标准化数据/地下电阻率节点_验证集10.csv"
+  metrics_baseline: "超图杯资料/标准化数据/插值精度对比_总体指标.csv"
+  analysis_summary: "超图杯资料/标准化数据/插值精度对比_分析摘要.json"
   prediction_files:
     "IDW 20m/25点": "../超图杯资料/标准化数据/RHO_IDW_CV_VALID_POINTS.csv"
     "Kriging 20m/25点": "../超图杯资料/标准化数据/RHO_KRIG_CV_VALID_POINTS.csv"

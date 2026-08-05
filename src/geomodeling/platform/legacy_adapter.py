@@ -8,9 +8,9 @@ extra installed.
 
 from __future__ import annotations
 
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping
 
-from geomodeling.platform.schemas import CaseRecord
+from geomodeling.platform.schemas import CaseRecord, FeaturedResultLink
 
 BUILTIN_SOURCE_KIND = "builtin_legacy"
 UPLOAD_SOURCE_KIND = "upload"
@@ -29,7 +29,11 @@ def legacy_case_cards() -> list[dict[str, Any]]:
     return cards
 
 
-def upload_case_card(record: CaseRecord) -> dict[str, Any]:
+def upload_case_card(
+    record: CaseRecord,
+    *,
+    featured_result: FeaturedResultLink | None = None,
+) -> dict[str, Any]:
     """Normalize a persisted upload case into the home-page card shape."""
 
     return {
@@ -40,11 +44,23 @@ def upload_case_card(record: CaseRecord) -> dict[str, Any]:
         "source_kind": UPLOAD_SOURCE_KIND,
         "created_at": record.created_at,
         "updated_at": record.updated_at,
+        # v0.6.1：主打成果直达入口（前端 /results/{id} 路由）；无成果为 null。
+        # legacy 卡片不携带该字段。
+        "featured_result": (
+            featured_result.model_dump(mode="json") if featured_result is not None else None
+        ),
         "links": {"detail": f"/api/cases/{record.id}", "publish_status": None},
     }
 
 
-def merged_case_cards(records: Iterable[CaseRecord]) -> list[dict[str, Any]]:
+def merged_case_cards(
+    records: Iterable[CaseRecord],
+    featured_results: Mapping[str, FeaturedResultLink | None] | None = None,
+) -> list[dict[str, Any]]:
     """Legacy cards first (stable order), then persisted upload cases."""
 
-    return legacy_case_cards() + [upload_case_card(record) for record in records]
+    featured = featured_results or {}
+    return legacy_case_cards() + [
+        upload_case_card(record, featured_result=featured.get(record.id))
+        for record in records
+    ]

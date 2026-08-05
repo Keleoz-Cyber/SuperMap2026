@@ -1,14 +1,17 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ApiError,
+  createResultRenderAsset,
   fetchDatasetPoints,
   fetchExperiment,
   fetchMicroseismicDerivation,
   fetchMicroseismicDerivationPoints,
-  fetchResult,
   fetchResultPreview,
+  fetchResultRenderAsset,
+  fetchResultRenderCapability,
+  materializeResult,
   MICROSEISMIC_SOURCE_KIND,
 } from '../api/client'
 import type {
@@ -17,10 +20,17 @@ import type {
   MicroseismicDerivation,
   MicroseismicPointLayer,
   MicroseismicPointLayerName,
+  PointLayerPayload,
+  PointLayerStyle,
   ResultMetadata,
   ResultPreview,
 } from '../api/types'
-import Field3D from '../components/results/Field3D.vue'
+import NativeVolumePanel from '../components/rendering/NativeVolumePanel.vue'
+import type {
+  NativeVolumeAuxPoints,
+  NativeVolumeRenderApi,
+} from '../components/rendering/NativeVolumePanel.vue'
+import { VOLUME_FRAME_PROTOCOL } from '../components/rendering/renderProtocol'
 import SlicePanel from '../components/results/SlicePanel.vue'
 import FormalSelectionPanel from '../components/results/FormalSelectionPanel.vue'
 import ExportPublicationPanel from '../components/results/ExportPublicationPanel.vue'
@@ -43,7 +53,7 @@ const loadError = ref<string | null>(null)
 const activeTab = ref<'field' | 'slices'>('field')
 
 // 微震证据图层：仅当成果所属数据集 source_kind 为 microseismic_dat_bundle 时出现。
-// 图层开关只影响渲染集合，绝不触碰网格阈值、值域、指标与正式选择。
+// 图层开关只影响经桥接发送的点层可见性，绝不触碰网格阈值、值域、指标与正式选择。
 const derivation = ref<MicroseismicDerivation | null>(null)
 const layerStates = reactive<
   Record<MicroseismicPointLayerName, { visible: boolean; points: MicroseismicPointLayer | null }>
@@ -74,13 +84,82 @@ const layerControls = computed(() => {
   }))
 })
 
-const evidenceLayers = computed(() =>
-  EVIDENCE_LAYER_ORDER.map((name) => ({
-    name,
-    visible: layerStates[name].visible,
-    points: layerStates[name].points,
-  })),
-)
+// ---------------------------------------------------------------------------
+// v0.6.1 NetCDF 原生体渲染：NativeVolumePanel 接线
+// ---------------------------------------------------------------------------
+
+const volumePanelRef = ref<InstanceType<typeof NativeVolumePanel> | null>(null)
+
+// 面板数据层以回调注入：能力与资产状态一律纯 GET，创建是唯一 POST
+const volumeApi: NativeVolumeRenderApi = {
+  fetchCapability: () => fetchResultRenderCapability(resultId.value),
+  fetchAsset: () => fetchResultRenderAsset(resultId.value),
+  createAsset: (retryFailed) => createResultRenderAsset(resultId.value, retryFailed),
+}
+
+// 网格采样预览作为辅助点层载荷（默认关，仅作数据分布参考，绝不参与连续体渲染）
+const gridSamplePoints = computed<NativeVolumeAuxPoints | null>(() => {
+  const p = preview.value
+  if (!p || !p.z) return null
+  return {
+    id: 'grid-samples',
+    role: 'auxiliary',
+    x: p.x,
+    y: p.y,
+    z: p.z,
+    values: p.values,
+    isNodata: p.is_nodata,
+    style: { color: '#22d3ee', pixelSize: 4 },
+  }
+})
+
+// 证据层样式与 v0.5 Field3D 既有口径逐字一致：剔除层红底浅描边与候选/聚合区分
+const EVIDENCE_STYLES: Record<MicroseismicPointLayerName, PointLayerStyle> = {
+  aggregated: { color: '#22c55e', pixelSize: 7 },
+  accepted: { color: '#38bdf8', pixelSize: 4 },
+  rejected: { color: '#ef4444', pixelSize: 6, outlineColor: '#f8fafc', outlineWidth: 2 },
+}
+
+function evidencePayload(name: MicroseismicPointLayerName): PointLayerPayload {
+  const state = layerStates[name]
+  return {
+    id: name,
+    visible: state.visible,
+    role: 'evidence',
+    coordinates: 'local',
+    x: state.points?.x ?? [],
+    y: state.points?.y ?? [],
+    z: state.points?.z ?? [],
+    style: EVIDENCE_STYLES[name],
+  }
+}
+
+// 握手完成前绝不向子帧发点层（子帧 INIT 前收到 SET_POINT_LAYER 会报错）；
+// 握手后的首次同步补发全部已加载层，之后开关即时增量同步。
+const frameHandshakeDone = ref(false)
+
+function syncEvidenceLayers(): void {
+  if (!derivation.value || !frameHandshakeDone.value) return
+  for (const name of EVIDENCE_LAYER_ORDER) {
+    volumePanelRef.value?.sendPointLayer(evidencePayload(name))
+  }
+}
+
+// 面板内 iframe 的 FRAME_READY 侦听：origin / source / protocol 三重校验
+// （requestId 由桥自身核对，本侦听只负责证据层重发时机）。
+function onVolumeFrameMessage(event: MessageEvent): void {
+  if (event.origin !== window.location.origin) return
+  const root = volumePanelRef.value?.$el as HTMLElement | null | undefined
+  const iframe = root?.querySelector('iframe') ?? null
+  if (!iframe || event.source !== iframe.contentWindow) return
+  const data = event.data as { protocol?: unknown; type?: unknown } | null
+  if (!data || data.protocol !== VOLUME_FRAME_PROTOCOL || data.type !== 'FRAME_READY') return
+  // 桥的 INIT 在本次事件分发中同步发出；延迟一个任务再重发证据层，保证 INIT 先到达子帧
+  window.setTimeout(() => {
+    frameHandshakeDone.value = true
+    syncEvidenceLayers()
+  }, 0)
+}
 
 async function loadLayerPoints(name: MicroseismicPointLayerName): Promise<void> {
   const state = layerStates[name]
@@ -96,6 +175,7 @@ async function loadLayerPoints(name: MicroseismicPointLayerName): Promise<void> 
 async function toggleEvidenceLayer(name: MicroseismicPointLayerName): Promise<void> {
   layerStates[name].visible = !layerStates[name].visible
   if (layerStates[name].visible) await loadLayerPoints(name)
+  syncEvidenceLayers()
 }
 
 // 成果元数据给出 dataset_version_id 后，用派生元数据探测领域身份；
@@ -119,8 +199,11 @@ const sourcePoints = computed(() => {
 })
 
 onMounted(async () => {
+  window.addEventListener('message', onVolumeFrameMessage)
   try {
-    const meta = await fetchResult(resultId.value)
+    // v0.6.1：物化是唯一显式变异入口（POST 一次）；绝不把 fetchResult 当创建捷径。
+    // 切片/预览/证据只在物化成功后获取。
+    const meta = await materializeResult(resultId.value)
     metadata.value = meta
     const exp = await fetchExperiment(meta.experiment_id)
     experiment.value = exp
@@ -144,6 +227,10 @@ onMounted(async () => {
   } catch (e) {
     loadError.value = e instanceof ApiError ? `${e.code}：${e.message}` : String(e)
   }
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('message', onVolumeFrameMessage)
 })
 </script>
 
@@ -209,10 +296,11 @@ onMounted(async () => {
           </button>
         </div>
 
-        <Field3D
+        <NativeVolumePanel
           v-if="metadata.dimension === '3d' && activeTab === 'field'"
-          :preview="preview"
-          :evidence-layers="evidenceLayers"
+          ref="volumePanelRef"
+          :api="volumeApi"
+          :aux-points="gridSamplePoints"
         />
         <SlicePanel
           v-else

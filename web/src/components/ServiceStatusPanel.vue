@@ -36,9 +36,9 @@ const hasImageFileLayer = computed(() =>
         <span class="mono">{{ publishStatus.planned_services.scene_name }}</span>
       </div>
     </div>
-    <el-alert :type="publishStatus.planned_services.volume.available ? 'success' : 'info'" :closable="false" class="s3m-tip">
+    <el-alert type="info" :closable="false" class="s3m-tip" data-test="s3m-evidence">
       <template #title>
-        <span class="s3m-text">S3M 体元缓存：{{ publishStatus.planned_services.volume.note }}</span>
+        <span class="s3m-text">历史 S3M 发布证据：{{ publishStatus.planned_services.volume.note }}</span>
       </template>
     </el-alert>
 
@@ -108,7 +108,7 @@ const hasImageFileLayer = computed(() =>
           </span>
         </div>
         <p v-if="hasImageFileLayer" class="panel-note">
-          当前图层类型 ImageFileLayer，即体元经工作空间发布为平面影像层。
+          当前图层类型 ImageFileLayer，即采样点数据经工作空间发布为平面影像层。
         </p>
       </template>
     </div>

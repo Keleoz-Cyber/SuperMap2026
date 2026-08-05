@@ -9,4 +9,9 @@ confirmations, persistent analysis jobs, professional result evidence,
 anomaly extractions, two-candidate comparisons and allowlisted artifact
 downloads); it is registered after the microseismic router and before the
 frontend static mount.
+
+v0.6.1 adds the ``rendering`` router (explicit render-asset mutation POSTs
+and pure capability/status/manifest/NetCDF GETs); it is registered after the
+result routes and before the frontend static mount, never shadowing the
+legacy ``/api/cases/resistivity`` or microseismic routes.
 """

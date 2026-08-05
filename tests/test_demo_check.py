@@ -24,6 +24,30 @@ BLOCKER_IDS = {
     "api_port",
 }
 OPTIONAL_IDS = {"iserver_optional", "s3m_optional", "iserver_credentials_optional"}
+# legacy 渲染源登记状态：只报告不阻断（未登记=warning，已登记=passed）
+LEGACY_CHECK_IDS = {"legacy_render_source"}
+
+LEGACY_GRID_FIXTURE = Path("tests/fixtures/legacy_rho_regular_grid.csv")
+
+
+def register_legacy_grid(data_dir: Path) -> None:
+    """把权威网格 fixture 登记进指定数据目录（demo-check 只读探测的对象）。"""
+
+    from geomodeling.platform import PlatformRuntime
+    from geomodeling.platform.legacy_render_sources import import_legacy_grid
+
+    runtime = PlatformRuntime(data_dir=data_dir)
+    import_legacy_grid(
+        runtime,
+        source_id="resistivity",
+        csv_path=LEGACY_GRID_FIXTURE,
+        x_column="X",
+        y_column="Y",
+        z_column="Z",
+        value_column="RHO",
+        property_name="RHO",
+        units="unknown",
+    )
 
 
 def make_frontend(tmp_path: Path) -> Path:
@@ -59,7 +83,7 @@ def test_all_blockers_pass_with_optional_warnings_aggregates_warning(tmp_path):
     assert report.status == "warning"
     assert report.exit_code == 0
     ids = {item.id for item in report.checks}
-    assert ids == BLOCKER_IDS | OPTIONAL_IDS
+    assert ids == BLOCKER_IDS | OPTIONAL_IDS | LEGACY_CHECK_IDS
     assert {item.id for item in report.checks if item.status == "blocked"} == set()
     payload = json.dumps(report.to_dict(), ensure_ascii=False)
     assert ":\\" not in payload  # 消息与修复建议不含盘符路径
@@ -76,10 +100,55 @@ def test_one_blocker_failure_aggregates_blocked(tmp_path):
 
 
 def test_all_pass_aggregates_passed(tmp_path):
+    register_legacy_grid(tmp_path / "data")  # legacy 渲染源已登记才能全绿
     report = run_checks(tmp_path, optional_probe=list)
     assert report.status == "passed"
     assert report.exit_code == 0
     assert all(item.status == "passed" for item in report.checks)
+
+
+# ---------------------------------------------------------------------------
+# legacy 渲染源登记状态检查（只报状态与相对身份，不报绝对路径；warning 不阻断）
+# ---------------------------------------------------------------------------
+
+
+def test_legacy_render_source_unregistered_warns_without_blocking(tmp_path):
+    report = run_checks(tmp_path, optional_probe=list)
+    item = next(i for i in report.checks if i.id == "legacy_render_source")
+    assert item.status == "warning"
+    assert "resistivity" in item.message
+    assert item.remediation
+    # 未登记不阻断：其余阻断项全过时整体 warning + 退出码 0
+    assert report.status == "warning"
+    assert report.exit_code == 0
+    text = item.message + (item.remediation or "")
+    assert ":\\" not in text
+    assert str(tmp_path) not in text
+
+
+def test_legacy_render_source_registered_passes_with_relative_identity(tmp_path):
+    register_legacy_grid(tmp_path / "data")
+    report = run_checks(tmp_path, optional_probe=list)
+    item = next(i for i in report.checks if i.id == "legacy_render_source")
+    assert item.status == "passed"
+    assert "resistivity" in item.message
+    assert item.remediation is None
+    # 只报相对身份（source_id / 网格 SHA 前缀），绝不报绝对路径
+    assert ":\\" not in item.message
+    assert str(tmp_path) not in item.message
+
+
+def test_legacy_render_source_corrupt_state_warns_not_blocked(tmp_path):
+    data_dir = tmp_path / "data"
+    current = data_dir / "render-sources" / "builtin_legacy" / "resistivity" / "current.json"
+    current.parent.mkdir(parents=True)
+    current.write_text("{not json", encoding="utf-8")
+    report = run_checks(tmp_path, optional_probe=list)
+    item = next(i for i in report.checks if i.id == "legacy_render_source")
+    assert item.status == "warning"
+    assert "LEGACY_RENDER_SOURCE_STATE_INVALID" in item.message
+    assert report.exit_code == 0
+    assert str(tmp_path) not in item.message
 
 
 def test_missing_demo_dataset_blocks(tmp_path):

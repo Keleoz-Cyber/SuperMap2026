@@ -40,7 +40,8 @@
 python -m pip install -e ".[test]"
 # 浏览器平台（v0.4）需要：
 python -m pip install -e ".[api,test]"
-python scripts/fetch_iclient3d.py
+# 三维体渲染 SDK（v0.6.1 起为 SuperMap3D，不入库；--help 查看参数）：
+python scripts/install_supermap3d.py --help
 ```
 
 ## 快速验证

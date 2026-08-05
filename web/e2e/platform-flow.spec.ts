@@ -270,3 +270,71 @@ test.describe('v0.6 专业建模流程（mock API）', () => {
     await expect(page.getByTestId('grid-difference')).toContainText('121')
   })
 })
+
+// ---------------------------------------------------------------------------
+// v0.6.1 体积基准卡直达成果（mock API）：featured_result 主入口与新建实验
+// 次操作分离，点击主入口进入真实成果工作台路由。
+// ---------------------------------------------------------------------------
+test.describe('v0.6.1 体积基准卡直达成果（mock API）', () => {
+  test('首页基准卡：查看体渲染成果主入口 + 新建实验次操作', async ({ page }) => {
+    await installMockApi(page)
+
+    await page.goto('/')
+    // 主入口与次操作同时存在、文案不混淆
+    const primary = page.getByTestId('open-featured-result')
+    await expect(primary).toBeVisible()
+    await expect(primary).toContainText('查看体渲染成果')
+    const secondary = page.getByTestId('new-experiment')
+    await expect(secondary).toBeVisible()
+    await expect(secondary).toContainText('新建实验')
+
+    // 次操作：新建实验 → 实验创建页（与查看已有成果互不混淆）
+    await secondary.click()
+    await expect(page).toHaveURL(/#\/cases\/case-bench-32\/experiments\/new/)
+
+    // 主入口：查看体渲染成果 → 成果工作台真实加载（复用 cand-1 演示成果夹具）
+    await page.goto('/')
+    await primary.click()
+    await expect(page).toHaveURL(/#\/results\/cand-1/)
+    await expect(page.getByTestId('tab-slices')).toBeVisible()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// v0.6.1 实验成果状态区（mock API）：运行 succeeded 只表述为验证完成；
+// 物化 / NetCDF 资产 / 浏览器渲染是后续独立阶段，状态区给出分层状态与
+// 显式动作入口，主按钮按排行榜首名候选直达成果工作台。
+// ---------------------------------------------------------------------------
+test.describe('v0.6.1 实验成果状态区（mock API）', () => {
+  test('深链实验页 → 运行终态 → 分层状态 → 显式物化/资产 → 查看成果直达成果页', async ({ page }) => {
+    await installMockApi(page)
+
+    // 深链进入（等价刷新恢复）：实验页自行轮询到终态
+    await page.goto('/#/experiments/exp-e2e')
+    await expect(page.getByTestId('run-progress')).toContainText('succeeded', { timeout: 15000 })
+
+    // 成果状态区：四阶段分层，succeeded 不被表述为已渲染
+    const panel = page.getByTestId('result-status')
+    await expect(panel).toBeVisible()
+    await expect(page.getByTestId('stage-validation')).toContainText('验证完成')
+    await expect(page.getByTestId('stage-materialize')).toContainText('未物化')
+    await expect(page.getByTestId('stage-netcdf')).toContainText('待规则网格物化后进行')
+    await expect(page.getByTestId('stage-render')).toContainText('成果工作台')
+    await expect(panel).not.toContainText('已渲染')
+
+    // 显式物化：动作入口就位于状态区，成功后进入 NetCDF 阶段
+    await page.getByTestId('materialize-result').click()
+    await expect(page.getByTestId('stage-materialize')).toContainText('已物化')
+    await expect(page.getByTestId('stage-netcdf')).toContainText('未生成')
+
+    // 显式创建 NetCDF 资产：状态机到 ready（仍不等于浏览器渲染）
+    await page.getByTestId('create-netcdf-asset').click()
+    await expect(page.getByTestId('stage-netcdf')).toContainText('已生成')
+    await expect(panel).not.toContainText('已渲染')
+
+    // 主入口：多候选取排行榜首名（cand-1，RMSE 1.2 < 2.4），一键直达成果工作台
+    await page.getByTestId('view-result').click()
+    await expect(page).toHaveURL(/#\/results\/cand-1/)
+    await expect(page.getByTestId('tab-slices')).toBeVisible()
+  })
+})

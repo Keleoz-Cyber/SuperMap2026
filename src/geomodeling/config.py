@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -7,6 +8,8 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+logger = logging.getLogger(__name__)
 
 
 class AppConfig(BaseModel):
@@ -28,7 +31,32 @@ class AppConfig(BaseModel):
         path = Path(value)
         if path.is_absolute():
             return path
-        return (PROJECT_ROOT / path).resolve()
+        candidate = (PROJECT_ROOT / path).resolve()
+        if candidate.exists():
+            return candidate
+        # Worktrees are nested below the real project root. Resolve legacy
+        # "../超图杯资料" paths by searching ancestor roots as well.
+        parts = list(path.parts)
+        while parts and parts[0] == "..":
+            parts.pop(0)
+        if parts:
+            relative = Path(*parts)
+            for root in (PROJECT_ROOT, *PROJECT_ROOT.parents):
+                fallback = (root / relative).resolve()
+                if fallback.exists():
+                    logger.info(
+                        "配置路径 %s 经上级目录解析为 %s（项目根下不存在）",
+                        value,
+                        fallback,
+                    )
+                    return fallback
+        logger.warning(
+            "配置路径不存在：%s（已尝试 %s 及以下上级目录：%s）",
+            candidate,
+            PROJECT_ROOT,
+            [str(root) for root in PROJECT_ROOT.parents],
+        )
+        return candidate
 
     def prediction_files(self) -> dict[str, Path]:
         files = self.paths.get("prediction_files", {})

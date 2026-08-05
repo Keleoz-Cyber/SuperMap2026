@@ -1,6 +1,6 @@
 # Acceptance Notes
 
-适用对象：当前代码基线（v0.1.0 电阻率基线 + 微震 v0.2a 审计底座 + v0.3.1 iServer 纵向闭环 + v0.4 通用建模平台 + v0.5 微震第二案例建模闭环（已随 v0.5.0 发布）+ v0.6 专业建模增强（`feat/v0.6-professional-modeling` 分支））。
+适用对象：当前代码基线（v0.1.0 电阻率基线 + 微震 v0.2a 审计底座 + v0.3.1 iServer 纵向闭环 + v0.4 通用建模平台 + v0.5 微震第二案例建模闭环（已随 v0.5.0 发布）+ v0.6 专业建模增强（`feat/v0.6-professional-modeling` 分支）+ v0.6.1 NetCDF 原生体渲染（`feat/v0.6.1-netcdf-native-rendering` 分支））。
 
 ## 验收命令
 
@@ -29,6 +29,32 @@ geomodeling verify-supermap -o outputs/release_verify
 ```
 
 当前基线（Task 23 后实测，本分支）：后端全量 `1153 passed`（便携 1124 / `local_data 29` 分层），前端 vitest `97 passed`，Playwright mock 冒烟 `4 passed`，Live E2E `3 passed`。测试数量只允许因真实新增测试而增加，任何减少或失败都必须调查。
+
+v0.6.1 当前基线（Task 14 后实测，`feat/v0.6.1-netcdf-native-rendering` 分支）：后端便携 `1274 passed`，前端 vitest `157 passed`，Mock E2E `5 passed`，Live E2E 真实 SDK 32^3/64^3 各 `1 passed` + 既有 `3 passed`。
+
+v0.6.1 NetCDF 原生体渲染验收（不依赖 iServer；live SDK 门为本地发布门）：
+
+1. 聚焦后端测试：
+
+```powershell
+python -m pytest tests/test_render_coordinates.py tests/test_schema_v6_migration.py tests/test_render_asset_repository.py tests/test_render_source_resolution.py tests/test_legacy_render_sources.py tests/test_netcdf_volume.py tests/test_render_asset_publication.py tests/test_rendering_api.py tests/test_v061_rendering_contract.py tests/test_v061_docs.py -q
+```
+
+2. 版本与文档合同：`python -m pytest tests/test_v061_docs.py tests/test_version_consistency.py -q`（全部版本面 = 0.6.1、运行手册必需命令、状态文档措辞防护）。
+3. 渲染防护契约：`tests/test_v061_rendering_contract.py` 保证旧全局 Cesium、`Field3D`/`RhoScene3D`、自研光线步进 POC 与 three/cesium 依赖不复活。
+4. 前端：`npm --prefix web run test:unit`、`type-check`、`build`、`test:e2e` 按上表基线通过。
+5. live 真实 SDK 门（本地发布门，隔离 `GEOMODELING_DATA_DIR`，需先按 [v0.6.1 运行手册](v0.6.1-netcdf-native-rendering-runbook.md) §2/§8 完成 SDK 预检与前端构建）：
+
+```powershell
+$env:GEOMODELING_DATA_DIR = "$PWD/var/geomodeling-e2e-live"
+npm --prefix web run test:e2e:live -- e2e-live/supermap-volume-frame-live.spec.ts e2e-live/supermap-native-volume-live.spec.ts
+Remove-Item Env:GEOMODELING_DATA_DIR
+```
+
+   判定：32^3 与 64^3 各自 rendered 30s 门内（参考机实测 <2s）、64^3 交互 5s 门内像素稳定（实测 <0.5s）、filter/opacity/Slice/Contour 像素响应超静帧噪声、证据元数据来自同一运行。
+6. 操作语义验收：POST 是唯一资产创建路径（首个成功 201 / ready 幂等 200 / creating 409 / failed-interrupted 须 `retry_failed=true` 显式重试）；所有 GET 纯查询；manifest/grid/NetCDF 哈希双向核验，损坏资产原子隔离不自动删除；重启后 `creating` 原子转 `interrupted`。
+7. legacy 边界验收：未登记权威网格时内置电阻率返回 `LEGACY_RENDER_SOURCE_NOT_REGISTERED` 且页面只显示 auxiliary points 辅助层；登记只走 `python -m geomodeling.render_cli import-csv`。
+8. 历史回归：v0.6 专业建模、v0.5 微震黄金哈希、v0.4.1 固定演示路径、v0.3.1 电阻率只读回归全部保持既有口径。
 
 v0.4 通用建模验收（不依赖 iServer）：
 

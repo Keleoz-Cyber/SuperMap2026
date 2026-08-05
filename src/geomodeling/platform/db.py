@@ -4,7 +4,8 @@ The runtime owns the SQLAlchemy engine, creates the initial schema on first
 initialize, and deterministically marks persisted in-flight runs as
 ``interrupted`` (error code ``PROCESS_RESTARTED``) at startup. Interrupted
 runs are never auto-requeued; retry is an explicit user action. v5 起启动
-恢复同样覆盖持久化分析任务（analysis_jobs）。
+恢复同样覆盖持久化分析任务（analysis_jobs）；v6 起覆盖 NetCDF 渲染资产
+（render_assets 的 creating 行原子转 interrupted）。
 """
 
 from __future__ import annotations
@@ -16,12 +17,14 @@ from pathlib import Path
 from sqlalchemy import create_engine, engine, event, inspect, update
 from sqlalchemy.orm import Session, sessionmaker
 
+from geomodeling.platform.schemas import STATUS_CREATING, STATUS_INTERRUPTED
 from geomodeling.platform.settings import PlatformSettings
 from geomodeling.platform.tables import (
     ERROR_PROCESS_RESTARTED,
     RUN_INFLIGHT_STATUSES,
     AnalysisJob,
     Base,
+    RenderAsset,
     Run,
     RunStatus,
     dumps_canonical,
@@ -33,7 +36,8 @@ from geomodeling.platform.tables import (
 # v3: candidate_results 成果列；v4: 在途 run 部分唯一索引 + exports.candidate_result_id；
 # v5: professional_diagnostics / professional_confirmations /
 # professional_result_artifacts / anomaly_extractions / analysis_jobs 五表。
-SCHEMA_VERSION = 5
+# v6: render_assets（NetCDF 渲染资产状态表，v0.6.1 设计 §2.2）。
+SCHEMA_VERSION = 6
 
 _BUSY_TIMEOUT_MS = 30000
 
@@ -45,6 +49,9 @@ _V5_NEW_TABLES = (
     "anomaly_extractions",
     "analysis_jobs",
 )
+
+# v6 新增表：迁移后显式核验必须存在。
+_V6_NEW_TABLES = ("render_assets",)
 
 
 def _create_v5_tables(conn: engine.Connection) -> None:
@@ -60,6 +67,20 @@ def _create_v5_tables(conn: engine.Connection) -> None:
     missing = [name for name in _V5_NEW_TABLES if not inspector.has_table(name)]
     if missing:
         raise RuntimeError(f"v5 migration did not create tables: {missing}")
+
+
+def _create_v6_tables(conn: engine.Connection) -> None:
+    """v5→v6：在同一事务内用 ORM metadata 创建 render_assets 并显式核验。
+
+    与 v5 迁移同构：metadata-backed 创建消除表定义漂移，``checkfirst``
+    保证绝不触碰既有 v5 行；新表迁移前不存在，始终为空表。
+    """
+
+    Base.metadata.create_all(bind=conn, checkfirst=True)
+    inspector = inspect(conn)
+    missing = [name for name in _V6_NEW_TABLES if not inspector.has_table(name)]
+    if missing:
+        raise RuntimeError(f"v6 migration did not create tables: {missing}")
 
 
 # 逐版本迁移步骤：键为起始版本。步骤为 SQL 字符串或接受连接的可调用对象；
@@ -78,6 +99,7 @@ _MIGRATIONS: dict[int, tuple[str | Callable[[engine.Connection], None], ...]] = 
         "VARCHAR(128) REFERENCES candidate_results(id)",
     ),
     4: (_create_v5_tables,),
+    5: (_create_v6_tables,),
 }
 
 
@@ -177,8 +199,9 @@ class PlatformRuntime:
         """Mark persisted queued/running runs and analysis jobs interrupted.
 
         v5 起同一段恢复语义同时覆盖持久化分析任务：进程重启后在途任务
-        一律转 ``interrupted``（错误码 ``PROCESS_RESTARTED``）。返回两张表
-        翻转的总行数。任务不会被自动重排队；重试是显式用户动作。
+        一律转 ``interrupted``（错误码 ``PROCESS_RESTARTED``）。v6 起覆盖
+        NetCDF 渲染资产：``creating`` 行原子转 ``interrupted``。返回三张表
+        翻转的总行数。任务与资产都不会被自动重排队/重建；重试是显式用户动作。
         """
 
         with self.session() as session:
@@ -205,8 +228,26 @@ class PlatformRuntime:
                     updated_at=utc_now_iso(),
                 )
             )
+            assets_flipped = session.execute(
+                update(RenderAsset)
+                .where(RenderAsset.status == STATUS_CREATING)
+                .values(
+                    status=STATUS_INTERRUPTED,
+                    error_json=dumps_canonical(
+                        {
+                            "code": ERROR_PROCESS_RESTARTED,
+                            "message": "render asset creation interrupted",
+                        }
+                    ),
+                    updated_at=utc_now_iso(),
+                )
+            )
             session.commit()
-            return int(runs_flipped.rowcount) + int(jobs_flipped.rowcount)
+            return (
+                int(runs_flipped.rowcount)
+                + int(jobs_flipped.rowcount)
+                + int(assets_flipped.rowcount)
+            )
 
     def close(self) -> None:
         if self._engine is not None:

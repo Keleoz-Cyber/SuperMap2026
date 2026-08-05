@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<link rel="icon" href="data:," />
+<title>gmp-supermap-volume-frame</title>
+<link rel="stylesheet" href="../SuperMap3D-2026/Widgets/widgets.css" />
+<link rel="stylesheet" href="./styles.css" />
+<script>
+// handoff 验证写法：SDK 加载前固定 CESIUM_BASE_URL（Workers/Assets 解析根）
+window.CESIUM_BASE_URL = '/SuperMap3D-2026/';
+</script>
+<script src="../SuperMap3D-2026/SuperMap3D.js"></script>
+<script type="module" src="./app.js"></script>
+</head>
+<body>
+<div id="container"></div>
+<div id="error-overlay" hidden></div>
+</body>
+</html>

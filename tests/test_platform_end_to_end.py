@@ -108,6 +108,9 @@ def test_portable_vertical_flow_and_restart_recovery(tmp_path):
     assert selection.status_code == 201, selection.text
 
     # ------------------------------------------------------ 成果与 Z/X/Y 切片
+    # v0.6.1（Task 7）：GET 不再隐式物化，先显式 POST materialize
+    materialized = client.post(f"/api/results/{best['id']}/materialize")
+    assert materialized.status_code in (200, 201), materialized.text
     metadata = client.get(f"/api/results/{best['id']}").json()
     assert metadata["dimension"] == "3d"
     assert len(metadata["shape"]) == 3

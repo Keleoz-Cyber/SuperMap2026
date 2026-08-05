@@ -19,10 +19,19 @@ export interface CaseSummary {
   source_kind?: 'builtin_legacy' | 'upload'
   case_type?: string
   created_at?: string
+  // v0.6.1：上传案例卡的主打成果直达链接；无成果为 null，legacy 卡片不携带
+  featured_result?: FeaturedResultLink | null
   links: {
     detail: string | null
     publish_status: string | null
   }
+}
+
+export interface FeaturedResultLink {
+  result_id: string
+  // 前端路由（非 API 路径），如 /results/{id}
+  url: string
+  materialized: boolean
 }
 
 export interface CasesResponse {
@@ -224,6 +233,9 @@ export interface PublishStatus {
   }
 }
 
+// 历史 S3M 发布证据：available 只表示旧 iServer S3M 发布链路可访问，
+// 绝不作为 v0.6.1 NetCDF 原生体渲染能力，也不决定 NetCDF 资产成败；
+// 原生能力一律以 render-capability GET（RenderCapability.supported）为准。
 export interface VolumeServicePlan {
   url: string
   service_name: string
@@ -279,18 +291,6 @@ export interface RhoPoints {
   x_range: [number, number]
   y_range: [number, number]
   z_range: [number, number]
-}
-
-export interface BrowserLoadReport {
-  case_id: string
-  result_id: string
-  service_url: string
-  scene_name: string
-  layer_count: number
-  success: boolean
-  render_kind: 'iserver_scene' | 's3m_voxel_cache' | 'fallback_points'
-  validated_count: number
-  note: string
 }
 
 // ---------------- v0.4 通用建模平台契约（与后端 schemas 一一对应） ----------------
@@ -1167,4 +1167,112 @@ export interface CandidateComparisonResult {
   grid_difference_available: boolean
   grid_difference: GridDifferenceSummary | null
   comparison_fingerprint: string
+}
+
+// ---------------- v0.6.1 NetCDF 原生体渲染契约（与 routes/rendering.py + 设计 §2.3/§2.4 一一对应） ----------------
+
+export type RenderSourceKind = 'candidate_result' | 'builtin_legacy'
+
+export type RenderAssetStatus = 'creating' | 'ready' | 'failed' | 'interrupted'
+
+// 显示锚点变换：wgs84_display_anchor_v1 只是显示变换，绝不代表真实地理配准
+export interface DisplayTransform {
+  contract: 'wgs84_display_anchor_v1'
+  origin_x: number
+  origin_y: number
+  anchor_longitude: number
+  anchor_latitude: number
+  anchor_height: number
+  metres_per_degree_lon: number
+  metres_per_degree_lat: number
+}
+
+// GET 渲染能力响应：supported=false 携带稳定 reason_code；display_transform 可能为 null
+// （无可用网格也无测点时前端只做文本诊断，不挂载 iframe）
+export interface RenderCapability {
+  source_kind: RenderSourceKind
+  source_id: string
+  supported: boolean
+  reason_code: string | null
+  reason: string | null
+  dimension: string | null
+  grid_kind: string | null
+  property_name: string | null
+  units: string | null
+  geolocation_status: string
+  display_transform: DisplayTransform | null
+}
+
+export interface RenderAssetError {
+  code: string
+  message: string
+  details: Record<string, unknown>
+}
+
+// 渲染资产公共记录：服务端内部 asset_dir 绝不下发，只有按 id 派生的相对 URL
+export interface RenderAssetRecord {
+  id: string
+  source_kind: RenderSourceKind
+  source_id: string
+  renderer: 'supermap_voxelgrid_netcdf'
+  status: RenderAssetStatus
+  grid_sha256: string
+  netcdf_sha256: string | null
+  manifest_url: string | null
+  netcdf_url: string | null
+  error: RenderAssetError | null
+}
+
+// legacy 渲染源导入响应的登记身份：artifact_dir 为相对工件目录身份，绝无绝对路径
+export interface LegacyRenderSourceRegistration {
+  source_kind: 'builtin_legacy'
+  source_id: string
+  grid_sha256: string
+  property_name: string
+  units: string
+  shape: number[]
+  artifact_dir: string
+  import_source_sha256: string
+}
+
+// 导入请求参数：列名/属性名/单位显式传入（multipart 表单同名字段）
+export interface LegacyRenderSourceImportParams {
+  xColumn: string
+  yColumn: string
+  zColumn: string
+  valueColumn: string
+  propertyName: string
+  units: string
+}
+
+// 子帧 RENDER_STATE 携带的渲染身份（camelCase，§2.4 协议字段名逐字一致）
+export interface RenderIdentity {
+  sourceKind: RenderSourceKind
+  sourceId: string
+  gridSha256: string
+  netcdfSha256: string
+}
+
+export type PointLayerId = 'grid-samples' | 'aggregated' | 'accepted' | 'rejected' | 'legacy-measurements'
+
+export interface PointLayerStyle {
+  color?: string
+  pixelSize: number
+  outlineColor?: string
+  outlineWidth?: number
+}
+
+// 辅助/证据点层：坐标恒为局部米制（'local'），由子帧按 INIT.displayTransform 变换；
+// 点层是辅助采样/证据层，绝不参与连续体渲染
+export interface PointLayerPayload {
+  id: PointLayerId
+  visible: boolean
+  role: 'auxiliary' | 'evidence'
+  coordinates: 'local'
+  x: number[]
+  y: number[]
+  z: number[]
+  values?: number[]
+  isNodata?: boolean[]
+  style: PointLayerStyle
 }

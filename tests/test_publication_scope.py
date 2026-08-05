@@ -43,8 +43,9 @@ def test_export_persists_candidate_and_publication_scopes_by_result(tmp_path):
     )
 
     # 只导出 A；为 B 请求发布 → 必须构建 B 自己的导出，不能复用 A 的
-    assert client.get(f"/api/results/{candidate_a}").status_code == 200
-    assert client.get(f"/api/results/{candidate_b}").status_code == 200
+    # v0.6.1（Task 7）：GET 不再隐式物化，两个成果都显式 POST materialize
+    assert client.post(f"/api/results/{candidate_a}/materialize").status_code in (200, 201)
+    assert client.post(f"/api/results/{candidate_b}/materialize").status_code in (200, 201)
     export_a = client.post(f"/api/results/{candidate_a}/exports").json()
     with runtime.session() as session:
         row_a = session.get(tables.Export, export_a["id"])

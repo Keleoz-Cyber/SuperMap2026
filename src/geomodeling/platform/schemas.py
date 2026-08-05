@@ -11,6 +11,7 @@ duplicated as ad-hoc dictionaries. All models forbid unknown keys.
 
 from __future__ import annotations
 
+import hashlib
 from enum import Enum
 from typing import Any, Literal
 
@@ -31,6 +32,7 @@ __all__ = [
     "Dimension",
     "ExperimentCreateRequest",
     "ExperimentRecord",
+    "FORMAT_VERSION",
     "FieldMapping",
     "FormalSelectionRecord",
     "FormalSelectionRequest",
@@ -40,9 +42,18 @@ __all__ = [
     "ProfessionalDiagnosisRequest",
     "ProfessionalDiagnosticRecord",
     "ProfessionalResultArtifactsRecord",
+    "RENDERER",
+    "RENDER_ASSET_STATUSES",
+    "RenderAssetError",
+    "RenderAssetRecord",
     "RunRecord",
     "RunStatus",
+    "STATUS_CREATING",
+    "STATUS_FAILED",
+    "STATUS_INTERRUPTED",
+    "STATUS_READY",
     "SpatialValidationSpec",
+    "render_asset_id",
 ]
 
 
@@ -290,6 +301,14 @@ class FormalSelectionRecord(ContractModel):
     created_at: str
 
 
+class FeaturedResultLink(ContractModel):
+    """首页上传案例卡的主打成果链接。``url`` 为前端路由（非 API 路径）。"""
+
+    result_id: str
+    url: str
+    materialized: bool
+
+
 # ---------------------------------------------------------------------------
 # v0.6 professional modeling records (SQLite v5)
 # ---------------------------------------------------------------------------
@@ -362,3 +381,55 @@ class AnalysisJobRecord(ContractModel):
     updated_at: str
     started_at: str | None = None
     finished_at: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# v0.6.1 native volume rendering records (SQLite v6)
+# ---------------------------------------------------------------------------
+
+RENDERER = "supermap_voxelgrid_netcdf"
+FORMAT_VERSION = 2
+STATUS_CREATING = "creating"
+STATUS_READY = "ready"
+STATUS_FAILED = "failed"
+STATUS_INTERRUPTED = "interrupted"
+RENDER_ASSET_STATUSES = frozenset(
+    {STATUS_CREATING, STATUS_READY, STATUS_FAILED, STATUS_INTERRUPTED}
+)
+
+
+def render_asset_id(*, source_kind: str, source_id: str, grid_sha256: str) -> str:
+    """渲染资产内容寻址 ID：五元身份（源 + 网格哈希 + 渲染器 + 格式版本）的
+
+    SHA-256 截断（设计 §2.2）。同一身份永远得到同一 ID，是幂等复用与
+    唯一约束竞态收敛的基础。
+    """
+
+    payload = f"{source_kind}\0{source_id}\0{grid_sha256}\0{RENDERER}\0{FORMAT_VERSION}"
+    return f"nc-{hashlib.sha256(payload.encode('utf-8')).hexdigest()[:32]}"
+
+
+class RenderAssetError(ContractModel):
+    code: str
+    message: str
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
+class RenderAssetRecord(ContractModel):
+    """NetCDF 渲染资产公共记录（设计 §2.4）。
+
+    服务端内部列 ``asset_dir`` 永不进入本 DTO：公共序列化只暴露按
+    ``id`` 派生的相对 URL（仅 ready 状态非空），文件位置由服务端按
+    设置目录解析。
+    """
+
+    id: str
+    source_kind: Literal["candidate_result", "builtin_legacy"]
+    source_id: str
+    renderer: Literal["supermap_voxelgrid_netcdf"]
+    status: Literal["creating", "ready", "failed", "interrupted"]
+    grid_sha256: str
+    netcdf_sha256: str | None = None
+    manifest_url: str | None = None
+    netcdf_url: str | None = None
+    error: RenderAssetError | None = None

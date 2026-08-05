@@ -20,6 +20,9 @@ Integration contract (Task 10):
 - the v0.6 ``professional`` router (Task 17) is registered after the
   microseismic router and before the frontend static mount — its exact
   prefixes never shadow legacy or microseismic routes;
+- the v0.6.1 ``rendering`` router (Task 7) is registered after the result
+  routes and before the frontend static mount — capability/status/manifest/
+  NetCDF GETs are pure queries, POSTs are the only explicit mutations;
 - all route errors share the v0.4 envelope
   ``{"error": {"code", "message", "details"}}`` and never leak local paths.
 """
@@ -51,6 +54,7 @@ from geomodeling.api.routes import (
     experiments,
     microseismic,
     professional,
+    rendering,
     results,
     runs,
 )
@@ -61,7 +65,7 @@ from geomodeling.platform.errors import (
     platform_error_handler,
 )
 from geomodeling.platform.legacy_adapter import merged_case_cards
-from geomodeling.platform.repositories import CaseRepository
+from geomodeling.platform.repositories import CaseRepository, featured_result_for_case
 from geomodeling.platform.worker import JobWorker
 from geomodeling.publishing import (
     IServerClient,
@@ -152,10 +156,16 @@ def create_app() -> FastAPI:
         # 运行时缺失（如未进入 lifespan 的纯 legacy 测试）时只回 legacy 卡片
         runtime = getattr(request.app.state, "platform_runtime", None)
         records = []
+        featured = {}
         if runtime is not None:
             with runtime.session() as session:
                 records = CaseRepository(session).list_all()
-        return {"cases": merged_case_cards(records)}
+                # v0.6.1：每张上传卡少量查询给出主打成果直达链接（正式选择优先）
+                featured = {
+                    record.id: featured_result_for_case(session, record.id)
+                    for record in records
+                }
+        return {"cases": merged_case_cards(records, featured)}
 
     @app.get("/api/cases/resistivity")
     def resistivity(
@@ -226,6 +236,9 @@ def create_app() -> FastAPI:
     app.include_router(microseismic.router)
     # v0.6 专业分析路由：精确前缀，不遮蔽 legacy 与微震路由；前端挂载之前注册
     app.include_router(professional.router)
+    # v0.6.1 原生体渲染路由：显式 POST 变异 + 纯查询 GET；结果路由之后、
+    # 前端静态挂载之前注册，精确前缀不遮蔽 legacy 与微震路由
+    app.include_router(rendering.router)
 
     # -------------------------------------------------------- frontend
     settings = get_settings()

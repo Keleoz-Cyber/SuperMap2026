@@ -6,6 +6,10 @@ all validated rows and evaluated on the persisted rule grid, written as
 Previews are deterministically decimated at 50,000 cells; slices always
 read the persisted artifact — they never rerun interpolation.
 
+v0.6.1（Task 7）：结果 metadata/preview/slices 的 GET 路径是纯查询——
+``POST /materialize`` 是唯一创建操作；``read_materialized_metadata`` 与
+``load_grid`` 只读既有工件，绝不隐式物化。
+
 v0.6 专业候选（Task 15，设计 §5.3/§6.4/§9/§10）：物化在同一事务式目录
 流水中额外落盘专业不确定性网格——Kriging 原生标准差（能力按算法矩阵，
 IDW 为 ``not_applicable`` 且绝不生成空文件占位）与全算法经验误差尺度
@@ -136,6 +140,24 @@ def _load_candidate(runtime, result_id: str):
         return candidate, run, experiment
 
 
+def _mapping_property_semantics(profile: dict[str, Any]) -> dict[str, str]:
+    """property 三键（v0.6.1 渲染语义）：property_name/units/coordinate_kind。
+
+    取自数据集 profile 的 ``mapping.value_name`` / ``mapping.value_unit`` /
+    ``mapping.coordinate_kind``，**不固定 rho 语义**（通用电阻率类与微震
+    profile 走同一映射）；``value_unit`` 缺失才回退字面 ``"unknown"``。正常
+    profile 经 FieldMapping 校验必有 value_name/coordinate_kind，回退值只
+    兜底绕过验证写入的旧 profile。
+    """
+
+    mapping = profile.get("mapping", {}) if isinstance(profile, dict) else {}
+    return {
+        "property_name": str(mapping.get("value_name") or "value"),
+        "units": str(mapping.get("value_unit") or "unknown"),
+        "coordinate_kind": str(mapping.get("coordinate_kind") or "local_linear"),
+    }
+
+
 def _result_metadata(
     *,
     result_id: str,
@@ -152,7 +174,12 @@ def _result_metadata(
     profile: dict[str, Any],
     fingerprint: str,
 ) -> dict[str, Any]:
-    """结果级 metadata（键顺序即落盘 JSON 顺序，legacy 逐字节锁定）。"""
+    """结果级 metadata（键顺序即落盘 JSON 顺序，逐位确定）。
+
+    v0.6.1（Task 4）在尾部追加 property 三键（``property_name``/``units``/
+    ``coordinate_kind``，取自 profile.mapping）；只对**新物化**成果生效——
+    幂等重读绝不改写既有 metadata.json，渲染源解析对新老 metadata 均可读。
+    """
 
     shape = grid.shape
     finite = grid_values[np.isfinite(grid_values)]
@@ -176,6 +203,8 @@ def _result_metadata(
         "fingerprint": fingerprint,
         "validation": params.get("validation"),
         "created_at": tables.utc_now_iso(),
+        # v0.6.1（Task 4）追加：渲染 property 语义三键（顺序锁定在尾部）
+        **_mapping_property_semantics(profile),
     }
 
 
@@ -740,6 +769,24 @@ def _verify_professional_materialization(
         if artifacts_row is not None and tables.loads_canonical(artifacts_row.manifest_json) != manifest:
             artifacts_row.manifest_json = tables.dumps_canonical(manifest)
             session.commit()
+
+
+def read_materialized_metadata(runtime: PlatformRuntime, result_id: str) -> dict[str, Any]:
+    """纯读取已物化成果的 metadata（v0.6.1 Task 7）。
+
+    未物化 404 ``RESULT_NOT_MATERIALIZED``；绝不创建文件、绝不改写工件——
+    ``POST /materialize`` 是唯一创建操作，GET 结果元数据只读既有落盘。
+    """
+
+    metadata_path = runtime.settings.result_grid(result_id).parent / "metadata.json"
+    if not metadata_path.is_file():
+        raise PlatformError(
+            RESULT_NOT_MATERIALIZED,
+            "成果尚未生成",
+            {"result_id": result_id},
+            http_status=404,
+        )
+    return json.loads(metadata_path.read_text(encoding="utf-8"))
 
 
 def load_grid(runtime: PlatformRuntime, result_id: str) -> GridResult:
