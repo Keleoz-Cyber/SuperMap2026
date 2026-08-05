@@ -141,6 +141,7 @@ def test_capability_is_pure_query_and_never_materializes(tmp_path, monkeypatch):
         assert capability["supported"] is False
         assert capability["reason_code"] == "RESULT_NOT_MATERIALIZED"
         assert capability["display_transform"] is None
+        assert capability["render_profile"] is None
         assert capability["geolocation_status"] == "display_anchor_only"
         assert_no_path_leak(capability, "$.capability")
 
@@ -163,6 +164,19 @@ def test_capability_supported_with_display_transform(tmp_path, monkeypatch):
         assert capability["reason_code"] is None
         assert capability["reason"] is None
         assert capability["dimension"] == "3d"
+        # v0.7.0 第二批：候选能力暴露来源默认 render_profile（linear/viridis）
+        profile = capability["render_profile"]
+        assert profile is not None
+        assert profile["default_scale"] == "linear"
+        assert profile["default_palette"] == "viridis"
+        assert profile["log_available"] is True
+        lo, hi = profile["value_range"]
+        assert lo > 0 and hi > lo
+        assert profile["filter_range"] == profile["value_range"]
+        assert profile["lighting"] is True
+        assert profile["gradient_opacity"] is True
+        assert profile["bounding_box"] is True
+        assert profile["opacity"] == 1.0
         assert capability["grid_kind"] == "regular"
         # 通用 profile（value_name=属性，无单位）：不固定 rho 语义
         assert capability["property_name"] == "属性"
@@ -455,6 +469,7 @@ def test_legacy_capability_unregistered_and_points_csv_unreadable(tmp_path, monk
         assert capability["supported"] is False
         assert capability["reason_code"] == "LEGACY_RENDER_SOURCE_NOT_REGISTERED"
         assert capability["display_transform"] is None
+        assert capability["render_profile"] is None
         assert capability["property_name"] is None
         assert capability["geolocation_status"] == "display_anchor_only"
         assert_no_path_leak(capability, "$.legacy_capability")
@@ -498,6 +513,16 @@ def test_legacy_capability_registered_grid_supported(tmp_path, monkeypatch):
         assert capability["grid_kind"] == "regular"
         assert capability["property_name"] == "RHO"
         assert capability["units"] == "unknown"
+        # v0.7.0 第二批：legacy 默认 log/native-spectrum；本夹具最小值为 0
+        # → log_available=False 降级 linear（不丢弃/不平移原始值）
+        profile = capability["render_profile"]
+        assert profile is not None
+        assert profile["default_scale"] == "linear"
+        assert profile["default_palette"] == "native-spectrum"
+        assert profile["log_available"] is False
+        assert profile["value_range"][0] == 0.0
+        assert profile["property_name"] == "RHO"
+        assert profile["unit"] == "unknown"
         transform = capability["display_transform"]
         # 灯具网格轴 X=[0,20,40]、Y=[0,20,40,60] → 原点即中心
         assert transform["origin_x"] == pytest.approx(20.0)

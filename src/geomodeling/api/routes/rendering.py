@@ -53,6 +53,7 @@ from geomodeling.platform.legacy_render_sources import (
 from geomodeling.platform.netcdf_volume import RENDER_ASSET_CORRUPT
 from geomodeling.platform.render_contracts import DisplayAnchor
 from geomodeling.platform.render_coordinates import display_transform_for_bounds
+from geomodeling.platform.render_profiles import build_render_profile
 from geomodeling.platform.repositories import RenderAssetRepository
 from geomodeling.platform.schemas import (
     STATUS_READY,
@@ -233,6 +234,7 @@ def _legacy_capability(runtime: PlatformRuntime, config: AppConfig) -> dict[str,
             "property_name": None,
             "units": None,
             "display_transform": None,
+            "render_profile": None,
         }
         if exc.code != LEGACY_RENDER_SOURCE_NOT_REGISTERED:
             return unsupported
@@ -266,6 +268,15 @@ def _legacy_capability(runtime: PlatformRuntime, config: AppConfig) -> dict[str,
             (float(y_axis[0]), float(y_axis[-1])),
             anchor,
         ),
+        # v0.7.0 第二批：legacy 登记元数据默认 log/native-spectrum；
+        # 有效值不全为正时自动降级 linear（不丢弃原始值）
+        "render_profile": build_render_profile(
+            "builtin_legacy",
+            grid.valid_min,
+            grid.valid_max,
+            property_name=source.property_name,
+            unit=source.units,
+        ).to_public(),
     }
 
 
