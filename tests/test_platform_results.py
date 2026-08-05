@@ -437,3 +437,38 @@ def test_result_gets_are_pure_queries_until_materialized(tmp_path, monkeypatch):
     assert client.get(f"/api/results/{candidate_id}/preview").status_code == 200
     assert client.get(f"/api/results/{candidate_id}/slices?axis=z&index=0").status_code == 200
     assert grid_path.stat().st_mtime_ns == mtime  # 工件未被重写
+
+
+def test_result_slices_use_common_extraction_with_compatible_response(tmp_path, monkeypatch):
+    """v0.7.0 第二批：旧结果切片 API 内部改走公共抽取核心（spy 证明），
+    响应字段、矩阵方向、取整与错误状态保持字节兼容。"""
+
+    from geomodeling.platform import results as platform_results
+    from geomodeling.platform import slice_analysis
+
+    client, _ = make_client(tmp_path)
+    _, _, _, candidate_id = prepare_completed_run(client)
+    client.post(f"/api/results/{candidate_id}/materialize")
+
+    calls = []
+    real = slice_analysis.extract_grid_plane
+
+    def spy(axes, values, is_nodata, axis, index):
+        calls.append((axis, index))
+        return real(axes, values, is_nodata, axis, index)
+
+    monkeypatch.setattr(platform_results, "extract_grid_plane", spy)
+
+    resp = client.get(f"/api/results/{candidate_id}/slices?axis=z&index=5")
+    assert resp.status_code == 200, resp.text
+    assert calls == [("z", 5)]
+    zslice = resp.json()
+    assert zslice["fixed_axis"] == "z"
+    assert zslice["fixed_coordinate"] == pytest.approx(-500.0)
+    assert zslice["axes_names"] == ["x", "y"]
+    assert len(zslice["matrix"]) == 11
+    assert len(zslice["matrix"][0]) == 11
+
+    resp = client.get(f"/api/results/{candidate_id}/slices?axis=z&index=99")
+    assert resp.status_code == 400
+    assert resp.json()["error"]["code"] == "SLICE_INDEX_OUT_OF_RANGE"

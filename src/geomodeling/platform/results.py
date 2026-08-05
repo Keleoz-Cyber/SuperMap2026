@@ -49,6 +49,7 @@ from geomodeling.modeling.professional_contracts import (
     capabilities_for,
 )
 from geomodeling.modeling.slices import GridResult, extract_slice
+from geomodeling.platform.slice_analysis import extract_grid_plane
 from geomodeling.modeling.uncertainty import empirical_error_scale, identity_transform
 from geomodeling.platform import tables
 from geomodeling.platform.errors import PlatformError
@@ -896,8 +897,10 @@ def preview(runtime: PlatformRuntime, result_id: str, layer: str = "value") -> d
 
 
 def serve_slice(runtime: PlatformRuntime, result_id: str, axis: str, index: int) -> dict[str, Any]:
+    # v0.7.0 第二批：与 RenderAsset 剖面服务共用同一抽取入口
+    # （slice_analysis.extract_grid_plane）；响应字段/方向/取整与旧合同逐位一致
     grid = load_grid(runtime, result_id)
-    result = extract_slice(grid, axis=axis, index=index)  # type: ignore[arg-type]
+    result = extract_grid_plane(grid.axes, grid.values, grid.is_nodata, axis, index)
     return {
         "result_id": result_id,
         "fixed_axis": result.fixed_axis,
