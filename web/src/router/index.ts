@@ -1,9 +1,8 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 import HomeView from '../views/HomeView.vue'
-import RhoCaseView from '../views/RhoCaseView.vue'
+import CaseWorkspaceView from '../views/CaseWorkspaceView.vue'
 import CaseCreateView from '../views/CaseCreateView.vue'
 import DatasetWizardView from '../views/DatasetWizardView.vue'
-import MicroseismicImportView from '../views/MicroseismicImportView.vue'
 import ExperimentView from '../views/ExperimentView.vue'
 import ProfessionalDiagnosisView from '../views/ProfessionalDiagnosisView.vue'
 import ProfessionalAnalysisView from '../views/ProfessionalAnalysisView.vue'
@@ -14,13 +13,11 @@ const router = createRouter({
   history: createWebHashHistory(),
   routes: [
     { path: '/', name: 'home', component: HomeView },
-    { path: '/case/resistivity', name: 'rho-case', component: RhoCaseView },
+    // v0.7.0：统一案例工作台；/case/resistivity 保留为兼容别名（重定向）
+    { path: '/case/resistivity', redirect: '/cases/resistivity' },
+    { path: '/cases/:caseId', name: 'case-workspace', component: CaseWorkspaceView },
     { path: '/cases/new', name: 'case-create', component: CaseCreateView },
-    {
-      path: '/cases/:caseId/microseismic/import',
-      name: 'microseismic-import',
-      component: MicroseismicImportView,
-    },
+    // v0.7.0：微震 DAT 导入路由已移除（CSV 预置案例取代）
     {
       path: '/cases/:caseId/datasets/:datasetId/prepare',
       name: 'dataset-prepare',

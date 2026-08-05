@@ -29,6 +29,9 @@ import EvidenceChainPanel from '../components/EvidenceChainPanel.vue'
 import ServiceStatusPanel from '../components/ServiceStatusPanel.vue'
 import IssuesPanel from '../components/IssuesPanel.vue'
 
+// v0.7.0：embedded 时隐藏本页顶栏（统一工作台壳提供页头）
+const props = withDefaults(defineProps<{ embedded?: boolean }>(), { embedded: false })
+
 const router = useRouter()
 
 const detail = ref<RhoCaseDetail | null>(null)
@@ -177,7 +180,7 @@ onMounted(loadAll)
 
 <template>
   <div class="case-page">
-    <header class="case-topbar">
+    <header v-if="!props.embedded" class="case-topbar">
       <div class="topbar-left">
         <el-button :icon="ArrowLeft" circle title="返回首页" @click="router.push('/')" />
         <div class="case-title">

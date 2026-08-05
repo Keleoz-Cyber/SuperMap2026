@@ -53,7 +53,7 @@ def test_health_reports_current_version(tmp_path, monkeypatch):
     app = make_integrated_app(tmp_path, monkeypatch)
     with TestClient(app) as client:
         body = client.get("/api/health").json()
-    assert body["version"] == "0.6.1"
+    assert body["version"] == "0.7.0"
 
 
 def test_cases_merges_legacy_card_and_upload_cases(tmp_path, monkeypatch):
@@ -67,8 +67,9 @@ def test_cases_merges_legacy_card_and_upload_cases(tmp_path, monkeypatch):
     by_id = {c["case_id"]: c for c in body["cases"]}
     assert by_id["resistivity"]["source_kind"] == "builtin_legacy"
     assert by_id["resistivity"]["status"] == "active"
-    # v0.3.1 卡片语义保留
-    assert by_id["microseismic"]["status"] == "audit_only"
+    # v0.7.0：旧 DAT 微震卡由预置描述符取代；v0.3.1 其余卡片语义保留
+    assert "microseismic" not in by_id
+    assert by_id["builtin-microseismic-vx-1911"]["workspace_kind"] == "builtin_preset"
     assert by_id["gas"]["status"] == "parked"
     uploaded = by_id[case_id]
     assert uploaded["title"] == "集成上传案例"
@@ -119,8 +120,9 @@ def test_http_errors_use_envelope_and_never_leak_paths(tmp_path, monkeypatch):
         assert "missing-standardized" not in json.dumps(payload, ensure_ascii=False)
 
 
-def test_microseismic_router_registered_without_shadowing_legacy(tmp_path, monkeypatch):
-    """v0.5 微震路由注册后，legacy 精确路由仍然优先命中。"""
+def test_dat_microseismic_routes_absent_and_legacy_still_resolves(tmp_path, monkeypatch):
+    """v0.7.0 DAT 路由退出产品面；legacy 精确路由仍然命中。"""
+
     app = make_integrated_app(tmp_path, monkeypatch)
     with TestClient(app) as client:
         legacy = client.get("/api/cases/resistivity")
@@ -128,12 +130,12 @@ def test_microseismic_router_registered_without_shadowing_legacy(tmp_path, monke
         assert legacy.json()["case_id"] == "resistivity"
 
         paths = client.get("/openapi.json").json()["paths"]
-        assert "/api/cases/{case_id}/microseismic-imports" in paths
-        assert "/api/datasets/{dataset_id}/derivation" in paths
+        assert "/api/cases/{case_id}/microseismic-imports" not in paths
+        assert "/api/datasets/{dataset_id}/derivation" not in paths
 
 
 def test_professional_router_registered_without_shadowing_existing(tmp_path, monkeypatch):
-    """v0.6 专业分析路由注册后，legacy 精确路由与微震路由仍然优先命中。"""
+    """v0.6 专业分析路由注册后，legacy 精确路由仍然优先命中。"""
     app = make_integrated_app(tmp_path, monkeypatch)
     with TestClient(app) as client:
         legacy = client.get("/api/cases/resistivity")
@@ -141,9 +143,9 @@ def test_professional_router_registered_without_shadowing_existing(tmp_path, mon
         assert legacy.json()["case_id"] == "resistivity"
 
         paths = client.get("/openapi.json").json()["paths"]
-        # 既有微震路由不被遮蔽
-        assert "/api/cases/{case_id}/microseismic-imports" in paths
-        assert "/api/datasets/{dataset_id}/derivation" in paths
+        # v0.7.0：DAT 路由已退出产品面（缺席断言见上方专用测试）
+        assert "/api/cases/{case_id}/microseismic-imports" not in paths
+        assert "/api/datasets/{dataset_id}/derivation" not in paths
         for path in (
             "/api/datasets/{dataset_id}/professional-diagnostics",
             "/api/professional-diagnostics/{diagnosis_id}",

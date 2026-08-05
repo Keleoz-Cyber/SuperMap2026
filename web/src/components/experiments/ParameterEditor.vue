@@ -201,7 +201,7 @@ const AXES = ['x', 'y', 'z'] as const
           :checked="searchMode === 'manual'"
           @change="searchMode = 'manual'"
         />
-        手动单组
+        单组参数（1 个候选）
       </label>
       <label class="radio">
         <input
@@ -211,7 +211,7 @@ const AXES = ['x', 'y', 'z'] as const
           :checked="searchMode === 'grid'"
           @change="searchMode = 'grid'"
         />
-        有限网格搜索
+        参数网格（自动组合）
       </label>
     </div>
 

@@ -1,0 +1,205 @@
+{
+  "run_id": "run-20260805T151827Z-822008cf",
+  "git_commit": "8f120f434a4da5191b4bcbbd08707896562576c4",
+  "sdk_sha256": "d69dadab01fc452a79f1fa88a46aced3cf29885df7bf4febbd6f24ce5b578120",
+  "sdk_version": "12.1.0",
+  "browser": {
+    "name": "chromium",
+    "version": "149.0.7827.55"
+  },
+  "gpu_renderer": "ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 4070 Laptop GPU/PCIe/SSE2, OpenGL 4.5.0)",
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "device_pixel_ratio": 1,
+  "results": {
+    "preset": {
+      "case_id": "builtin-microseismic-vx-1911",
+      "official_result_id": "a38dae67-9d82-42a8-a0e7-0b81a33e811e",
+      "grid_sha256": "9a141ac6ca62dbf55ca3099e54ef55c62aa10b5e7848dca8f9f2f6811f72221b",
+      "netcdf_sha256": "589f52258e2be591fb6f8d1bdeeb405740e6ae86bc59cd9208a15a1a859c19f9",
+      "asset_id": "nc-324164fba54b8803302075e7e27c3bf2"
+    }
+  },
+  "preset": {
+    "requests": [
+      {
+        "method": "GET",
+        "path": "/",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/assets/index-Bx6CKymt.css",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/assets/vendor-uJI5630r.js",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/assets/index-Zut4N7JG.js",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/assets/element-CbQFUQ-w.js",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/api/cases/builtin-microseismic-vx-1911/workspace",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/api/results/a38dae67-9d82-42a8-a0e7-0b81a33e811e/materialize",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/api/experiments/f2399db7-8470-5175-8948-6e7596ee80d5",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/api/results/a38dae67-9d82-42a8-a0e7-0b81a33e811e/render-capability",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/api/results/a38dae67-9d82-42a8-a0e7-0b81a33e811e/render-assets/netcdf",
+        "status": 404
+      },
+      {
+        "method": "GET",
+        "path": "/api/cases/builtin-microseismic-vx-1911/formal-selections",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/api/results/a38dae67-9d82-42a8-a0e7-0b81a33e811e/preview",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/api/datasets/d25d3cf9-55a1-55e8-9c92-999a7e9c2477/points",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/api/results/a38dae67-9d82-42a8-a0e7-0b81a33e811e/render-assets/netcdf",
+        "status": 201
+      },
+      {
+        "method": "GET",
+        "path": "/supermap-volume-frame/index.html",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/SuperMap3D-2026/Widgets/widgets.css",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/supermap-volume-frame/styles.css",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/supermap-volume-frame/app.js",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/SuperMap3D-2026/SuperMap3D.js",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/SuperMap3D-2026/Widgets/Images/ZoomIndicator/zoom_Identifiers.png",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/SuperMap3D-2026/Widgets/Images/Navigation/tilt.png",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/SuperMap3D-2026/Widgets/Images/Navigation/compass_active.png",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/SuperMap3D-2026/Widgets/Images/Navigation/tiltbar.png",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/SuperMap3D-2026/Widgets/Images/Navigation/ring.png",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/SuperMap3D-2026/Widgets/Images/Navigation/zoom.png",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/SuperMap3D-2026/Widgets/Images/Navigation/zoombar.png",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/SuperMap3D-2026/Widgets/Images/cur/Pan.cur",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/SuperMap3D-2026/Assets/Images/logo.png",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/SuperMap3D-2026/Assets/approximateTerrainHeights.json",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/SuperMap3D-2026/Assets/IAU2006_XYS/IAU2006_XYS_18.json",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/api/render-assets/nc-324164fba54b8803302075e7e27c3bf2/manifest",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/SuperMap3D-2026/Assets/Textures/EnvironmentMapping_512.hdr",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/SuperMap3D-2026/Assets/Textures/GlobalBkLayer.jpg",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/SuperMap3D-2026/Assets/Textures/EnvironmentMapping_512.hdr",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/api/render-assets/nc-324164fba54b8803302075e7e27c3bf2/volume.nc",
+        "status": 200
+      }
+    ],
+    "failures": []
+  }
+}

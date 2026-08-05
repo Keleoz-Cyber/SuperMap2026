@@ -8,7 +8,9 @@ const props = defineProps<{
 }>()
 
 const algorithmLabel = computed(() => (props.params.algorithm === 'idw' ? 'IDW' : '普通克里金'))
-const modeLabel = computed(() => (props.params.search_mode === 'manual' ? '手动单组' : '有限网格搜索'))
+const modeLabel = computed(() =>
+  props.params.search_mode === 'manual' ? '单组参数（1 个候选）' : '参数网格（自动组合）',
+)
 
 const count = computed(() =>
   combinationCount(props.params.parameters ?? {}, props.params.search_mode ?? 'manual'),

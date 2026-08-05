@@ -26,7 +26,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from geomodeling.platform import tables
-from test_microseismic_api import assert_envelope
+from microseismic_fixtures import assert_envelope
 from test_professional_api import (
     DIAGNOSIS_CONFIG,
     _auto_confirm_body,

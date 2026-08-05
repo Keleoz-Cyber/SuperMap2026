@@ -20,7 +20,7 @@ import re
 import tomllib
 from pathlib import Path
 
-EXPECTED = "0.6.1"
+EXPECTED = "0.7.0"
 
 PYPROJECT = Path("pyproject.toml")
 PKG_INIT = Path("src/geomodeling/__init__.py")

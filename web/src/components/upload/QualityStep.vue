@@ -88,11 +88,11 @@ const banner = computed(() => {
         </button>
         <button
           class="gmp-btn primary"
-          data-test="start-experiment"
+          data-test="enter-workspace"
           :disabled="!qualityReady"
           @click="emit('start')"
         >
-          开始实验
+          进入案例工作台
         </button>
       </div>
     </template>

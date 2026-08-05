@@ -419,6 +419,165 @@ export async function installMockApi(page: Page): Promise<void> {
     const method = route.request().method()
 
     if (path === '/health') return json(route, { status: 'ok', version: WEB_VERSION, time: T })
+    // v0.7.0：统一工作台 DTO（mock 与 /api/cases 卡片身份一致）
+    if (path === '/cases/resistivity/workspace' && method === 'GET') {
+      return json(route, {
+        case_id: 'resistivity',
+        title: '地下电阻率',
+        status: 'active',
+        source_kind: 'builtin_legacy',
+        workspace_kind: 'builtin_legacy',
+        capabilities: {
+          data_summary: true,
+          experiments: false,
+          official_result: false,
+          native_volume: true,
+        },
+        primary_dataset: null,
+        official_result: null,
+        provenance_summary: {
+          data_form: '三维 X/Y/Z/RHO（局部工程坐标）',
+          coordinate: '局部工程坐标',
+          unit_note: 'RHO 单位待来源确认',
+        },
+        links: { detail: '/api/cases/resistivity', publish_status: '/api/cases/resistivity/publish-status' },
+      })
+    }
+    if (path === '/cases/case-e2e/workspace' && method === 'GET') {
+      return json(route, {
+        case_id: 'case-e2e',
+        title: 'E2E 案例',
+        case_type: 'generic',
+        status: 'active',
+        source_kind: 'upload',
+        workspace_kind: 'user_upload',
+        created_at: T,
+        updated_at: T,
+        capabilities: {
+          data_summary: true,
+          experiments: true,
+          official_result: false,
+          native_volume: false,
+        },
+        primary_dataset: {
+          id: 'ds-e2e',
+          case_id: 'case-e2e',
+          version: 1,
+          status: 'validated',
+          created_at: T,
+          profile: {
+            mapping: {
+              dimension: '3d',
+              x: 'x',
+              y: 'y',
+              z: 'z',
+              value: 'rho',
+              value_name: '电阻率',
+              value_unit: 'unknown',
+              coordinate_kind: 'local_linear',
+            },
+            row_count: 1722,
+            valid_row_count: 1722,
+            invalid_row_count: 0,
+          },
+        },
+        official_result: null,
+        provenance_summary: {
+          value_name: '电阻率',
+          value_unit: 'unknown',
+          coordinate_kind: 'local_linear',
+        },
+        links: { detail: '/api/cases/case-e2e', publish_status: null },
+      })
+    }
+    if (path === '/cases/builtin-microseismic-vx-1911/workspace' && method === 'GET') {      return json(route, {
+        case_id: 'builtin-microseismic-vx-1911',
+        title: '微震速度',
+        case_type: 'generic',
+        status: 'active',
+        source_kind: 'builtin_preset',
+        workspace_kind: 'builtin_preset',
+        created_at: T,
+        updated_at: T,
+        capabilities: {
+          data_summary: true,
+          experiments: true,
+          official_result: true,
+          native_volume: true,
+        },
+        primary_dataset: {
+          id: 'ds-preset',
+          case_id: 'builtin-microseismic-vx-1911',
+          version: 1,
+          status: 'validated',
+          created_at: T,
+          profile: {
+            mapping: {
+              dimension: '3d',
+              x: 'X_LOCAL_M',
+              y: 'Y_LOCAL_M',
+              z: 'Z_LOCAL_M',
+              value: 'VX_KM_S',
+              value_name: 'Vx',
+              value_unit: 'km/s',
+              coordinate_kind: 'local_linear',
+            },
+            row_count: 1911,
+            valid_row_count: 1911,
+            invalid_row_count: 0,
+          },
+        },
+        official_result: {
+          result_id: 'cand-1',
+          url: '/results/cand-1',
+          materialized: true,
+        },
+        provenance_summary: {
+          badge: 'CSV 预置 · 官方普通克里金成果',
+          data_form: '三维 X/Y/Z/Vx（局部测线坐标）',
+          value_unit: 'km/s',
+          coordinate_kind: 'local_linear',
+        },
+        links: { detail: null, publish_status: null },
+      })
+    }
+    if (path === '/datasets/ds-preset' && method === 'GET') {
+      return json(route, {
+        id: 'ds-preset',
+        case_id: 'builtin-microseismic-vx-1911',
+        version: 1,
+        status: 'validated',
+        profile: {
+          mapping: {
+            dimension: '3d',
+            x: 'X_LOCAL_M',
+            y: 'Y_LOCAL_M',
+            z: 'Z_LOCAL_M',
+            value: 'VX_KM_S',
+            value_name: 'Vx',
+            value_unit: 'km/s',
+            coordinate_kind: 'local_linear',
+          },
+          row_count: 1911,
+          valid_row_count: 1911,
+          invalid_row_count: 0,
+        },
+        created_at: T,
+      })
+    }
+    if (path === '/cases/builtin-microseismic-vx-1911/datasets' && method === 'GET') {
+      return json(route, {
+        datasets: [
+          {
+            id: 'ds-preset',
+            case_id: 'builtin-microseismic-vx-1911',
+            version: 1,
+            status: 'validated',
+            created_at: T,
+          },
+        ],
+      })
+    }
     if (path === '/cases' && method === 'GET') {
       return json(route, {
         cases: [
@@ -434,14 +593,59 @@ export async function installMockApi(page: Page): Promise<void> {
             links: { detail: '/api/cases/resistivity', publish_status: '/api/cases/resistivity/publish-status' },
           },
           {
-            case_id: 'microseismic',
+            // v0.7.0：微震 CSV 预置卡（builtin_preset；官方成果直达 cand-1 夹具）
+            case_id: 'builtin-microseismic-vx-1911',
             title: '微震速度',
-            data_form: '三维 X/Y/Z/Vx（局部测线坐标）',
-            status: 'audit_only',
-            coordinate: '局部测线坐标（W16 原点）',
-            unit_note: 'Vx 单位 km/s',
-            v03_stage: '第二案例：v0.5 原始 DAT 导入',
-            source_kind: 'builtin_legacy',
+            case_type: 'generic',
+            status: 'active',
+            source_kind: 'builtin_preset',
+            workspace_kind: 'builtin_preset',
+            created_at: T,
+            updated_at: T,
+            capabilities: {
+              data_summary: true,
+              experiments: true,
+              official_result: true,
+              native_volume: true,
+            },
+            primary_dataset: {
+              id: 'ds-preset',
+              case_id: 'builtin-microseismic-vx-1911',
+              version: 1,
+              status: 'validated',
+              created_at: T,
+              profile: {
+                mapping: {
+                  dimension: '3d',
+                  x: 'X_LOCAL_M',
+                  y: 'Y_LOCAL_M',
+                  z: 'Z_LOCAL_M',
+                  value: 'VX_KM_S',
+                  value_name: 'Vx',
+                  value_unit: 'km/s',
+                  coordinate_kind: 'local_linear',
+                },
+                row_count: 1911,
+                valid_row_count: 1911,
+                invalid_row_count: 0,
+              },
+            },
+            official_result: {
+              result_id: 'cand-1',
+              url: '/results/cand-1',
+              materialized: true,
+            },
+            featured_result: {
+              result_id: 'cand-1',
+              url: '/results/cand-1',
+              materialized: true,
+            },
+            provenance_summary: {
+              badge: 'CSV 预置 · 官方普通克里金成果',
+              data_form: '三维 X/Y/Z/Vx（局部测线坐标）',
+              value_unit: 'km/s',
+              coordinate_kind: 'local_linear',
+            },
             links: { detail: null, publish_status: null },
           },
           {

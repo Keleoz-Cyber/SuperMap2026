@@ -1,6 +1,6 @@
 # 当前开发状态
 
-> 更新时间：2026-08-04（v0.6.1 分支更新）。本文是开发人员和开发 Agent 判断“现在做到哪一步”的唯一状态入口。数据细节见 [电阻率](../data/resistivity.md)、[微震](../data/microseismic.md)、[瓦斯](../data/gas.md) 和 [数据契约](../data/contracts.md)；目标产品见 [产品蓝图](../product-blueprint.md)。
+> 更新时间：2026-08-05（v0.7.0 统一案例工作台·第一批分支更新）。本文是开发人员和开发 Agent 判断“现在做到哪一步”的唯一状态入口。数据细节见 [电阻率](../data/resistivity.md)、[微震](../data/microseismic.md)、[瓦斯](../data/gas.md) 和 [数据契约](../data/contracts.md)；目标产品见 [产品蓝图](../product-blueprint.md)。
 
 ## 1. 状态分层
 
@@ -12,6 +12,13 @@
 
 ## 2. 当前代码已实现
 
+- **v0.7.0 统一案例工作台 · 第一批（`feat/v0.7.0-unified-case-workspace` 分支，发布候选）**：
+  - 微震 **CSV 预置**案例：受控入库 `data/presets/microseismic/microseismic-vx-1911.csv`（LF 归一化字节 SHA-256 `ea3917c2…`，溯源原始文件 `微震局部三维点_3Sigma_去重均值_1911.csv`；1,911 行、XYZ 唯一、全有限、局部测线坐标、Vx=km/s），合同校验 fail-closed（`PRESET_SOURCE_INVALID`）。
+  - 官方**普通克里金**基线：`python -m geomodeling.preset_cli analyze-microseismic` 执行固定 27 成员候选矩阵（spherical/exponential/gaussian × 12/24/36 邻域 × z_scale 0.5/1/2，固定种子 20260723 空间 5 折，公共有效集 1,910/1,911）；评审冻结 `config/presets/microseismic-official-baseline.json`——winner `exponential/neighbor=12/z_scale=2.0`，RMSE=0.268062、MAE=0.212624、R²=0.844559、Bias=0.053333（z_scale 为距离实验参数，不代表已确认地质各向异性）；源/报告指纹不符或选择不可复算即 `PRESET_BASELINE_INVALID`，绝不覆盖既有成果。
+  - `seed-microseismic`（唯一生产 seed 入口）经正常 `Case → DatasetVersion → Experiment → Run → CandidateResult → materialize → FormalSelection` 链登记官方成果：确定性 UUID5 身份、幂等复用、并发无双选择、失败补偿无半成品；官方成果按 v0.6.1 候选成果链显式创建 **NetCDF** 原生体渲染资产（网格 35×47×82=134,890 单元，变量 `Vx`，`display_anchor_only` 显示锚点，非真实地理配准）。
+  - 统一案例工作台：电阻率（`builtin_legacy`）、微震预置（**`builtin_preset`**）、用户上传（`user_upload`）同一 `workspace_kind`/`capabilities`/primary_dataset/official_result DTO 与 `/#/cases/:caseId` 工作台壳；`/case/resistivity` 兼容重定向；首页全部由 DTO 驱动，无 case_id 分支。未 seed 时预置卡可见但能力全 false，工作台返回类型化 `PRESET_NOT_INITIALIZED`。
+  - 微震 **DAT** 导入**退出产品面**：首页 DAT 文案、`MicroseismicImportView`、导入路由、`POST /api/cases/{id}/microseismic-imports` 与派生 GET 端点全部移除；历史运行时文件、派生服务层与 CLI 保留，历史 DAT 成果经通用结果 URL 只读查看，领域证据导出（`domain_evidence/` 七文件、哈希不符 409）契约不变。
+  - 用户从预置数据版本新建实验拥有独立的 experiment/run/candidate 身份，官方正式选择不可被用户操作改写。
 - **v0.1.0 电阻率基线**：17,549 / 15,827 / 1,722 行，训练/验证空间柱重叠0；五模型各1,481 valid、241 NoData、XY mismatch 0；`baseline_passed=True`。
 - `RHO_KRIG_FINAL_20M_40` 是唯一登记为正式的 SuperMap 体元成果；`dataset_verified=False`，目前只有配置、文件和人工证据。
 - **微震 v0.2a 审计底座**：22个DAT、2,006条源记录、2,005条有限值和1条无效值；三张标准表、一维累计距离、问题清单、审计报告及CLI已经合并。
