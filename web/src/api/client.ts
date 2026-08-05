@@ -23,6 +23,8 @@ import type {
   ExportRecord,
   FormalSelectionRecord,
   FormalSelectionsResponse,
+  LegacyRenderSourceImportParams,
+  LegacyRenderSourceRegistration,
   MicroseismicDerivation,
   MicroseismicImportResponse,
   MicroseismicPointLayer,
@@ -415,4 +417,24 @@ export function createLegacyRhoRenderAsset(retryFailed = false): Promise<RenderA
 
 export function fetchLegacyRhoRenderAsset(): Promise<RenderAssetRecord> {
   return getJson<RenderAssetRecord>('/cases/resistivity/render-assets/netcdf')
+}
+
+// 产品内显式导入入口：multipart CSV + 显式列名/属性名/单位；
+// 不设置 Content-Type，由浏览器生成 multipart 边界（与 uploadDataset 同一约定）
+export function importLegacyRhoRenderSource(
+  file: File,
+  params: LegacyRenderSourceImportParams,
+): Promise<LegacyRenderSourceRegistration> {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('x_column', params.xColumn)
+  form.append('y_column', params.yColumn)
+  form.append('z_column', params.zColumn)
+  form.append('value_column', params.valueColumn)
+  form.append('property_name', params.propertyName)
+  form.append('units', params.units)
+  return requestJson<LegacyRenderSourceRegistration>('/cases/resistivity/render-sources/import', {
+    method: 'POST',
+    body: form,
+  })
 }

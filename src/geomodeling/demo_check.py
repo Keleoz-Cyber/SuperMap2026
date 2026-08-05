@@ -1,8 +1,8 @@
 """`geomodeling demo-check` 的预检编排（纯逻辑、可注入探针）。
 
-阻断项失败聚合为 ``blocked`` + 退出码 1；iServer/S3M/凭据缺失只产生
-``warning``，整体仍返回 0。公开消息与修复建议只使用逻辑名，不含本机
-绝对路径。
+阻断项失败聚合为 ``blocked`` + 退出码 1；iServer/S3M/凭据缺失与 legacy 渲染
+源未登记只产生 ``warning``，整体仍返回 0。公开消息与修复建议只使用逻辑名，
+不含本机绝对路径。
 """
 
 from __future__ import annotations
@@ -248,6 +248,52 @@ def _check_sqlite(data_dir: Path) -> DemoCheckItem:
             runtime.close()
 
 
+def _check_legacy_render_source(data_dir: Path) -> DemoCheckItem:
+    """legacy 渲染源登记状态（纯查询：绝不创建文件、绝不改写登记状态）。
+
+    已登记 → passed（只报 source_id 与网格 SHA 前缀等相对身份）；未登记 →
+    warning（内置电阻率案例的 NetCDF 体渲染不可用，但案例其余功能不依赖它，
+    绝不阻断）；登记状态损坏或探测异常 → warning。任何消息都不含绝对路径。
+    """
+
+    from geomodeling.platform import PlatformRuntime
+    from geomodeling.platform.errors import PlatformError
+    from geomodeling.platform.legacy_render_sources import (
+        LEGACY_RENDER_SOURCE_NOT_REGISTERED,
+        resolve_legacy_render_source,
+    )
+
+    try:
+        runtime = PlatformRuntime(data_dir=data_dir)
+        source = resolve_legacy_render_source(runtime, "resistivity")
+    except PlatformError as exc:
+        if exc.code == LEGACY_RENDER_SOURCE_NOT_REGISTERED:
+            return DemoCheckItem(
+                "legacy_render_source",
+                WARNING,
+                "内置电阻率 legacy 渲染源未登记（resistivity；NetCDF 体渲染暂不可用）",
+                "在电阻率案例页「导入权威规则网格」上传 X/Y/Z/RHO CSV，或运行 render-grid import-csv",
+            )
+        return DemoCheckItem(
+            "legacy_render_source",
+            WARNING,
+            f"legacy 渲染源登记状态异常（{exc.code}）",
+            "人工核查数据目录 render-sources 登记状态",
+        )
+    except Exception as exc:
+        return DemoCheckItem(
+            "legacy_render_source",
+            WARNING,
+            f"legacy 渲染源登记探测失败（{type(exc).__name__}）",
+            "人工核查数据目录 render-sources 登记状态",
+        )
+    return DemoCheckItem(
+        "legacy_render_source",
+        PASSED,
+        f"legacy 渲染源已登记（{source.source_id}，网格 SHA-256 {source.grid_sha256[:12]}…）",
+    )
+
+
 def _check_api_port(host: str, port: int, port_probe) -> tuple[DemoCheckItem, bool]:
     result = port_probe(host, port)
     if result is PortProbeResult.FREE:
@@ -288,6 +334,7 @@ def run_demo_checks(
         _check_demo_dataset(asset_path),
         _check_runtime_directory(data_dir),
         _check_sqlite(data_dir),
+        _check_legacy_render_source(data_dir),
     ]
     port_item, reuse_existing = _check_api_port(host, port, port_probe)
     checks.append(port_item)

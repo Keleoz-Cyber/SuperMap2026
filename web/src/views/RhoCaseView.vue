@@ -3,14 +3,22 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ArrowLeft, Refresh } from '@element-plus/icons-vue'
 import {
+  ApiError,
   createLegacyRhoRenderAsset,
   fetchLegacyRhoRenderAsset,
   fetchLegacyRhoRenderCapability,
   fetchRhoCase,
   fetchRhoPoints,
   fetchRhoPublishStatus,
+  importLegacyRhoRenderSource,
 } from '../api/client'
-import type { PublishStatus, RenderCapability, RhoCaseDetail, RhoPoints } from '../api/types'
+import type {
+  LegacyRenderSourceRegistration,
+  PublishStatus,
+  RenderCapability,
+  RhoCaseDetail,
+  RhoPoints,
+} from '../api/types'
 import NativeVolumePanel from '../components/rendering/NativeVolumePanel.vue'
 import type {
   NativeVolumeAuxPoints,
@@ -63,6 +71,58 @@ const volumeApi: NativeVolumeRenderApi = {
 
 // 未登记规则三维网格时：测点访问保留为显式分离的辅助视图
 const showAuxOnlyNotice = computed(() => renderCapability.value?.supported === false)
+
+// ---------------------------------------------------------------------------
+// 产品内显式导入入口：未登记（LEGACY_RENDER_SOURCE_NOT_REGISTERED）时显示
+// 「导入权威规则网格」动作；列名/属性名/单位显式传入（默认 X/Y/Z/RHO）。
+// 登记成功后入口不再显示（展示登记身份），面板重挂载走既有 NativeVolumePanel
+// 生成资产流程；导入是唯一会 POST render-sources/import 的入口。
+// ---------------------------------------------------------------------------
+
+const panelKey = ref(0)
+const importFile = ref<File | null>(null)
+const importing = ref(false)
+const importError = ref<string | null>(null)
+const importIdentity = ref<LegacyRenderSourceRegistration | null>(null)
+const importColumns = ref({ x: 'X', y: 'Y', z: 'Z', value: 'RHO' })
+const importPropertyName = ref('RHO')
+const importUnits = ref('unknown')
+
+const showImportEntry = computed(
+  () =>
+    importIdentity.value === null &&
+    renderCapability.value?.supported === false &&
+    renderCapability.value.reason_code === 'LEGACY_RENDER_SOURCE_NOT_REGISTERED',
+)
+
+function onImportFileChange(event: Event) {
+  importFile.value = (event.target as HTMLInputElement).files?.[0] ?? null
+}
+
+async function submitImport() {
+  const file = importFile.value
+  if (!file || importing.value) return
+  importing.value = true
+  importError.value = null
+  try {
+    const record = await importLegacyRhoRenderSource(file, {
+      xColumn: importColumns.value.x,
+      yColumn: importColumns.value.y,
+      zColumn: importColumns.value.z,
+      valueColumn: importColumns.value.value,
+      propertyName: importPropertyName.value,
+      units: importUnits.value,
+    })
+    importIdentity.value = record
+    // 登记成功 → 能力翻转：重取能力并重挂载面板，走既有显式生成资产流程
+    renderCapability.value = await fetchLegacyRhoRenderCapability()
+    panelKey.value += 1
+  } catch (e) {
+    importError.value = e instanceof ApiError ? `${e.code}：${e.message}` : String(e)
+  } finally {
+    importing.value = false
+  }
+}
 
 // 既有测点仅作为 legacy-measurements 辅助层：坐标为局部米制，
 // 由能力 GET 返回的只读 display_transform 定位，握手后由面板发送；
@@ -198,7 +258,79 @@ onMounted(loadAll)
             <p class="aux-notice-line">测点仅用于数据分布检查，不是体渲染。</p>
           </template>
         </el-alert>
-        <NativeVolumePanel :api="volumeApi" :aux-points="legacyMeasurementPoints" />
+        <div v-if="showImportEntry" class="legacy-import" data-test="legacy-import">
+          <p class="import-lead">
+            上传权威规则网格 CSV（每个笛卡尔格点恰好一行）完成登记后，即可生成 NetCDF
+            体渲染资产；登记经过完整校验（笛卡尔完整性 / 规则轴 / 重复坐标 / 非有限值），
+            绝不从散点重跑插值。
+          </p>
+          <div class="import-form">
+            <input
+              type="file"
+              accept=".csv"
+              class="import-file"
+              data-test="legacy-import-file"
+              @change="onImportFileChange"
+            />
+            <div class="import-mapping">
+              <label class="import-field">
+                X 列
+                <input v-model="importColumns.x" class="import-input" data-test="import-x-column" />
+              </label>
+              <label class="import-field">
+                Y 列
+                <input v-model="importColumns.y" class="import-input" data-test="import-y-column" />
+              </label>
+              <label class="import-field">
+                Z 列
+                <input v-model="importColumns.z" class="import-input" data-test="import-z-column" />
+              </label>
+              <label class="import-field">
+                属性列
+                <input
+                  v-model="importColumns.value"
+                  class="import-input"
+                  data-test="import-value-column"
+                />
+              </label>
+              <label class="import-field">
+                属性名
+                <input
+                  v-model="importPropertyName"
+                  class="import-input"
+                  data-test="import-property-name"
+                />
+              </label>
+              <label class="import-field">
+                单位
+                <input v-model="importUnits" class="import-input" data-test="import-units" />
+              </label>
+            </div>
+            <el-button
+              type="primary"
+              size="small"
+              data-test="legacy-import-submit"
+              :disabled="!importFile || importing"
+              :loading="importing"
+              @click="submitImport"
+            >
+              {{ importing ? '正在导入…' : '导入权威规则网格' }}
+            </el-button>
+          </div>
+          <div v-if="importError" class="import-error" data-test="legacy-import-error">
+            {{ importError }}
+          </div>
+        </div>
+        <div
+          v-if="importIdentity"
+          class="legacy-import-identity"
+          data-test="legacy-import-identity"
+        >
+          已登记权威规则网格：{{ importIdentity.source_id }}，形状
+          {{ importIdentity.shape.join('×') }}，网格 SHA-256
+          {{ importIdentity.grid_sha256.slice(0, 16) }}…（{{ importIdentity.artifact_dir }}）
+        </div>
+        <NativeVolumePanel :key="panelKey" :api="volumeApi" :aux-points="legacyMeasurementPoints" />
       </section>
 
       <aside v-if="!rightCollapsed" class="panel panel-right">
@@ -359,6 +491,78 @@ onMounted(loadAll)
 .aux-notice-line {
   margin: 0;
   line-height: 1.6;
+}
+
+.legacy-import {
+  border: 1px solid var(--gmp-border-soft);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.import-lead {
+  margin: 0;
+  font-size: 13px;
+  color: var(--gmp-text-dim);
+  line-height: 1.6;
+}
+
+.import-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.import-file {
+  font-size: 12px;
+  color: var(--gmp-text-dim);
+}
+
+.import-mapping {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.import-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--gmp-text-dim);
+}
+
+.import-input {
+  width: 72px;
+  border: 1px solid var(--gmp-border);
+  background: var(--gmp-bg-soft);
+  color: inherit;
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+
+.import-error {
+  border: 1px solid #a43d3d;
+  background: rgba(164, 61, 61, 0.15);
+  color: #ef9a9a;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+.legacy-import-identity {
+  border: 1px solid var(--gmp-border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  font-family: ui-monospace, monospace;
+  color: var(--gmp-text-dim);
+  word-break: break-all;
 }
 
 .lineage {

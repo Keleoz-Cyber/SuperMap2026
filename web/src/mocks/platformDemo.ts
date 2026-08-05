@@ -152,6 +152,8 @@ interface MockState {
   extractionJobPolls: number
   // v0.6.1：cand-1 物化状态机——GET /results 未物化 404，POST materialize 后 200
   resultMaterialized: boolean
+  // v0.6.1：内置电阻率 legacy 渲染源登记状态机——导入 POST 前未登记，导入后 supported
+  legacyRenderSourceRegistered: boolean
 }
 
 // ---------------------------------------------------------------- v0.6 专业建模
@@ -349,6 +351,7 @@ export async function installMockApi(page: Page): Promise<void> {
     diagnosisJobPolls: 0,
     extractionJobPolls: 0,
     resultMaterialized: false,
+    legacyRenderSourceRegistered: false,
   }
 
   const runBody = (status: string, completed: number) => ({
@@ -793,6 +796,146 @@ export async function installMockApi(page: Page): Promise<void> {
         id: assetId,
         source_kind: 'candidate_result',
         source_id: 'cand-1',
+        renderer: 'supermap_voxelgrid_netcdf',
+        status: 'ready',
+        grid_sha256: SHA,
+        netcdf_sha256: MICRO_SHA,
+        manifest_url: `/api/render-assets/${assetId}/manifest`,
+        netcdf_url: `/api/render-assets/${assetId}/volume.nc`,
+        error: null,
+      }, 201)
+    }
+    // ------------------------------------------------- v0.6.1 内置电阻率案例
+    // legacy 渲染源登记状态机：导入 POST 前 LEGACY_RENDER_SOURCE_NOT_REGISTERED，
+    // 导入后 capability 翻转 supported，资产创建走既有 NetCDF 流程
+    if (path === '/cases/resistivity' && method === 'GET') {
+      return json(route, {
+        case_id: 'resistivity',
+        title: '地下电阻率',
+        coordinate: { type: 'local', epsg: null, note: '局部工程坐标 · EPSG 未确认 · Z 向下为负' },
+        datasets: [],
+        validation_split: { spatial_column_overlap: 0, seed: 'e2e-seed' },
+        metric_expectations: { common_valid: 100, common_nodata: 0, coverage_rate: 1 },
+        models: [],
+        baseline_comparison: null,
+        metric_source: 'e2e-mock',
+        supermap: { version: '12.1.0', datasource_alias: 'rho', dataset_api: '', results: [] },
+        views: [],
+        issues: [],
+      })
+    }
+    if (path === '/cases/resistivity/publish-status' && method === 'GET') {
+      return json(route, {
+        case_id: 'resistivity',
+        result_id: 'RHO_KRIG_FINAL_20M_40',
+        iserver_available: false,
+        iserver: { base_url: 'http://localhost:8090/iserver', reachable: false, http_status: null, services: [] },
+        service_checks: [],
+        evidence_chain: { result_id: 'RHO_KRIG_FINAL_20M_40', states: [] },
+        failed_results: [],
+        planned_services: {
+          data: 'http://localhost:8090/iserver/services/data-rho/rest/data',
+          map: 'http://localhost:8090/iserver/services/map-rho/rest/maps/rho',
+          realspace: 'http://localhost:8090/iserver/services/3D-WorkSpace/rest/realspace',
+          scene_name: 'RHO_三维全值域',
+          volume: {
+            url: 'http://localhost:8090/iserver/services/3D-WorkSpace/rest/realspace/datas/rho',
+            service_name: 'rho-volume',
+            scene_name: 'RHO_三维全值域',
+            available: false,
+            layers: [],
+            note: 'S3M 缓存未发布',
+          },
+        },
+      })
+    }
+    if (path === '/cases/resistivity/points' && method === 'GET') {
+      return json(route, {
+        case_id: 'resistivity',
+        source: 'csv',
+        source_label: 'rho_measurements.csv',
+        sha256: SHA,
+        decimate: 40,
+        count: 1000,
+        served: 0,
+        value_field: 'rho',
+        unit_note: 'Ω·m',
+        x: [],
+        y: [],
+        z: [],
+        values: [],
+        value_range: [10, 120],
+        x_range: [-150, -60],
+        y_range: [260, 580],
+        z_range: [-300, -100],
+      })
+    }
+    if (path === '/cases/resistivity/render-capability' && method === 'GET') {
+      const transform = {
+        contract: 'wgs84_display_anchor_v1',
+        origin_x: -105,
+        origin_y: 420,
+        anchor_longitude: 120,
+        anchor_latitude: 30,
+        anchor_height: 0,
+        metres_per_degree_lon: 96486.3,
+        metres_per_degree_lat: 110852.4,
+      }
+      if (!state.legacyRenderSourceRegistered) {
+        return json(route, {
+          source_kind: 'builtin_legacy',
+          source_id: 'resistivity',
+          supported: false,
+          reason_code: 'LEGACY_RENDER_SOURCE_NOT_REGISTERED',
+          reason: '内置案例尚未登记权威规则网格，请先运行 render-grid import-csv',
+          dimension: '3d',
+          grid_kind: null,
+          property_name: 'RHO',
+          units: 'unknown',
+          geolocation_status: 'display_anchor_only',
+          display_transform: transform,
+        })
+      }
+      return json(route, {
+        source_kind: 'builtin_legacy',
+        source_id: 'resistivity',
+        supported: true,
+        reason_code: null,
+        reason: null,
+        dimension: '3d',
+        grid_kind: 'regular',
+        property_name: 'RHO',
+        units: 'unknown',
+        geolocation_status: 'display_anchor_only',
+        display_transform: transform,
+      })
+    }
+    if (path === '/cases/resistivity/render-sources/import' && method === 'POST') {
+      state.legacyRenderSourceRegistered = true
+      return json(route, {
+        source_kind: 'builtin_legacy',
+        source_id: 'resistivity',
+        grid_sha256: SHA,
+        property_name: 'RHO',
+        units: 'unknown',
+        shape: [3, 4, 5],
+        artifact_dir: `builtin_legacy/resistivity/${SHA}`,
+        import_source_sha256: MICRO_SHA,
+      }, 201)
+    }
+    if (path === '/cases/resistivity/render-assets/netcdf' && method === 'GET') {
+      return json(
+        route,
+        { error: { code: 'RENDER_ASSET_NOT_FOUND', message: '该渲染源尚未创建渲染资产', details: {} } },
+        404,
+      )
+    }
+    if (path === '/cases/resistivity/render-assets/netcdf' && method === 'POST') {
+      const assetId = `nc-${'ef'.repeat(16)}`
+      return json(route, {
+        id: assetId,
+        source_kind: 'builtin_legacy',
+        source_id: 'resistivity',
         renderer: 'supermap_voxelgrid_netcdf',
         status: 'ready',
         grid_sha256: SHA,

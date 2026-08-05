@@ -7,6 +7,7 @@ import * as client from '../../api/client'
 import { ApiError } from '../../api/client'
 import type {
   DisplayTransform,
+  LegacyRenderSourceRegistration,
   PublishStatus,
   RenderAssetRecord,
   RenderCapability,
@@ -25,6 +26,7 @@ vi.mock('../../api/client', async (importOriginal) => {
     fetchLegacyRhoRenderCapability: vi.fn(),
     fetchLegacyRhoRenderAsset: vi.fn(),
     createLegacyRhoRenderAsset: vi.fn(),
+    importLegacyRhoRenderSource: vi.fn(),
   }
 })
 
@@ -170,6 +172,27 @@ const LEGACY_FAILED_ASSET: RenderAssetRecord = {
   manifest_url: null,
   netcdf_url: null,
   error: { code: 'NETCDF_EXPORT_FAILED', message: 'NetCDF 写盘失败', details: {} },
+}
+
+// 导入登记身份（导入端点响应）：artifact_dir 为相对工件目录身份，绝无绝对路径
+const REGISTRATION: LegacyRenderSourceRegistration = {
+  source_kind: 'builtin_legacy',
+  source_id: 'resistivity',
+  grid_sha256: 'g'.repeat(64),
+  property_name: 'RHO',
+  units: 'unknown',
+  shape: [3, 4, 5],
+  artifact_dir: `builtin_legacy/resistivity/${'g'.repeat(64)}`,
+  import_source_sha256: 'i'.repeat(64),
+}
+
+async function chooseImportFile(wrapper: { find: (selector: string) => any }): Promise<File> {
+  const file = new File(['X,Y,Z,RHO\n0,0,0,1\n'], 'grid.csv', { type: 'text/csv' })
+  const input = wrapper.find('[data-test="legacy-import-file"]')
+  expect(input.exists()).toBe(true)
+  Object.defineProperty(input.element, 'files', { value: [file], configurable: true })
+  await input.trigger('change')
+  return file
 }
 
 // frame stub：与 NativeVolumePanel.spec 同一约定，记录 props 并暴露同名命令方法
@@ -376,5 +399,68 @@ describe('RhoCaseView legacy 体渲染能力真值', () => {
     expect(text).not.toContain('S3M 体元渲染')
     expect(text).not.toContain('体元格')
     expect(text).toContain('采样点')
+  })
+
+  it('未登记：显示导入入口；上传登记成功后转为可生成资产流程', async () => {
+    vi.mocked(client.importLegacyRhoRenderSource).mockResolvedValue(REGISTRATION)
+    const wrapper = await mountView({ capability: missingGridCapability(TRANSFORM) })
+
+    // 未登记：显式导入入口，未选文件不可提交，且无创建资产入口
+    const entry = wrapper.find('[data-test="legacy-import"]')
+    expect(entry.exists()).toBe(true)
+    expect(entry.text()).toContain('导入权威规则网格')
+    expect(wrapper.find('[data-test="legacy-import-submit"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-test="create-asset"]').exists()).toBe(false)
+    expect(client.importLegacyRhoRenderSource).not.toHaveBeenCalled()
+
+    const file = await chooseImportFile(wrapper)
+    // 登记成功后：capability GET 翻转为 supported（面板重挂载走既有流程）
+    vi.mocked(client.fetchLegacyRhoRenderCapability).mockResolvedValue(supportedCapability())
+    await wrapper.find('[data-test="legacy-import-submit"]').trigger('click')
+    await flushPromises()
+
+    // 列名/属性名/单位显式传入（默认 X/Y/Z/RHO）
+    expect(client.importLegacyRhoRenderSource).toHaveBeenCalledWith(file, {
+      xColumn: 'X',
+      yColumn: 'Y',
+      zColumn: 'Z',
+      valueColumn: 'RHO',
+      propertyName: 'RHO',
+      units: 'unknown',
+    })
+
+    // 入口不再显示，展示已登记身份；面板转为可生成资产
+    expect(wrapper.find('[data-test="legacy-import"]').exists()).toBe(false)
+    const identity = wrapper.find('[data-test="legacy-import-identity"]')
+    expect(identity.exists()).toBe(true)
+    expect(identity.text()).toContain('resistivity')
+    expect(wrapper.find('[data-test="legacy-import-error"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="create-asset"]').exists()).toBe(true)
+  })
+
+  it('导入失败：显示稳定错误码诊断，入口保留且绝不出现创建按钮', async () => {
+    vi.mocked(client.importLegacyRhoRenderSource).mockRejectedValue(
+      new ApiError(
+        'LEGACY_IMPORT_GRID_INCOMPLETE',
+        'legacy 网格缺失笛卡尔格点：每个格点必须恰好一行',
+        422,
+      ),
+    )
+    const wrapper = await mountView({ capability: missingGridCapability(TRANSFORM) })
+    await chooseImportFile(wrapper)
+    const capabilityCalls = vi.mocked(client.fetchLegacyRhoRenderCapability).mock.calls.length
+
+    await wrapper.find('[data-test="legacy-import-submit"]').trigger('click')
+    await flushPromises()
+
+    const error = wrapper.find('[data-test="legacy-import-error"]')
+    expect(error.exists()).toBe(true)
+    expect(error.text()).toContain('LEGACY_IMPORT_GRID_INCOMPLETE')
+    // 入口保留可重试；绝不显示登记身份，也绝不翻转为可生成资产
+    expect(wrapper.find('[data-test="legacy-import"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="legacy-import-identity"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="create-asset"]').exists()).toBe(false)
+    // 失败不触发能力重取（面板保持未登记状态）
+    expect(vi.mocked(client.fetchLegacyRhoRenderCapability).mock.calls.length).toBe(capabilityCalls)
   })
 })

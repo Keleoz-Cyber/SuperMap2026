@@ -544,6 +544,194 @@ def test_legacy_post_registered_201_then_200_never_materializes(tmp_path, monkey
 
 
 # ---------------------------------------------------------------------------
+# legacy 渲染源产品内导入：POST /api/cases/resistivity/render-sources/import
+# ---------------------------------------------------------------------------
+
+LEGACY_IMPORT_URL = "/api/cases/resistivity/render-sources/import"
+
+IMPORT_FORM = {
+    "x_column": "X",
+    "y_column": "Y",
+    "z_column": "Z",
+    "value_column": "RHO",
+    "property_name": "RHO",
+    "units": "unknown",
+}
+
+# 与 fixture 网格不同（2×2×2、值域不同）的合法网格：覆盖保护测试专用
+OTHER_GRID_CSV = (
+    "X,Y,Z,RHO\n"
+    "0,0,0,1\n10,0,0,2\n0,10,0,3\n10,10,0,4\n"
+    "0,0,-5,5\n10,0,-5,6\n0,10,-5,7\n10,10,-5,8\n"
+)
+
+
+def post_import(client, csv_text: str, **form_overrides):
+    form = {**IMPORT_FORM, **form_overrides}
+    return client.post(
+        LEGACY_IMPORT_URL,
+        files={"file": ("grid.csv", csv_text.encode("utf-8"), "text/csv")},
+        data=form,
+    )
+
+
+def legacy_source_listing(runtime) -> list[str]:
+    root = runtime.settings.render_sources_dir
+    if not root.exists():
+        return []
+    return sorted(p.relative_to(root).as_posix() for p in root.rglob("*"))
+
+
+def test_legacy_import_registers_201_and_flips_capability(tmp_path, monkeypatch):
+    app = make_app(tmp_path, monkeypatch)
+    with TestClient(app) as client:
+        runtime = app.state.platform_runtime
+        before = client.get("/api/cases/resistivity/render-capability").json()
+        assert before["supported"] is False
+        assert before["reason_code"] == "LEGACY_RENDER_SOURCE_NOT_REGISTERED"
+
+        resp = post_import(client, LEGACY_GRID_FIXTURE.read_text(encoding="utf-8"))
+        assert resp.status_code == 201, resp.text
+        record = resp.json()
+        # 登记身份白名单：只有逻辑身份/相对工件目录/SHA，绝无绝对路径
+        assert set(record) == {
+            "source_kind",
+            "source_id",
+            "grid_sha256",
+            "property_name",
+            "units",
+            "shape",
+            "artifact_dir",
+            "import_source_sha256",
+        }
+        assert record["source_kind"] == "builtin_legacy"
+        assert record["source_id"] == "resistivity"
+        assert record["shape"] == [3, 4, 5]
+        assert record["artifact_dir"].startswith("builtin_legacy/resistivity/")
+        assert len(record["grid_sha256"]) == 64
+        assert len(record["import_source_sha256"]) == 64
+        assert_no_path_leak(record, "$.import")
+
+        # 登记后能力翻转为 supported，体渲染走既有资产流程
+        after = client.get("/api/cases/resistivity/render-capability").json()
+        assert after["supported"] is True
+        assert after["property_name"] == "RHO"
+
+        listing = legacy_source_listing(runtime)
+        assert "builtin_legacy/resistivity/current.json" in listing
+
+
+def test_legacy_import_idempotent_reimport_200_same_identity(tmp_path, monkeypatch):
+    app = make_app(tmp_path, monkeypatch)
+    with TestClient(app) as client:
+        runtime = app.state.platform_runtime
+        csv_text = LEGACY_GRID_FIXTURE.read_text(encoding="utf-8")
+
+        first = post_import(client, csv_text)
+        assert first.status_code == 201, first.text
+        current_json = (
+            runtime.settings.render_sources_dir / "builtin_legacy" / "resistivity" / "current.json"
+        )
+        mtime = current_json.stat().st_mtime_ns
+
+        second = post_import(client, csv_text)
+        assert second.status_code == 200, second.text
+        assert second.json() == first.json()  # 幂等：同身份返回既有登记
+        assert current_json.stat().st_mtime_ns == mtime  # 登记状态未改写
+
+
+def test_legacy_import_conflict_409_never_overwrites(tmp_path, monkeypatch):
+    app = make_app(tmp_path, monkeypatch)
+    with TestClient(app) as client:
+        runtime = app.state.platform_runtime
+        register_legacy_grid(runtime)
+
+        resp = post_import(client, OTHER_GRID_CSV)
+        assert_envelope(resp, 409, "LEGACY_RENDER_SOURCE_CONFLICT")
+        serialized = json.dumps(resp.json(), ensure_ascii=False)
+        assert str(tmp_path) not in serialized
+
+        # 既有登记原样保留：同网格重导入仍幂等 200
+        again = post_import(client, LEGACY_GRID_FIXTURE.read_text(encoding="utf-8"))
+        assert again.status_code == 200, again.text
+
+
+def test_legacy_import_validation_failures_422_and_zero_residue(tmp_path, monkeypatch):
+    app = make_app(tmp_path, monkeypatch)
+    with TestClient(app) as client:
+        runtime = app.state.platform_runtime
+        cases = [
+            # 缺一个笛卡尔格点（8 缺 1）
+            (
+                "X,Y,Z,RHO\n0,0,0,1\n10,0,0,2\n0,10,0,3\n10,10,0,4\n"
+                "0,0,-5,5\n10,0,-5,6\n0,10,-5,7\n",
+                {},
+                "LEGACY_IMPORT_GRID_INCOMPLETE",
+            ),
+            # 指定的坐标列不存在
+            ("X,Y,Z,RHO\n0,0,0,1\n", {"y_column": "LAT"}, "LEGACY_IMPORT_COLUMN_NOT_FOUND"),
+            # 重复坐标元组
+            ("X,Y,Z,RHO\n0,0,0,1\n0,0,0,2\n", {}, "LEGACY_IMPORT_DUPLICATE_COORDINATES"),
+            # 非有限坐标
+            ("X,Y,Z,RHO\n0,0,0,1\nNaN,0,0,2\n", {}, "LEGACY_IMPORT_COORDINATE_INVALID"),
+            # X 轴间距不等（0,10,30），不是规则轴
+            (
+                "X,Y,Z,RHO\n0,0,0,1\n10,0,0,2\n30,0,0,3\n0,10,0,4\n10,10,0,5\n30,10,0,6\n"
+                "0,0,-5,7\n10,0,-5,8\n30,0,-5,9\n0,10,-5,10\n10,10,-5,11\n30,10,-5,12\n",
+                {},
+                "LEGACY_IMPORT_AXIS_IRREGULAR",
+            ),
+            # 空文件
+            ("", {}, "LEGACY_IMPORT_PARSE_FAILED"),
+        ]
+        for csv_text, overrides, code in cases:
+            resp = post_import(client, csv_text, **overrides)
+            assert_envelope(resp, 422, code)
+            serialized = json.dumps(resp.json(), ensure_ascii=False)
+            assert str(tmp_path) not in serialized
+        # 零残留：全部失败后 render-sources 目录没有任何登记状态或工件
+        assert legacy_source_listing(runtime) == []
+
+
+def test_legacy_import_missing_parameters_keep_unified_envelope(tmp_path, monkeypatch):
+    app = make_app(tmp_path, monkeypatch)
+    with TestClient(app) as client:
+        runtime = app.state.platform_runtime
+        csv_bytes = LEGACY_GRID_FIXTURE.read_bytes()
+
+        # 缺文件
+        resp = client.post(LEGACY_IMPORT_URL, data=IMPORT_FORM)
+        assert_envelope(resp, 422, "LEGACY_IMPORT_REQUEST_INVALID")
+        # 缺列名参数
+        form = {key: value for key, value in IMPORT_FORM.items() if key != "z_column"}
+        resp = client.post(
+            LEGACY_IMPORT_URL,
+            files={"file": ("grid.csv", csv_bytes, "text/csv")},
+            data=form,
+        )
+        assert_envelope(resp, 422, "LEGACY_IMPORT_REQUEST_INVALID")
+        # 空白属性名
+        resp = post_import(
+            client, LEGACY_GRID_FIXTURE.read_text(encoding="utf-8"), property_name="  "
+        )
+        assert_envelope(resp, 422, "LEGACY_IMPORT_REQUEST_INVALID")
+        assert legacy_source_listing(runtime) == []
+
+
+def test_legacy_import_oversized_upload_413(tmp_path, monkeypatch):
+    app = make_app(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        "geomodeling.api.routes.rendering.MAX_LEGACY_IMPORT_BYTES", 1024
+    )
+    with TestClient(app) as client:
+        runtime = app.state.platform_runtime
+        big_csv = "X,Y,Z,RHO\n" + "0,0,0,1\n" * 200  # 远超 1024 字节
+        resp = post_import(client, big_csv)
+        assert_envelope(resp, 413, "LEGACY_IMPORT_UPLOAD_TOO_LARGE")
+        assert legacy_source_listing(runtime) == []
+
+
+# ---------------------------------------------------------------------------
 # 路由注册顺序与错误体脱敏
 # ---------------------------------------------------------------------------
 
@@ -557,6 +745,7 @@ def test_rendering_routes_registered_without_shadowing(tmp_path, monkeypatch):
             "/api/results/{result_id}/render-assets/netcdf",
             "/api/cases/resistivity/render-capability",
             "/api/cases/resistivity/render-assets/netcdf",
+            "/api/cases/resistivity/render-sources/import",
             "/api/render-assets/{asset_id}/manifest",
             "/api/render-assets/{asset_id}/volume.nc",
         ):

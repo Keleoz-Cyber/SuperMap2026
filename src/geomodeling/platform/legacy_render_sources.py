@@ -75,11 +75,11 @@ def _source_root(runtime: PlatformRuntime, source_id: str) -> Path:
 def _read_csv(csv_path: Path) -> pd.DataFrame:
     try:
         return pd.read_csv(csv_path, encoding="utf-8-sig")
-    except (UnicodeDecodeError, pd.errors.ParserError) as exc:
+    except (UnicodeDecodeError, pd.errors.ParserError, pd.errors.EmptyDataError) as exc:
         raise PlatformError(
             LEGACY_IMPORT_PARSE_FAILED,
             f"legacy 网格 CSV 解析失败：{exc}",
-            http_status=400,
+            http_status=422,
         ) from exc
 
 
@@ -89,7 +89,7 @@ def _numeric_column(frame: pd.DataFrame, column: str, role: str) -> np.ndarray:
             LEGACY_IMPORT_COLUMN_NOT_FOUND,
             f"{role} 列在 CSV 中不存在：{column}",
             {"column": column, "columns": [str(name) for name in frame.columns]},
-            http_status=400,
+            http_status=422,
         )
     return pd.to_numeric(frame[column], errors="coerce").to_numpy(dtype="float64")
 
@@ -102,7 +102,7 @@ def _validate_axis(axis: np.ndarray, name: str) -> np.ndarray:
             LEGACY_IMPORT_AXIS_IRREGULAR,
             f"legacy 网格 {name} 轴必须不少于 2 个节点且严格递增",
             {"axis": name, "node_count": int(axis.size)},
-            http_status=400,
+            http_status=422,
         )
     span = float(axis[-1] - axis[0])
     reference = np.linspace(axis[0], axis[-1], axis.size)
@@ -112,7 +112,7 @@ def _validate_axis(axis: np.ndarray, name: str) -> np.ndarray:
             LEGACY_IMPORT_AXIS_IRREGULAR,
             f"legacy 网格 {name} 轴不是近似等距的规则轴",
             {"axis": name},
-            http_status=400,
+            http_status=422,
         )
     return axis
 
@@ -138,14 +138,14 @@ def _build_grid(
             LEGACY_IMPORT_COORDINATE_INVALID,
             "legacy 网格坐标必须全部是有限数值",
             {"row_count": len(frame)},
-            http_status=400,
+            http_status=422,
         )
     if frame.duplicated(subset=[x_column, y_column, z_column]).any():
         raise PlatformError(
             LEGACY_IMPORT_DUPLICATE_COORDINATES,
             "legacy 网格存在重复坐标元组",
             {"row_count": len(frame)},
-            http_status=400,
+            http_status=422,
         )
 
     x_axis = _validate_axis(np.unique(x), "x")
@@ -161,7 +161,7 @@ def _build_grid(
                 "expected_cells": expected_cells,
                 "shape": [int(x_axis.size), int(y_axis.size), int(z_axis.size)],
             },
-            http_status=400,
+            http_status=422,
         )
 
     shape = (int(x_axis.size), int(y_axis.size), int(z_axis.size))

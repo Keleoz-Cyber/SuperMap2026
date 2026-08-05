@@ -146,3 +146,50 @@ test('3D 成果工作台：显式物化 + 原生体渲染面板 + 协议握手 +
   await page.goto('/')
   expect(await page.locator('a[href*="volume-demo"]').count()).toBe(0)
 })
+
+test('内置电阻率：产品内导入权威规则网格 → 生成 NetCDF 资产 → 原生渲染', async ({ page }) => {
+  // v0.6.1：全新运行时未登记 legacy 渲染源 → 页内显式导入入口（multipart CSV）→
+  // 登记成功后面板翻转为可生成资产 → 显式创建 → 协议握手渲染。
+  const importPosts: { contentType: string }[] = []
+  page.on('request', (req) => {
+    if (req.method() === 'POST' && new URL(req.url()).pathname.includes('render-sources/import')) {
+      importPosts.push({ contentType: req.headers()['content-type'] ?? '' })
+    }
+  })
+
+  await installMockApi(page)
+  await page.route(
+    (url) => url.pathname === '/supermap-volume-frame/index.html',
+    (route) => route.fulfill({ status: 200, contentType: 'text/html', body: MOCK_FRAME_HTML }),
+  )
+
+  await page.goto('/#/case/resistivity')
+
+  // 未登记：稳定原因码 + 显式导入入口；绝无创建资产入口
+  await expect(page.getByTestId('unsupported-reason')).toContainText(
+    'LEGACY_RENDER_SOURCE_NOT_REGISTERED',
+  )
+  await expect(page.getByTestId('legacy-import')).toBeVisible()
+  await expect(page.getByTestId('legacy-import-submit')).toBeDisabled()
+  await expect(page.getByTestId('create-asset')).toHaveCount(0)
+
+  // 上传权威规则网格 CSV（X,Y,Z,RHO）并显式导入
+  await page.getByTestId('legacy-import-file').setInputFiles({
+    name: 'grid.csv',
+    mimeType: 'text/csv',
+    buffer: Buffer.from('X,Y,Z,RHO\n0,0,0,1\n10,0,0,2\n'),
+  })
+  await page.getByTestId('legacy-import-submit').click()
+  expect(importPosts).toHaveLength(1)
+  expect(importPosts[0].contentType).toContain('multipart/form-data')
+
+  // 登记身份展示，导入入口不再显示；面板转为可生成资产
+  await expect(page.getByTestId('legacy-import-identity')).toBeVisible()
+  await expect(page.getByTestId('legacy-import')).toHaveCount(0)
+  await expect(page.getByTestId('create-asset')).toBeVisible()
+
+  // 既有 NativeVolumePanel 流程：显式创建 → 握手 → 渲染
+  await page.getByTestId('create-asset').click()
+  await expect(page.getByTestId('volume-phase')).toContainText('已渲染')
+  await expect(page.getByTestId('asset-identity')).toContainText('supermap_voxelgrid_netcdf')
+})

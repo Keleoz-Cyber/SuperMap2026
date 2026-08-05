@@ -1223,6 +1223,28 @@ export interface RenderAssetRecord {
   error: RenderAssetError | null
 }
 
+// legacy 渲染源导入响应的登记身份：artifact_dir 为相对工件目录身份，绝无绝对路径
+export interface LegacyRenderSourceRegistration {
+  source_kind: 'builtin_legacy'
+  source_id: string
+  grid_sha256: string
+  property_name: string
+  units: string
+  shape: number[]
+  artifact_dir: string
+  import_source_sha256: string
+}
+
+// 导入请求参数：列名/属性名/单位显式传入（multipart 表单同名字段）
+export interface LegacyRenderSourceImportParams {
+  xColumn: string
+  yColumn: string
+  zColumn: string
+  valueColumn: string
+  propertyName: string
+  units: string
+}
+
 // 子帧 RENDER_STATE 携带的渲染身份（camelCase，§2.4 协议字段名逐字一致）
 export interface RenderIdentity {
   sourceKind: RenderSourceKind
