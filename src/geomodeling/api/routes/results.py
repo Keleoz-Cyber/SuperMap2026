@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse
 
 from geomodeling.api.deps import get_platform_runtime
 from geomodeling.platform import PlatformRuntime, tables
-from geomodeling.platform.errors import PlatformError
+from geomodeling.platform.errors import PlatformError, READ_ONLY_CASE_FORMAL_SELECTION
 from geomodeling.platform.exports import build_export
 from geomodeling.platform.publications import request_publication
 from geomodeling.platform.repositories import FormalSelectionRepository
@@ -64,9 +64,17 @@ def get_result_slice(
     return serve_slice(runtime, result_id, axis, index)
 
 
+def _case_is_read_only(session, case_id: str) -> bool:
+    """read_only 官方案例判定（持久化配置；缺行按非只读处理，不改变既有语义）。"""
+
+    case_row = session.get(tables.Case, case_id)
+    if case_row is None:
+        return False
+    return tables.loads_canonical(case_row.config_json).get("read_only") is True
+
+
 @router.post("/api/results/{result_id}/select-formal", status_code=201)
-def select_formal(
-    result_id: str,
+def select_formal(    result_id: str,
     request: FormalSelectionBody,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
@@ -88,6 +96,18 @@ def select_formal(
                 "EXPERIMENT_NOT_FOUND",
                 "成果所属实验缺失，归属链不完整",
                 {"result_id": result_id, "experiment_id": run.experiment_id},
+                http_status=409,
+            )
+        # v0.7.0 审查修复（Blocker）：read_only 案例（如 builtin_preset 官方
+        # 案例）禁止产品面新增正式选择——官方成果只能由内部 seed 登记，
+        # 用户实验不得顶替。只读判定来自持久化 Case 配置，不依赖用户输入。
+        case_row = session.get(tables.Case, experiment.case_id)
+        case_config = tables.loads_canonical(case_row.config_json) if case_row is not None else {}
+        if case_config.get("read_only") is True:
+            raise PlatformError(
+                READ_ONLY_CASE_FORMAL_SELECTION,
+                "官方案例为只读：正式成果已由官方登记，不能另行选择",
+                {"case_id": experiment.case_id},
                 http_status=409,
             )
         selection = FormalSelectionRepository(session).select(
@@ -115,6 +135,9 @@ def list_formal_selections(
         )
     return {
         "case_id": case_id,
+        # v0.7.0 审查修复：产品面是否允许新增正式选择（read_only 官方案例禁止）；
+        # 前端据此隐藏选择控件，API 写路径仍独立强制同一判定
+        "selection_allowed": not _case_is_read_only(session, case_id),
         "selections": [
             {
                 "id": row.id,

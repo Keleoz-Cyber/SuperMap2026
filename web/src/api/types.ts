@@ -577,6 +577,8 @@ export interface FormalSelectionRecord {
 
 export interface FormalSelectionsResponse {
   case_id: string
+  // v0.7.0：read_only 官方案例为 false（默认缺省视为允许，兼容旧响应）
+  selection_allowed?: boolean
   selections: FormalSelectionRecord[]
 }
 

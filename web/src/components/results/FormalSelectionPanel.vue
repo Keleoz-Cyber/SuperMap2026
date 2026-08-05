@@ -9,6 +9,8 @@ const props = defineProps<{
 }>()
 
 const selections = ref<FormalSelectionRecord[]>([])
+// 后端显式能力：read_only 官方案例隐藏可写选择控件（默认允许，加载失败不阻断）
+const selectionAllowed = ref(true)
 const note = ref('')
 const selectedBy = ref('')
 const error = ref<string | null>(null)
@@ -17,6 +19,7 @@ const submitting = ref(false)
 async function refresh() {
   const body = await fetchFormalSelections(props.caseId)
   selections.value = body.selections
+  selectionAllowed.value = body.selection_allowed !== false
 }
 
 onMounted(async () => {
@@ -59,7 +62,7 @@ async function submit() {
     </ul>
     <p v-else class="empty">尚未选择正式模型</p>
 
-    <div class="selection-form">
+    <div v-if="selectionAllowed" class="selection-form">
       <input
         v-model="note"
         class="gmp-input"
@@ -78,6 +81,9 @@ async function submit() {
         登记为正式模型
       </button>
     </div>
+    <p v-else class="readonly-note" data-test="selection-readonly">
+      官方案例为只读：正式成果已由官方登记，不能另行选择。
+    </p>
     <p v-if="error" class="selection-error" data-test="selection-error">{{ error }}</p>
   </section>
 </template>

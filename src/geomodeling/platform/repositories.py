@@ -686,7 +686,38 @@ def featured_result_for_case(session: Session, case_id: str) -> FeaturedResultLi
     （created_at 倒序，id 兜底决胜）；两者皆无返回 None。``materialized``
     以候选 ``grid_path`` 已登记为准——``results.materialize`` 与基准种子
     都是网格落盘后才写回该列，与幂等重读的判定口径一致。
+
+    v0.7.0 审查修复（Blocker 读路径）：``config_json.workspace_kind ==
+    "builtin_preset"`` 的只读官方案例固定解析到**最早一条**正式选择
+    （created_at 升序、id 兜底），即内部 seed 登记的官方成果——官方案例
+    的 Case 与正式选择只能由 seed 在单次加锁流程中创建，必然先于任何用户
+    操作；历史污染选择（较新行）不会改变官方结果。普通案例语义不变。
     """
+
+    case_row = session.get(Case, case_id)
+    case_config = tables.loads_canonical(case_row.config_json) if case_row is not None else {}
+    is_readonly_preset = case_config.get("workspace_kind") == "builtin_preset"
+
+    if is_readonly_preset:
+        selection = (
+            session.query(FormalSelection)
+            .filter(FormalSelection.case_id == case_id)
+            .order_by(FormalSelection.created_at.asc(), FormalSelection.id.asc())
+            .first()
+        )
+        candidate = (
+            session.get(CandidateResult, selection.candidate_result_id)
+            if selection is not None
+            else None
+        )
+        # 官方锚点必须仍归属本案例且状态有效，否则视为缺失（不回退到污染行）
+        if candidate is None or candidate.status != RunStatus.SUCCEEDED.value:
+            return None
+        return FeaturedResultLink(
+            result_id=candidate.id,
+            url=f"/results/{candidate.id}",
+            materialized=candidate.grid_path is not None,
+        )
 
     selection = (
         session.query(FormalSelection)
