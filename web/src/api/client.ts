@@ -37,6 +37,8 @@ import type {
   QualityReport,
   RenderAssetRecord,
   RenderCapability,
+  SliceAnalysisResponse,
+  SliceAxis,
   ResultMetadata,
   ResultPreview,
   RhoCaseDetail,
@@ -377,6 +379,34 @@ export function createResultRenderAsset(resultId: string, retryFailed = false): 
 
 export function fetchResultRenderAsset(resultId: string): Promise<RenderAssetRecord> {
   return getJson<RenderAssetRecord>(`/results/${resultId}/render-assets/netcdf`)
+}
+
+// v0.7.0 第二批：RenderAsset 统一剖面分析与导出（三来源共用）
+export function fetchRenderAssetSliceAnalysis(
+  assetId: string,
+  axis: SliceAxis,
+  index: number,
+): Promise<SliceAnalysisResponse> {
+  return getJson<SliceAnalysisResponse>(
+    `/render-assets/${assetId}/slice-analysis?axis=${axis}&index=${index}`,
+  )
+}
+
+export function createRenderAssetSliceExport(
+  assetId: string,
+  axis: SliceAxis,
+  index: number,
+  png: Blob,
+): Promise<ExportRecord> {
+  const form = new FormData()
+  form.append('axis', axis)
+  form.append('index', String(index))
+  form.append('image', png, 'slice.png')
+  // 不手动设置 Content-Type，由浏览器生成 multipart 边界
+  return requestJson<ExportRecord>(`/render-assets/${assetId}/slice-exports`, {
+    method: 'POST',
+    body: form,
+  })
 }
 
 export function fetchLegacyRhoRenderCapability(): Promise<RenderCapability> {
