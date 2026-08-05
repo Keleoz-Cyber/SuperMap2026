@@ -20,7 +20,12 @@ def _make_client(tmp_path: Path, *, seed: bool):
     from fastapi.testclient import TestClient
 
     from geomodeling.api.app import create_app
-    from geomodeling.api.deps import ApiSettings, get_app_config, get_iserver_client, get_settings
+    from geomodeling.api.deps import (
+        ApiSettings,
+        get_app_config,
+        get_iserver_client,
+        get_settings,
+    )
     from geomodeling.platform import PlatformRuntime
     from test_api import FakeIServer, make_config
 
@@ -87,20 +92,15 @@ def _insert_pollution_selection(client, candidate_id: str) -> None:
 def _build_user_candidate(client, runtime) -> str:
     """在预置案例中制造一个用户实验成功候选（正常产品链路）。"""
 
-    from test_case_workspace_api import _build_upload_result  # noqa: PLC0415
-
     # 复用深状态夹具：在同一个 runtime 中向预置案例插入用户实验成功候选
     import threading
 
-    import numpy as np
-    import pandas as pd
     from geomodeling.modeling.runner import execute_run
     from geomodeling.platform import tables
 
-    dataset_id = (
-        client.get(f"/api/cases/{PRESET_CASE_ID}/workspace")
-        .json()["primary_dataset"]["id"]
-    )
+    dataset_id = client.get(f"/api/cases/{PRESET_CASE_ID}/workspace").json()[
+        "primary_dataset"
+    ]["id"]
     experiment_id = f"user-exp-{uuid.uuid4().hex[:8]}"
     run_id = f"user-run-{uuid.uuid4().hex[:8]}"
     params = {
@@ -133,7 +133,9 @@ def _build_user_candidate(client, runtime) -> str:
         )
 
 
-def test_read_only_preset_select_formal_returns_typed_409_without_side_effects(preset_client):
+def test_read_only_preset_select_formal_returns_typed_409_without_side_effects(
+    preset_client,
+):
     runtime = preset_client.app.state.platform_runtime
     official_before = _official_result_id(preset_client)
     count_before = _selection_count(preset_client, PRESET_CASE_ID)
@@ -313,6 +315,7 @@ def test_formal_selections_endpoint_exposes_selection_allowed(preset_client, tmp
 # 复审 Medium：官方锚点必须校验完整归属链（Candidate→Run→Experiment）
 # ---------------------------------------------------------------------------
 
+
 def _insert_aged_pollution_selection(
     client, candidate_id: str, *, created_at: str = "2020-01-01T00:00:00+00:00"
 ) -> None:
@@ -335,7 +338,9 @@ def _insert_aged_pollution_selection(
         session.commit()
 
 
-def test_anchor_returns_none_when_earliest_selection_points_to_other_case(preset_client):
+def test_anchor_returns_none_when_earliest_selection_points_to_other_case(
+    preset_client,
+):
     from geomodeling.platform.repositories import featured_result_for_case
     from test_case_workspace_api import _build_upload_result  # noqa: PLC0415
 

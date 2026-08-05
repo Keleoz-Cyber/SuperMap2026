@@ -74,14 +74,20 @@ def _case_is_read_only(session, case_id: str) -> bool:
 
 
 @router.post("/api/results/{result_id}/select-formal", status_code=201)
-def select_formal(    result_id: str,
+def select_formal(
+    result_id: str,
     request: FormalSelectionBody,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
     with runtime.session() as session:
         candidate = session.get(tables.CandidateResult, result_id)
         if candidate is None:
-            raise PlatformError("CANDIDATE_NOT_FOUND", "成果不存在", {"result_id": result_id}, http_status=404)
+            raise PlatformError(
+                "CANDIDATE_NOT_FOUND",
+                "成果不存在",
+                {"result_id": result_id},
+                http_status=404,
+            )
         run = session.get(tables.Run, candidate.run_id)
         if run is None:
             raise PlatformError(
@@ -102,7 +108,9 @@ def select_formal(    result_id: str,
         # 案例）禁止产品面新增正式选择——官方成果只能由内部 seed 登记，
         # 用户实验不得顶替。只读判定来自持久化 Case 配置，不依赖用户输入。
         case_row = session.get(tables.Case, experiment.case_id)
-        case_config = tables.loads_canonical(case_row.config_json) if case_row is not None else {}
+        case_config = (
+            tables.loads_canonical(case_row.config_json) if case_row is not None else {}
+        )
         if case_config.get("read_only") is True:
             raise PlatformError(
                 READ_ONLY_CASE_FORMAL_SELECTION,
@@ -167,7 +175,12 @@ def download_export(
     with runtime.session() as session:
         row = session.get(tables.Export, export_id)
         if row is None:
-            raise PlatformError("EXPORT_NOT_FOUND", "导出不存在", {"export_id": export_id}, http_status=404)
+            raise PlatformError(
+                "EXPORT_NOT_FOUND",
+                "导出不存在",
+                {"export_id": export_id},
+                http_status=404,
+            )
     return FileResponse(
         row.package_path,
         media_type="application/zip",

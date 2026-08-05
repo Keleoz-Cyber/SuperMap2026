@@ -235,7 +235,9 @@ class DatasetRepository:
 
     def _allocate_version(self, case_id: str) -> int:
         current_max = self._s.scalar(
-            select(func.max(DatasetVersion.version)).where(DatasetVersion.case_id == case_id)
+            select(func.max(DatasetVersion.version)).where(
+                DatasetVersion.case_id == case_id
+            )
         )
         return (current_max or 0) + 1
 
@@ -278,7 +280,10 @@ class DatasetRepository:
         row = self._s.get(DatasetVersion, dataset_id)
         if row is None:
             raise PlatformError(
-                DATASET_NOT_FOUND, "数据集不存在", {"dataset_id": dataset_id}, http_status=404
+                DATASET_NOT_FOUND,
+                "数据集不存在",
+                {"dataset_id": dataset_id},
+                http_status=404,
             )
         return row
 
@@ -373,7 +378,11 @@ class ExperimentRepository:
             "dataset_version_id": request.dataset_version_id,
             "search_mode": request.search_mode,
             "validation": request.validation.model_dump(mode="json"),
-            "grid": request.grid.model_dump(mode="json") if request.grid is not None else None,
+            "grid": (
+                request.grid.model_dump(mode="json")
+                if request.grid is not None
+                else None
+            ),
             "parameters": request.parameters,
         }
         if professional is not None:
@@ -428,7 +437,9 @@ class RunRepository:
                 {"experiment_id": experiment_id},
                 http_status=404,
             )
-        row = Run(id=_new_id(), experiment_id=experiment_id, status=RunStatus.QUEUED.value)
+        row = Run(
+            id=_new_id(), experiment_id=experiment_id, status=RunStatus.QUEUED.value
+        )
         self._s.add(row)
         try:
             self._s.commit()
@@ -510,7 +521,9 @@ class RunRepository:
             message="任务已不在运行中，完成结果不会覆盖当前状态",
         )
 
-    def mark_failed(self, run_id: str, *, error_code: str, metrics: dict[str, Any] | None = None) -> RunRecord:
+    def mark_failed(
+        self, run_id: str, *, error_code: str, metrics: dict[str, Any] | None = None
+    ) -> RunRecord:
         values: dict[str, Any] = {
             "status": RunStatus.FAILED.value,
             "error_code": error_code,
@@ -626,7 +639,9 @@ class FormalSelectionRepository:
     def __init__(self, session: Session) -> None:
         self._s = session
 
-    def select(self, case_id: str, request: FormalSelectionRequest) -> FormalSelectionRecord:
+    def select(
+        self, case_id: str, request: FormalSelectionRequest
+    ) -> FormalSelectionRecord:
         """只有成功 run 产出的成功候选可以设为正式模型，且必须属于本案例。
 
         ownership（404）先于 run 状态（409）检查：跨案例探测候选时
@@ -678,7 +693,9 @@ class FormalSelectionRepository:
         return _formal_selection_record(row)
 
 
-def featured_result_for_case(session: Session, case_id: str) -> FeaturedResultLink | None:
+def featured_result_for_case(
+    session: Session, case_id: str
+) -> FeaturedResultLink | None:
     """首页上传案例卡的主打成果：正式选择优先，其次本案例最新成功候选。
 
     选取规则：① 案例级正式选择（最新一条）对应的候选直接胜出；② 否则在
@@ -695,7 +712,9 @@ def featured_result_for_case(session: Session, case_id: str) -> FeaturedResultLi
     """
 
     case_row = session.get(Case, case_id)
-    case_config = tables.loads_canonical(case_row.config_json) if case_row is not None else {}
+    case_config = (
+        tables.loads_canonical(case_row.config_json) if case_row is not None else {}
+    )
     is_readonly_preset = case_config.get("workspace_kind") == "builtin_preset"
 
     if is_readonly_preset:
@@ -714,7 +733,9 @@ def featured_result_for_case(session: Session, case_id: str) -> FeaturedResultLi
         # 且候选与 Run 均为 succeeded；任一环节异常 fail-closed 返回 None，
         # 绝不回退到污染行或跨案例候选
         run = session.get(Run, candidate.run_id) if candidate is not None else None
-        experiment = session.get(Experiment, run.experiment_id) if run is not None else None
+        experiment = (
+            session.get(Experiment, run.experiment_id) if run is not None else None
+        )
         if (
             candidate is None
             or candidate.status != RunStatus.SUCCEEDED.value
@@ -767,13 +788,17 @@ def featured_result_for_case(session: Session, case_id: str) -> FeaturedResultLi
 # ---------------------------------------------------------------------------
 
 # 诊断生命周期：queued→running→succeeded/failed；interrupted 由重启恢复写入。
-DIAGNOSIS_INFLIGHT_STATUSES = frozenset({RunStatus.QUEUED.value, RunStatus.RUNNING.value})
+DIAGNOSIS_INFLIGHT_STATUSES = frozenset(
+    {RunStatus.QUEUED.value, RunStatus.RUNNING.value}
+)
 
 # 专业工件与异常提取生命周期：pending→succeeded/failed（终态不可再迁移）。
 ARTIFACT_INFLIGHT_STATUS = "pending"
 
 
-def _professional_diagnostic_record(row: ProfessionalDiagnostic) -> ProfessionalDiagnosticRecord:
+def _professional_diagnostic_record(
+    row: ProfessionalDiagnostic,
+) -> ProfessionalDiagnosticRecord:
     return ProfessionalDiagnosticRecord(
         id=row.id,
         dataset_version_id=row.dataset_version_id,
@@ -781,7 +806,11 @@ def _professional_diagnostic_record(row: ProfessionalDiagnostic) -> Professional
         config=tables.loads_canonical(row.config_json),
         fingerprint=row.fingerprint,
         manifest=tables.loads_canonical(row.manifest_json),
-        error=tables.loads_canonical(row.error_json) if row.error_json is not None else None,
+        error=(
+            tables.loads_canonical(row.error_json)
+            if row.error_json is not None
+            else None
+        ),
         created_at=row.created_at,
         updated_at=row.updated_at,
         finished_at=row.finished_at,
@@ -823,7 +852,11 @@ def _anomaly_extraction_record(row: AnomalyExtraction) -> AnomalyExtractionRecor
         config=tables.loads_canonical(row.config_json),
         fingerprint=row.fingerprint,
         manifest=tables.loads_canonical(row.manifest_json),
-        error=tables.loads_canonical(row.error_json) if row.error_json is not None else None,
+        error=(
+            tables.loads_canonical(row.error_json)
+            if row.error_json is not None
+            else None
+        ),
         created_at=row.created_at,
     )
 
@@ -838,7 +871,11 @@ def _analysis_job_record(row: AnalysisJob) -> AnalysisJobRecord:
         status=row.status,
         retry_of_job_id=row.retry_of_job_id,
         progress=tables.loads_canonical(row.progress_json),
-        error=tables.loads_canonical(row.error_json) if row.error_json is not None else None,
+        error=(
+            tables.loads_canonical(row.error_json)
+            if row.error_json is not None
+            else None
+        ),
         created_at=row.created_at,
         updated_at=row.updated_at,
         started_at=row.started_at,
@@ -1025,7 +1062,9 @@ class ProfessionalConfirmationRepository:
     def get(self, confirmation_id: str) -> ProfessionalConfirmationRecord:
         return _professional_confirmation_record(self._get_row(confirmation_id))
 
-    def list_for_diagnostic(self, diagnostic_id: str) -> list[ProfessionalConfirmationRecord]:
+    def list_for_diagnostic(
+        self, diagnostic_id: str
+    ) -> list[ProfessionalConfirmationRecord]:
         rows = (
             self._s.query(ProfessionalConfirmation)
             .filter(ProfessionalConfirmation.diagnostic_id == diagnostic_id)
@@ -1084,7 +1123,9 @@ class ProfessionalResultArtifactsRepository:
     def get(self, artifacts_id: str) -> ProfessionalResultArtifactsRecord:
         return _professional_result_artifacts_record(self._get_row(artifacts_id))
 
-    def get_for_candidate(self, candidate_result_id: str) -> ProfessionalResultArtifactsRecord:
+    def get_for_candidate(
+        self, candidate_result_id: str
+    ) -> ProfessionalResultArtifactsRecord:
         row = self._s.scalar(
             select(ProfessionalResultArtifacts).where(
                 ProfessionalResultArtifacts.candidate_result_id == candidate_result_id
@@ -1120,7 +1161,11 @@ class ProfessionalResultArtifactsRepository:
             raise PlatformError(
                 INVALID_STATUS_TRANSITION,
                 message,
-                {"artifacts_id": artifacts_id, "expected": [ARTIFACT_INFLIGHT_STATUS], "actual": actual},
+                {
+                    "artifacts_id": artifacts_id,
+                    "expected": [ARTIFACT_INFLIGHT_STATUS],
+                    "actual": actual,
+                },
                 http_status=409,
             )
         self._s.commit()
@@ -1131,7 +1176,10 @@ class ProfessionalResultArtifactsRepository:
     ) -> ProfessionalResultArtifactsRecord:
         return self._cas_transition(
             artifacts_id,
-            values={"status": "succeeded", "manifest_json": tables.dumps_canonical(manifest)},
+            values={
+                "status": "succeeded",
+                "manifest_json": tables.dumps_canonical(manifest),
+            },
             message="工件集合已不在待处理状态，完成结果不会覆盖当前状态",
         )
 
@@ -1216,7 +1264,11 @@ class AnomalyExtractionRepository:
             raise PlatformError(
                 INVALID_STATUS_TRANSITION,
                 message,
-                {"extraction_id": extraction_id, "expected": [ARTIFACT_INFLIGHT_STATUS], "actual": actual},
+                {
+                    "extraction_id": extraction_id,
+                    "expected": [ARTIFACT_INFLIGHT_STATUS],
+                    "actual": actual,
+                },
                 http_status=409,
             )
         self._s.commit()
@@ -1227,7 +1279,10 @@ class AnomalyExtractionRepository:
     ) -> AnomalyExtractionRecord:
         return self._cas_transition(
             extraction_id,
-            values={"status": "succeeded", "manifest_json": tables.dumps_canonical(manifest)},
+            values={
+                "status": "succeeded",
+                "manifest_json": tables.dumps_canonical(manifest),
+            },
             message="异常提取已不在待处理状态，完成结果不会覆盖当前状态",
         )
 
@@ -1289,7 +1344,9 @@ class AnalysisJobRepository:
     def get(self, job_id: str) -> AnalysisJobRecord:
         return _analysis_job_record(self._get_row(job_id))
 
-    def find_active(self, *, job_kind: str, subject_id: str) -> AnalysisJobRecord | None:
+    def find_active(
+        self, *, job_kind: str, subject_id: str
+    ) -> AnalysisJobRecord | None:
         row = self._s.scalar(
             select(AnalysisJob).where(
                 AnalysisJob.job_kind == job_kind,
@@ -1313,7 +1370,9 @@ class AnalysisJobRepository:
         values.setdefault("updated_at", tables.utc_now_iso())
         result = self._s.execute(
             update(AnalysisJob)
-            .where(AnalysisJob.id == job_id, AnalysisJob.status.in_(sorted(expected_set)))
+            .where(
+                AnalysisJob.id == job_id, AnalysisJob.status.in_(sorted(expected_set))
+            )
             .values(**values)
         )
         if result.rowcount != 1:
@@ -1389,11 +1448,18 @@ class AnalysisJobRepository:
                 {"job_id": job_id, "status": row.status},
                 http_status=409,
             )
-        if self.find_active(job_kind=row.job_kind, subject_id=row.subject_id) is not None:
+        if (
+            self.find_active(job_kind=row.job_kind, subject_id=row.subject_id)
+            is not None
+        ):
             raise PlatformError(
                 ANALYSIS_JOB_ALREADY_ACTIVE,
                 "该对象已有排队或运行中的同类分析任务，不能重复重试",
-                {"job_id": job_id, "job_kind": row.job_kind, "subject_id": row.subject_id},
+                {
+                    "job_id": job_id,
+                    "job_kind": row.job_kind,
+                    "subject_id": row.subject_id,
+                },
                 http_status=409,
             )
         new_row = AnalysisJob(
@@ -1413,7 +1479,11 @@ class AnalysisJobRepository:
             raise PlatformError(
                 ANALYSIS_JOB_ALREADY_ACTIVE,
                 "该对象已有排队或运行中的同类分析任务，不能重复重试",
-                {"job_id": job_id, "job_kind": row.job_kind, "subject_id": row.subject_id},
+                {
+                    "job_id": job_id,
+                    "job_kind": row.job_kind,
+                    "subject_id": row.subject_id,
+                },
                 http_status=409,
             ) from exc
         return _analysis_job_record(new_row)
@@ -1441,7 +1511,11 @@ def _render_asset_record(row: RenderAsset) -> RenderAssetRecord:
         netcdf_sha256=row.netcdf_sha256 if ready else None,
         manifest_url=f"/api/render-assets/{row.id}/manifest" if ready else None,
         netcdf_url=f"/api/render-assets/{row.id}/volume.nc" if ready else None,
-        error=tables.loads_canonical(row.error_json) if row.error_json is not None else None,
+        error=(
+            tables.loads_canonical(row.error_json)
+            if row.error_json is not None
+            else None
+        ),
     )
 
 
@@ -1498,7 +1572,9 @@ class RenderAssetRepository:
                 source_kind=source.source_kind,
                 source_id=source.source_id,
                 candidate_result_id=(
-                    source.source_id if source.source_kind == "candidate_result" else None
+                    source.source_id
+                    if source.source_kind == "candidate_result"
+                    else None
                 ),
                 renderer=RENDERER,
                 format_version=FORMAT_VERSION,
