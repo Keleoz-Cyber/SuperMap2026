@@ -174,3 +174,181 @@ def test_generic_result_and_dataset_reads_still_work(seeded_client):
     assert result.status_code == 200, result.text
     dataset = seeded_client.get(f"/api/datasets/{dataset_id}")
     assert dataset.status_code == 200, dataset.text
+
+
+# ---------------------------------------------------------------------------
+# v0.7.0 补齐：user_upload 工作台深状态（数据版本 + 主打成果两种来源）
+# ---------------------------------------------------------------------------
+
+import threading  # noqa: E402
+
+import numpy as np  # noqa: E402
+import pandas as pd  # noqa: E402
+
+from geomodeling.modeling.runner import execute_run  # noqa: E402
+from geomodeling.platform.results import materialize  # noqa: E402
+from geomodeling.platform.repositories import FormalSelectionRepository  # noqa: E402
+from geomodeling.platform.schemas import FormalSelectionRequest  # noqa: E402
+
+
+def _build_upload_result(runtime, case_id: str, *, formal: bool) -> str:
+    """上传案例：标准化数据 → 实验 → 运行 → 物化 →（可选）正式选择。"""
+
+    from geomodeling.platform import tables
+
+    dataset_id = f"{case_id}-ds"
+    experiment_id = f"{case_id}-exp"
+    run_id = f"{case_id}-run"
+    rng = np.random.default_rng(7)
+    n = 36
+    x = rng.uniform(-160.0, -40.0, n)
+    y = rng.uniform(220.0, 660.0, n)
+    z = rng.uniform(-800.0, -100.0, n)
+    frame = pd.DataFrame(
+        {
+            "source_row": np.arange(1, n + 1),
+            "x": x,
+            "y": y,
+            "z": z,
+            "value": np.sin(x / 40) + np.cos(y / 90) + 0.001 * z + 10.0,
+            "is_numeric_valid": True,
+        }
+    )
+    target = runtime.settings.standardized_dataset(case_id, dataset_id)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    frame.to_parquet(target, index=False)
+    params = {
+        "algorithm": "idw",
+        "dataset_version_id": dataset_id,
+        "search_mode": "manual",
+        "parameters": {"power": 2.0, "neighbor_count": 8},
+        "validation": {"method": "spatial_kfold", "folds": 3, "seed": 11},
+        "grid": {
+            "bounds": [[-160.0, -40.0], [220.0, 660.0], [-800.0, -100.0]],
+            "resolution": [40.0, 40.0, 100.0],
+            "max_cells": 100000,
+        },
+    }
+    profile = {
+        "mapping": {
+            "dimension": "3d",
+            "x": "x",
+            "y": "y",
+            "z": "z",
+            "value": "value",
+            "value_name": "电阻率",
+            "value_unit": "ohm-m",
+            "coordinate_kind": "local_linear",
+        },
+        "row_count": n,
+        "valid_row_count": n,
+        "invalid_row_count": 0,
+        "source_sha256": "a" * 64,
+        "standardized_sha256": "b" * 64,
+        "standardized_path": str(target),
+        "quality": {"status": "passed", "confirmed": True},
+    }
+    with runtime.session() as session:
+        session.add(
+            tables.Case(id=case_id, name="上传案例", case_type="generic", config_json="{}")
+        )
+        session.add(
+            tables.DatasetVersion(
+                id=dataset_id,
+                case_id=case_id,
+                version=1,
+                status="validated",
+                source_path="x.csv",
+                profile_json=tables.dumps_canonical(profile),
+            )
+        )
+        session.add(
+            tables.Experiment(
+                id=experiment_id,
+                case_id=case_id,
+                name="实验",
+                params_json=tables.dumps_canonical(params),
+            )
+        )
+        session.add(tables.Run(id=run_id, experiment_id=experiment_id, status="queued"))
+        session.commit()
+    outcome = execute_run(runtime, run_id, threading.Event())
+    assert outcome.status == "succeeded"
+    with runtime.session() as session:
+        candidate = (
+            session.query(tables.CandidateResult)
+            .filter(tables.CandidateResult.run_id == run_id)
+            .one()
+        )
+        candidate_id = candidate.id
+    materialize(runtime, candidate_id)
+    if formal:
+        with runtime.session() as session:
+            FormalSelectionRepository(session).select(
+                case_id,
+                FormalSelectionRequest(candidate_result_id=candidate_id, note="测试选择"),
+            )
+    return dataset_id, candidate_id
+
+
+def test_upload_workspace_with_dataset_and_formal_selection(seeded_client):
+    runtime = seeded_client.app.state.platform_runtime
+    dataset_id, candidate_id = _build_upload_result(runtime, "up-formal", formal=True)
+
+    cards = _cards(seeded_client)
+    card = cards["up-formal"]
+    assert card["workspace_kind"] == "user_upload"
+    assert card["capabilities"] == {
+        "data_summary": True,
+        "experiments": True,
+        "official_result": True,
+        "native_volume": True,
+    }
+    assert card["primary_dataset"]["id"] == dataset_id
+    assert card["primary_dataset"]["status"] == "validated"
+    assert card["official_result"]["result_id"] == candidate_id
+    assert card["official_result"]["materialized"] is True
+    assert card["official_result"]["url"] == f"/results/{candidate_id}"
+    assert card["provenance_summary"]["value_name"] == "电阻率"
+    assert card["provenance_summary"]["value_unit"] == "ohm-m"
+
+    workspace = seeded_client.get("/api/cases/up-formal/workspace")
+    assert workspace.status_code == 200, workspace.text
+    body = workspace.json()
+    assert body["official_result"]["result_id"] == candidate_id
+    assert body["primary_dataset"]["profile"]["mapping"]["value_name"] == "电阻率"
+    assert "source_path" not in workspace.text
+
+
+def test_upload_workspace_official_result_falls_back_to_latest_candidate(seeded_client):
+    runtime = seeded_client.app.state.platform_runtime
+    _, candidate_id = _build_upload_result(runtime, "up-plain", formal=False)
+
+    workspace = seeded_client.get("/api/cases/up-plain/workspace")
+    assert workspace.status_code == 200, workspace.text
+    body = workspace.json()
+    assert body["capabilities"]["official_result"] is True
+    assert body["official_result"]["result_id"] == candidate_id
+    assert body["official_result"]["materialized"] is True
+
+
+def test_upload_workspace_without_dataset_has_no_experiment_capability(seeded_client):
+    from geomodeling.platform import tables
+
+    runtime = seeded_client.app.state.platform_runtime
+    with runtime.session() as session:
+        session.add(
+            tables.Case(id="up-empty", name="空案例", case_type="generic", config_json="{}")
+        )
+        session.commit()
+    workspace = seeded_client.get("/api/cases/up-empty/workspace")
+    assert workspace.status_code == 200
+    body = workspace.json()
+    assert body["capabilities"] == {
+        "data_summary": False,
+        "experiments": False,
+        "official_result": False,
+        "native_volume": False,
+    }
+    assert body["primary_dataset"] is None
+    assert body["official_result"] is None
