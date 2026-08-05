@@ -750,11 +750,11 @@ def test_rendering_routes_registered_without_shadowing(tmp_path, monkeypatch):
             "/api/render-assets/{asset_id}/volume.nc",
         ):
             assert path in paths, path
-        # legacy 精确路由与微震路由不被遮蔽
+        # legacy 精确路由不被遮蔽；v0.7.0 DAT 路由已退出产品面
         legacy = client.get("/api/cases/resistivity")
         assert legacy.status_code == 200, legacy.text
         assert legacy.json()["case_id"] == "resistivity"
-        assert "/api/cases/{case_id}/microseismic-imports" in paths
+        assert "/api/cases/{case_id}/microseismic-imports" not in paths
         # 渲染 capability 命中渲染路由而非动态案例路由
         capability = client.get("/api/cases/resistivity/render-capability")
         assert capability.status_code == 200, capability.text
