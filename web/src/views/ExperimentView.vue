@@ -25,6 +25,7 @@ import ParameterEditor, { type ParameterSubmit } from '../components/experiments
 import { parseNumberList, resolveDatasetPreset } from '../components/experiments/searchSpace'
 import SearchSummary from '../components/experiments/SearchSummary.vue'
 import RunProgress from '../components/experiments/RunProgress.vue'
+import ResultStatusPanel from '../components/experiments/ResultStatusPanel.vue'
 import CandidateLeaderboard from '../components/experiments/CandidateLeaderboard.vue'
 import PageNavigation from '../components/navigation/PageNavigation.vue'
 
@@ -430,6 +431,7 @@ onBeforeUnmount(stopPolling)
       <div v-if="actionError" class="action-error" data-test="action-error">{{ actionError }}</div>
       <SearchSummary v-if="experiment" :params="experiment.params" />
       <RunProgress :run="latestRun" :acting="acting" @cancel="onCancel" @retry="onRetry" />
+      <ResultStatusPanel :run="latestRun" :candidates="candidates" />
       <CandidateLeaderboard :candidates="candidates" :public-metrics="publicMetrics" />
     </template>
   </div>

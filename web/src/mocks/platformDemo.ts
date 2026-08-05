@@ -150,6 +150,8 @@ interface MockState {
   datasetStatus: 'uploaded' | 'mapped' | 'validated'
   diagnosisJobPolls: number
   extractionJobPolls: number
+  // v0.6.1：cand-1 物化状态机——GET /results 未物化 404，POST materialize 后 200
+  resultMaterialized: boolean
 }
 
 // ---------------------------------------------------------------- v0.6 专业建模
@@ -346,6 +348,7 @@ export async function installMockApi(page: Page): Promise<void> {
     datasetStatus: 'uploaded',
     diagnosisJobPolls: 0,
     extractionJobPolls: 0,
+    resultMaterialized: false,
   }
 
   const runBody = (status: string, completed: number) => ({
@@ -636,10 +639,19 @@ export async function installMockApi(page: Page): Promise<void> {
       return json(route, state.runPolls > 1 ? runBody('succeeded', 2) : runBody('running', 1))
     }
     if (path === '/results/cand-1' && method === 'GET') {
+      // 与真实后端一致：未物化 404 RESULT_NOT_MATERIALIZED，POST materialize 后才可读
+      if (!state.resultMaterialized) {
+        return json(
+          route,
+          { error: { code: 'RESULT_NOT_MATERIALIZED', message: '成果尚未生成', details: { result_id: 'cand-1' } } },
+          404,
+        )
+      }
       return json(route, {
         result_id: 'cand-1',
         run_id: 'run-e2e',
         experiment_id: 'exp-e2e',
+        dataset_version_id: 'ds-e2e',
         algorithm: 'idw',
         parameters: { power: 1.5, neighbor_count: 8 },
         dimension: '3d',
@@ -721,6 +733,7 @@ export async function installMockApi(page: Page): Promise<void> {
     // ---------------------------------------------------------------- v0.6.1 NetCDF 原生体渲染
     // 物化是唯一显式变异（POST）；能力/资产状态一律纯 GET，绝不隐式 POST。
     if (path === '/results/cand-1/materialize' && method === 'POST') {
+      state.resultMaterialized = true
       return json(route, {
         result_id: 'cand-1',
         run_id: 'run-e2e',
@@ -994,6 +1007,22 @@ export async function installMockApi(page: Page): Promise<void> {
         fingerprint: 'fp-pro-1',
         validation: { folds: 5 },
         created_at: T,
+      })
+    }
+    if (path === '/results/cand-pro-1/render-capability' && method === 'GET') {
+      // 二维成果：与真实后端一致 supported=false + 稳定 RENDER_REQUIRES_3D 原因码
+      return json(route, {
+        source_kind: 'candidate_result',
+        source_id: 'cand-pro-1',
+        supported: false,
+        reason_code: 'RENDER_REQUIRES_3D',
+        reason: '原生体渲染要求三维成果网格',
+        dimension: '2d',
+        grid_kind: null,
+        property_name: '电阻率',
+        units: 'unknown',
+        geolocation_status: 'display_anchor_only',
+        display_transform: null,
       })
     }
     if (path === '/results/cand-pro-1/preview' && method === 'GET') {
