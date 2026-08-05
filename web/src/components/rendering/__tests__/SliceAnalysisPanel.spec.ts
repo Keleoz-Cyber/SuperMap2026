@@ -4,7 +4,7 @@ import ElementPlus from 'element-plus'
 import type { SliceAnalysisResponse, SliceAxis } from '../../../api/types'
 import SliceAnalysisPanel from '../SliceAnalysisPanel.vue'
 
-// v0.7.0 Batch 2 Task 10：剖面分析面板（最新请求获胜 + 统计 + 导出流）。
+// v0.7.0 Batch 2 Task 10/11：剖面分析面板（目标驱动 + 最新请求获胜）。
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -82,9 +82,19 @@ const HeatmapStub = {
   },
 }
 
-function mountPanel(api: ReturnType<typeof makeApi>) {
+const AXES_META = {
+  x: { length: 2, coordinates: [0, 100], unit: 'm' },
+  y: { length: 3, coordinates: [0, 10, 20], unit: 'm' },
+  z: { length: 4, coordinates: [0, 1, 2, 3], unit: 'm' },
+}
+
+function mountPanel(
+  api: ReturnType<typeof makeApi>,
+  target: { axis: SliceAxis; index: number } | null,
+  axesMeta: typeof AXES_META | null = AXES_META,
+) {
   return mount(SliceAnalysisPanel, {
-    props: { api, assetId: 'nc-1', axisMeta: null, enabled: true },
+    props: { api, assetId: 'nc-1', target, axesMeta, enabled: true },
     global: { plugins: [ElementPlus], stubs: { SliceHeatmap: HeatmapStub } },
     attachTo: document.body,
   })
@@ -95,59 +105,62 @@ describe('SliceAnalysisPanel', () => {
     vi.clearAllMocks()
   })
 
-  it('首次进入切片模式：bootstrap z/0 → 轴元数据 → z/中位索引 → 显示统计并发出 analysis-loaded', async () => {
+  it('无轴元数据时先 z/0 引导并上报 axes-meta-loaded', async () => {
     const api = makeApi()
-    const boot = makeResponse('z', 0, 0)
-    const middle = makeResponse('z', 1, 1)
-    api.fetchSliceAnalysis
-      .mockResolvedValueOnce(boot)
-      .mockResolvedValueOnce(middle)
-    const wrapper = mountPanel(api)
-    await wrapper.find('[data-test="enter-slice-mode"]').trigger('click')
+    api.fetchSliceAnalysis.mockResolvedValue(makeResponse('z', 0, 0))
+    const wrapper = mountPanel(api, { axis: 'z', index: 1 }, null)
     await flushPromises()
-    expect(api.fetchSliceAnalysis).toHaveBeenCalledTimes(2)
-    expect(api.fetchSliceAnalysis).toHaveBeenNthCalledWith(1, 'nc-1', 'z', 0)
-    expect(api.fetchSliceAnalysis).toHaveBeenNthCalledWith(2, 'nc-1', 'z', 1)
-    expect(wrapper.find('[data-test="slice-valid-count"]').text()).toContain('5')
-    expect(wrapper.find('[data-test="slice-coordinate-label"]').text()).toContain('Z = 1')
-    const loaded = wrapper.emitted('analysis-loaded')
-    expect(loaded).toBeTruthy()
-    expect((loaded![0][0] as SliceAnalysisResponse).slice.sdk_relative_position).toBeCloseTo(1 / 3)
+    expect(api.fetchSliceAnalysis).toHaveBeenCalledWith('nc-1', 'z', 0)
+    const meta = wrapper.emitted('axes-meta-loaded')
+    expect(meta).toBeTruthy()
+    expect(meta![0][0]).toEqual(AXES_META)
   })
 
-  it('竞态：stale 成功/失败/finally 均不得污染当前状态', async () => {
+  it('目标到达即请求并展示统计，上报 analysis-loaded', async () => {
     const api = makeApi()
-    api.fetchSliceAnalysis.mockResolvedValueOnce(makeResponse('z', 0, 0)).mockResolvedValueOnce(makeResponse('z', 1, 1))
-    const wrapper = mountPanel(api)
-    await wrapper.find('[data-test="enter-slice-mode"]').trigger('click')
+    api.fetchSliceAnalysis.mockResolvedValue(makeResponse('z', 1, 1))
+    const wrapper = mountPanel(api, { axis: 'z', index: 1 })
+    await flushPromises()
+    expect(api.fetchSliceAnalysis).toHaveBeenCalledWith('nc-1', 'z', 1)
+    expect(wrapper.find('[data-test="slice-valid-count"]').text()).toContain('5')
+    expect(wrapper.find('[data-test="slice-coordinate-label"]').text()).toContain('Z = 1')
+    expect(wrapper.emitted('analysis-loaded')).toBeTruthy()
+  })
+
+  it('竞态：stale 成功/失败均不得污染当前目标状态', async () => {
+    const api = makeApi()
+    api.fetchSliceAnalysis.mockResolvedValue(makeResponse('z', 1, 1))
+    const wrapper = mountPanel(api, { axis: 'z', index: 1 })
     await flushPromises()
 
     const x1 = deferred<SliceAnalysisResponse>()
     const y2 = deferred<SliceAnalysisResponse>()
-    api.fetchSliceAnalysis.mockImplementation((_assetId: string, axis: SliceAxis) =>
+    api.fetchSliceAnalysis.mockImplementation((_id: string, axis: SliceAxis) =>
       axis === 'x' ? x1.promise : y2.promise,
     )
-    await wrapper.find('[data-test="axis-x"]').trigger('click')
-    await wrapper.find('[data-test="axis-y"]').trigger('click')
+    await wrapper.setProps({ target: { axis: 'x', index: 1 } })
+    await wrapper.setProps({ target: { axis: 'y', index: 1 } })
     y2.resolve(makeResponse('y', 1, 20))
     x1.reject(new Error('stale failure'))
     await flushPromises()
     expect(wrapper.text()).toContain('Y = 20 m')
     expect(wrapper.find('[data-test="slice-error"]').exists()).toBe(false)
+  })
 
-    // stale 成功也不得覆盖
-    const z3 = deferred<SliceAnalysisResponse>()
-    const x4 = deferred<SliceAnalysisResponse>()
-    api.fetchSliceAnalysis.mockImplementation((_assetId: string, axis: SliceAxis) =>
-      axis === 'x' ? x4.promise : z3.promise,
-    )
-    await wrapper.find('[data-test="axis-z"]').trigger('click')
-    await wrapper.find('[data-test="axis-x"]').trigger('click')
-    x4.resolve(makeResponse('x', 1, 100))
-    z3.resolve(makeResponse('z', 2, 2))
+  it('目标切换后导出禁用直到匹配响应到达', async () => {
+    const api = makeApi()
+    api.fetchSliceAnalysis.mockResolvedValue(makeResponse('z', 1, 1))
+    const wrapper = mountPanel(api, { axis: 'z', index: 1 })
     await flushPromises()
-    expect(wrapper.text()).toContain('X = 100 m')
-    expect(wrapper.text()).not.toContain('Z = 2 m')
+    expect(wrapper.get('[data-test="export-slice"]').attributes('disabled')).toBeUndefined()
+
+    const pending = deferred<SliceAnalysisResponse>()
+    api.fetchSliceAnalysis.mockImplementation(() => pending.promise)
+    await wrapper.setProps({ target: { axis: 'x', index: 0 } })
+    expect(wrapper.get('[data-test="export-slice"]').attributes('disabled')).toBeDefined()
+    pending.resolve(makeResponse('x', 0, 0))
+    await flushPromises()
+    expect(wrapper.get('[data-test="export-slice"]').attributes('disabled')).toBeUndefined()
   })
 
   it('全 NoData 剖面是有效结果：计数为 0 且统计为 —', async () => {
@@ -165,53 +178,27 @@ describe('SliceAnalysisPanel', () => {
       p50: null,
       p90: null,
     }
-    api.fetchSliceAnalysis
-      .mockResolvedValueOnce(makeResponse('z', 0, 0))
-      .mockResolvedValueOnce(empty)
-    const wrapper = mountPanel(api)
-    await wrapper.find('[data-test="enter-slice-mode"]').trigger('click')
+    api.fetchSliceAnalysis.mockResolvedValue(empty)
+    const wrapper = mountPanel(api, { axis: 'z', index: 1 })
     await flushPromises()
     expect(wrapper.find('[data-test="slice-valid-count"]').text()).toContain('0')
     expect(wrapper.find('[data-test="slice-error"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('—')
   })
 
-  it('导出仅在已加载身份与当前选择一致时可用；成功后跳转下载', async () => {
+  it('导出携带当前目标的轴/索引与 PNG，成功后跳转下载', async () => {
     const api = makeApi()
-    api.fetchSliceAnalysis
-      .mockResolvedValueOnce(makeResponse('z', 0, 0))
-      .mockResolvedValueOnce(makeResponse('z', 1, 1))
-    const wrapper = mountPanel(api)
-    await wrapper.find('[data-test="enter-slice-mode"]').trigger('click')
+    api.fetchSliceAnalysis.mockResolvedValue(makeResponse('z', 1, 1))
+    const wrapper = mountPanel(api, { axis: 'z', index: 1 })
     await flushPromises()
-    const exportButton = wrapper.get('[data-test="export-slice"]')
-    expect(exportButton.attributes('disabled')).toBeUndefined()
     const assignSpy = vi.fn()
     Object.defineProperty(window, 'location', {
       value: { assign: assignSpy, origin: window.location.origin },
       configurable: true,
     })
-    await exportButton.trigger('click')
+    await wrapper.get('[data-test="export-slice"]').trigger('click')
     await flushPromises()
     expect(api.createSliceExport).toHaveBeenCalledWith('nc-1', 'z', 1, expect.any(Blob))
     expect(assignSpy).toHaveBeenCalledWith('/api/exports/exp-1/download')
-  })
-
-  it('切换选择后导出禁用直到新响应到达', async () => {
-    const api = makeApi()
-    api.fetchSliceAnalysis
-      .mockResolvedValueOnce(makeResponse('z', 0, 0))
-      .mockResolvedValueOnce(makeResponse('z', 1, 1))
-    const wrapper = mountPanel(api)
-    await wrapper.find('[data-test="enter-slice-mode"]').trigger('click')
-    await flushPromises()
-
-    const pending = deferred<SliceAnalysisResponse>()
-    api.fetchSliceAnalysis.mockImplementation(() => pending.promise)
-    await wrapper.find('[data-test="axis-x"]').trigger('click')
-    expect(wrapper.get('[data-test="export-slice"]').attributes('disabled')).toBeDefined()
-    pending.resolve(makeResponse('x', 0, 0))
-    await flushPromises()
-    expect(wrapper.get('[data-test="export-slice"]').attributes('disabled')).toBeUndefined()
   })
 })

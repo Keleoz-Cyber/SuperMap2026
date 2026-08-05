@@ -21,12 +21,18 @@ const props = withDefaults(
     modelValue: RenderStateV2
     profile: RenderProfile | null
     enabled?: boolean
+    // Task 11：色带/标度可由面板提升为受控状态（与剖面热力图共享同一份选择）；
+    // 不传时回退 profile 默认（保持旧用法兼容）
+    palette?: RenderPaletteId
+    scale?: RenderScale
   }>(),
-  { enabled: true },
+  { enabled: true, palette: undefined, scale: undefined },
 )
 
 const emit = defineEmits<{
   'update:modelValue': [state: RenderStateV2]
+  'update:palette': [palette: RenderPaletteId]
+  'update:scale': [scale: RenderScale]
   'reset-view': []
 }>()
 
@@ -44,21 +50,24 @@ function cloneWith(mutate: (next: RenderStateV2) => void) {
 }
 
 const currentPaletteId = computed<RenderPaletteId>({
-  get: () => props.profile?.default_palette ?? 'viridis',
-  set: (palette) =>
+  get: () => props.palette ?? props.profile?.default_palette ?? 'viridis',
+  set: (palette) => {
+    emit('update:palette', palette)
     cloneWith((next) => {
       next.colorTransferFunction = buildColorStops(
         palette,
         currentScale.value,
         [next.filter.min, next.filter.max],
       )
-    }),
+    })
+  },
 })
 
 const currentScale = computed<RenderScale>({
-  get: () => props.profile?.default_scale ?? 'linear',
+  get: () => props.scale ?? props.profile?.default_scale ?? 'linear',
   set: (scale) => {
     if (scale === 'log' && !logAvailable.value) return
+    emit('update:scale', scale)
     cloneWith((next) => {
       next.colorTransferFunction = buildColorStops(
         currentPaletteId.value,

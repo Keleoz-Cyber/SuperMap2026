@@ -1,19 +1,22 @@
 import { expect, test } from '@playwright/test'
 import { installMockApi } from '../src/mocks/platformDemo'
 
-// v0.6.1 Task 11：mock 产品流程浏览器测试。
-// 验证：路由加载、显式物化/资产创建（POST）、iframe 协议握手、控件命令、切片 tab、
-// 无 /volume-demo 链接。iframe 由本文件的协议 mock 页面扮演（无 SuperMap3D SDK），
-// 本测试只证明协议与产品接线正确，绝不宣称真实渲染。
+// v0.6.1 Task 11 → v0.7.0 第二批 Task 11：mock 产品流程浏览器测试。
+// 验证：路由加载、显式物化/资产创建（POST）、iframe v2 协议握手、常驻工具栏
+// 完整渲染状态命令、X/Y/Z 正交切片（3D slice 只来自权威剖面响应）、等值面
+// 输入、multipart 剖面导出、切片 tab、无 /volume-demo 链接。
+// iframe 由本文件的协议 mock 页面扮演（无 SuperMap3D SDK），本测试只证明
+// 协议与产品接线正确，绝不宣称真实渲染。
 
 // 协议 mock 子帧：与 web/public/supermap-volume-frame/app.js 同一份
-// gmp-supermap-volume/v1 信封纪律（request_id 关联、目标 origin 恒为本源），
-// 但不做任何 SDK 调用；INIT 后按 asset 回 RENDER_STATE，并记录全部父级命令供断言。
+// gmp-supermap-volume/v2 信封纪律（request_id 关联、目标 origin 恒为本源），
+// 但不做任何 SDK 调用；INIT 后按 asset 回 RENDER_STATE，命令回 STATE_APPLIED /
+// COMMAND_APPLIED，并记录全部父级消息供断言。
 const MOCK_FRAME_HTML = `<!doctype html>
 <html><head><meta charset="utf-8"></head><body>
 <script>
 (function () {
-  var PROTOCOL = 'gmp-supermap-volume/v1'
+  var PROTOCOL = 'gmp-supermap-volume/v2'
   var requestId = new URLSearchParams(window.location.search).get('request_id') || ''
   var received = []
   window.__GMP_MOCK_FRAME__ = { requestId: requestId, received: received }
@@ -40,9 +43,29 @@ const MOCK_FRAME_HTML = `<!doctype html>
             }
           : null,
       })
+    } else if (msg.type === 'APPLY_RENDER_STATE') {
+      post({
+        type: 'STATE_APPLIED',
+        commandId: msg.commandId,
+        revision: msg.state.revision,
+        appliedState: msg.state,
+      })
+    } else if (msg.type === 'SET_POINT_LAYER' || msg.type === 'RESET_VIEW') {
+      post({ type: 'COMMAND_APPLIED', commandId: msg.commandId, commandType: msg.type })
     }
   })
-  post({ type: 'FRAME_READY', sdkVersion: 'mock-frame/0', contextType: 2 })
+  post({
+    type: 'FRAME_READY',
+    sdkVersion: 'mock-frame/0',
+    contextType: 2,
+    capabilities: {
+      singleAxisSlice: true,
+      lighting: true,
+      gradientOpacity: true,
+      boundingBox: true,
+      transferFunction: true,
+    },
+  })
 })()
 </script>
 </body></html>`
@@ -52,22 +75,42 @@ interface PostedRequest {
   body: unknown
 }
 
+interface MockRenderState {
+  revision: number
+  mode: 'volume' | 'slice' | 'contour'
+  filter: { min: number; max: number }
+  opacity: number
+  colorTransferFunction: { value: number; color: string }[]
+  lighting: boolean
+  gradientOpacity: boolean
+  boundingBox: boolean
+  slice?: { axis: 'x' | 'y' | 'z'; index: number; coordinate: number; relativePosition: number }
+  contourValue?: number
+}
+
 interface MockFrameMessage {
   type: string
   layer?: Record<string, unknown>
+  state?: MockRenderState
 }
 
-test('3D 成果工作台：显式物化 + 原生体渲染面板 + 协议握手 + 控件与切片', async ({ page }) => {
+test('3D 成果工作台：物化 + 原生体渲染 + 工具栏完整状态 + 正交切片与剖面导出', async ({ page }) => {
   const posts: PostedRequest[] = []
+  const sliceExportPosts: { contentType: string }[] = []
   page.on('request', (req) => {
     if (req.method() !== 'POST') return
+    const path = new URL(req.url()).pathname
+    if (path.includes('slice-exports')) {
+      sliceExportPosts.push({ contentType: req.headers()['content-type'] ?? '' })
+      return
+    }
     let body: unknown = null
     try {
       body = req.postDataJSON()
     } catch {
       // 非 JSON 请求体不记录
     }
-    posts.push({ path: new URL(req.url()).pathname, body })
+    posts.push({ path, body })
   })
 
   await installMockApi(page)
@@ -102,21 +145,98 @@ test('3D 成果工作台：显式物化 + 原生体渲染面板 + 协议握手 +
       () => (window as unknown as { __GMP_MOCK_FRAME__: { received: MockFrameMessage[] } }).__GMP_MOCK_FRAME__
         .received,
     )) as MockFrameMessage[]
+  const appliedStates = async () =>
+    (await frameMessages())
+      .filter((m) => m.type === 'APPLY_RENDER_STATE' && m.state)
+      .map((m) => m.state!)
   expect((await frameMessages()).map((m) => m.type)).toContain('INIT')
 
-  // 控件：rendered 后启用，命令经桥发送
-  await expect(page.getByTestId('mode-slice')).toBeEnabled()
-  await page.getByTestId('mode-slice').click()
-  await page.getByTestId('filter-min').fill('10')
+  // ------------------------------------------------------------ 常驻工具栏
+  // 光照/渐变透明度/包围盒运行时切换
+  await page.getByTestId('lighting-toggle').click()
+  await page.getByTestId('gradient-opacity-toggle').click()
+  await page.getByTestId('bounding-box-toggle').click()
+  // 滤波
+  await page.getByTestId('filter-min').fill('20')
   await page.getByTestId('filter-max').fill('50')
   await page.getByTestId('filter-apply').click()
-  await page.getByTestId('opacity-slider').fill('0.5')
+  // 色带 → turbo；标度 → 对数
+  await page.getByTestId('palette-select').click()
+  await page.locator('.el-select-dropdown__item:has-text("turbo")').first().click()
+  await page.getByTestId('log-scale').click()
+  // 不透明度：点击滑轨中部（真实指针交互，el-slider 按比例取值）
+  const runway = page.getByTestId('opacity-slider').locator('.el-slider__runway')
+  const runwayBox = await runway.boundingBox()
+  expect(runwayBox).toBeTruthy()
+  await page.mouse.click(
+    runwayBox!.x + runwayBox!.width * 0.5,
+    runwayBox!.y + runwayBox!.height / 2,
+  )
+
+  // 等值面输入只在 contour 模式显示；值进入状态
+  await expect(page.getByTestId('contour-value')).toHaveCount(0)
+  await page.getByTestId('mode-contour').click()
+  await expect(page.getByTestId('contour-value')).toBeVisible()
+  await page.getByTestId('contour-value').fill('30')
+  await page.getByTestId('contour-apply').click()
+
+  // 最后一条完整状态命令：全部字段齐备（revision 递增、滤波/色带/标度/开关生效）
+  await expect
+    .poll(async () => (await appliedStates()).at(-1))
+    .toMatchObject({
+      mode: 'contour',
+      contourValue: 30,
+      filter: { min: 20, max: 50 },
+      lighting: false,
+      gradientOpacity: false,
+      boundingBox: false,
+    })
+  const lastComplete = (await appliedStates()).at(-1)!
+  expect(lastComplete.revision).toBeGreaterThan(1)
+  expect(lastComplete.opacity).toBeLessThan(1)
+  expect(lastComplete.colorTransferFunction).toHaveLength(5)
+  expect(lastComplete.colorTransferFunction[0].color).toBe('#30123b') // turbo 端点
+  // log 标度几何间隔
+  expect(lastComplete.colorTransferFunction[2].value).toBeCloseTo(Math.sqrt(20 * 50))
+
+  // ------------------------------------------------------------ 正交切片
+  await page.getByTestId('mode-slice').click()
+  // z 中位索引（z 长度 5 → 2）引导加载；剖面坐标标签来自权威响应
+  await expect(page.getByTestId('slice-coordinate-label')).toContainText('Z = -400')
+  await expect(page.getByTestId('slice-controls')).toBeVisible()
+  await expect(page.getByTestId('slice-statistics')).toContainText('有效 11 / NoData 1')
+
+  // X/Y/Z 轴选择：3D slice 状态带权威 relativePosition
+  await page.getByTestId('axis-x').click()
+  await expect(page.getByTestId('slice-coordinate-label')).toContainText('X = -141')
+  await expect
+    .poll(async () => (await appliedStates()).at(-1)?.slice)
+    .toMatchObject({ axis: 'x', index: 1, coordinate: -141, relativePosition: 0.5 })
+
+  await page.getByTestId('axis-y').click()
+  await expect(page.getByTestId('slice-coordinate-label')).toContainText('Y = 292')
+  await expect
+    .poll(async () => (await appliedStates()).at(-1)?.slice)
+    .toMatchObject({ axis: 'y', index: 1, coordinate: 292, relativePosition: 1 / 3 })
+
+  await page.getByTestId('axis-z').click()
+  await expect(page.getByTestId('slice-coordinate-label')).toContainText('Z = -400')
+  // 步进到下一层：commit 立即生效
+  await page.getByTestId('slice-next').click()
+  await expect(page.getByTestId('slice-coordinate-label')).toContainText('Z = -200')
+  await expect
+    .poll(async () => (await appliedStates()).at(-1)?.slice)
+    .toMatchObject({ axis: 'z', index: 3, coordinate: -200, relativePosition: 0.75 })
+
+  // 离开切片模式：切片控件与剖面分析消失；等值面输入也不可见
+  await page.getByTestId('mode-volume').click()
+  await expect(page.getByTestId('slice-controls')).toHaveCount(0)
+  await expect(page.getByTestId('slice-analysis')).toHaveCount(0)
+  await expect(page.getByTestId('contour-value')).toHaveCount(0)
+
   // 辅助采样点默认关闭，打开后发送 visible=true 的点层
   await expect(page.getByTestId('aux-points-toggle')).not.toBeChecked()
   await page.getByTestId('aux-points-toggle').check()
-
-  // 命令经 postMessage 异步到达子帧：最后发送的是 visible=true 点层，
-  // 轮询直至其到齐（此前命令必然已全部到达）
   await expect
     .poll(async () => {
       const layers = (await frameMessages()).filter((m) => m.type === 'SET_POINT_LAYER')
@@ -124,13 +244,12 @@ test('3D 成果工作台：显式物化 + 原生体渲染面板 + 协议握手 +
     })
     .toMatchObject({ id: 'grid-samples', role: 'auxiliary', visible: true, coordinates: 'local' })
 
-  const received = await frameMessages()
-  const types = received.map((m) => m.type)
-  expect(types).toContain('INIT')
-  expect(types).toContain('SET_MODE')
-  expect(types).toContain('SET_FILTER')
-  expect(types).toContain('SET_OPACITY')
-  expect(types).toContain('SET_POINT_LAYER')
+  // 剖面导出：multipart POST（axis/index/image），保持在最后（触发下载语义）
+  await page.getByTestId('mode-slice').click()
+  await expect(page.getByTestId('slice-coordinate-label')).toContainText('Z = -400')
+  await page.getByTestId('export-slice').click()
+  await expect.poll(() => sliceExportPosts.length).toBe(1)
+  expect(sliceExportPosts[0].contentType).toContain('multipart/form-data')
 
   // 正式选择/导出/专业分析控件保留
   await expect(page.getByTestId('professional-entry')).toBeVisible()

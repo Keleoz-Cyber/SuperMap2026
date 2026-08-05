@@ -3,9 +3,11 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ApiError,
+  createRenderAssetSliceExport,
   createResultRenderAsset,
   fetchDatasetPoints,
   fetchExperiment,
+  fetchRenderAssetSliceAnalysis,
   fetchResultPreview,
   fetchResultRenderAsset,
   fetchResultRenderCapability,
@@ -47,11 +49,15 @@ const activeTab = ref<'field' | 'slices'>('field')
 // v0.6.1 NetCDF 原生体渲染：NativeVolumePanel 接线
 // ---------------------------------------------------------------------------
 
-// 面板数据层以回调注入：能力与资产状态一律纯 GET，创建是唯一 POST
+// 面板数据层以回调注入：能力与资产状态一律纯 GET，创建是唯一 POST；
+// 剖面分析/导出经 RenderAsset 统一 API（v0.7.0 第二批，三来源共用）
 const volumeApi: NativeVolumeRenderApi = {
   fetchCapability: () => fetchResultRenderCapability(resultId.value),
   fetchAsset: () => fetchResultRenderAsset(resultId.value),
   createAsset: (retryFailed) => createResultRenderAsset(resultId.value, retryFailed),
+  fetchSliceAnalysis: (assetId, axis, index) => fetchRenderAssetSliceAnalysis(assetId, axis, index),
+  createSliceExport: (assetId, axis, index, png) =>
+    createRenderAssetSliceExport(assetId, axis, index, png),
 }
 
 // 网格采样预览作为辅助点层载荷（默认关，仅作数据分布参考，绝不参与连续体渲染）

@@ -1,12 +1,32 @@
 <script lang="ts">
-import type { PointLayerStyle, RenderAssetRecord, RenderCapability } from '../../api/types'
+import type {
+  ExportRecord,
+  PointLayerStyle,
+  RenderAssetRecord,
+  RenderCapability,
+  SliceAnalysisResponse,
+  SliceAxis,
+} from '../../api/types'
 
 // 面板的数据层以回调注入：候选成果与内置电阻率共用本面板，
-// 各自绑定 client.ts 中对应的 capability/create/fetch 函数（Task 11/12 接线）。
+// 各自绑定 client.ts 中对应的 capability/create/fetch 函数。
+// v0.7.0 第二批 Task 11：剖面分析/导出经 RenderAsset 统一 API（三来源共用），
+// 签名与 SliceAnalysisPanel 的 SliceAnalysisApi 结构化一致，api 直接透传。
 export interface NativeVolumeRenderApi {
   fetchCapability: () => Promise<RenderCapability>
   fetchAsset: () => Promise<RenderAssetRecord>
   createAsset: (retryFailed: boolean) => Promise<RenderAssetRecord>
+  fetchSliceAnalysis: (
+    assetId: string,
+    axis: SliceAxis,
+    index: number,
+  ) => Promise<SliceAnalysisResponse>
+  createSliceExport: (
+    assetId: string,
+    axis: SliceAxis,
+    index: number,
+    png: Blob,
+  ) => Promise<ExportRecord>
 }
 
 // 辅助采样点载荷（不含 visible/coordinates：visible 由复选框决定，coordinates 恒为 local）
@@ -23,13 +43,17 @@ export interface NativeVolumeAuxPoints {
 </script>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { Aim } from '@element-plus/icons-vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { ApiError } from '../../api/client'
 import type { PointLayerPayload, RenderIdentity } from '../../api/types'
 import SuperMapVolumeFrame from './SuperMapVolumeFrame.vue'
+import VolumeRenderToolbar from './VolumeRenderToolbar.vue'
+import OrthogonalSliceControls from './OrthogonalSliceControls.vue'
+import type { SliceAxisMeta } from './OrthogonalSliceControls.vue'
+import SliceAnalysisPanel from './SliceAnalysisPanel.vue'
 import { buildColorStops } from './renderTransferFunctions'
-import type { RenderStateV2, VolumeMode } from './renderProtocol'
+import type { RenderPaletteId, RenderScale } from './renderTransferFunctions'
+import type { RenderStateV2 } from './renderProtocol'
 
 const props = withDefaults(
   defineProps<{
@@ -56,18 +80,92 @@ const phase = ref<VolumePhase>('idle')
 const identity = ref<RenderIdentity | null>(null)
 const frameError = ref<{ code: string; message: string } | null>(null)
 
-const mode = ref<VolumeMode>('volume')
-const sliceZ = ref(0.5)
-const contourValueInput = ref('')
-const opacity = ref(1)
-const filterMinInput = ref('')
-const filterMaxInput = ref('')
-const filterError = ref<string | null>(null)
 const auxVisible = ref(false)
+
+// ---------------------------------------------------------------------------
+// v0.7.0 第二批 Task 11：完整 v2 渲染状态编排
+// renderState 是唯一事实源；revision 1 由 INIT 消费，后续 APPLY 从 2 起单调
+// 递增。slice 模式必须携带权威 slice 载荷（app.js 硬要求）：剖面响应到达前
+// 绝不推送 slice 模式状态。色带/标度由工具栏受控提升，与剖面热力图共享。
+// ---------------------------------------------------------------------------
+const renderState = ref<RenderStateV2>(initialRenderState())
+const nextRevision = ref(2)
+const activePalette = ref<RenderPaletteId>('viridis')
+const activeScale = ref<RenderScale>('linear')
+const axesMeta = ref<Record<SliceAxis, SliceAxisMeta> | null>(null)
+const sliceTarget = ref<{ axis: SliceAxis; index: number } | null>(null)
+const contourInput = ref<string | number>('')
+let sliceDebounce: ReturnType<typeof setTimeout> | null = null
 
 function formatError(e: unknown): string {
   return e instanceof ApiError ? `${e.code}：${e.message}` : String(e)
 }
+
+// 渲染默认值来自 capability.render_profile（色带/标度经纯函数展开）；
+// 缺省（不支持/点云专用初始化）使用固定安全默认
+function profileDefaults() {
+  const profile = capability.value?.render_profile ?? null
+  const range: [number, number] = profile ? profile.value_range : [0, 1]
+  return {
+    range,
+    stops: buildColorStops(profile?.default_palette ?? 'viridis', profile?.default_scale ?? 'linear', range),
+    lighting: profile?.lighting ?? true,
+    gradientOpacity: profile?.gradient_opacity ?? true,
+    boundingBox: profile?.bounding_box ?? true,
+    opacity: profile?.opacity ?? 1,
+  }
+}
+
+function initialRenderState(): RenderStateV2 {
+  const defaults = profileDefaults()
+  return {
+    revision: 1,
+    mode: 'volume',
+    filter: { min: defaults.range[0], max: defaults.range[1] },
+    opacity: defaults.opacity,
+    colorTransferFunction: defaults.stops,
+    lighting: defaults.lighting,
+    gradientOpacity: defaults.gradientOpacity,
+    boundingBox: defaults.boundingBox,
+  }
+}
+
+function clearSliceDebounce() {
+  if (sliceDebounce !== null) {
+    clearTimeout(sliceDebounce)
+    sliceDebounce = null
+  }
+}
+
+function resetRenderState() {
+  clearSliceDebounce()
+  renderState.value = initialRenderState()
+  nextRevision.value = 2
+  axesMeta.value = null
+  sliceTarget.value = null
+  contourInput.value = ''
+}
+
+// 能力（重）加载：渲染状态/色带/标度/剖面上下文全部回默认
+watch(
+  () => capability.value,
+  () => {
+    const profile = capability.value?.render_profile ?? null
+    activePalette.value = profile?.default_palette ?? 'viridis'
+    activeScale.value = profile?.default_scale ?? 'linear'
+    resetRenderState()
+  },
+  { immediate: true },
+)
+
+// 资产身份切换：剖面目标/轴元数据清空，渲染状态回 profile 默认，revision 重置
+watch(
+  () => asset.value?.id ?? null,
+  (id, prev) => {
+    if (id === prev) return
+    resetRenderState()
+  },
+)
 
 // frame 初始化载荷：仅在有能力 + 显示变换时挂载；
 // supported 时只在 ready 资产后挂载，unsupported 时以 asset=null 进入点云专用初始化
@@ -79,7 +177,7 @@ const frameInit = computed<{
   const cap = capability.value
   const transform = cap?.display_transform
   if (!cap || !transform) return null
-  const initialState = currentRenderState()
+  const initialState = JSON.parse(JSON.stringify(renderState.value)) as RenderStateV2
   if (cap.supported) {
     const record = asset.value
     return record && record.status === 'ready' ? { asset: record, transform, initialState } : null
@@ -189,99 +287,104 @@ function onFrameFailed(error: { code: string; message: string }) {
   phase.value = 'failed'
 }
 
-// v0.7.0 第二批 Task 7 桥接适配：控件状态组装为完整 v2 渲染状态。
-// 默认值来自 capability.render_profile（色带/标度经 Task 6 纯函数展开）；
-// 缺省（点云专用初始化）使用固定安全默认。Task 9/10/11 将把这些控件拆分为
-// VolumeRenderToolbar 与 OrthogonalSliceControls，并以剖面 API 的真实
-// index/coordinate 取代本处的相对位置占位（index/coordinate 暂为 0）。
-const renderRevision = ref(1)
+// ---------------------------------------------------------------------------
+// 渲染状态推送与控件事件
+// ---------------------------------------------------------------------------
 
-function profileDefaults() {
-  const profile = capability.value?.render_profile ?? null
-  const range: [number, number] = profile ? profile.value_range : [0, 1]
-  return {
-    range,
-    stops: buildColorStops(profile?.default_palette ?? 'viridis', profile?.default_scale ?? 'linear', range),
-    lighting: profile?.lighting ?? true,
-    gradientOpacity: profile?.gradient_opacity ?? true,
-    boundingBox: profile?.bounding_box ?? true,
-    opacity: profile?.opacity ?? 1,
-  }
-}
-
-function currentRenderState(mutate?: (state: RenderStateV2) => void): RenderStateV2 {
-  const defaults = profileDefaults()
-  const state: RenderStateV2 = {
-    revision: renderRevision.value,
-    mode: mode.value,
-    filter: { min: defaults.range[0], max: defaults.range[1] },
-    opacity: defaults.opacity,
-    colorTransferFunction: defaults.stops,
-    lighting: defaults.lighting,
-    gradientOpacity: defaults.gradientOpacity,
-    boundingBox: defaults.boundingBox,
-  }
-  if (mode.value === 'slice') {
-    state.slice = { axis: 'z', index: 0, coordinate: 0, relativePosition: sliceZ.value }
-  }
-  if (mode.value === 'contour') {
-    const contourValue = Number(contourValueInput.value)
-    if (Number.isFinite(contourValue) && contourValueInput.value.trim() !== '') {
-      state.contourValue = contourValue
-    }
-  }
-  mutate?.(state)
-  return state
-}
-
-function pushRenderState(mutate?: (state: RenderStateV2) => void) {
+function pushRenderState() {
   if (!controlsEnabled.value) return
-  const state = currentRenderState(mutate)
-  if (frameRef.value?.applyRenderState(state)) {
-    renderRevision.value += 1
+  const current = renderState.value
+  // slice 模式必须携带权威 slice 载荷；剖面响应到达前不推送（app.js 硬失败）
+  if (current.mode === 'slice' && !current.slice) return
+  const next: RenderStateV2 = { ...current, revision: nextRevision.value }
+  if (frameRef.value?.applyRenderState(next)) {
+    renderState.value = next
+    nextRevision.value += 1
   }
 }
 
-function selectMode(next: VolumeMode) {
-  mode.value = next
+function onToolbarUpdate(next: RenderStateV2) {
+  renderState.value = next
   pushRenderState()
 }
 
-function applySliceCoordinate() {
-  pushRenderState((state) => {
-    state.mode = 'slice'
-    state.slice = { axis: 'z', index: 0, coordinate: 0, relativePosition: sliceZ.value }
-  })
+function onPaletteUpdate(palette: RenderPaletteId) {
+  activePalette.value = palette
 }
 
-function applyContourValue() {
-  const contourValue = Number(contourValueInput.value)
-  if (!Number.isFinite(contourValue)) return
-  pushRenderState((state) => {
-    state.mode = 'contour'
-    state.contourValue = contourValue
-  })
+function onScaleUpdate(scale: RenderScale) {
+  activeScale.value = scale
 }
 
-function applyFilter() {
-  const rawMin = String(filterMinInput.value).trim()
-  const rawMax = String(filterMaxInput.value).trim()
-  const min = Number(rawMin)
-  const max = Number(rawMax)
-  if (rawMin === '' || rawMax === '' || !Number.isFinite(min) || !Number.isFinite(max) || min > max) {
-    filterError.value = '滤波范围必须是有限数值且 min ≤ max'
-    return
+// 模式切换：进入 slice 时确立剖面目标（有元数据用 z 中位索引，否则 z/0 引导）；
+// 离开时清空目标（控件与分析面板随之卸载）
+watch(
+  () => renderState.value.mode,
+  (mode, prev) => {
+    if (mode === prev) return
+    clearSliceDebounce()
+    if (mode === 'slice') {
+      const axes = axesMeta.value
+      sliceTarget.value = axes
+        ? { axis: 'z', index: Math.floor((axes.z.length - 1) / 2) }
+        : { axis: 'z', index: 0 }
+    } else {
+      sliceTarget.value = null
+    }
+  },
+)
+
+function onAxesMetaLoaded(axes: Record<SliceAxis, SliceAxisMeta>) {
+  axesMeta.value = axes
+  sliceTarget.value = { axis: 'z', index: Math.floor((axes.z.length - 1) / 2) }
+}
+
+// 滑块拖动 150ms 防抖；轴切换/步进/松手 commit 立即生效
+function onSliceChange(payload: { axis: SliceAxis; index: number; coordinate: number }) {
+  clearSliceDebounce()
+  sliceDebounce = setTimeout(() => {
+    sliceDebounce = null
+    sliceTarget.value = { axis: payload.axis, index: payload.index }
+  }, 150)
+}
+
+function onSliceCommit(payload: { axis: SliceAxis; index: number }) {
+  clearSliceDebounce()
+  sliceTarget.value = { axis: payload.axis, index: payload.index }
+}
+
+// 3D slice 状态只来自权威剖面响应（index/coordinate/sdk_relative_position）
+function onAnalysisLoaded(response: SliceAnalysisResponse) {
+  if (renderState.value.mode !== 'slice') return
+  const s = response.slice
+  renderState.value = {
+    ...renderState.value,
+    mode: 'slice',
+    slice: {
+      axis: s.fixed_axis,
+      index: s.index,
+      coordinate: s.coordinate,
+      relativePosition: s.sdk_relative_position,
+    },
   }
-  filterError.value = null
-  pushRenderState((state) => {
-    state.filter = { min, max }
-  })
+  pushRenderState()
 }
 
-function onOpacityInput() {
-  pushRenderState((state) => {
-    state.opacity = opacity.value
-  })
+// 等值面输入只在 contour 模式显示；留空回落值域中点（不带 contourValue）。
+// 注意 type="number" 输入的 v-model 会被 Vue 自动转型为 number，这里统一按字符串处理
+function applyContourValue() {
+  const raw = String(contourInput.value ?? '').trim()
+  const next = JSON.parse(JSON.stringify(renderState.value)) as RenderStateV2
+  next.mode = 'contour'
+  if (raw === '') {
+    delete next.contourValue
+  } else {
+    const value = Number(raw)
+    if (!Number.isFinite(value)) return
+    next.contourValue = value
+  }
+  renderState.value = next
+  pushRenderState()
 }
 
 function onResetView() {
@@ -386,137 +489,62 @@ onMounted(() => {
         @failed="onFrameFailed"
       />
 
-      <!-- 体积控件：只在 rendered 后启用；体积绝不被名为「点」的显示模式隐藏 -->
+      <!-- 体积控件：常驻工具栏 + 模式专属控件；只在 rendered 后启用 -->
       <div class="volume-controls" data-test="volume-controls">
-        <div class="mode-tabs" role="group" aria-label="渲染模式">
-          <button
-            class="mode-tab"
-            :class="{ active: mode === 'volume' }"
-            data-test="mode-volume"
-            :disabled="!controlsEnabled"
-            @click="selectMode('volume')"
-          >
-            体积
-          </button>
-          <button
-            class="mode-tab"
-            :class="{ active: mode === 'slice' }"
-            data-test="mode-slice"
-            :disabled="!controlsEnabled"
-            @click="selectMode('slice')"
-          >
-            切片
-          </button>
-          <button
-            class="mode-tab"
-            :class="{ active: mode === 'contour' }"
-            data-test="mode-contour"
-            :disabled="!controlsEnabled"
-            @click="selectMode('contour')"
-          >
-            等值线
-          </button>
-          <button
-            class="icon-button"
-            data-test="reset-view"
-            title="重置视角"
-            aria-label="重置视角"
-            :disabled="!controlsEnabled"
-            @click="onResetView"
-          >
-            <Aim />
-          </button>
-        </div>
+        <VolumeRenderToolbar
+          :model-value="renderState"
+          :profile="capability.render_profile ?? null"
+          :palette="activePalette"
+          :scale="activeScale"
+          :enabled="controlsEnabled"
+          @update:model-value="onToolbarUpdate"
+          @update:palette="onPaletteUpdate"
+          @update:scale="onScaleUpdate"
+          @reset-view="onResetView"
+        />
 
-        <div class="control-row">
-          <label class="control-label" for="slice-coordinate">切片位置 Z</label>
-          <input
-            id="slice-coordinate"
-            v-model.number="sliceZ"
-            class="opacity-slider"
-            data-test="slice-coordinate"
-            type="range"
-            min="0"
-            max="1"
-            step="0.01"
-            :disabled="!controlsEnabled"
-            @input="applySliceCoordinate"
-          />
-          <span class="control-value">{{ sliceZ.toFixed(2) }}</span>
-        </div>
-
-        <div class="control-row">
+        <!-- 等值面输入只在 contour 模式显示 -->
+        <div v-if="renderState.mode === 'contour'" class="control-row" data-test="contour-controls">
           <label class="control-label" for="contour-value">等值面值</label>
           <input
             id="contour-value"
-            v-model="contourValueInput"
+            v-model="contourInput"
             class="number-input"
             data-test="contour-value"
             type="number"
             :disabled="!controlsEnabled"
             @change="applyContourValue"
           />
-          <button class="link-button" data-test="contour-apply" :disabled="!controlsEnabled" @click="applyContourValue">
+          <button
+            class="link-button"
+            data-test="contour-apply"
+            :disabled="!controlsEnabled"
+            @click="applyContourValue"
+          >
             应用等值面
           </button>
           <span class="style-note">留空使用数据值域中点</span>
         </div>
 
-        <div class="control-row">
-          <label class="control-label" for="filter-min">滤波 min</label>
-          <input
-            id="filter-min"
-            v-model="filterMinInput"
-            class="number-input"
-            data-test="filter-min"
-            type="number"
-            :disabled="!controlsEnabled"
-          />
-          <label class="control-label" for="filter-max">max</label>
-          <input
-            id="filter-max"
-            v-model="filterMaxInput"
-            class="number-input"
-            data-test="filter-max"
-            type="number"
-            :disabled="!controlsEnabled"
-          />
-          <button class="link-button" data-test="filter-apply" :disabled="!controlsEnabled" @click="applyFilter">
-            应用滤波
-          </button>
-          <span v-if="filterError" class="control-error" data-test="filter-error">{{ filterError }}</span>
-        </div>
-
-        <div class="control-row">
-          <label class="control-label" for="opacity-slider">不透明度</label>
-          <input
-            id="opacity-slider"
-            v-model.number="opacity"
-            class="opacity-slider"
-            data-test="opacity-slider"
-            type="range"
-            min="0"
-            max="1"
-            step="0.05"
-            :disabled="!controlsEnabled"
-            @input="onOpacityInput"
-          />
-          <span class="control-value">{{ opacity.toFixed(2) }}</span>
-        </div>
-
-        <div class="control-row style-toggles">
-          <label class="toggle-label">
-            <input data-test="lighting-toggle" type="checkbox" checked disabled />
-            光照
-          </label>
-          <label class="toggle-label">
-            <input data-test="gradient-opacity-toggle" type="checkbox" checked disabled />
-            渐变透明度
-          </label>
-          <span class="style-note" data-test="style-note">
-            光照与渐变透明度由渲染器初始化时固定启用（协议 v1 无运行时调整命令）
-          </span>
-        </div>
+        <OrthogonalSliceControls
+          v-if="renderState.mode === 'slice' && axesMeta"
+          :mode="renderState.mode"
+          :axes="axesMeta"
+          @change="onSliceChange"
+          @commit="onSliceCommit"
+        />
+        <SliceAnalysisPanel
+          v-if="renderState.mode === 'slice' && asset && asset.status === 'ready'"
+          :api="api"
+          :asset-id="asset.id"
+          :target="sliceTarget"
+          :axes-meta="axesMeta"
+          :palette="activePalette"
+          :scale="activeScale"
+          :enabled="controlsEnabled"
+          @analysis-loaded="onAnalysisLoaded"
+          @axes-meta-loaded="onAxesMetaLoaded"
+        />
 
         <div class="control-row">
           <label class="toggle-label">
@@ -645,54 +673,6 @@ onMounted(() => {
   gap: 10px;
 }
 
-.mode-tabs {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.mode-tab {
-  border: 1px solid var(--gmp-border);
-  background: var(--gmp-bg-soft);
-  color: var(--gmp-text-dim);
-  border-radius: 8px;
-  padding: 6px 14px;
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.mode-tab.active {
-  background: var(--gmp-accent);
-  border-color: var(--gmp-accent);
-  color: #0b0f14;
-  font-weight: 600;
-}
-
-.mode-tab:disabled,
-.icon-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.icon-button {
-  margin-left: auto;
-  width: 32px;
-  height: 32px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--gmp-border);
-  background: var(--gmp-bg-soft);
-  color: var(--gmp-text-dim);
-  border-radius: 8px;
-  cursor: pointer;
-}
-
-.icon-button svg {
-  width: 16px;
-  height: 16px;
-}
-
 .control-row {
   display: flex;
   align-items: center;
@@ -713,20 +693,6 @@ onMounted(() => {
   color: inherit;
   border-radius: 6px;
   padding: 5px 8px;
-}
-
-.opacity-slider {
-  flex: 1;
-  min-width: 160px;
-  accent-color: var(--gmp-accent);
-}
-
-.control-value {
-  font-family: ui-monospace, monospace;
-}
-
-.control-error {
-  color: #ef9a9a;
 }
 
 .toggle-label {

@@ -99,6 +99,45 @@ describe('VolumeRenderToolbar', () => {
     expect(next).not.toBe(makeState())
   })
 
+  it('受控 palette/scale 优先于 profile 默认；切换同步发射 update:palette/update:scale', async () => {
+    // Task 11：面板把色带/标度提升为受控状态（与剖面热力图共享同一份选择）
+    const wrapper = mount(VolumeRenderToolbar, {
+      props: {
+        modelValue: makeState(),
+        profile: makeProfile({ default_palette: 'viridis', default_scale: 'linear' }),
+        palette: 'turbo',
+        scale: 'log',
+        enabled: true,
+        'onUpdate:modelValue': () => {},
+      },
+      global: { plugins: [ElementPlus] },
+      attachTo: document.body,
+    })
+    // 受控值优先于 profile 默认（turbo 而非 viridis）
+    const select = wrapper.findComponent({ name: 'ElSelect' })
+    expect(select.props('modelValue')).toBe('turbo')
+
+    ;(select.vm as unknown as { $emit: (e: string, v: string) => void }).$emit(
+      'update:modelValue',
+      'coolwarm',
+    )
+    await flushPromises()
+    expect(wrapper.emitted('update:palette')![0][0]).toBe('coolwarm')
+    // stops 用受控 log 标度重算（几何间隔），与 3D/剖面热力图一致
+    const next = wrapper.emitted('update:modelValue')![0][0] as RenderStateV2
+    expect(next.colorTransferFunction[0].color).toBe(PALETTES.coolwarm[0])
+    expect(next.colorTransferFunction[2].value).toBeCloseTo(Math.sqrt(1000))
+
+    await wrapper.find('[data-test="linear-scale"] input').setValue(true)
+    expect(wrapper.emitted('update:scale')![0][0]).toBe('linear')
+  })
+
+  it('无受控 palette/scale 时回退 profile 默认（兼容旧用法）', () => {
+    const wrapper = mountToolbar(makeState(), makeProfile({ default_palette: 'turbo' }))
+    const select = wrapper.findComponent({ name: 'ElSelect' })
+    expect(select.props('modelValue')).toBe('turbo')
+  })
+
   it('切换对数标度重算色带节点（原始值域不变）', async () => {
     const wrapper = mountToolbar()
     await wrapper.find('[data-test="log-scale"] input').setValue(true)

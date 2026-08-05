@@ -2,17 +2,21 @@
 import { computed, ref, watch } from 'vue'
 import type {
   ExportRecord,
+  RenderPaletteId,
+  RenderScale,
   SliceAnalysisResponse,
   SliceAxis,
 } from '../../api/types'
 import type { SliceAxisMeta } from './OrthogonalSliceControls.vue'
 import SliceHeatmap from './SliceHeatmap.vue'
 
-// v0.7.0 Batch 2 Task 10：剖面分析面板（设计 §7.3）。
-// 最新请求获胜：每个请求捕获 {assetId, axis, index, sequence}，成功/失败/
-// finally 都只更新仍为当前目标的状态。首次进入切片模式先以 z/0 引导
-// （仅分析用途），拿到三轴元数据后立即请求 z/floor((len-1)/2)，之后才
-// 显示热力图并上报 analysis-loaded；后续切轴复用已加载元数据。
+// v0.7.0 Batch 2 Task 10/11：剖面分析面板（目标驱动 + 最新请求获胜）。
+// 轴/索引选择由 OrthogonalSliceControls（父级）持有；本组件只负责请求
+// 生命周期、统计展示、导出与响应竞态控制（设计 §7.1）。
+// 首次进入切片模式且无轴元数据时：先以 z/0 引导（仅分析用途），上报
+// axes-meta-loaded，父级随后把目标设为 z/floor((len-1)/2)，本组件再请求
+// 并展示；每个请求捕获 {assetId, axis, index, sequence}，成功/失败/finally
+// 都只更新仍为当前目标的状态。
 
 export interface SliceAnalysisApi {
   fetchSliceAnalysis: (
@@ -32,22 +36,21 @@ const props = withDefaults(
   defineProps<{
     api: SliceAnalysisApi
     assetId: string
-    axisMeta?: Record<SliceAxis, SliceAxisMeta> | null
+    target: { axis: SliceAxis; index: number } | null
+    axesMeta?: Record<SliceAxis, SliceAxisMeta> | null
+    palette?: RenderPaletteId
+    scale?: RenderScale
     enabled?: boolean
   }>(),
-  { axisMeta: null, enabled: true },
+  { axesMeta: null, palette: 'viridis', scale: 'linear', enabled: true },
 )
 
 const emit = defineEmits<{
   'analysis-loaded': [response: SliceAnalysisResponse]
+  'axes-meta-loaded': [axes: Record<SliceAxis, SliceAxisMeta>]
 }>()
 
-const AXES: SliceAxis[] = ['x', 'y', 'z']
-
-const active = ref(false)
-const axis = ref<SliceAxis>('z')
-const index = ref(0)
-const axesMeta = ref<Record<SliceAxis, SliceAxisMeta> | null>(props.axisMeta)
+const bootstrapping = ref(false)
 const analysis = ref<SliceAnalysisResponse | null>(null)
 const loadError = ref<string | null>(null)
 const exporting = ref(false)
@@ -65,16 +68,30 @@ const coordinateLabel = computed(() => {
 const currentTargetMatches = computed(
   () =>
     analysis.value !== null &&
+    props.target !== null &&
     analysis.value.asset_identity.asset_id === props.assetId &&
-    analysis.value.slice.fixed_axis === axis.value &&
-    analysis.value.slice.index === index.value,
+    analysis.value.slice.fixed_axis === props.target.axis &&
+    analysis.value.slice.index === props.target.index,
 )
 const exportEnabled = computed(
   () => props.enabled && currentTargetMatches.value && !exporting.value,
 )
 
-function axisLengthOf(name: SliceAxis): number {
-  return axesMeta.value?.[name]?.length ?? 0
+async function bootstrapIfNeeded(): Promise<boolean> {
+  if (props.axesMeta || props.target === null) return true
+  if (bootstrapping.value) return false
+  bootstrapping.value = true
+  try {
+    // 引导请求：仅用于拿三轴元数据；统计区保持加载语义
+    const boot = await props.api.fetchSliceAnalysis(props.assetId, 'z', 0)
+    emit('axes-meta-loaded', { x: boot.axes.x, y: boot.axes.y, z: boot.axes.z })
+    return true
+  } catch (error) {
+    loadError.value = error instanceof Error ? error.message : String(error)
+    return false
+  } finally {
+    bootstrapping.value = false
+  }
 }
 
 async function request(targetAxis: SliceAxis, targetIndex: number): Promise<void> {
@@ -84,61 +101,74 @@ async function request(targetAxis: SliceAxis, targetIndex: number): Promise<void
   try {
     const response = await props.api.fetchSliceAnalysis(target.assetId, target.axis, target.index)
     if (seq !== requestSeq) return
+    if (
+      props.target === null ||
+      props.target.axis !== target.axis ||
+      props.target.index !== target.index
+    ) {
+      return
+    }
     analysis.value = response
     loadError.value = null
     emit('analysis-loaded', response)
   } catch (error) {
     if (seq !== requestSeq) return
+    if (
+      props.target === null ||
+      props.target.axis !== target.axis ||
+      props.target.index !== target.index
+    ) {
+      return
+    }
     loadError.value = error instanceof Error ? error.message : String(error)
   }
 }
 
-async function enterSliceMode() {
-  active.value = true
-  if (!axesMeta.value) {
-    // 引导请求：仅用于拿三轴元数据；面板保持加载语义
-    const boot = await props.api.fetchSliceAnalysis(props.assetId, 'z', 0)
-    axesMeta.value = {
-      x: boot.axes.x,
-      y: boot.axes.y,
-      z: boot.axes.z,
+watch(
+  () => [props.assetId, props.target?.axis, props.target?.index] as const,
+  async () => {
+    if (props.target === null) {
+      requestSeq += 1
+      analysis.value = null
+      loadError.value = null
+      return
     }
-  }
-  axis.value = 'z'
-  index.value = Math.floor((axisLengthOf('z') - 1) / 2)
-  await request(axis.value, index.value)
-}
-
-async function selectAxis(next: SliceAxis) {
-  axis.value = next
-  index.value = Math.floor((axisLengthOf(next) - 1) / 2)
-  await request(next, index.value)
-}
+    const ready = await bootstrapIfNeeded()
+    if (ready && props.target !== null) {
+      await request(props.target.axis, props.target.index)
+    }
+  },
+  { immediate: true },
+)
 
 watch(
   () => props.assetId,
   () => {
-    // 资产切换：取消旧请求、清空剖面与错误状态，等待下一次显式进入
     requestSeq += 1
-    active.value = false
     analysis.value = null
     loadError.value = null
     exportError.value = null
-    axesMeta.value = props.axisMeta
   },
 )
 
 async function retry() {
-  await request(axis.value, index.value)
+  if (props.target === null) return
+  const ready = await bootstrapIfNeeded()
+  if (ready) await request(props.target.axis, props.target.index)
 }
 
 async function exportSlice() {
-  if (!exportEnabled.value) return
+  if (!exportEnabled.value || props.target === null) return
   exporting.value = true
   exportError.value = null
   try {
     const png = await heatmapRef.value!.capturePng()
-    const record = await props.api.createSliceExport(props.assetId, axis.value, index.value, png)
+    const record = await props.api.createSliceExport(
+      props.assetId,
+      props.target.axis,
+      props.target.index,
+      png,
+    )
     window.location.assign(`/api/exports/${record.id}/download`)
   } catch (error) {
     exportError.value = error instanceof Error ? error.message : String(error)
@@ -155,71 +185,52 @@ function statText(value: number | null, digits = 4): string {
 
 <template>
   <div class="slice-analysis" data-test="slice-analysis">
-    <el-button
-      v-if="!active"
-      size="small"
-      type="primary"
-      :disabled="!enabled"
-      data-test="enter-slice-mode"
-      @click="enterSliceMode"
-    >
-      进入切片分析
-    </el-button>
+    <div v-if="loadError" class="analysis-error" data-test="slice-error">
+      剖面加载失败：{{ loadError }}
+      <el-button size="small" text data-test="slice-retry" @click="retry">重试</el-button>
+    </div>
 
-    <template v-else>
-      <div class="analysis-axes" data-test="analysis-axis-segment">
-        <el-radio-group v-model="axis" size="small">
-          <el-radio-button
-            v-for="name in AXES"
-            :key="name"
-            :value="name"
-            :data-test="`axis-${name}`"
-            @click="selectAxis(name)"
-          >
-            {{ name.toUpperCase() }}
-          </el-radio-button>
-        </el-radio-group>
+    <template v-if="analysis && !loadError">
+      <div class="analysis-head">
         <span class="coordinate-label" data-test="slice-coordinate-label">{{ coordinateLabel }}</span>
       </div>
-
-      <div v-if="loadError" class="analysis-error" data-test="slice-error">
-        剖面加载失败：{{ loadError }}
-        <el-button size="small" text data-test="slice-retry" @click="retry">重试</el-button>
-      </div>
-
-      <template v-if="analysis && !loadError">
-        <div class="analysis-body">
-          <SliceHeatmap
-            ref="heatmapRef"
-            :analysis="analysis"
-            palette="viridis"
-            scale="linear"
-          />
-          <div class="analysis-stats" data-test="slice-statistics">
-            <p data-test="slice-valid-count">
-              有效 {{ statistics?.valid_count }} / NoData {{ statistics?.nodata_count }}（共
-              {{ statistics?.total_count }}）
-            </p>
-            <p>最小 {{ statText(statistics?.min ?? null) }} · 最大 {{ statText(statistics?.max ?? null) }} {{ analysis.property.unit }}</p>
-            <p>均值 {{ statText(statistics?.mean ?? null) }} · 总体标准差 {{ statText(statistics?.std_population ?? null) }}</p>
-            <p>
-              P10 {{ statText(statistics?.p10 ?? null) }} · P50
-              {{ statText(statistics?.p50 ?? null) }} · P90 {{ statText(statistics?.p90 ?? null) }}
-            </p>
-            <el-button
-              size="small"
-              type="primary"
-              :disabled="!exportEnabled"
-              :loading="exporting"
-              data-test="export-slice"
-              @click="exportSlice"
-            >
-              下载剖面分析包
-            </el-button>
-            <p v-if="exportError" class="analysis-error" data-test="export-error">{{ exportError }}</p>
-          </div>
+      <div class="analysis-body">
+        <SliceHeatmap
+          ref="heatmapRef"
+          :analysis="analysis"
+          :palette="palette"
+          :scale="scale"
+        />
+        <div class="analysis-stats" data-test="slice-statistics">
+          <p data-test="slice-valid-count">
+            有效 {{ statistics?.valid_count }} / NoData {{ statistics?.nodata_count }}（共
+            {{ statistics?.total_count }}）
+          </p>
+          <p>
+            最小 {{ statText(statistics?.min ?? null) }} · 最大
+            {{ statText(statistics?.max ?? null) }} {{ analysis.property.unit }}
+          </p>
+          <p>
+            均值 {{ statText(statistics?.mean ?? null) }} · 总体标准差
+            {{ statText(statistics?.std_population ?? null) }}
+          </p>
+          <p>
+            P10 {{ statText(statistics?.p10 ?? null) }} · P50
+            {{ statText(statistics?.p50 ?? null) }} · P90 {{ statText(statistics?.p90 ?? null) }}
+          </p>
+          <el-button
+            size="small"
+            type="primary"
+            :disabled="!exportEnabled"
+            :loading="exporting"
+            data-test="export-slice"
+            @click="exportSlice"
+          >
+            下载剖面分析包
+          </el-button>
+          <p v-if="exportError" class="analysis-error" data-test="export-error">{{ exportError }}</p>
         </div>
-      </template>
+      </div>
     </template>
   </div>
 </template>
@@ -230,11 +241,10 @@ function statText(value: number | null, digits = 4): string {
   flex-direction: column;
   gap: 10px;
 }
-.analysis-axes {
+.analysis-head {
   display: flex;
   align-items: center;
   gap: 12px;
-  flex-wrap: wrap;
 }
 .coordinate-label {
   color: var(--gmp-text-dim);

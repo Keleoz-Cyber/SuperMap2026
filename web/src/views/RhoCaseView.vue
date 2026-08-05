@@ -5,8 +5,10 @@ import { ArrowLeft, Refresh } from '@element-plus/icons-vue'
 import {
   ApiError,
   createLegacyRhoRenderAsset,
+  createRenderAssetSliceExport,
   fetchLegacyRhoRenderAsset,
   fetchLegacyRhoRenderCapability,
+  fetchRenderAssetSliceAnalysis,
   fetchRhoCase,
   fetchRhoPoints,
   fetchRhoPublishStatus,
@@ -61,7 +63,8 @@ const voxelBands = computed<number | null>(() => {
 const renderCapability = ref<RenderCapability | null>(null)
 
 // 面板数据层以回调注入：能力/资产状态一律纯 GET，创建是唯一 POST；
-// 能力响应同步到本视图，用于决定辅助视图说明的展示
+// 能力响应同步到本视图，用于决定辅助视图说明的展示；
+// 剖面分析/导出经 RenderAsset 统一 API（v0.7.0 第二批，三来源共用）
 const volumeApi: NativeVolumeRenderApi = {
   fetchCapability: async () => {
     const cap = await fetchLegacyRhoRenderCapability()
@@ -70,6 +73,9 @@ const volumeApi: NativeVolumeRenderApi = {
   },
   fetchAsset: fetchLegacyRhoRenderAsset,
   createAsset: (retryFailed) => createLegacyRhoRenderAsset(retryFailed),
+  fetchSliceAnalysis: (assetId, axis, index) => fetchRenderAssetSliceAnalysis(assetId, axis, index),
+  createSliceExport: (assetId, axis, index, png) =>
+    createRenderAssetSliceExport(assetId, axis, index, png),
 }
 
 // 未登记规则三维网格时：测点访问保留为显式分离的辅助视图
