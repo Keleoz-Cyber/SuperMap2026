@@ -1,6 +1,6 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 import HomeView from '../views/HomeView.vue'
-import RhoCaseView from '../views/RhoCaseView.vue'
+import CaseWorkspaceView from '../views/CaseWorkspaceView.vue'
 import CaseCreateView from '../views/CaseCreateView.vue'
 import DatasetWizardView from '../views/DatasetWizardView.vue'
 import MicroseismicImportView from '../views/MicroseismicImportView.vue'
@@ -14,7 +14,9 @@ const router = createRouter({
   history: createWebHashHistory(),
   routes: [
     { path: '/', name: 'home', component: HomeView },
-    { path: '/case/resistivity', name: 'rho-case', component: RhoCaseView },
+    // v0.7.0：统一案例工作台；/case/resistivity 保留为兼容别名（重定向）
+    { path: '/case/resistivity', redirect: '/cases/resistivity' },
+    { path: '/cases/:caseId', name: 'case-workspace', component: CaseWorkspaceView },
     { path: '/cases/new', name: 'case-create', component: CaseCreateView },
     {
       path: '/cases/:caseId/microseismic/import',

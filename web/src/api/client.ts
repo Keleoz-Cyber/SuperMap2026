@@ -7,6 +7,7 @@ import type {
   CandidateComparisonResult,
   CandidatesResponse,
   CaseDatasetsResponse,
+  CaseWorkspaceSummary,
   CasesResponse,
   DatasetVersionRecord,
   ExperimentCreatePayload,
@@ -141,6 +142,11 @@ export function createCase(name: string, caseType = 'generic'): Promise<Platform
 
 export function fetchCase(caseId: string): Promise<PlatformCaseRecord> {
   return getJson<PlatformCaseRecord>(`/cases/${caseId}`)
+}
+
+// v0.7.0：统一案例工作台 DTO
+export function fetchCaseWorkspace(caseId: string): Promise<CaseWorkspaceSummary> {
+  return getJson<CaseWorkspaceSummary>(`/cases/${caseId}/workspace`)
 }
 
 export function uploadDataset(caseId: string, file: File): Promise<DatasetVersionRecord> {

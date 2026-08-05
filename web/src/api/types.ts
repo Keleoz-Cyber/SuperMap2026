@@ -34,6 +34,27 @@ export interface FeaturedResultLink {
   materialized: boolean
 }
 
+// v0.7.0：统一案例工作台身份（三种来源共用同一 DTO）
+export type WorkspaceKind = 'builtin_legacy' | 'builtin_preset' | 'user_upload'
+
+export interface WorkspaceCapabilities {
+  data_summary: boolean
+  experiments: boolean
+  official_result: boolean
+  native_volume: boolean
+}
+
+export interface CaseWorkspaceSummary extends CaseSummary {
+  workspace_kind: WorkspaceKind
+  capabilities: WorkspaceCapabilities
+  // 当前可查看/建模的数据版本摘要；没有时为 null
+  primary_dataset: DatasetVersionRecord | null
+  // 官方或正式主打成果链接；没有时为 null
+  official_result: FeaturedResultLink | null
+  // 只含允许公开的来源说明、字段、坐标语义、单位和摘要指纹
+  provenance_summary: Record<string, unknown>
+}
+
 export interface CasesResponse {
   cases: CaseSummary[]
 }
