@@ -52,7 +52,6 @@ from geomodeling.api.routes import (
     datasets,
     demo,
     experiments,
-    microseismic,
     professional,
     rendering,
     results,
@@ -301,7 +300,8 @@ def create_app() -> FastAPI:
     app.include_router(experiments.router)
     app.include_router(runs.router)
     app.include_router(results.router)
-    app.include_router(microseismic.router)
+    # v0.7.0：DAT 微震导入/派生路由退出产品面（预置 CSV 案例取代）；
+    # 派生服务层与历史运行时文件保留，通用结果/数据集读取不受影响。
     # v0.6 专业分析路由：精确前缀，不遮蔽 legacy 与微震路由；前端挂载之前注册
     app.include_router(professional.router)
     # v0.6.1 原生体渲染路由：显式 POST 变异 + 纯查询 GET；结果路由之后、

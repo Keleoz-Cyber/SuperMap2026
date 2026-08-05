@@ -26,10 +26,6 @@ import type {
   FormalSelectionsResponse,
   LegacyRenderSourceImportParams,
   LegacyRenderSourceRegistration,
-  MicroseismicDerivation,
-  MicroseismicImportResponse,
-  MicroseismicPointLayer,
-  MicroseismicPointLayerName,
   PlatformCaseRecord,
   ProfessionalConfirmationPayload,
   ProfessionalConfirmationRecord,
@@ -267,34 +263,6 @@ export function fetchDatasetPoints(datasetId: string, decimate = 1): Promise<Dat
 }
 
 // ---------------------------------------------------------- v0.5 microseismic
-
-// 微震派生证据只在数据集 profile.source_kind 为该值时存在；
-// 成果工作台据此决定是否为成果加载领域证据图层。
-export const MICROSEISMIC_SOURCE_KIND = 'microseismic_dat_bundle'
-
-export function importMicroseismic(caseId: string, files: File[]): Promise<MicroseismicImportResponse> {
-  const form = new FormData()
-  for (const file of files) form.append('files', file, file.name)
-  // 不设置 Content-Type，由浏览器生成 multipart 边界
-  return requestJson<MicroseismicImportResponse>(`/cases/${caseId}/microseismic-imports`, {
-    method: 'POST',
-    body: form,
-  })
-}
-
-export function fetchMicroseismicDerivation(datasetId: string): Promise<MicroseismicDerivation> {
-  return getJson<MicroseismicDerivation>(`/datasets/${datasetId}/derivation`)
-}
-
-export function fetchMicroseismicDerivationPoints(
-  datasetId: string,
-  layer: MicroseismicPointLayerName,
-  decimate = 1,
-): Promise<MicroseismicPointLayer> {
-  return getJson<MicroseismicPointLayer>(
-    `/datasets/${datasetId}/derivation/points?layer=${layer}&decimate=${decimate}`,
-  )
-}
 
 // ---------------------------------------------------------- v0.6 professional
 

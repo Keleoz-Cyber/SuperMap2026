@@ -32,8 +32,6 @@ vi.mock('../../../api/client', async (importOriginal) => {
     createExport: vi.fn(),
     createPublication: vi.fn(),
     fetchDatasetPoints: vi.fn(),
-    fetchMicroseismicDerivation: vi.fn(),
-    fetchMicroseismicDerivationPoints: vi.fn(),
     fetchResultRenderCapability: vi.fn(),
     fetchResultRenderAsset: vi.fn(),
     createResultRenderAsset: vi.fn(),
@@ -231,10 +229,6 @@ async function mountWorkbench(metadata: ResultMetadata) {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  // 默认走通用（非微震）成果路径：派生探测被 409 拒绝，绝不请求领域图层
-  vi.mocked(client.fetchMicroseismicDerivation).mockRejectedValue(
-    new client.ApiError('DATASET_NOT_MICROSEISMIC', '数据集不是微震 DAT 导入，没有派生证据', 409),
-  )
 })
 
 describe('ResultWorkbenchView', () => {
@@ -284,11 +278,10 @@ describe('ResultWorkbenchView', () => {
     expect(wrapper.find('[data-test="valid-cells"]').text()).toContain('5')
   })
 
-  it('通用成果不显示微震证据图层控制组，也不请求领域图层', async () => {
+  it('v0.7.0：成果工作台不再渲染 DAT 微震证据图层控制组', async () => {
     const { wrapper } = await mountWorkbench(makeMetadata('3d'))
-    // 派生元数据是 source_kind 唯一探测手段；409 后绝不发领域图层请求
-    expect(client.fetchMicroseismicDerivation).toHaveBeenCalledWith('ds1')
-    expect(client.fetchMicroseismicDerivationPoints).not.toHaveBeenCalled()
+    // DAT 派生探测与证据图层已退出产品面（客户端不再有对应 API）
+    expect('fetchMicroseismicDerivation' in client).toBe(false)
     expect(wrapper.find('[data-test="evidence-layers"]').exists()).toBe(false)
   })
 

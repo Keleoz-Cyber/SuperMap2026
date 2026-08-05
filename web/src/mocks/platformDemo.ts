@@ -419,6 +419,30 @@ export async function installMockApi(page: Page): Promise<void> {
     const method = route.request().method()
 
     if (path === '/health') return json(route, { status: 'ok', version: WEB_VERSION, time: T })
+    // v0.7.0：统一工作台 DTO（mock 与 /api/cases 卡片身份一致）
+    if (path === '/cases/resistivity/workspace' && method === 'GET') {
+      return json(route, {
+        case_id: 'resistivity',
+        title: '地下电阻率',
+        status: 'active',
+        source_kind: 'builtin_legacy',
+        workspace_kind: 'builtin_legacy',
+        capabilities: {
+          data_summary: true,
+          experiments: false,
+          official_result: false,
+          native_volume: true,
+        },
+        primary_dataset: null,
+        official_result: null,
+        provenance_summary: {
+          data_form: '三维 X/Y/Z/RHO（局部工程坐标）',
+          coordinate: '局部工程坐标',
+          unit_note: 'RHO 单位待来源确认',
+        },
+        links: { detail: '/api/cases/resistivity', publish_status: '/api/cases/resistivity/publish-status' },
+      })
+    }
     if (path === '/cases' && method === 'GET') {
       return json(route, {
         cases: [

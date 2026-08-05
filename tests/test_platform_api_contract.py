@@ -120,8 +120,9 @@ def test_http_errors_use_envelope_and_never_leak_paths(tmp_path, monkeypatch):
         assert "missing-standardized" not in json.dumps(payload, ensure_ascii=False)
 
 
-def test_microseismic_router_registered_without_shadowing_legacy(tmp_path, monkeypatch):
-    """v0.5 微震路由注册后，legacy 精确路由仍然优先命中。"""
+def test_dat_microseismic_routes_absent_and_legacy_still_resolves(tmp_path, monkeypatch):
+    """v0.7.0 DAT 路由退出产品面；legacy 精确路由仍然命中。"""
+
     app = make_integrated_app(tmp_path, monkeypatch)
     with TestClient(app) as client:
         legacy = client.get("/api/cases/resistivity")
@@ -129,12 +130,12 @@ def test_microseismic_router_registered_without_shadowing_legacy(tmp_path, monke
         assert legacy.json()["case_id"] == "resistivity"
 
         paths = client.get("/openapi.json").json()["paths"]
-        assert "/api/cases/{case_id}/microseismic-imports" in paths
-        assert "/api/datasets/{dataset_id}/derivation" in paths
+        assert "/api/cases/{case_id}/microseismic-imports" not in paths
+        assert "/api/datasets/{dataset_id}/derivation" not in paths
 
 
 def test_professional_router_registered_without_shadowing_existing(tmp_path, monkeypatch):
-    """v0.6 专业分析路由注册后，legacy 精确路由与微震路由仍然优先命中。"""
+    """v0.6 专业分析路由注册后，legacy 精确路由仍然优先命中。"""
     app = make_integrated_app(tmp_path, monkeypatch)
     with TestClient(app) as client:
         legacy = client.get("/api/cases/resistivity")
@@ -142,9 +143,9 @@ def test_professional_router_registered_without_shadowing_existing(tmp_path, mon
         assert legacy.json()["case_id"] == "resistivity"
 
         paths = client.get("/openapi.json").json()["paths"]
-        # 既有微震路由不被遮蔽
-        assert "/api/cases/{case_id}/microseismic-imports" in paths
-        assert "/api/datasets/{dataset_id}/derivation" in paths
+        # v0.7.0：DAT 路由已退出产品面（缺席断言见上方专用测试）
+        assert "/api/cases/{case_id}/microseismic-imports" not in paths
+        assert "/api/datasets/{dataset_id}/derivation" not in paths
         for path in (
             "/api/datasets/{dataset_id}/professional-diagnostics",
             "/api/professional-diagnostics/{diagnosis_id}",

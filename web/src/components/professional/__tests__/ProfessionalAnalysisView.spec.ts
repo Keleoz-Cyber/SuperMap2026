@@ -30,8 +30,6 @@ vi.mock('../../../api/client', async (importOriginal) => {
     fetchResultPreview: vi.fn(),
     fetchResultSlice: vi.fn(),
     fetchDatasetPoints: vi.fn(),
-    fetchMicroseismicDerivation: vi.fn(),
-    fetchMicroseismicDerivationPoints: vi.fn(),
     fetchFormalSelections: vi.fn(),
     selectFormal: vi.fn(),
     createExport: vi.fn(),
@@ -761,7 +759,6 @@ describe('ResultWorkbenchView 专业分析入口', () => {
       value_name: null,
       source_sha256: null,
     })
-    vi.mocked(client.fetchMicroseismicDerivation).mockRejectedValue(new Error('not microseismic'))
     vi.mocked(client.fetchFormalSelections).mockResolvedValue({ case_id: 'c1', selections: [] })
 
     const router = makeTestRouter()

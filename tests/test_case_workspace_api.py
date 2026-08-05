@@ -148,3 +148,29 @@ def test_legacy_resistivity_workspace_resolves_as_builtin_legacy(seeded_client):
     assert body["workspace_kind"] == "builtin_legacy"
     assert body["capabilities"]["native_volume"] is True
     assert body["capabilities"]["experiments"] is False
+
+
+# ---------------------------------------------------------------------------
+# Task 8：DAT 产品入口缺席（导入 POST 与派生读取均不可达；通用读取兼容）
+# ---------------------------------------------------------------------------
+
+def test_dat_import_and_derivation_endpoints_are_not_registered(seeded_client):
+    # DAT 导入 POST：产品注册已移除（404/405 均可，绝不 2xx）
+    response = seeded_client.post(f"/api/cases/{PRESET_CASE_ID}/microseismic-imports")
+    assert response.status_code in (404, 405)
+    # DAT 派生证据读取端点同批退出产品面
+    dataset_id = _cards(seeded_client)[PRESET_CASE_ID]["primary_dataset"]["id"]
+    assert seeded_client.get(f"/api/datasets/{dataset_id}/derivation").status_code in (404, 405)
+    assert seeded_client.get(
+        f"/api/datasets/{dataset_id}/derivation/points"
+    ).status_code in (404, 405)
+
+
+def test_generic_result_and_dataset_reads_still_work(seeded_client):
+    cards = _cards(seeded_client)
+    result_id = cards[PRESET_CASE_ID]["official_result"]["result_id"]
+    dataset_id = cards[PRESET_CASE_ID]["primary_dataset"]["id"]
+    result = seeded_client.get(f"/api/results/{result_id}")
+    assert result.status_code == 200, result.text
+    dataset = seeded_client.get(f"/api/datasets/{dataset_id}")
+    assert dataset.status_code == 200, dataset.text
