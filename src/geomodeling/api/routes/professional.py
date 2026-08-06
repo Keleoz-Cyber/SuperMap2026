@@ -815,3 +815,37 @@ def download_professional_artifact(
         )
     media_type = _ARTIFACT_MEDIA_TYPES.get(path.suffix.lower(), "application/octet-stream")
     return FileResponse(path, media_type=media_type, filename=file_name)
+
+
+# ---------------------------------------------------------------------------
+# v0.7.0 batch 3: candidate catalog and multi-candidate comparison (§8)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/datasets/{dataset_id}/comparison-candidates")
+def list_comparison_candidates(
+    dataset_id: str,
+    runtime: PlatformRuntime = Depends(get_platform_runtime),
+) -> dict[str, Any]:
+    """List comparable candidates across experiments for a dataset version."""
+
+    from geomodeling.platform.candidate_comparisons import candidate_catalog
+
+    return candidate_catalog(runtime, dataset_id)
+
+
+@router.post("/api/candidate-comparisons")
+def compare_candidates_route(
+    request_body: dict[str, Any],
+    runtime: PlatformRuntime = Depends(get_platform_runtime),
+) -> dict[str, Any]:
+    """Compare 2-4 candidates deterministically without persistence."""
+
+    from geomodeling.platform.candidate_comparisons import (
+        CandidateComparisonRequest,
+        compare_candidates_multi,
+    )
+
+    req = CandidateComparisonRequest(**request_body)
+    result = compare_candidates_multi(runtime, req.candidate_result_ids)
+    return result.model_dump(mode="json")
