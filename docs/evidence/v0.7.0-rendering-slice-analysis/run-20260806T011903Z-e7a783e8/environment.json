@@ -1,6 +1,6 @@
 {
-  "run_id": "run-20260806T003615Z-a9e01252",
-  "git_commit": "e6c83d7a04c13534cc740629430714069b4000df",
+  "run_id": "run-20260806T011903Z-e7a783e8",
+  "git_commit": "42b45f47d0f21556b134fe9b1de15c7a55105c38",
   "sdk_sha256": "d69dadab01fc452a79f1fa88a46aced3cf29885df7bf4febbd6f24ce5b578120",
   "sdk_version": "12.1.0",
   "browser": {
@@ -22,7 +22,7 @@
       "asset_id": "nc-47990ecd77598f60be678f7d6c8cc99c"
     }
   },
-  "created_at": "2026-08-06T00:36:41.373Z",
+  "created_at": "2026-08-06T01:19:29.673Z",
   "platform": "win32/x64",
   "node": "v24.13.1",
   "grid_source": "fixtures/legacyGrid.ts synthetic-6x7x8（与 frame-live 同字节）"

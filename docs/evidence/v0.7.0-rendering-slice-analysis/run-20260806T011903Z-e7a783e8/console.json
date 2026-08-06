@@ -1,6 +1,6 @@
 {
-  "run_id": "run-20260806T003615Z-a9e01252",
-  "git_commit": "e6c83d7a04c13534cc740629430714069b4000df",
+  "run_id": "run-20260806T011903Z-e7a783e8",
+  "git_commit": "42b45f47d0f21556b134fe9b1de15c7a55105c38",
   "sdk_sha256": "d69dadab01fc452a79f1fa88a46aced3cf29885df7bf4febbd6f24ce5b578120",
   "sdk_version": "12.1.0",
   "browser": {
@@ -22,29 +22,21 @@
       "asset_id": "nc-47990ecd77598f60be678f7d6c8cc99c"
     }
   },
-  "legacy": {
-    "rendered_ms": 1758,
-    "rendered_gate_ms": 30000,
-    "commands": {
-      "slice-mode": 2782,
-      "contour": 630,
-      "restore-volume": 715,
-      "palette-turbo": 1145,
-      "scale-linear": 712,
-      "scale-log": 726,
-      "filter": 711,
-      "opacity": 694,
-      "lighting-off": 612,
-      "gradient-off": 672,
-      "bounding-box-off": 656,
-      "filter-restore": 735,
-      "opacity-restore": 722,
-      "lighting-on": 715,
-      "gradient-on": 719,
-      "bounding-box-on": 739,
-      "slice-reenter": 626,
-      "restore-volume-final": 685
+  "legacy": [
+    {
+      "type": "info",
+      "text": "**********超图三维产品SDK包版本信息**********",
+      "location": "/SuperMap3D-2026/SuperMap3D.js"
     },
-    "total_ms": 23433
-  }
+    {
+      "type": "info",
+      "text": "产品名称: iClient3D; 大版本号: 12.1.0; SVN版本号: 50939",
+      "location": "/SuperMap3D-2026/SuperMap3D.js"
+    },
+    {
+      "type": "info",
+      "text": "**********超图三维产品SDK包版本信息**********",
+      "location": "/SuperMap3D-2026/SuperMap3D.js"
+    }
+  ]
 }

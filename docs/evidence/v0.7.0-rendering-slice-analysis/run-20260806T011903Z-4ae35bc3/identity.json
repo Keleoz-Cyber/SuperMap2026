@@ -1,6 +1,6 @@
 {
-  "run_id": "run-20260806T003615Z-f4999f55",
-  "git_commit": "e6c83d7a04c13534cc740629430714069b4000df",
+  "run_id": "run-20260806T011903Z-4ae35bc3",
+  "git_commit": "42b45f47d0f21556b134fe9b1de15c7a55105c38",
   "sdk_sha256": "d69dadab01fc452a79f1fa88a46aced3cf29885df7bf4febbd6f24ce5b578120",
   "sdk_version": "12.1.0",
   "browser": {
@@ -16,17 +16,17 @@
   "results": {
     "preset": {
       "case_id": "builtin-microseismic-vx-1911",
-      "official_result_id": "fd18931a-9319-4604-af74-d3c5c9dba3ba",
+      "official_result_id": "ba4e7200-f0e0-4f16-b247-dd217cbf3fef",
       "grid_sha256": "9a141ac6ca62dbf55ca3099e54ef55c62aa10b5e7848dca8f9f2f6811f72221b",
-      "netcdf_sha256": "4065ecd203a98cf79036cf13101c22ae7b0ecc2fd7084bebeec9a6f766dc6b92",
-      "asset_id": "nc-f12b69c8f17d015318f1662a81af5d3f"
+      "netcdf_sha256": "4df1576478115c60f550e8a16517464e003aae885d4ee4baa210e5fb57dee5e0",
+      "asset_id": "nc-7f5e5d97488662aa826eac4e25cdeb62"
     }
   },
   "preset": {
-    "asset_id": "nc-f12b69c8f17d015318f1662a81af5d3f",
+    "asset_id": "nc-7f5e5d97488662aa826eac4e25cdeb62",
     "renderer": "supermap_voxelgrid_netcdf",
     "grid_sha256": "9a141ac6ca62dbf55ca3099e54ef55c62aa10b5e7848dca8f9f2f6811f72221b",
-    "netcdf_sha256": "4065ecd203a98cf79036cf13101c22ae7b0ecc2fd7084bebeec9a6f766dc6b92",
+    "netcdf_sha256": "4df1576478115c60f550e8a16517464e003aae885d4ee4baa210e5fb57dee5e0",
     "manifest_shape": [
       35,
       47,
@@ -35,9 +35,9 @@
     "variable_name": "Vx",
     "rendered_identity": {
       "sourceKind": "candidate_result",
-      "sourceId": "fd18931a-9319-4604-af74-d3c5c9dba3ba",
+      "sourceId": "ba4e7200-f0e0-4f16-b247-dd217cbf3fef",
       "gridSha256": "9a141ac6ca62dbf55ca3099e54ef55c62aa10b5e7848dca8f9f2f6811f72221b",
-      "netcdfSha256": "4065ecd203a98cf79036cf13101c22ae7b0ecc2fd7084bebeec9a6f766dc6b92"
+      "netcdfSha256": "4df1576478115c60f550e8a16517464e003aae885d4ee4baa210e5fb57dee5e0"
     },
     "diag_layer_type": "VoxelGridLayer3D",
     "sdk_version": "12.1.0"
@@ -47,8 +47,8 @@
     "dataset_version_id": "d25d3cf9-55a1-55e8-9c92-999a7e9c2477",
     "experiment_id": "f2399db7-8470-5175-8948-6e7596ee80d5",
     "run_id": "4ecd4794-fa9f-54d7-b746-3302ab8420ac",
-    "result_id": "fd18931a-9319-4604-af74-d3c5c9dba3ba",
-    "official_url": "/results/fd18931a-9319-4604-af74-d3c5c9dba3ba",
+    "result_id": "ba4e7200-f0e0-4f16-b247-dd217cbf3fef",
+    "official_url": "/results/ba4e7200-f0e0-4f16-b247-dd217cbf3fef",
     "materialized": true,
     "source_sha256": "ea3917c2ee228953f39122fc52b864d802de9c9835f07a57c4c88585a501e510",
     "baseline_sha256": "ba101d92f0d4162489f9e9657db3accfe9dbb2bab69a6b4747b2c1d4685102c0"

@@ -1,6 +1,6 @@
 {
-  "run_id": "run-20260806T003615Z-f4999f55",
-  "git_commit": "e6c83d7a04c13534cc740629430714069b4000df",
+  "run_id": "run-20260806T011903Z-4ae35bc3",
+  "git_commit": "42b45f47d0f21556b134fe9b1de15c7a55105c38",
   "sdk_sha256": "d69dadab01fc452a79f1fa88a46aced3cf29885df7bf4febbd6f24ce5b578120",
   "sdk_version": "12.1.0",
   "browser": {
@@ -16,26 +16,26 @@
   "results": {
     "preset": {
       "case_id": "builtin-microseismic-vx-1911",
-      "official_result_id": "fd18931a-9319-4604-af74-d3c5c9dba3ba",
+      "official_result_id": "ba4e7200-f0e0-4f16-b247-dd217cbf3fef",
       "grid_sha256": "9a141ac6ca62dbf55ca3099e54ef55c62aa10b5e7848dca8f9f2f6811f72221b",
-      "netcdf_sha256": "4065ecd203a98cf79036cf13101c22ae7b0ecc2fd7084bebeec9a6f766dc6b92",
-      "asset_id": "nc-f12b69c8f17d015318f1662a81af5d3f"
+      "netcdf_sha256": "4df1576478115c60f550e8a16517464e003aae885d4ee4baa210e5fb57dee5e0",
+      "asset_id": "nc-7f5e5d97488662aa826eac4e25cdeb62"
     }
   },
   "preset": {
     "noise_diff": 0,
     "pixel_threshold": 200,
-    "base_non_bg": 95303,
+    "base_non_bg": 95297,
     "slice_mode_non_bg": 34468,
     "contour_non_bg": 37634,
     "control_diffs": {
       "contour": 29035,
-      "palette-turbo": 78695,
-      "scale-log": 75593,
-      "scale-linear": 75593,
-      "filter": 78868,
-      "opacity": 53527,
-      "lighting-off": 29768,
+      "palette-turbo": 78666,
+      "scale-log": 75581,
+      "scale-linear": 75581,
+      "filter": 78857,
+      "opacity": 53530,
+      "lighting-off": 30359,
       "gradient-off": 60178,
       "bounding-box-off": 6689
     },

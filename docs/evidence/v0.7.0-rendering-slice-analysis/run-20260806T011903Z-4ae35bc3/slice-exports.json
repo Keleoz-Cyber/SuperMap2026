@@ -1,6 +1,6 @@
 {
-  "run_id": "run-20260806T003615Z-f4999f55",
-  "git_commit": "e6c83d7a04c13534cc740629430714069b4000df",
+  "run_id": "run-20260806T011903Z-4ae35bc3",
+  "git_commit": "42b45f47d0f21556b134fe9b1de15c7a55105c38",
   "sdk_sha256": "d69dadab01fc452a79f1fa88a46aced3cf29885df7bf4febbd6f24ce5b578120",
   "sdk_version": "12.1.0",
   "browser": {
@@ -16,10 +16,10 @@
   "results": {
     "preset": {
       "case_id": "builtin-microseismic-vx-1911",
-      "official_result_id": "fd18931a-9319-4604-af74-d3c5c9dba3ba",
+      "official_result_id": "ba4e7200-f0e0-4f16-b247-dd217cbf3fef",
       "grid_sha256": "9a141ac6ca62dbf55ca3099e54ef55c62aa10b5e7848dca8f9f2f6811f72221b",
-      "netcdf_sha256": "4065ecd203a98cf79036cf13101c22ae7b0ecc2fd7084bebeec9a6f766dc6b92",
-      "asset_id": "nc-f12b69c8f17d015318f1662a81af5d3f"
+      "netcdf_sha256": "4df1576478115c60f550e8a16517464e003aae885d4ee4baa210e5fb57dee5e0",
+      "asset_id": "nc-7f5e5d97488662aa826eac4e25cdeb62"
     }
   },
   "preset": {
@@ -27,11 +27,11 @@
     "export_kind": "slice_analysis",
     "image_provenance": "client_echarts_canvas",
     "asset_identity": {
-      "asset_id": "nc-f12b69c8f17d015318f1662a81af5d3f",
+      "asset_id": "nc-7f5e5d97488662aa826eac4e25cdeb62",
       "source_kind": "candidate_result",
-      "source_id": "fd18931a-9319-4604-af74-d3c5c9dba3ba",
+      "source_id": "ba4e7200-f0e0-4f16-b247-dd217cbf3fef",
       "grid_sha256": "9a141ac6ca62dbf55ca3099e54ef55c62aa10b5e7848dca8f9f2f6811f72221b",
-      "netcdf_sha256": "4065ecd203a98cf79036cf13101c22ae7b0ecc2fd7084bebeec9a6f766dc6b92"
+      "netcdf_sha256": "4df1576478115c60f550e8a16517464e003aae885d4ee4baa210e5fb57dee5e0"
     },
     "property": {
       "name": "Vx",
@@ -85,6 +85,6 @@
         "size_bytes": 89432
       }
     },
-    "created_at": "2026-08-06T00:36:57.739885+00:00"
+    "created_at": "2026-08-06T01:19:46.080066+00:00"
   }
 }
