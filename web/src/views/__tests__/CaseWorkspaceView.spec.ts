@@ -3,7 +3,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { describe, expect, it, vi } from 'vitest'
 import ElementPlus from 'element-plus'
 import * as client from '../../api/client'
-import type { CaseWorkspaceSummary } from '../../api/types'
+import type { CaseWorkspaceSummary, DatasetVersionRecord } from '../../api/types'
 import CaseWorkspaceView from '../CaseWorkspaceView.vue'
 
 // v0.7.0 Task 6：统一案例工作台壳（三种身份共用版式与命令位置）。
@@ -60,6 +60,16 @@ async function mountWorkspace(path: string) {
       {
         path: '/cases/:caseId/experiments/new',
         name: 'experiment-create',
+        component: { template: '<div />' },
+      },
+      {
+        path: '/datasets/:datasetId/professional-diagnosis',
+        name: 'professional-diagnosis',
+        component: { template: '<div />' },
+      },
+      {
+        path: '/datasets/:datasetId/candidate-comparison',
+        name: 'candidate-comparison',
         component: { template: '<div />' },
       },
     ],
@@ -257,5 +267,56 @@ describe('CaseWorkspaceView', () => {
     await flushPromises()
     expect(router.currentRoute.value.path).toBe('/cases/up-1/experiments/new')
     expect(router.currentRoute.value.query.dataset).toBe('ds-1')
+  })
+
+  it('validated_datasets: 每个已校验数据集显示三个命令按钮且导航正确', async () => {
+    const ws = workspaceOf('user_upload')
+    const validated: DatasetVersionRecord[] = [
+      {
+        id: 'ds-v1',
+        case_id: 'up-1',
+        version: 1,
+        status: 'validated',
+        profile: { dimension: '3d' },
+        created_at: '2026-08-05T00:00:00+00:00',
+      },
+      {
+        id: 'ds-v2',
+        case_id: 'up-1',
+        version: 2,
+        status: 'validated',
+        profile: { dimension: '3d' },
+        created_at: '2026-08-06T00:00:00+00:00',
+      },
+    ]
+    ws.validated_datasets = validated
+    vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(ws)
+    const { wrapper, router } = await mountWorkspace('/cases/up-1')
+
+    const rows = wrapper.findAll('[data-test^="validated-dataset-"]')
+    expect(rows).toHaveLength(2)
+
+    // 第一个数据集的新建实验按钮
+    await wrapper.find('[data-test="validated-dataset-ds-v1"] [data-test="new-experiment-btn"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/cases/up-1/experiments/new')
+    expect(router.currentRoute.value.query.dataset).toBe('ds-v1')
+
+    // 专业诊断
+    await router.push('/cases/up-1')
+    await flushPromises()
+    await wrapper.find('[data-test="validated-dataset-ds-v1"] [data-test="professional-diagnosis-btn"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.name).toBe('professional-diagnosis')
+    expect(router.currentRoute.value.params.datasetId).toBe('ds-v1')
+    expect(router.currentRoute.value.query.case).toBe('up-1')
+
+    // 比较候选
+    await router.push('/cases/up-1')
+    await flushPromises()
+    await wrapper.find('[data-test="validated-dataset-ds-v1"] [data-test="candidate-comparison-btn"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/datasets/ds-v1/candidate-comparison')
+    wrapper.unmount()
   })
 })

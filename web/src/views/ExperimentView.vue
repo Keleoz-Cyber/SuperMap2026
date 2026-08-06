@@ -9,6 +9,7 @@ import {
   fetchCaseDatasets,
   fetchDataset,
   fetchExperiment,
+  fetchProfessionalConfirmation,
   retryRun,
   startRun,
   fetchRun,
@@ -19,6 +20,7 @@ import type {
   ExperimentCreatePayload,
   ExperimentRecord,
   NeighborhoodPayload,
+  ProfessionalConfirmationSummary,
   RunRecord,
 } from '../api/types'
 import ParameterEditor, { type ParameterSubmit } from '../components/experiments/ParameterEditor.vue'
@@ -76,12 +78,18 @@ const dimension = computed<'2d' | '3d'>(() =>
 const preset = computed(() => resolveDatasetPreset(dataset.value?.profile ?? null))
 
 // ------------------------------------------------------- v0.6 professional
-// 专业模式（可选）：确认快照只来自诊断页导航（query.confirmation），邻域与经验
+// 专业模式（可选）：确认快照只来自诊断页导航（query.professional_confirmation），邻域与经验
 // 不确定性为契约原始载荷，严格校验在服务端。专业模式关闭时提交载荷与 v0.4 逐字一致。
 const professionalEnabled = ref(false)
-const confirmationId = computed(() => {
-  const q = route.query.confirmation
+const professionalConfirmationId = computed(() => {
+  const q = route.query.professional_confirmation
   return typeof q === 'string' && q ? q : null
+})
+
+const confirmationSummary = ref<ProfessionalConfirmationSummary | null>(null)
+const confirmationNote = computed(() => {
+  const raw = confirmationSummary.value?.confirmation as { note?: string } | undefined
+  return raw?.note ?? null
 })
 
 // ParameterEditor 是既有 legacy 组件（不改其源码）：算法选择经 change 事件冒泡同步，
@@ -115,7 +123,7 @@ function effectiveRadii(): number[] | null {
 
 const professionalInvalid = computed<string | null>(() => {
   if (!professionalEnabled.value) return null
-  if (editorAlgorithm.value === 'ordinary_kriging' && !confirmationId.value) {
+  if (editorAlgorithm.value === 'ordinary_kriging' && !professionalConfirmationId.value) {
     return '专业 Kriging 实验需要诊断确认快照：请先在专业诊断工作台完成人工确认并携带确认 ID 进入'
   }
   if (effectiveRadii() === null) {
@@ -149,12 +157,21 @@ function goDiagnosis() {
   void router.push({
     name: 'professional-diagnosis',
     params: { datasetId: dataset.value.id },
-    query: { case: caseId.value },
+    query: { case: confirmationSummary.value?.case_id ?? caseId.value },
   })
 }
 
 // ----------------------------------------------------------- create flow
 async function resolveDataset() {
+  // 专业确认模式：确认快照决定案例与数据集归属（不由 URL query.dataset 决定）
+  if (professionalConfirmationId.value) {
+    const summary = await fetchProfessionalConfirmation(professionalConfirmationId.value)
+    confirmationSummary.value = summary
+    editorAlgorithm.value = 'ordinary_kriging'
+    dataset.value = await fetchDataset(summary.dataset_id)
+    return
+  }
+  confirmationSummary.value = null
   const fromQuery = route.query.dataset
   if (typeof fromQuery === 'string' && fromQuery) {
     dataset.value = await fetchDataset(fromQuery)
@@ -177,8 +194,9 @@ async function resolveDataset() {
 async function submit(payload: ParameterSubmit) {
   if (!dataset.value) return
   actionError.value = null
+  const effectiveCaseId = confirmationSummary.value?.case_id ?? caseId.value
   const body: ExperimentCreatePayload = {
-    case_id: caseId.value,
+    case_id: effectiveCaseId,
     name: name.value.trim() || '插值实验',
     algorithm: payload.algorithm,
     dataset_version_id: dataset.value.id,
@@ -187,6 +205,9 @@ async function submit(payload: ParameterSubmit) {
     validation: payload.validation,
     grid: payload.grid,
   }
+  if (professionalConfirmationId.value) {
+    body.professional_confirmation_id = professionalConfirmationId.value
+  }
   if (professionalEnabled.value) {
     // 前置校验与后端错误码对齐（缺确认 409 / 配置非法 409），不合法绝不提交
     const invalid = professionalInvalid.value
@@ -194,9 +215,6 @@ async function submit(payload: ParameterSubmit) {
     if (invalid !== null || neighborhood === null) {
       actionError.value = invalid ?? '搜索邻域配置非法'
       return
-    }
-    if (payload.algorithm === 'ordinary_kriging' && confirmationId.value) {
-      body.professional_confirmation_id = confirmationId.value
     }
     body.neighborhood = neighborhood
     body.empirical_uncertainty = {
@@ -336,32 +354,47 @@ onBeforeUnmount(stopPolling)
         <input v-model="name" class="gmp-input" data-test="exp-name" maxlength="256" />
       </label>
       <div class="editor-wrap" @change="onEditorChange">
-        <ParameterEditor v-if="dataset" :dimension="dimension" :submitting="submitting" :preset="preset" @submit="submit" />
+        <ParameterEditor
+          v-if="dataset"
+          :dimension="dimension"
+          :submitting="submitting"
+          :preset="preset"
+          :algorithm-lock="professionalConfirmationId ? 'ordinary_kriging' : null"
+          :z-scale-lock="professionalConfirmationId ? 1 : null"
+          @submit="submit"
+        />
       </div>
       <div v-if="!dataset" v-loading="true" class="page-loading" />
       <section v-if="dataset" class="professional-section" data-test="professional-section">
+        <div v-if="professionalConfirmationId" class="pro-block">
+          <p class="confirmation-chip" data-test="professional-confirmation">
+            变异函数确认快照：<span class="mono">{{ professionalConfirmationId }}</span>
+            <template v-if="confirmationSummary">
+              （指纹 <span class="mono">{{ confirmationSummary.fingerprint }}</span>）
+            </template>
+            <template v-if="confirmationNote">
+              · {{ confirmationNote }}
+            </template>
+          </p>
+        </div>
         <div class="pro-row">
           <button
-            v-if="dataset.status === 'validated'"
+            v-if="dataset.status === 'validated' && !professionalConfirmationId"
             class="gmp-btn"
             data-test="professional-entry"
             @click="goDiagnosis"
           >
             专业诊断
           </button>
-          <span v-else class="pro-hint">数据集通过质量门禁后开放专业诊断入口</span>
+          <span v-else-if="dataset.status !== 'validated'" class="pro-hint">数据集通过质量门禁后开放专业诊断入口</span>
           <label class="radio">
             <input v-model="professionalEnabled" type="checkbox" data-test="professional-toggle" />
             启用专业模式（搜索邻域 / 经验不确定性）
           </label>
         </div>
         <template v-if="professionalEnabled">
-          <div v-if="editorAlgorithm === 'ordinary_kriging'" class="pro-block">
-            <p v-if="confirmationId" class="confirmation-chip" data-test="professional-confirmation">
-              变异函数确认快照：<span class="mono">{{ confirmationId }}</span>
-              （匹配本数据版本的不可变确认，随实验指纹保存）
-            </p>
-            <p v-else class="pro-warn" data-test="professional-confirmation-missing">
+          <div v-if="editorAlgorithm === 'ordinary_kriging' && !professionalConfirmationId" class="pro-block">
+            <p class="pro-warn" data-test="professional-confirmation-missing">
               专业 Kriging 需要诊断确认快照：请先在「专业诊断」完成人工确认，并从确认快照进入本页。
             </p>
           </div>

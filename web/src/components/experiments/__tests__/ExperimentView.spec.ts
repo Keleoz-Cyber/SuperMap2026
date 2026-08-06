@@ -24,6 +24,7 @@ vi.mock('../../../api/client', async (importOriginal) => {
     fetchExperiment: vi.fn(),
     fetchCaseDatasets: vi.fn(),
     fetchDataset: vi.fn(),
+    fetchProfessionalConfirmation: vi.fn(),
     createExperiment: vi.fn(),
     startRun: vi.fn(),
     fetchRun: vi.fn(),

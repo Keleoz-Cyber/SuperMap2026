@@ -8,10 +8,12 @@ import {
   fetchDataset,
   fetchDiagnosisVariogram,
   fetchProfessionalDiagnosis,
+  fetchProfessionalDiagnostics,
   requestProfessionalDiagnosis,
   retryAnalysisJob,
 } from '../api/client'
 import type {
+  AnalysisJobRecord,
   DatasetVersionRecord,
   DirectionPayload,
   ProfessionalConfirmationPayload,
@@ -37,6 +39,10 @@ const datasetId = computed(() => String(route.params.datasetId ?? ''))
 const queryCaseId = computed(() =>
   typeof route.query.case === 'string' ? route.query.case : '',
 )
+const queryDiagnosisId = computed(() => {
+  const q = route.query.diagnosis
+  return typeof q === 'string' && q ? q : null
+})
 
 const dataset = ref<DatasetVersionRecord | null>(null)
 const loading = ref(true)
@@ -106,12 +112,59 @@ function describeError(e: unknown): string {
 onMounted(async () => {
   try {
     dataset.value = await fetchDataset(datasetId.value)
+    if (queryDiagnosisId.value) {
+      await resumeDiagnosis(queryDiagnosisId.value)
+    }
   } catch (e) {
     loadError.value = describeError(e)
   } finally {
     loading.value = false
   }
 })
+
+// 从 query.diagnosis 恢复已有诊断：获取诊断与任务，校验数据集归属，按状态恢复轮询/证据
+async function resumeDiagnosis(diagnosisId: string) {
+  const list = await fetchProfessionalDiagnostics(datasetId.value)
+  const item = list.diagnostics.find(
+    (d) => (d.diagnosis as { id?: string }).id === diagnosisId,
+  )
+  if (!item) {
+    throw new ApiError('DIAGNOSIS_NOT_FOUND', '未找到指定的诊断记录', 404)
+  }
+  const diagRecord = item.diagnosis as unknown as ProfessionalDiagnosisRecord
+  if (diagRecord.dataset_version_id !== datasetId.value) {
+    throw new ApiError('DIAGNOSIS_DATASET_MISMATCH', '诊断不属于当前数据集', 409)
+  }
+  const job = item.job as unknown as AnalysisJobRecord | null
+
+  if (diagRecord.status === 'succeeded') {
+    await loadSuccess(diagnosisId)
+    return
+  }
+  if ((diagRecord.status === 'failed' || diagRecord.status === 'interrupted') && job) {
+    phase.value = {
+      kind: 'failed',
+      diagnosisId,
+      jobId: job.id,
+      status: job.status,
+      error: job.error ?? diagRecord.error ?? {
+        code: 'ANALYSIS_JOB_NOT_SUCCEEDED',
+        message: `任务未成功（${diagRecord.status}）`,
+      },
+    }
+    return
+  }
+  if (job) {
+    phase.value = {
+      kind: 'running',
+      diagnosisId,
+      jobId: job.id,
+      status: job.status,
+      progress: job.progress ?? {},
+    }
+    maybePoll()
+  }
+}
 
 function toggleAzimuth(azimuth: number) {
   selectedAzimuths.value = selectedAzimuths.value.includes(azimuth)
@@ -280,7 +333,7 @@ function gotoExperiment() {
   void router.push({
     name: 'experiment-create',
     params: { caseId: caseId.value },
-    query: { dataset: datasetId.value, confirmation: confirmation.value.id },
+    query: { dataset: datasetId.value, professional_confirmation: confirmation.value.id },
   })
 }
 

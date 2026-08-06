@@ -74,6 +74,22 @@ function createExperiment() {
     query: datasetId ? { dataset: datasetId } : {},
   })
 }
+function newExperimentForDataset(datasetId: string) {
+  void router.push({
+    path: `/cases/${caseId.value}/experiments/new`,
+    query: { dataset: datasetId },
+  })
+}
+function gotoDiagnosisForDataset(datasetId: string) {
+  void router.push({
+    name: 'professional-diagnosis',
+    params: { datasetId },
+    query: { case: caseId.value },
+  })
+}
+function gotoComparisonForDataset(datasetId: string) {
+  void router.push(`/datasets/${datasetId}/candidate-comparison`)
+}
 
 // 单调递增请求序号：只有最新一次 loadWorkspace 可以写状态；
 // 快速连切时旧请求无论成功、失败还是 finally 都不得覆盖新请求
@@ -212,6 +228,33 @@ watch(caseId, (next, prev) => {
             :preparation="workspace.data_preparation"
             :case-id="caseId"
           />
+          <div
+            v-if="workspace.validated_datasets?.length"
+            class="validated-datasets"
+            data-test="validated-datasets"
+          >
+            <div
+              v-for="ds in workspace.validated_datasets"
+              :key="ds.id"
+              class="dataset-row"
+              :data-test="`validated-dataset-${ds.id}`"
+            >
+              <span class="dataset-label">
+                数据版本 v{{ ds.version }} · {{ ds.id }}
+              </span>
+              <div class="command-row">
+                <el-button data-test="new-experiment-btn" @click="newExperimentForDataset(ds.id)">
+                  新建实验
+                </el-button>
+                <el-button data-test="professional-diagnosis-btn" @click="gotoDiagnosisForDataset(ds.id)">
+                  专业诊断
+                </el-button>
+                <el-button data-test="candidate-comparison-btn" @click="gotoComparisonForDataset(ds.id)">
+                  比较候选
+                </el-button>
+              </div>
+            </div>
+          </div>
         </section>
 
         <section class="workspace-section" data-test="workspace-experiments">
@@ -296,5 +339,23 @@ watch(caseId, (next, prev) => {
 }
 .rho-block {
   margin-top: 10px;
+}
+.validated-datasets {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.dataset-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 6px 0;
+  border-top: 1px dashed #263142;
+}
+.dataset-label {
+  font-size: 12px;
+  color: #93a1b3;
 }
 </style>
