@@ -110,8 +110,9 @@ function onMessage(event: MessageEvent) {
       })
       return
     case 'RENDER_STATE':
-      // 任何相位都是终态信号（failed/unsupported 另有 ERROR 通道上报）
-      clearTimer('renderState')
+      // loading 只是中间态：只有 rendered/failed/unsupported 终态（或 ERROR）
+      // 才取消渲染状态超时；子帧先 loading 后永久卡住必须仍能超时失败
+      if (msg.phase !== 'loading') clearTimer('renderState')
       if (msg.phase === 'rendered') emit('rendered', msg.identity)
       return
     case 'STATE_APPLIED':

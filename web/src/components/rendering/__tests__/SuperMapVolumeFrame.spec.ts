@@ -255,4 +255,40 @@ describe('SuperMapVolumeFrame 握手/渲染超时（黑屏不得无限停留）'
       vi.useRealTimers()
     }
   })
+
+  it('RENDER_STATE(loading) 是中间态，不得取消计时器：60s 无终态仍超时', async () => {
+    vi.useFakeTimers()
+    try {
+      const { wrapper, emitChild } = mountFrame()
+      emitChild({ type: 'FRAME_READY', sdkVersion: '12.1.0', contextType: 2, capabilities: CAPS })
+      await flushPromises()
+      // loading 中间态到达（真实子帧 INIT 后先发 loading）
+      emitChild({ type: 'RENDER_STATE', phase: 'loading', identity: null })
+      await flushPromises()
+      // loading 后再无终态：60s 计时必须仍然生效
+      await vi.advanceTimersByTimeAsync(60_000)
+      const failed = wrapper.emitted('failed')
+      expect(failed).toHaveLength(1)
+      expect(failed![0][0]).toMatchObject({ code: 'RENDER_STATE_TIMEOUT' })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('RENDER_STATE 终态（unsupported/failed）取消计时器，不再误报超时', async () => {
+    vi.useFakeTimers()
+    try {
+      const { wrapper, emitChild } = mountFrame()
+      emitChild({ type: 'FRAME_READY', sdkVersion: '12.1.0', contextType: 2, capabilities: CAPS })
+      await flushPromises()
+      emitChild({ type: 'RENDER_STATE', phase: 'loading', identity: null })
+      await flushPromises()
+      emitChild({ type: 'RENDER_STATE', phase: 'unsupported', identity: null })
+      await flushPromises()
+      await vi.advanceTimersByTimeAsync(120_000)
+      expect(wrapper.emitted('failed') ?? []).toHaveLength(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
