@@ -47,7 +47,7 @@ def get_case(
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
     with runtime.session() as session:
-        return public_case(CaseRepository(session).get(case_id))
+        return public_case(CaseRepository(session).get_active(case_id))
 
 
 @router.get("/{case_id}/datasets")

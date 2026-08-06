@@ -62,6 +62,7 @@ from geomodeling.platform import PlatformRuntime
 from geomodeling.platform.case_lifecycle import recover_case_purges
 from geomodeling.platform.errors import (
     CASE_NOT_FOUND,
+    CASE_TRASHED,
     PRESET_NOT_INITIALIZED,
     REDACTED_PATH,
     PlatformError,
@@ -185,7 +186,7 @@ def create_app() -> FastAPI:
         primary_datasets = {}
         if runtime is not None:
             with runtime.session() as session:
-                records = CaseRepository(session).list_all()
+                records = CaseRepository(session).list_active()
                 dataset_repo = DatasetRepository(session)
                 # v0.6.1：每张上传卡少量查询给出主打成果直达链接（正式选择优先）
                 featured = {
@@ -216,8 +217,10 @@ def create_app() -> FastAPI:
         if runtime is not None:
             with runtime.session() as session:
                 try:
-                    record = CaseRepository(session).get(case_id)
+                    record = CaseRepository(session).get_active(case_id)
                 except PlatformError as exc:
+                    if exc.code == CASE_TRASHED:
+                        raise
                     if exc.code != CASE_NOT_FOUND:
                         raise
                 if record is not None:

@@ -251,8 +251,50 @@ class CaseRepository:
             )
         return _case_record(row)
 
+    def get_any_state(self, case_id: str) -> CaseRecord:
+        """Read any lifecycle state (for lifecycle operations)."""
+        return self.get(case_id)
+
+    def get_active(self, case_id: str) -> CaseRecord:
+        """Return active case or raise typed 410 CASE_TRASHED."""
+        from geomodeling.platform.errors import CASE_TRASHED
+
+        row = self._s.get(Case, case_id)
+        if row is None:
+            raise PlatformError(
+                CASE_NOT_FOUND, "案例不存在", {"case_id": case_id}, http_status=404
+            )
+        if row.lifecycle_state != "active":
+            raise PlatformError(
+                CASE_TRASHED,
+                "案例已移入回收站",
+                {"case_id": case_id, "lifecycle_state": row.lifecycle_state},
+                http_status=410,
+            )
+        return _case_record(row)
+
     def list_all(self) -> list[CaseRecord]:
         rows = self._s.query(Case).order_by(Case.created_at.asc()).all()
+        return [_case_record(row) for row in rows]
+
+    def list_active(self) -> list[CaseRecord]:
+        """Active-only cases ordered by created_at asc."""
+        rows = (
+            self._s.query(Case)
+            .filter(Case.lifecycle_state == "active")
+            .order_by(Case.created_at.asc())
+            .all()
+        )
+        return [_case_record(row) for row in rows]
+
+    def list_trashed(self) -> list[CaseRecord]:
+        """Trashed-only cases ordered by trashed_at desc."""
+        rows = (
+            self._s.query(Case)
+            .filter(Case.lifecycle_state == "trashed")
+            .order_by(Case.trashed_at.desc(), Case.id.desc())
+            .all()
+        )
         return [_case_record(row) for row in rows]
 
 
@@ -1743,3 +1785,115 @@ class RenderAssetRepository:
                 http_status=409,
             )
         return _render_asset_record(row)
+
+
+# ---------------------------------------------------------------------------
+# v0.7.0 active-case subject guards (Task 5)
+# ---------------------------------------------------------------------------
+
+
+def require_active_case(runtime: Any, case_id: str) -> str:
+    """Return case_id if the case is active, else raise typed 410/404."""
+    with runtime.session() as session:
+        CaseRepository(session).get_active(case_id)
+        return case_id
+
+
+def require_active_dataset(runtime: Any, dataset_id: str) -> str:
+    """Walk dataset -> case, return case_id if active."""
+    with runtime.session() as session:
+        dv = session.get(DatasetVersion, dataset_id)
+        if dv is None:
+            raise PlatformError(
+                DATASET_NOT_FOUND, "数据集不存在",
+                {"dataset_id": dataset_id}, http_status=404,
+            )
+        CaseRepository(session).get_active(dv.case_id)
+        return dv.case_id
+
+
+def require_active_experiment(runtime: Any, experiment_id: str) -> str:
+    """Walk experiment -> case, return case_id if active."""
+    with runtime.session() as session:
+        exp = session.get(Experiment, experiment_id)
+        if exp is None:
+            raise PlatformError(
+                EXPERIMENT_NOT_FOUND, "实验不存在",
+                {"experiment_id": experiment_id}, http_status=404,
+            )
+        CaseRepository(session).get_active(exp.case_id)
+        return exp.case_id
+
+
+def require_active_run(runtime: Any, run_id: str) -> str:
+    """Walk run -> experiment -> case, return case_id if active."""
+    with runtime.session() as session:
+        run = session.get(Run, run_id)
+        if run is None:
+            raise PlatformError(
+                RUN_NOT_FOUND, "任务不存在",
+                {"run_id": run_id}, http_status=404,
+            )
+        exp = session.get(Experiment, run.experiment_id)
+        if exp is None:
+            raise PlatformError(
+                EXPERIMENT_NOT_FOUND, "实验不存在",
+                {"experiment_id": run.experiment_id}, http_status=404,
+            )
+        CaseRepository(session).get_active(exp.case_id)
+        return exp.case_id
+
+
+def require_active_candidate(runtime: Any, candidate_id: str) -> str:
+    """Walk candidate -> run -> experiment -> case, return case_id if active."""
+    with runtime.session() as session:
+        cand = session.get(CandidateResult, candidate_id)
+        if cand is None:
+            raise PlatformError(
+                CANDIDATE_NOT_FOUND, "候选结果不存在",
+                {"candidate_result_id": candidate_id}, http_status=404,
+            )
+        run = session.get(Run, cand.run_id)
+        if run is None:
+            raise PlatformError(
+                RUN_NOT_FOUND, "任务不存在",
+                {"run_id": cand.run_id}, http_status=404,
+            )
+        exp = session.get(Experiment, run.experiment_id)
+        if exp is None:
+            raise PlatformError(
+                EXPERIMENT_NOT_FOUND, "实验不存在",
+                {"experiment_id": run.experiment_id}, http_status=404,
+            )
+        CaseRepository(session).get_active(exp.case_id)
+        return exp.case_id
+
+
+def require_active_render_asset(runtime: Any, asset_id: str) -> str:
+    """Walk render_asset -> candidate -> run -> experiment -> case, return case_id if active."""
+    with runtime.session() as session:
+        ra = session.get(RenderAsset, asset_id)
+        if ra is None:
+            raise PlatformError(
+                "RENDER_ASSET_NOT_FOUND", "渲染资产不存在",
+                {"asset_id": asset_id}, http_status=404,
+            )
+        if ra.candidate_result_id is None:
+            raise PlatformError(
+                CASE_NOT_FOUND, "渲染资产不属于任何案例",
+                {"asset_id": asset_id}, http_status=404,
+            )
+        return require_active_candidate(runtime, ra.candidate_result_id)
+
+
+def require_active_export(runtime: Any, export_id: str) -> str:
+    """Walk export -> case, return case_id if active."""
+    with runtime.session() as session:
+        exp = session.get(Export, export_id)
+        if exp is None:
+            raise PlatformError(
+                "EXPORT_NOT_FOUND", "导出不存在",
+                {"export_id": export_id}, http_status=404,
+            )
+        CaseRepository(session).get_active(exp.case_id)
+        return exp.case_id
