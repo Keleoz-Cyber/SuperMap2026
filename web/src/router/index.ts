@@ -8,6 +8,7 @@ import ExperimentView from '../views/ExperimentView.vue'
 import ProfessionalDiagnosisView from '../views/ProfessionalDiagnosisView.vue'
 import ProfessionalAnalysisView from '../views/ProfessionalAnalysisView.vue'
 import ResultWorkbenchView from '../views/ResultWorkbenchView.vue'
+import CandidateComparisonView from '../views/CandidateComparisonView.vue'
 import TrashView from '../views/TrashView.vue'
 
 // 构建产物由 FastAPI StaticFiles 直接托管，hash 模式可避免刷新深链 404。
@@ -40,6 +41,11 @@ const router = createRouter({
       path: '/datasets/:datasetId/professional-diagnosis',
       name: 'professional-diagnosis',
       component: ProfessionalDiagnosisView,
+    },
+    {
+      path: '/datasets/:datasetId/candidate-comparison',
+      name: 'candidate-comparison',
+      component: CandidateComparisonView,
     },
     {
       path: '/experiments/:experimentId',
