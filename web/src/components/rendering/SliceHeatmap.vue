@@ -131,8 +131,14 @@ onBeforeUnmount(() => {
 async function capturePng(): Promise<Blob> {
   if (!chart) throw new Error('HEATMAP_NOT_READY')
   const dataUrl = chart.getDataURL({ type: 'png', pixelRatio: 2 })
-  const response = await fetch(dataUrl)
-  return response.blob()
+  // 手工解码 data URL：fetch(data:) 在部分环境（Node/undici 与 jsdom 并存）会
+  // 产生跨 realm Blob；此处始终用当前窗口的 Blob 构造，浏览器/测试语义一致
+  const [header, payload] = dataUrl.split(',')
+  const mime = /data:(.*?)(?:;|$)/.exec(header)?.[1] || 'image/png'
+  const binary = atob(payload ?? '')
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i)
+  return new Blob([bytes], { type: mime })
 }
 
 defineExpose({ capturePng })
