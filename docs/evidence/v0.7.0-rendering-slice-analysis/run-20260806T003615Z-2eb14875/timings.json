@@ -1,0 +1,90 @@
+{
+  "run_id": "run-20260806T003615Z-2eb14875",
+  "git_commit": "e6c83d7a04c13534cc740629430714069b4000df",
+  "sdk_sha256": "d69dadab01fc452a79f1fa88a46aced3cf29885df7bf4febbd6f24ce5b578120",
+  "sdk_version": "12.1.0",
+  "browser": {
+    "name": "chromium",
+    "version": "149.0.7827.55"
+  },
+  "gpu_renderer": "ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 4070 Laptop GPU/PCIe/SSE2, OpenGL 4.5.0)",
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "device_pixel_ratio": 1,
+  "results": {
+    "32": {
+      "candidate_id": "ff940ffc-078f-524f-bdba-b453b4cb84ca",
+      "case_id": "3da11535-5cc0-5a73-8628-be8ac2e2c924",
+      "dataset_version_id": "b642a68b-d144-5ce6-8a2c-deb23bec7261",
+      "experiment_id": "1f2c03f1-0072-5b34-810a-f9f9649a0b7a",
+      "run_id": "a55b1d58-e8ef-59b2-b99b-eb2d0d5e02af",
+      "grid_sha256": "172fb54decffa0e31c4460c20c9747e70a34e3321b6cd80c40125bc2b319aa8c",
+      "netcdf_sha256": "f5dbef652ec0a73d7333091cdd7967b9ef0d182a134d4121fc4c170955239492",
+      "asset_id": "nc-7cf00c6de12028fd870bcf32745e4d00"
+    },
+    "64": {
+      "candidate_id": "223806eb-5cc2-5ca3-aa13-212e4aaab31c",
+      "case_id": "48a2390c-3959-516f-998d-f0ce5a3b9650",
+      "dataset_version_id": "c1ebf14f-dc15-58ad-9676-a0bbda74ecf4",
+      "experiment_id": "69ce5d69-54e1-5c4f-8681-66b59552dfcb",
+      "run_id": "e85d76ac-f247-5b62-85f3-5a660eb7f1d3",
+      "grid_sha256": "f2f0d4dad8f10a0de22cabc11b7e3f361918f54e06ada8d9d9cdc4be873bbb03",
+      "netcdf_sha256": "17dc705f601dd32380e780638cc2ce979d7df48541352bdb0bba62bd8c13be62",
+      "asset_id": "nc-0c13c6b5176878ed2f83fcb1d68c8b2e"
+    }
+  },
+  "per_size": {
+    "32": {
+      "post_ms": 102,
+      "rendered_ms": 1816,
+      "rendered_gate_ms": 30000,
+      "commands": {
+        "slice-mode": 740,
+        "contour": 587,
+        "restore-volume": 743,
+        "palette-turbo": 1596,
+        "filter": 672,
+        "opacity": 635,
+        "lighting-off": 628,
+        "gradient-off": 642,
+        "bounding-box-off": 659,
+        "filter-restore": 780,
+        "opacity-restore": 763,
+        "lighting-on": 702,
+        "gradient-on": 729,
+        "bounding-box-on": 695,
+        "slice-reenter": 592,
+        "restore-volume-final": 657
+      },
+      "settle_gate_ms": null,
+      "total_ms": 25849
+    },
+    "64": {
+      "post_ms": 115,
+      "rendered_ms": 2601,
+      "rendered_gate_ms": 30000,
+      "commands": {
+        "slice-mode": 763,
+        "contour": 643,
+        "restore-volume": 703,
+        "palette-turbo": 1561,
+        "filter": 689,
+        "opacity": 646,
+        "lighting-off": 609,
+        "gradient-off": 638,
+        "bounding-box-off": 653,
+        "filter-restore": 712,
+        "opacity-restore": 707,
+        "lighting-on": 690,
+        "gradient-on": 688,
+        "bounding-box-on": 705,
+        "slice-reenter": 604,
+        "restore-volume-final": 671
+      },
+      "settle_gate_ms": 5000,
+      "total_ms": 31964
+    }
+  }
+}

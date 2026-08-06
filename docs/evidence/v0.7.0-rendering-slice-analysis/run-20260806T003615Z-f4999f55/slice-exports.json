@@ -1,0 +1,90 @@
+{
+  "run_id": "run-20260806T003615Z-f4999f55",
+  "git_commit": "e6c83d7a04c13534cc740629430714069b4000df",
+  "sdk_sha256": "d69dadab01fc452a79f1fa88a46aced3cf29885df7bf4febbd6f24ce5b578120",
+  "sdk_version": "12.1.0",
+  "browser": {
+    "name": "chromium",
+    "version": "149.0.7827.55"
+  },
+  "gpu_renderer": "ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 4070 Laptop GPU/PCIe/SSE2, OpenGL 4.5.0)",
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "device_pixel_ratio": 1,
+  "results": {
+    "preset": {
+      "case_id": "builtin-microseismic-vx-1911",
+      "official_result_id": "fd18931a-9319-4604-af74-d3c5c9dba3ba",
+      "grid_sha256": "9a141ac6ca62dbf55ca3099e54ef55c62aa10b5e7848dca8f9f2f6811f72221b",
+      "netcdf_sha256": "4065ecd203a98cf79036cf13101c22ae7b0ecc2fd7084bebeec9a6f766dc6b92",
+      "asset_id": "nc-f12b69c8f17d015318f1662a81af5d3f"
+    }
+  },
+  "preset": {
+    "format_version": "slice-analysis/v1",
+    "export_kind": "slice_analysis",
+    "image_provenance": "client_echarts_canvas",
+    "asset_identity": {
+      "asset_id": "nc-f12b69c8f17d015318f1662a81af5d3f",
+      "source_kind": "candidate_result",
+      "source_id": "fd18931a-9319-4604-af74-d3c5c9dba3ba",
+      "grid_sha256": "9a141ac6ca62dbf55ca3099e54ef55c62aa10b5e7848dca8f9f2f6811f72221b",
+      "netcdf_sha256": "4065ecd203a98cf79036cf13101c22ae7b0ecc2fd7084bebeec9a6f766dc6b92"
+    },
+    "property": {
+      "name": "Vx",
+      "unit": "km/s"
+    },
+    "axes": {
+      "x": {
+        "length": 35
+      },
+      "y": {
+        "length": 47
+      },
+      "z": {
+        "length": 82
+      }
+    },
+    "slice": {
+      "fixed_axis": "z",
+      "index": 40,
+      "coordinate": -2087.0130617283953
+    },
+    "statistics_contract": {
+      "valid_definition": "is_nodata=false 且数值有限",
+      "std": "population(ddof=0)",
+      "quantiles": "numpy-linear",
+      "counts": "valid_count + nodata_count = total_count"
+    },
+    "statistics": {
+      "total_count": 1645,
+      "valid_count": 1645,
+      "nodata_count": 0,
+      "min": 1.8334084427963915,
+      "max": 2.67480016273522,
+      "mean": 2.2680292795244132,
+      "std_population": 0.14465691358308896,
+      "p10": 2.0961745626409423,
+      "p50": 2.256029309777227,
+      "p90": 2.4713316408465795
+    },
+    "files": {
+      "slice.csv": {
+        "sha256": "6a31abb42b841756d1249ddc01ff6038287b52251b8110ab5972530a268b186f",
+        "size_bytes": 131549
+      },
+      "statistics.json": {
+        "sha256": "c659e0af2f9680c4c1ec032b87f389531a826e93e931d0f7fa2f0aa06206b98b",
+        "size_bytes": 283
+      },
+      "slice.png": {
+        "sha256": "c343b0a89c931cfb454d33e8fe5ac65e087cdfb6729935722fc82abfcf0816e7",
+        "size_bytes": 89432
+      }
+    },
+    "created_at": "2026-08-06T00:36:57.739885+00:00"
+  }
+}

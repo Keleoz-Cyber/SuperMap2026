@@ -1,0 +1,71 @@
+{
+  "run_id": "run-20260806T003615Z-f4999f55",
+  "git_commit": "e6c83d7a04c13534cc740629430714069b4000df",
+  "sdk_sha256": "d69dadab01fc452a79f1fa88a46aced3cf29885df7bf4febbd6f24ce5b578120",
+  "sdk_version": "12.1.0",
+  "browser": {
+    "name": "chromium",
+    "version": "149.0.7827.55"
+  },
+  "gpu_renderer": "ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 4070 Laptop GPU/PCIe/SSE2, OpenGL 4.5.0)",
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "device_pixel_ratio": 1,
+  "results": {
+    "preset": {
+      "case_id": "builtin-microseismic-vx-1911",
+      "official_result_id": "fd18931a-9319-4604-af74-d3c5c9dba3ba",
+      "grid_sha256": "9a141ac6ca62dbf55ca3099e54ef55c62aa10b5e7848dca8f9f2f6811f72221b",
+      "netcdf_sha256": "4065ecd203a98cf79036cf13101c22ae7b0ecc2fd7084bebeec9a6f766dc6b92",
+      "asset_id": "nc-f12b69c8f17d015318f1662a81af5d3f"
+    }
+  },
+  "preset": {
+    "noise_diff": 0,
+    "pixel_threshold": 200,
+    "base_non_bg": 95303,
+    "slice_mode_non_bg": 34468,
+    "contour_non_bg": 37634,
+    "control_diffs": {
+      "contour": 29035,
+      "palette-turbo": 78695,
+      "scale-log": 75593,
+      "scale-linear": 75593,
+      "filter": 78868,
+      "opacity": 53527,
+      "lighting-off": 29768,
+      "gradient-off": 60178,
+      "bounding-box-off": 6689
+    },
+    "slice_gates": {
+      "x": {
+        "quarterIndex": 8,
+        "threeQuarterIndex": 25,
+        "quarterNonBg": 35184,
+        "diff": 48644
+      },
+      "y": {
+        "quarterIndex": 11,
+        "threeQuarterIndex": 34,
+        "quarterNonBg": 40052,
+        "diff": 50299
+      },
+      "z": {
+        "quarterIndex": 20,
+        "threeQuarterIndex": 60,
+        "quarterNonBg": 31957,
+        "diff": 44925
+      }
+    },
+    "stats_invariant": true,
+    "unsettled_commands": [],
+    "gates": {
+      "base_non_bg_min": 2000,
+      "mode_non_bg_min": 500,
+      "response_over_noise": "max(200, noise*3+50)",
+      "control_over_noise": "max(80, noise*2+20)"
+    }
+  }
+}
