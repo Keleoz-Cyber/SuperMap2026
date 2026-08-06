@@ -156,4 +156,102 @@ describe('SliceHeatmap', () => {
     expect(blob).toBeInstanceOf(Blob)
     expect(blob.type).toBe('image/png')
   })
+
+  it('颜色由 itemStyle 按 display 归一化维度映射：不同值必须不同色，无 visualMap 残留', async () => {
+    mount(SliceHeatmap, {
+      props: { analysis: makeAnalysis(), palette: 'viridis', scale: 'linear' },
+      attachTo: document.body,
+    })
+    await flushPromises()
+    const option = chartInstances[0].setOption.mock.calls[0][0]
+    // 不得再有 visualMap（pieces 用原始值域节点匹配 [0,1] 的 display 是全同色 bug）
+    expect(option.visualMap).toBeUndefined()
+    const color = option.series[0].itemStyle.color
+    // 同一切片内多个不同值 → 不同颜色（display 已归一化，直接驱动分段）
+    const low = color({ data: [0, 0, 0.0, 1] })
+    const mid = color({ data: [0, 1, 0.45, 61] })
+    const high = color({ data: [1, 2, 1.0, 121] })
+    expect(new Set([low, mid, high]).size).toBe(3)
+  })
+
+  it('色带值域锁定全体数据 render_profile.value_range：切片统计不同不影响同色值', async () => {
+    const profile = {
+      property_name: 'Vx',
+      unit: 'km/s',
+      default_scale: 'linear' as const,
+      default_palette: 'viridis' as const,
+      log_available: true,
+      value_range: [0, 200] as [number, number],
+      filter_range: [0, 200] as [number, number],
+      lighting: true,
+      gradient_opacity: true,
+      bounding_box: true,
+      opacity: 1,
+    }
+    const a = makeAnalysis()
+    a.render_profile = profile
+    const wrapperA = mount(SliceHeatmap, {
+      props: { analysis: a, palette: 'viridis', scale: 'linear' },
+      attachTo: document.body,
+    })
+    await flushPromises()
+    const colorA = chartInstances[0].setOption.mock.calls[0][0].series[0].itemStyle.color(
+      { data: [1, 2, 0.605, 121] },
+    )
+    wrapperA.unmount()
+
+    // 另一切片（不同索引/不同逐片统计），同一全体值域：raw=121 必须同色
+    const b = makeAnalysis()
+    b.render_profile = profile
+    b.slice = { ...b.slice, index: 2, coordinate: 2 }
+    b.statistics = { ...b.statistics, min: 10, max: 100 }
+    mount(SliceHeatmap, {
+      props: { analysis: b, palette: 'viridis', scale: 'linear' },
+      attachTo: document.body,
+    })
+    await flushPromises()
+    const colorB = chartInstances[1].setOption.mock.calls[0][0].series[0].itemStyle.color(
+      { data: [1, 2, 0.605, 121] },
+    )
+    expect(colorB).toBe(colorA)
+  })
+
+  it('切换切片索引：数据随真实值变化，颜色随之变化', async () => {
+    const a = makeAnalysis()
+    mount(SliceHeatmap, { props: { analysis: a, palette: 'viridis', scale: 'linear' }, attachTo: document.body })
+    await flushPromises()
+    const optionA = chartInstances[0].setOption.mock.calls[0][0]
+
+    const b = makeAnalysis()
+    b.slice = { ...b.slice, index: 3, coordinate: 3 }
+    b.slice.values = [
+      [5, 15],
+      [25, null],
+      [35, 45],
+    ]
+    mount(SliceHeatmap, { props: { analysis: b, palette: 'viridis', scale: 'linear' }, attachTo: document.body })
+    await flushPromises()
+    const optionB = chartInstances[1].setOption.mock.calls[0][0]
+    // 数据确实变化
+    expect(optionB.series[0].data).not.toEqual(optionA.series[0].data)
+    // 同一单元格（0,0）：raw 1（值域底部）vs 121（顶部）→ 颜色不同
+    const colorA = optionA.series[0].itemStyle.color({ data: [0, 0, 0, 1] })
+    const colorB = optionB.series[0].itemStyle.color({ data: [0, 0, 1, 121] })
+    expect(colorB).not.toBe(colorA)
+  })
+
+  it('NoData 使用灰化标记色，绝不占用色带颜色、不伪装成有效值', async () => {
+    mount(SliceHeatmap, {
+      props: { analysis: makeAnalysis(), palette: 'viridis', scale: 'linear' },
+      attachTo: document.body,
+    })
+    await flushPromises()
+    const option = chartInstances[0].setOption.mock.calls[0][0]
+    const color = option.series[0].itemStyle.color
+    const nodataColor = color({ data: [1, 1, 0, null] })
+    expect(nodataColor).toBe('rgba(120, 130, 145, 0.35)')
+    // 与任何有效值颜色不同
+    const validColor = color({ data: [0, 0, 0, 1] })
+    expect(nodataColor).not.toBe(validColor)
+  })
 })

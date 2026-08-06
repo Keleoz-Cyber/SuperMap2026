@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { init as echartsInit, use as echartsUse } from 'echarts/core'
 import { HeatmapChart } from 'echarts/charts'
-import { GridComponent, TooltipComponent, VisualMapComponent } from 'echarts/components'
+import { GridComponent, TooltipComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import type { SliceAnalysisResponse } from '../../api/types'
 import {
@@ -13,10 +13,13 @@ import {
 } from './renderTransferFunctions'
 
 // v0.7.0 Batch 2 Task 10：ECharts 剖面热力图（设计 §7.3）。
-// 系列数据 [col, row, displayValue, rawValue]：颜色用显示归一化维度，
-// tooltip 一律读取原始维度；NoData 显示 NoData，绝不显示伪造的 0。
+// 系列数据 [col, row, displayValue, rawValue]：颜色只经 itemStyle 按 display
+// 归一化维度映射（不再使用 visualMap——其 pieces 曾用原始值域节点匹配 [0,1]
+// 的 display，导致所有切片同色）；tooltip 一律读取原始维度；NoData 显示
+// NoData，绝不显示伪造的 0。色带值域默认锁定全体数据 render_profile.value_range，
+// 逐切片统计漂移不改变同一真实值的颜色。
 
-echartsUse([HeatmapChart, GridComponent, TooltipComponent, VisualMapComponent, CanvasRenderer])
+echartsUse([HeatmapChart, GridComponent, TooltipComponent, CanvasRenderer])
 
 const props = defineProps<{
   analysis: SliceAnalysisResponse
@@ -30,20 +33,21 @@ let chart: ReturnType<typeof echartsInit> | null = null
 const slice = computed(() => props.analysis.slice)
 const property = computed(() => props.analysis.property)
 
+// 色带值域：全体数据（render_profile）优先；缺失时退回逐片统计（保持旧行为）
+const bandRange = computed<[number, number]>(() => {
+  const profile = props.analysis.render_profile
+  if (profile) return profile.value_range
+  const stats = props.analysis.statistics
+  const min = stats.min ?? 0
+  const max = stats.max ?? min + 1
+  return min < max ? [min, max] : [min, min + 1]
+})
+
 type HeatmapPoint = [number, number, number, number | null]
 
 function buildPoints(): HeatmapPoint[] {
   const s = slice.value
-  const stops = buildColorStops(props.palette, props.scale, [
-    props.analysis.statistics.min ?? s.coordinate,
-    props.analysis.statistics.max ?? s.coordinate + 1,
-  ])
-  void stops
-  const stats = props.analysis.statistics
-  const range: [number, number] = [
-    stats.min ?? s.coordinate,
-    stats.max ?? s.coordinate + 1,
-  ]
+  const range = bandRange.value
   const points: HeatmapPoint[] = []
   for (let r = 0; r < s.row_coordinates.length; r += 1) {
     for (let c = 0; c < s.column_coordinates.length; c += 1) {
@@ -57,21 +61,11 @@ function buildPoints(): HeatmapPoint[] {
 
 function buildOption() {
   const s = slice.value
-  const stats = props.analysis.statistics
-  const range: [number, number] = [
-    stats.min ?? s.coordinate,
-    stats.max ?? s.coordinate + 1,
-  ]
-  const stops = buildColorStops(props.palette, props.scale, range)
+  const stops = buildColorStops(props.palette, props.scale, bandRange.value)
   return {
     grid: { left: 56, right: 16, top: 16, bottom: 40 },
     xAxis: { type: 'category', data: s.column_coordinates.map(String) },
     yAxis: { type: 'category', data: s.row_coordinates.map(String) },
-    visualMap: {
-      show: false,
-      type: 'piecewise',
-      pieces: stops.map((stop) => ({ gt: stop.value, color: stop.color })),
-    },
     tooltip: {
       formatter: (param: { data: [number, number, number, number | null] }) => {
         const [c, r, , raw] = param.data
