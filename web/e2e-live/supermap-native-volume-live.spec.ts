@@ -411,6 +411,8 @@ test.describe('v0.6.1 Task 14：32³/64³ 原生体渲染 live 门', () => {
       },
       valueRange: [vmin, vmax],
       logAvailable: capability.render_profile?.log_available === true,
+      // 基准网格 x/y∈[0,500]、z∈[-500,0]：各向同性体盒（跨度相等是数据事实）
+      expectedSpansMetres: [500, 500, 500],
     })
     record.gates = gates
 
@@ -446,6 +448,7 @@ test.describe('v0.6.1 Task 14：32³/64³ 原生体渲染 live 门', () => {
       noise_diff: gates.noiseDiff,
       pixel_threshold: gates.pixelThreshold,
       base_metrics: gates.baseMetrics,
+      geometry: gates.geometry,
       slice_mode_metrics: gates.sliceModeMetrics,
       contour_metrics: gates.contourMetrics,
       control_diffs: gates.controlDiffs,

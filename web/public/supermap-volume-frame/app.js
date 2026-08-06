@@ -55,6 +55,10 @@ const diag = {
   layerType: null,
   mode: null, // volume | slice | contour（协议命名）
   identity: null, // { sourceKind, sourceId, gridSha256, netcdfSha256 }
+  // 体盒几何只读诊断（INIT 后写入，全模式不变；绝不暴露 viewer/layer 本体）：
+  // { layerBoundsDegrees: {west,south,east,north}, zBoundsMetres: [z0,z1],
+  //   cameraSpanMetres: 最大物理跨度（相机取景依据） }
+  geometry: null,
   errors: [], // [{ code, message }]
 }
 
@@ -65,6 +69,13 @@ function publishDiag() {
     layerType: diag.layerType,
     mode: diag.mode,
     identity: diag.identity ? Object.freeze({ ...diag.identity }) : null,
+    geometry: diag.geometry
+      ? Object.freeze({
+          layerBoundsDegrees: Object.freeze({ ...diag.geometry.layerBoundsDegrees }),
+          zBoundsMetres: Object.freeze([...diag.geometry.zBoundsMetres]),
+          cameraSpanMetres: diag.geometry.cameraSpanMetres,
+        })
+      : null,
     errors: Object.freeze(diag.errors.map((e) => Object.freeze({ ...e }))),
   })
 }
@@ -467,6 +478,13 @@ async function handleInit(msg) {
       zBounds[1] - zBounds[0],
     ),
   }
+  // 体盒几何只读诊断：包围盒/米制 Z 边界/相机取景跨度（全模式不变）
+  diag.geometry = {
+    layerBoundsDegrees: { west: bounds.west, south: bounds.south, east: bounds.east, north: bounds.north },
+    zBoundsMetres: [zBounds[0], zBounds[1]],
+    cameraSpanMetres: viewParams.span,
+  }
+  publishDiag()
   lookAtVolume()
 
   // 12. 画布像素探针确认体积像素后才 emit rendered

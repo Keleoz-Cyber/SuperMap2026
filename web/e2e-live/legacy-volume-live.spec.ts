@@ -433,6 +433,9 @@ test.describe('v0.6.1 合并前审查：内置电阻率 legacy 产品页体渲�
       },
       valueRange: [expectVmin, expectVmax],
       logAvailable: true,
+      // legacy 合成网格 6×7×8、100m 间距：x∈[0,500]、y∈[0,600]、z∈[-800,-100]
+      // ——真实各向异性体盒，不得切成方盒
+      expectedSpansMetres: [500, 600, 700],
     })
     record.gates = gates
 
@@ -454,6 +457,7 @@ test.describe('v0.6.1 合并前审查：内置电阻率 legacy 产品页体渲�
       noise_diff: gates.noiseDiff,
       pixel_threshold: gates.pixelThreshold,
       base_metrics: gates.baseMetrics,
+      geometry: gates.geometry,
       slice_mode_metrics: gates.sliceModeMetrics,
       contour_metrics: gates.contourMetrics,
       control_diffs: gates.controlDiffs,

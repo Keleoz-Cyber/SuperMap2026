@@ -390,6 +390,9 @@ test.describe('v0.7.0 Batch 1：微震预置官方成果原生体渲染 live 门
       },
       valueRange: [vmin, vmax],
       logAvailable: true,
+      // 官方基线网格 X[-750,960] Y[-995,1310] Z[-4086.538,-37.5]：
+      // 真实各向异性体盒，不得切成方盒
+      expectedSpansMetres: [1710, 2305, 4049.038],
     })
     record.gates = gates
 
@@ -411,6 +414,7 @@ test.describe('v0.7.0 Batch 1：微震预置官方成果原生体渲染 live 门
       noise_diff: gates.noiseDiff,
       pixel_threshold: gates.pixelThreshold,
       base_metrics: gates.baseMetrics,
+      geometry: gates.geometry,
       slice_mode_metrics: gates.sliceModeMetrics,
       contour_metrics: gates.contourMetrics,
       control_diffs: gates.controlDiffs,

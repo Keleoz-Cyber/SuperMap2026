@@ -551,6 +551,10 @@ export interface V070GateParams {
   valueRange: [number, number]
   /** 权威有效值是否全为正（profile.log_available） */
   logAvailable: boolean
+  /** 体盒三轴物理跨度（米，按数据真实范围）：验收体盒不得切成方盒 */
+  expectedSpansMetres: [number, number, number]
+  /** 跨度容差比（默认 0.01） */
+  spansToleranceRatio?: number
   /** 导出剖面轴/索引；默认 z 中位 */
   exportAxis?: SliceAxisName
   exportIndex?: number
@@ -560,6 +564,12 @@ export interface V070GateReport {
   noiseDiff: number
   pixelThreshold: number
   baseMetrics: VolumePixelMetrics
+  /** 体盒几何：体积模式读数 + 全模式不变性 */
+  geometry: {
+    spansMetres: [number, number, number]
+    cameraSpanMetres: number
+    invariantAcrossModes: boolean
+  }
   controlDiffs: Record<string, number>
   sliceGates: Record<
     string,
@@ -613,6 +623,34 @@ export async function runV070RenderGates(params: V070GateParams): Promise<V070Ga
   expectVolumeContent(baseMetrics, '基准体积', { minNonBg: 2000, minCoverage: 0.15 })
   saveShot('volume', previous)
 
+  // --- 体盒几何不变量（问题二验收）：包围盒全模式不变、跨度忠于数据、相机按最大跨度取景
+  const manifestResp = await request.get(`/api/render-assets/${assetId}/manifest`)
+  expect(manifestResp.ok()).toBe(true)
+  const manifest = await manifestResp.json()
+  const dt = manifest.display_transform
+  const readGeometry = () =>
+    frame.evaluate(() => (window as any).__GMP_VOLUME_FRAME__.geometry)
+  const baseGeometry = await readGeometry()
+  expect(baseGeometry, 'diag.geometry 必须存在').toBeTruthy()
+  const spanTolerance = params.spansToleranceRatio ?? 0.01
+  const spansMetres: [number, number, number] = [
+    (baseGeometry.layerBoundsDegrees.east - baseGeometry.layerBoundsDegrees.west) *
+      dt.metres_per_degree_lon,
+    (baseGeometry.layerBoundsDegrees.north - baseGeometry.layerBoundsDegrees.south) *
+      dt.metres_per_degree_lat,
+    baseGeometry.zBoundsMetres[1] - baseGeometry.zBoundsMetres[0],
+  ]
+  for (let i = 0; i < 3; i += 1) {
+    const expected = params.expectedSpansMetres[i]
+    expect(
+      Math.abs(spansMetres[i] - expected) / expected,
+      `体盒 ${'XYZ'[i]} 轴物理跨度必须忠于数据（不得切成方盒）：实测 ${spansMetres[i].toFixed(3)}，期望 ${expected}`,
+    ).toBeLessThanOrEqual(spanTolerance)
+  }
+  // 相机取景按最大物理跨度
+  expect(baseGeometry.cameraSpanMetres).toBeCloseTo(Math.max(...spansMetres), 6)
+  const geometryInvariant = { ok: true }
+
   // 统计参照：渲染控件绝不改变权威统计（服务端从原始网格重算）
   const statsBefore = await captureSliceStatistics(request, assetId, 'z', mid('z'))
 
@@ -651,6 +689,8 @@ export async function runV070RenderGates(params: V070GateParams): Promise<V070Ga
     await setSliceIndex(page, quarter(axis))
     await waitSliceApplied(page, request, frame, assetId, axis, quarter(axis))
     await expect(page.getByTestId('slice-valid-count')).toContainText(/有效 [1-9]/)
+    // 剖面模式下包围盒/相机跨度必须保持体积模式读数（体盒几何不变）
+    expect(await readGeometry(), `${axis} 剖面模式体盒几何不得变化`).toEqual(baseGeometry)
     const shotQuarter = await shot()
     const quarterMetrics = await analyzeVolumePixels(page, shotQuarter)
     expectVolumeContent(quarterMetrics, `${axis} 剖面`, { minNonBg: 500, minCoverage: 0.03 })
@@ -676,6 +716,7 @@ export async function runV070RenderGates(params: V070GateParams): Promise<V070Ga
   // --- 等值面门 ---------------------------------------------------------------
   const preContour = previous
   await command('contour', () => page.getByTestId('mode-contour').click(), false)
+  expect(await readGeometry(), '等值面模式体盒几何不得变化').toEqual(baseGeometry)
   const contourMetrics = await analyzeVolumePixels(page, previous)
   expectVolumeContent(contourMetrics, '等值面', { minNonBg: 500, minCoverage: 0.03 })
   controlDiffs['contour'] = await countDiff(page, preContour, previous)
@@ -760,6 +801,11 @@ export async function runV070RenderGates(params: V070GateParams): Promise<V070Ga
     noiseDiff,
     pixelThreshold,
     baseMetrics,
+    geometry: {
+      spansMetres,
+      cameraSpanMetres: baseGeometry.cameraSpanMetres,
+      invariantAcrossModes: geometryInvariant.ok,
+    },
     controlDiffs,
     sliceGates,
     sliceModeMetrics,

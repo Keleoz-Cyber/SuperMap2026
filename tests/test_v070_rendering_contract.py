@@ -131,3 +131,17 @@ def test_vite_config_injects_frame_and_sdk_versions():
     assert "__VOLUME_SDK_VERSION__" in src
     assert "supermap-volume-frame" in src
     assert "SuperMap3D.js" in src
+
+
+def test_frame_publishes_geometry_diagnostic():
+    """几何只读诊断：包围盒角度/米制 Z 边界/相机取景跨度必须进入 diag。
+
+    体盒几何验收的依据：layerBounds/zBounds 全模式不变（不得切成方盒）、
+    相机按最大物理跨度取景；不暴露 viewer/layer 本体。
+    """
+
+    src = _frame_source()
+    assert "geometry" in src
+    assert "layerBoundsDegrees" in src
+    assert "zBoundsMetres" in src
+    assert "cameraSpanMetres" in src
