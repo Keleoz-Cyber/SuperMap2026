@@ -114,6 +114,8 @@ def public_case(record: CaseRecord) -> dict[str, Any]:
         "name": record.name,
         "case_type": record.case_type,
         "config": scrub_nested(record.config),
+        "lifecycle_state": record.lifecycle_state,
+        "trashed_at": record.trashed_at,
         "created_at": record.created_at,
         "updated_at": record.updated_at,
     }

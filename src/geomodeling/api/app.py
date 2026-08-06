@@ -56,8 +56,10 @@ from geomodeling.api.routes import (
     rendering,
     results,
     runs,
+    trash,
 )
 from geomodeling.platform import PlatformRuntime
+from geomodeling.platform.case_lifecycle import recover_case_purges
 from geomodeling.platform.errors import (
     CASE_NOT_FOUND,
     PRESET_NOT_INITIALIZED,
@@ -115,9 +117,11 @@ async def platform_lifespan(app: FastAPI):
     runtime = PlatformRuntime()
     runtime.initialize()
     runtime.recover_interrupted_runs()
+    purge_report = recover_case_purges(runtime)
     worker = JobWorker(runtime)
     app.state.platform_runtime = runtime
     app.state.job_worker = worker
+    app.state.case_purge_recovery = purge_report
     try:
         yield
     finally:
@@ -150,7 +154,7 @@ def create_app() -> FastAPI:
             "http://127.0.0.1:4173",
         ],
         allow_credentials=False,
-        allow_methods=["GET", "POST"],
+        allow_methods=["GET", "POST", "DELETE"],
         allow_headers=["*"],
     )
 
@@ -307,6 +311,8 @@ def create_app() -> FastAPI:
     # v0.6.1 原生体渲染路由：显式 POST 变异 + 纯查询 GET；结果路由之后、
     # 前端静态挂载之前注册，精确前缀不遮蔽 legacy 与微震路由
     app.include_router(rendering.router)
+    # v0.7.0 案例生命周期路由：回收站列表（DELETE/restore/purge 在 cases.router）
+    app.include_router(trash.router)
 
     # -------------------------------------------------------- frontend
     settings = get_settings()

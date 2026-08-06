@@ -67,6 +67,129 @@ _ADAPTER_BUILTIN_CASE_IDS = frozenset({"resistivity", "gas", "microseismic"})
 
 _RUN_INFLIGHT = frozenset({RunStatus.QUEUED.value, RunStatus.RUNNING.value})
 
+_PURGE_TERMINAL_STATES = frozenset({"cleaned", "rolled_back", "failed"})
+
+
+def recover_case_purges(runtime: Any) -> dict[str, Any]:
+    """Recover interrupted purge operations at startup.
+
+    - ``prepared`` + case exists -> ``failed`` (no files moved)
+    - ``quarantined`` + case exists -> restore files, ``rolled_back``
+    - ``committed`` + case gone -> clean quarantine, ``cleaned``
+    - Terminal states are idempotent no-ops.
+    - Impossible combinations record ``failed`` with CASE_PURGE_RECOVERY_REQUIRED.
+    """
+
+    from geomodeling.platform.errors import CASE_PURGE_RECOVERY_REQUIRED
+
+    report: dict[str, list[str]] = {
+        "cleaned": [],
+        "rolled_back": [],
+        "failed": [],
+    }
+
+    with runtime.session() as session:
+        ops = (
+            session.query(CasePurgeOperation)
+            .filter(~CasePurgeOperation.state.in_(sorted(_PURGE_TERMINAL_STATES)))
+            .all()
+        )
+
+        for op in ops:
+            case_exists = session.get(Case, op.case_id) is not None
+
+            if op.state == "prepared":
+                if case_exists:
+                    op.state = "failed"
+                    op.error_json = json.dumps(
+                        {"code": CASE_PURGE_RECOVERY_REQUIRED,
+                         "message": "prepared 状态中断，案例仍存在"},
+                        ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+                    report["failed"].append(op.id)
+                else:
+                    op.state = "failed"
+                    op.error_json = json.dumps(
+                        {"code": CASE_PURGE_RECOVERY_REQUIRED,
+                         "message": "prepared 状态中断，案例已不存在"},
+                        ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+                    report["failed"].append(op.id)
+
+            elif op.state == "quarantined":
+                if case_exists:
+                    _restore_quarantined_files(runtime, op)
+                    op.state = "rolled_back"
+                    report["rolled_back"].append(op.id)
+                else:
+                    op.state = "failed"
+                    op.error_json = json.dumps(
+                        {"code": CASE_PURGE_RECOVERY_REQUIRED,
+                         "message": "quarantined 但案例已不存在，无法恢复"},
+                        ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+                    report["failed"].append(op.id)
+
+            elif op.state == "committed":
+                if not case_exists:
+                    quarantine_dir = runtime.settings.purge_quarantine_dir / op.id
+                    if quarantine_dir.exists():
+                        import shutil
+                        shutil.rmtree(quarantine_dir, ignore_errors=True)
+                    op.state = "cleaned"
+                    report["cleaned"].append(op.id)
+                else:
+                    op.state = "failed"
+                    op.error_json = json.dumps(
+                        {"code": CASE_PURGE_RECOVERY_REQUIRED,
+                         "message": "committed 但案例仍存在"},
+                        ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+                    report["failed"].append(op.id)
+
+        session.commit()
+
+    return report
+
+
+def _restore_quarantined_files(runtime: Any, op: CasePurgeOperation) -> None:
+    """Restore files from quarantine directory back to their controlled roots."""
+
+    import shutil
+
+    settings = runtime.settings
+    roots = {
+        "uploads": settings.uploads_dir,
+        "datasets": settings.datasets_dir,
+        "experiments": settings.experiments_dir,
+        "results": settings.results_dir,
+        "exports": settings.exports_dir,
+        "render_assets": settings.render_assets_dir,
+        "comparisons": settings.comparisons_dir,
+    }
+    quarantine_dir = settings.purge_quarantine_dir / op.id
+    if not quarantine_dir.exists():
+        return
+
+    try:
+        manifest_data = json.loads(op.manifest_json) if op.manifest_json else {}
+    except json.JSONDecodeError:
+        return
+
+    for fm in manifest_data.get("files", []):
+        root_name = fm.get("root")
+        rel_path = fm.get("relative_path")
+        if not root_name or not rel_path:
+            continue
+        root_dir = roots.get(root_name)
+        if root_dir is None:
+            continue
+        src = quarantine_dir / root_name / rel_path
+        if not src.exists():
+            continue
+        dst = root_dir / rel_path
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            os.replace(src, dst)
+        except OSError:
+            pass
+
 
 @dataclass(frozen=True)
 class CaseOwnership:
