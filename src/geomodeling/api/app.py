@@ -225,12 +225,33 @@ def create_app() -> FastAPI:
                         raise
                 if record is not None:
                     featured = featured_result_for_case(session, record.id)
-                    primary = _latest_validated_public_dataset(
-                        DatasetRepository(session), record.id
-                    )
-                    return workspace_case_card(
+                    dataset_repo = DatasetRepository(session)
+                    primary = _latest_validated_public_dataset(dataset_repo, record.id)
+                    card = workspace_case_card(
                         record, featured_result=featured, primary_dataset=primary
                     )
+                    # v0.7.0: add data_preparation for user_upload cases
+                    config = record.config if isinstance(record.config, dict) else {}
+                    if config.get("workspace_kind", "user_upload") == "user_upload":
+                        from geomodeling.platform.data_preparation import (
+                            resolve_data_preparation,
+                        )
+                        datasets = dataset_repo.list_for_case(record.id)
+                        prep = resolve_data_preparation(
+                            getattr(request.app.state, "platform_runtime"),
+                            record.id,
+                            datasets,
+                        )
+                        card["data_preparation"] = prep.model_dump(mode="json")
+                        card["validated_datasets"] = [
+                            public_dataset(d)
+                            for d in datasets
+                            if d.status == "validated"
+                        ][::-1]
+                    else:
+                        card["data_preparation"] = None
+                        card["validated_datasets"] = []
+                    return card
         if case_id == PRESET_CASE_ID:
             raise PlatformError(
                 PRESET_NOT_INITIALIZED,
