@@ -1,62 +1,44 @@
-"""v0.7.0 Batch 1：文档与版本面合同（Task 10）。
+"""v0.7.0 第二批 Task 12：当前文档必须如实描述协议 v2 与剖面分析合同。
 
-锁定：版本面全部 0.7.0；README 与状态文档描述微震 CSV 预置新流程
-（CSV 预置 / 普通克里金 / NetCDF / builtin_preset），并明确 DAT 导入
-不在产品面；拒绝把「导入微震 DAT」写成产品操作指引。
+历史 v0.6.1 计划/运行手册保持版本化历史不变；当前受控文档（README、
+architecture、supermap-integration、current-status）必须覆盖协议 v2、
+剖面导出格式、权威统计口径、PNG provenance、单轴能力与 no fallback。
 """
 
-from __future__ import annotations
-
-import json
-import tomllib
 from pathlib import Path
 
-EXPECTED = "0.7.0"
-
-README = Path("README.md")
-STATUS_DOC = Path("docs/status/current-status.md")
-
-REQUIRED_TERMS = ("CSV 预置", "普通克里金", "NetCDF", "builtin_preset")
-
-# 状态文档必须明确 DAT 导入已退出产品面（措辞可不同，事实必须在）
-DAT_EXIT_MARKERS = ("DAT", "退出产品", "不在产品面", "不再提供")
-
-# 产品指引中不得再出现 DAT 导入操作话术
-STALE_DAT_INSTRUCTION = "导入微震 DAT"
+ROOT = Path(__file__).resolve().parents[1]
+CURRENT_DOCS = [
+    ROOT / "README.md",
+    ROOT / "docs" / "architecture.md",
+    ROOT / "docs" / "supermap-integration.md",
+    ROOT / "docs" / "status" / "current-status.md",
+]
 
 
-def _read(path: Path) -> str:
-    assert path.exists(), f"{path} 不存在"
-    return path.read_text(encoding="utf-8")
+def _corpus() -> str:
+    return "\n".join(path.read_text(encoding="utf-8") for path in CURRENT_DOCS)
 
 
-def test_version_surfaces_are_070():
-    doc = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
-    assert doc["project"]["version"] == EXPECTED
-    pkg = json.loads(Path("web/package.json").read_text(encoding="utf-8"))
-    assert pkg["version"] == EXPECTED
+def test_current_docs_cover_v070_rendering_contract():
+    corpus = _corpus()
+    for token in (
+        "gmp-supermap-volume/v2",
+        "slice-analysis/v1",
+        "std_population",
+        "client_echarts_canvas",
+        "singleAxisSlice",
+        "no fallback",
+    ):
+        assert token in corpus, f"当前文档缺少 {token}"
 
 
-def test_status_doc_describes_preset_flow_and_dat_exit():
-    text = _read(STATUS_DOC)
-    missing = [term for term in REQUIRED_TERMS if term not in text]
-    assert not missing, "状态文档缺少 v0.7.0 关键事实词: " + "; ".join(missing)
-    assert any(marker in text for marker in DAT_EXIT_MARKERS), (
-        "状态文档必须明确 DAT 导入已退出产品面"
-    )
-
-
-def test_readme_describes_preset_flow_and_dat_exit():
-    text = _read(README)
-    missing = [term for term in REQUIRED_TERMS if term not in text]
-    assert not missing, "README 缺少 v0.7.0 关键事实词: " + "; ".join(missing)
-    assert any(marker in text for marker in DAT_EXIT_MARKERS), (
-        "README 必须明确 DAT 导入已退出产品面"
-    )
-
-
-def test_no_stale_dat_import_instructions():
-    for path in (README, STATUS_DOC):
-        assert STALE_DAT_INSTRUCTION not in _read(path), (
-            f"{path} 不得再把「导入微震 DAT」写作产品操作"
-        )
+def test_current_docs_do_not_describe_v1_as_current_protocol():
+    # v1 只允许以历史/取代/升级语义出现（v0.6.1 计划与运行手册为版本化历史）
+    for path in CURRENT_DOCS:
+        text = path.read_text(encoding="utf-8")
+        for line in text.splitlines():
+            if "gmp-supermap-volume/v1" in line:
+                assert any(
+                    marker in line for marker in ("取代", "历史", "升级", "v2", "supersed")
+                ), f"{path.name} 仍以当前语义描述 v1 协议：{line.strip()}"

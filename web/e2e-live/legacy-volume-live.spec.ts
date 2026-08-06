@@ -1,18 +1,27 @@
-import { expect, test, type Frame, type Page } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { LEGACY_GRID_SHAPE, syntheticLegacyGridCsv } from './fixtures/legacyGrid'
+import {
+  installLiveProbe,
+  probeMessages,
+  runV070RenderGates,
+  type V070GateReport,
+} from './v070RenderGates'
 
 /**
- * v0.6.1 合并前审查补充：内置电阻率 legacy 体渲染的**产品页**真实 SDK live 门。
+ * v0.6.1 合并前审查补充 → v0.7.0 第二批 Task 12 扩展：内置电阻率 legacy
+ * 体渲染的**产品页**真实 SDK live 门（协议 v2）。
  *
- * 与 32³/64³ 门（supermap-native-volume-live.spec.ts）同一像素口径；与
- * supermap-volume-frame-live.spec.ts（CLI 登记 + 隔离裸帧）互补——本规格验收
- * /#/case/resistivity 产品页：capability → 资产确保 → 页面自动 rendered →
- * 协议身份 → 体积/Slice/Contour 像素门 → 错误门。
+ * 与 32³/64³ 门（supermap-native-volume-live.spec.ts）同一可观测检查序列
+ * （v070RenderGates.runV070RenderGates）；与 supermap-volume-frame-live.spec.ts
+ * （CLI 登记 + 隔离裸帧）互补——本规格验收 /#/case/resistivity 产品页：
+ * capability → 资产确保 → 页面自动 rendered → 协议身份 → 体积/X/Y/Z 剖面
+ * （两索引超噪声 + STATE_APPLIED 权威载荷）/等值面/运行时控件 + 权威统计
+ * 不变性 + 剖面分析 ZIP 导出校验 → 错误门。
  *
  * 共享单例纪律：live 套件共用一个隔离 GEOMODELING_DATA_DIR，
  * builtin_legacy/resistivity 注册是单例。本规格与 frame-live 使用
@@ -23,16 +32,16 @@ import { LEGACY_GRID_SHAPE, syntheticLegacyGridCsv } from './fixtures/legacyGrid
  * web/e2e/supermap-native-volume.spec.ts「内置电阻率」用例），本规格不依赖
  * 执行顺序。
  *
- * 证据写入 docs/evidence/v0.6.1-netcdf-native/<run-id>/（仅测试运行时创建）。
- * 真实 RHO 网格（7×23×42）的视觉证据见 run-*-legacy-rho-demo（演示运行时实拍，
- * 其 provenance 字段如实标注）。
+ * 证据写入 docs/evidence/v0.7.0-rendering-slice-analysis/<run-id>/
+ * （仅测试运行时创建）。真实 RHO 网格（7×23×42）的视觉证据见
+ * v0.6.1-netcdf-native/run-*-legacy-rho-demo（演示运行时实拍，其
+ * provenance 字段如实标注）。
  */
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = path.resolve(HERE, '../..')
-const PROTOCOL = 'gmp-supermap-volume/v1'
 const SDK_DIST_PATH = path.join(REPO_ROOT, 'web', 'dist', 'SuperMap3D-2026', 'SuperMap3D.js')
-const EVIDENCE_ROOT = path.join(REPO_ROOT, 'docs', 'evidence', 'v0.6.1-netcdf-native')
+const EVIDENCE_ROOT = path.join(REPO_ROOT, 'docs', 'evidence', 'v0.7.0-rendering-slice-analysis')
 const VIEWPORT = { width: 1280, height: 800 }
 const RENDERED_GATE_MS = 30_000
 
@@ -69,88 +78,6 @@ function csvValueRange(csv: string): [number, number] {
 }
 
 // ---------------------------------------------------------------------------
-// 像素工具（与 supermap-native-volume-live.spec.ts 同口径）
-// ---------------------------------------------------------------------------
-
-async function countNonBg(page: Page, shot: Buffer): Promise<{ nonBg: number; total: number }> {
-  const dataUrl = 'data:image/png;base64,' + shot.toString('base64')
-  return page.evaluate(async (src: string) => {
-    const img = new Image()
-    await new Promise((res, rej) => {
-      img.onload = res
-      img.onerror = rej
-      img.src = src
-    })
-    const c = document.createElement('canvas')
-    c.width = img.width
-    c.height = img.height
-    const ctx = c.getContext('2d')!
-    ctx.drawImage(img, 0, 0)
-    const d = ctx.getImageData(0, 0, c.width, c.height).data
-    let nonBg = 0
-    for (let i = 0; i < d.length; i += 4) {
-      if (d[i] > 12 || d[i + 1] > 12 || d[i + 2] > 12) nonBg += 1
-    }
-    return { nonBg, total: c.width * c.height }
-  }, dataUrl)
-}
-
-async function countDiff(page: Page, a: Buffer, b: Buffer): Promise<number> {
-  const pair = [a, b].map((buf) => 'data:image/png;base64,' + buf.toString('base64'))
-  return page.evaluate(async ([srcA, srcB]: [string, string]) => {
-    const load = (src: string) =>
-      new Promise<HTMLImageElement>((res, rej) => {
-        const img = new Image()
-        img.onload = () => res(img)
-        img.onerror = rej
-        img.src = src
-      })
-    const [ia, ib] = await Promise.all([load(srcA), load(srcB)])
-    const read = (img: HTMLImageElement) => {
-      const c = document.createElement('canvas')
-      c.width = img.width
-      c.height = img.height
-      const ctx = c.getContext('2d')!
-      ctx.drawImage(img, 0, 0)
-      return { d: ctx.getImageData(0, 0, c.width, c.height).data, w: c.width }
-    }
-    const A = read(ia)
-    const B = read(ib)
-    let diff = 0
-    for (let y = 0; y < ia.height; y += 1) {
-      for (let x = 0; x < ia.width; x += 1) {
-        const i = (y * A.w + x) * 4
-        if (
-          Math.abs(A.d[i] - B.d[i]) > 10 ||
-          Math.abs(A.d[i + 1] - B.d[i + 1]) > 10 ||
-          Math.abs(A.d[i + 2] - B.d[i + 2]) > 10
-        ) {
-          diff += 1
-        }
-      }
-    }
-    return diff
-  }, pair as [string, string])
-}
-
-// 渲染发生在 iframe 内：帧等待必须落在子帧事件循环上
-async function waitFrames(frame: Frame, frames: number): Promise<void> {
-  await frame.evaluate(
-    (n) =>
-      new Promise<void>((resolve) => {
-        let i = 0
-        const tick = () => {
-          i += 1
-          if (i >= n) resolve()
-          else requestAnimationFrame(tick)
-        }
-        requestAnimationFrame(tick)
-      }),
-    frames,
-  )
-}
-
-// ---------------------------------------------------------------------------
 // 证据聚合
 // ---------------------------------------------------------------------------
 
@@ -171,6 +98,7 @@ const record = {
   sdkVersion: null as string | null,
   gpuRenderer: null as string | null,
   dpr: null as number | null,
+  gates: null as V070GateReport | null,
 }
 
 function evidencePath(name: string): string {
@@ -291,6 +219,10 @@ test.describe('v0.6.1 合并前审查：内置电阻率 legacy 产品页体渲�
     expect(capability.units).toBe('ohm-m')
     expect(capability.geolocation_status).toBe('display_anchor_only')
     expect(capability.display_transform?.contract).toBe('wgs84_display_anchor_v1')
+    // v0.7.0 第二批：内置电阻率渲染默认值 log + native-spectrum（Task 2 合同）
+    expect(capability.render_profile?.default_palette).toBe('native-spectrum')
+    expect(capability.render_profile?.default_scale).toBe('log')
+    expect(capability.render_profile?.log_available).toBe(true)
 
     // --- 覆盖保护：不同网格必须 409 且登记不被改写 ----------------------------
     // 冲突网格必须仍是完整笛卡尔网格（否则 422 校验先于 409 身份冲突）：
@@ -381,22 +313,7 @@ test.describe('v0.6.1 合并前审查：内置电阻率 legacy 产品页体渲�
     expect(Math.abs(vmax - expectVmax)).toBeLessThan(1e-4)
 
     // --- 产品页：协议探针 + 网络/控制台监听 ----------------------------------
-    await page.addInitScript((proto: string) => {
-      const w = window as any
-      w.__liveProbe = { messages: [] as any[] }
-      window.addEventListener('message', (event) => {
-        const d = event.data as any
-        if (d && d.protocol === proto) {
-          w.__liveProbe.messages.push({
-            type: d.type,
-            phase: d.phase ?? null,
-            code: d.code ?? null,
-            identity: d.identity ?? null,
-            sdkVersion: d.sdkVersion ?? null,
-          })
-        }
-      })
-    }, PROTOCOL)
+    await installLiveProbe(page)
 
     const benign4xx: string[] = []
     const pathOf = (url: string) => {
@@ -416,9 +333,12 @@ test.describe('v0.6.1 合并前审查：内置电阻率 legacy 产品页体渲�
     page.on('pageerror', (e) =>
       record.console.push({ type: 'pageerror', text: String(e).slice(0, 400), location: '' }),
     )
-    page.on('requestfailed', (r) =>
-      record.networkFailures.push(`${r.method()} ${pathOf(r.url())} ${r.failure()?.errorText}`),
-    )
+    page.on('requestfailed', (r) => {
+      // 导航式下载（location.assign → attachment）被浏览器以 ERR_ABORTED 中止属正常下载语义
+      const p = pathOf(r.url())
+      if (p.startsWith('/api/exports/') && r.failure()?.errorText === 'net::ERR_ABORTED') return
+      record.networkFailures.push(`${r.method()} ${p} ${r.failure()?.errorText}`)
+    })
     page.on('response', (r) => {
       const p = pathOf(r.url())
       record.network.push({ method: r.request().method(), path: p, status: r.status() })
@@ -439,7 +359,7 @@ test.describe('v0.6.1 合并前审查：内置电阻率 legacy 产品页体渲�
     const renderedMs = Date.now() - renderStart
 
     // 协议身份：RENDER_STATE.rendered 的 identity 与源/网格/NetCDF 哈希一致
-    const messages: any[] = await page.evaluate(() => (window as any).__liveProbe.messages)
+    const messages = await probeMessages(page)
     const renderedMsg = messages.find((m) => m.type === 'RENDER_STATE' && m.phase === 'rendered')
     expect(renderedMsg).toBeTruthy()
     const expectedIdentity = {
@@ -492,93 +412,32 @@ test.describe('v0.6.1 合并前审查：内置电阻率 legacy 产品页体渲�
       sdk_version: record.sdkVersion,
     }
 
-    // --- 像素门：静帧噪声基线 → 基准非背景 → Slice/Contour 响应 --------------
+    // --- v0.7.0 第二批渲染门（与 32³/64³/微震预置同一可观测检查序列） --------
     const frameLocator = page.getByTestId('volume-frame')
     await frameLocator.scrollIntoViewIfNeeded()
-    const frameBox = await frameLocator.boundingBox()
-    expect(frameBox).toBeTruthy()
-    const centralClip = {
-      x: frameBox!.x + frameBox!.width * 0.25,
-      y: frameBox!.y + frameBox!.height * 0.25,
-      width: frameBox!.width * 0.5,
-      height: frameBox!.height * 0.5,
-    }
-    const shotCentral = () => page.screenshot({ clip: centralClip })
-    const shotElement = () => page.getByTestId('volume-frame').screenshot()
+    const shot = () => page.getByTestId('volume-frame').screenshot()
+    const saveShot = (name: string, buf: Buffer) =>
+      writeFileSync(evidencePath(`legacy-${name}.png`), buf)
 
-    const noiseShot1 = await shotCentral()
-    await waitFrames(frame!, 10)
-    const noiseShot2 = await shotCentral()
-    const noiseDiff = await countDiff(page, noiseShot1, noiseShot2)
-    const pixelThreshold = Math.max(200, noiseDiff * 3 + 50)
-
-    const baseCentral = noiseShot2
-    const baseStats = await countNonBg(page, baseCentral)
-    expect(baseStats.nonBg).toBeGreaterThan(2000)
-    writeFileSync(evidencePath('legacy-volume.png'), await shotElement())
-
-    const protocolCount = () => page.evaluate(() => (window as any).__liveProbe.messages.length)
-
-    const runCommand = async (
-      name: string,
-      act: () => Promise<void>,
-    ): Promise<{ total_ms: number; central: Buffer }> => {
-      const cmdStart = Date.now()
-      const before = await protocolCount()
-      await act()
-      await page.waitForFunction((n) => (window as any).__liveProbe.messages.length > n, before, {
-        timeout: 30_000,
-      })
-      let previous = await shotCentral()
-      let settled = false
-      const settleStart = Date.now()
-      while (Date.now() - settleStart < 20_000) {
-        await page.waitForTimeout(250)
-        const next = await shotCentral()
-        const d = await countDiff(page, previous, next)
-        if (d <= Math.max(50, noiseDiff * 2)) {
-          settled = true
-          previous = next
-          break
-        }
-        previous = next
-      }
-      if (!settled) {
-        console.warn(`[legacy-volume-live] ${name} 20s 内未稳定（如实记录）`)
-      }
-      return { total_ms: Date.now() - cmdStart, central: previous }
-    }
-
-    const diffs: Record<string, number> = {}
-    const commandTimings: Record<string, number> = {}
-
-    // slice 模式
-    const slice = await runCommand('slice', async () => {
-      await page.getByTestId('mode-slice').click()
+    const gates = await runV070RenderGates({
+      page,
+      request,
+      frame: frame!,
+      shot,
+      saveShot,
+      assetId: asset.id,
+      identity: {
+        assetId: asset.id,
+        gridSha256: asset.grid_sha256,
+        netcdfSha256: asset.netcdf_sha256,
+      },
+      valueRange: [expectVmin, expectVmax],
+      logAvailable: true,
     })
-    const sliceStats = await countNonBg(page, slice.central)
-    expect(sliceStats.nonBg, 'legacy Slice 必须有非背景体数据像素').toBeGreaterThan(500)
-    diffs.slice = await countDiff(page, baseCentral, slice.central)
-    expect(diffs.slice).toBeGreaterThan(pixelThreshold)
-    commandTimings.slice = slice.total_ms
-    writeFileSync(evidencePath('legacy-slice.png'), await shotElement())
-
-    // contour 模式
-    const contour = await runCommand('contour', async () => {
-      await page.getByTestId('mode-contour').click()
-    })
-    const contourStats = await countNonBg(page, contour.central)
-    expect(contourStats.nonBg, 'legacy Contour 必须有非背景等值面像素').toBeGreaterThan(500)
-    diffs.contour = await countDiff(page, slice.central, contour.central)
-    expect(diffs.contour).toBeGreaterThan(pixelThreshold)
-    commandTimings.contour = contour.total_ms
-    writeFileSync(evidencePath('legacy-contour.png'), await shotElement())
-
-    // 恢复体积模式（产品面完整闭环，无协议错误）
-    await runCommand('restore-volume', () => page.getByTestId('mode-volume').click())
+    record.gates = gates
 
     // --- 全局健康门：无协议错误/页面错误/资源失败 ----------------------------
-    const finalMessages: any[] = await page.evaluate(() => (window as any).__liveProbe.messages)
+    const finalMessages = await probeMessages(page)
     expect(finalMessages.filter((m) => m.type === 'ERROR')).toEqual([])
     expect(record.networkFailures).toEqual([])
     const consoleErrors = record.console.filter(
@@ -586,38 +445,43 @@ test.describe('v0.6.1 合并前审查：内置电阻率 legacy 产品页体渲�
         ['pageerror', 'error'].includes(c.type) &&
         !(
           c.text.includes('Failed to load resource') &&
-          benign4xx.some((p) => c.location.endsWith(p))
+          (benign4xx.some((p) => c.location.endsWith(p)) || c.location.includes('/api/exports/'))
         ),
     )
     expect(consoleErrors).toEqual([])
 
     record.pixelStats = {
-      clip: centralClip,
-      noise_diff: noiseDiff,
-      pixel_threshold: pixelThreshold,
-      base_non_bg: baseStats.nonBg,
-      base_total: baseStats.total,
-      slice_non_bg: sliceStats.nonBg,
-      contour_non_bg: contourStats.nonBg,
-      diffs,
+      noise_diff: gates.noiseDiff,
+      pixel_threshold: gates.pixelThreshold,
+      base_non_bg: gates.baseNonBg,
+      slice_mode_non_bg: gates.sliceModeNonBg,
+      contour_non_bg: gates.contourNonBg,
+      control_diffs: gates.controlDiffs,
+      slice_gates: gates.sliceGates,
+      stats_invariant: gates.statsInvariant,
+      unsettled_commands: gates.unsettledCommands,
       gates: {
         base_non_bg_min: 2000,
         mode_non_bg_min: 500,
         response_over_noise: 'max(200, noise*3+50)',
+        control_over_noise: 'max(80, noise*2+20)',
       },
     }
     record.timings = {
       rendered_ms: renderedMs,
       rendered_gate_ms: RENDERED_GATE_MS,
-      commands: commandTimings,
+      commands: gates.timings,
       total_ms: Date.now() - t0,
     }
 
     console.log(
       `[legacy-volume-live] sdk=${record.sdkVersion} gpu=${record.gpuRenderer} ` +
-        `rendered=${renderedMs}ms 非背景=${baseStats.nonBg} 噪声=${noiseDiff} ` +
-        `阈值=${pixelThreshold} slice非背景=${sliceStats.nonBg} contour非背景=${contourStats.nonBg} ` +
-        `差异: slice=${diffs.slice} contour=${diffs.contour} 总耗时=${((Date.now() - t0) / 1000).toFixed(1)}s`,
+        `rendered=${renderedMs}ms 非背景=${gates.baseNonBg} 噪声=${gates.noiseDiff} ` +
+        `阈值=${gates.pixelThreshold} 剖面=${Object.entries(gates.sliceGates)
+          .map(([a, g]) => `${a}(q${g.quarterIndex}/q${g.threeQuarterIndex},Δ${g.diff})`)
+          .join(' ')} 控件差异=${Object.entries(gates.controlDiffs)
+          .map(([k, v]) => `${k}=${v}`)
+          .join(' ')} 总耗时=${((Date.now() - t0) / 1000).toFixed(1)}s`,
     )
   })
 
@@ -636,5 +500,6 @@ test.describe('v0.6.1 合并前审查：内置电阻率 legacy 产品页体渲�
     writeEvidenceJson('console.json', { legacy: record.console })
     writeEvidenceJson('pixel-stats.json', { legacy: record.pixelStats })
     writeEvidenceJson('timings.json', { legacy: record.timings })
+    writeEvidenceJson('slice-exports.json', { legacy: record.gates?.exportManifest ?? null })
   })
 })

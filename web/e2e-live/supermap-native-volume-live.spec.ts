@@ -3,7 +3,6 @@ import {
   test,
   type APIRequestContext,
   type Browser,
-  type Frame,
   type Page,
 } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
@@ -11,9 +10,17 @@ import { createHash, randomUUID } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import {
+  installLiveProbe,
+  probeMessages,
+  runLiveCommand,
+  runV070RenderGates,
+  type V070GateReport,
+} from './v070RenderGates'
 
 /**
- * v0.6.1 Task 14 live 验收：32³/64³ 确定性基准网格的真实产品流体渲染门。
+ * v0.6.1 Task 14 live 验收 → v0.7.0 第二批 Task 12 扩展：
+ * 32³/64³ 确定性基准网格的真实产品流体渲染门（协议 v2）。
  *
  * 真实链路：seed_volume_benchmarks.py 在隔离 GEOMODELING_DATA_DIR 落库
  * case/dataset/experiment/succeeded run/succeeded candidate + grid.npz →
@@ -22,22 +29,25 @@ import { fileURLToPath } from 'node:url'
  *
  *   POST 资产成功（首个成功 201）；manifest shape 与 grid/NetCDF 哈希匹配；
  *   iframe 30 秒内到 rendered（实测记录）；中央画布有非背景体积像素；
- *   filter/opacity/slice/contour 各自超过静帧像素噪声；
+ *   X/Y/Z 剖面各自两个索引（1/4 与 3/4）超过静帧像素噪声，3D slice 状态
+ *   只来自权威剖面响应（STATE_APPLIED 精确匹配 axis/index/coordinate/
+ *   relativePosition）；等值面非背景像素；palette/log/filter/opacity/
+ *   lighting/gradient/bounding-box 运行时控件各自超过噪声且权威统计不变；
+ *   每源下载一份剖面分析 ZIP（四文件/CSV/统计/manifest 哈希/无路径泄漏）；
  *   无资源失败/pageerror/unhandledrejection（白名单仅两条产品内既有
  *   良性 4xx：建资产前的资产状态 404、通用数据集的微震派生 409）；
  *   64³ 每条命令点击后 5 秒内像素稳定（实测记录，不隐藏慢结果）。
  *
- * 证据写入 docs/evidence/v0.6.1-netcdf-native/<run-id>/（仅测试运行时创建）：
- * 同一运行的全部文件报告同一 run ID、Git commit、SDK 哈希、浏览器、
- * GPU renderer、视口、DPR、结果/源身份、grid 哈希、NetCDF 哈希。
- * 不碰默认运行时目录；uvicorn 生命周期由 Playwright webServer 管理。
+ * 证据写入 docs/evidence/v0.7.0-rendering-slice-analysis/<run-id>/
+ * （仅测试运行时创建）：同一运行的全部文件报告同一 run ID、Git commit、
+ * SDK 哈希、浏览器、GPU renderer、视口、DPR、结果/源身份、grid 哈希、
+ * NetCDF 哈希。不碰默认运行时目录；uvicorn 生命周期由 Playwright webServer 管理。
  */
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = path.resolve(HERE, '../..')
-const PROTOCOL = 'gmp-supermap-volume/v1'
 const SDK_DIST_PATH = path.join(REPO_ROOT, 'web', 'dist', 'SuperMap3D-2026', 'SuperMap3D.js')
-const EVIDENCE_ROOT = path.join(REPO_ROOT, 'docs', 'evidence', 'v0.6.1-netcdf-native')
+const EVIDENCE_ROOT = path.join(REPO_ROOT, 'docs', 'evidence', 'v0.7.0-rendering-slice-analysis')
 const SEED_JSON_REL = path.join('live-fixtures', 'volume-benchmarks.json')
 const VIEWPORT = { width: 1280, height: 800 }
 const SETTLE_GATE_MS = 5_000
@@ -80,96 +90,8 @@ function isoRunId(): string {
 }
 
 // ---------------------------------------------------------------------------
-// 像素工具（与 Task 9 supermap-volume-frame-live.spec.ts 同口径）
-// ---------------------------------------------------------------------------
-
-async function countNonBg(page: Page, shot: Buffer): Promise<{ nonBg: number; total: number }> {
-  const dataUrl = 'data:image/png;base64,' + shot.toString('base64')
-  return page.evaluate(async (src: string) => {
-    const img = new Image()
-    await new Promise((res, rej) => {
-      img.onload = res
-      img.onerror = rej
-      img.src = src
-    })
-    const c = document.createElement('canvas')
-    c.width = img.width
-    c.height = img.height
-    const ctx = c.getContext('2d')!
-    ctx.drawImage(img, 0, 0)
-    const d = ctx.getImageData(0, 0, c.width, c.height).data
-    let nonBg = 0
-    for (let i = 0; i < d.length; i += 4) {
-      if (d[i] > 12 || d[i + 1] > 12 || d[i + 2] > 12) nonBg += 1
-    }
-    return { nonBg, total: c.width * c.height }
-  }, dataUrl)
-}
-
-async function countDiff(page: Page, a: Buffer, b: Buffer): Promise<number> {
-  const pair = [a, b].map((buf) => 'data:image/png;base64,' + buf.toString('base64'))
-  return page.evaluate(async ([srcA, srcB]: [string, string]) => {
-    const load = (src: string) =>
-      new Promise<HTMLImageElement>((res, rej) => {
-        const img = new Image()
-        img.onload = () => res(img)
-        img.onerror = rej
-        img.src = src
-      })
-    const [ia, ib] = await Promise.all([load(srcA), load(srcB)])
-    const read = (img: HTMLImageElement) => {
-      const c = document.createElement('canvas')
-      c.width = img.width
-      c.height = img.height
-      const ctx = c.getContext('2d')!
-      ctx.drawImage(img, 0, 0)
-      return { d: ctx.getImageData(0, 0, c.width, c.height).data, w: c.width }
-    }
-    const A = read(ia)
-    const B = read(ib)
-    let diff = 0
-    for (let y = 0; y < ia.height; y += 1) {
-      for (let x = 0; x < ia.width; x += 1) {
-        const i = (y * A.w + x) * 4
-        if (
-          Math.abs(A.d[i] - B.d[i]) > 10 ||
-          Math.abs(A.d[i + 1] - B.d[i + 1]) > 10 ||
-          Math.abs(A.d[i + 2] - B.d[i + 2]) > 10
-        ) {
-          diff += 1
-        }
-      }
-    }
-    return diff
-  }, pair as [string, string])
-}
-
-// 渲染发生在 iframe 内：帧等待必须落在子帧事件循环上（与 Task 9 同理）
-async function waitFrames(frame: Frame, frames: number): Promise<void> {
-  await frame.evaluate(
-    (n) =>
-      new Promise<void>((resolve) => {
-        let i = 0
-        const tick = () => {
-          i += 1
-          if (i >= n) resolve()
-          else requestAnimationFrame(tick)
-        }
-        requestAnimationFrame(tick)
-      }),
-    frames,
-  )
-}
-
-// ---------------------------------------------------------------------------
 // 证据聚合（serial 模式同一 worker，模块级共享）
 // ---------------------------------------------------------------------------
-
-interface CommandTiming {
-  ack_ms: number
-  settle_ms: number
-  total_ms: number
-}
 
 interface SizeRecord {
   seed: SeedEntry
@@ -182,6 +104,7 @@ interface SizeRecord {
   sdkVersion: string | null
   gpuRenderer: string | null
   dpr: number | null
+  gates: V070GateReport | null
 }
 
 const runId = isoRunId()
@@ -286,27 +209,13 @@ test.describe('v0.6.1 Task 14：32³/64³ 原生体渲染 live 门', () => {
       sdkVersion: null,
       gpuRenderer: null,
       dpr: null,
+      gates: null,
     }
     records[size] = record
     browserVersion = browser.version()
 
     // 协议消息探针：产品页父侧窗口收 iframe 出站消息（只读观测，不改行为）
-    await page.addInitScript((proto: string) => {
-      const w = window as any
-      w.__liveProbe = { messages: [] as any[] }
-      window.addEventListener('message', (event) => {
-        const d = event.data as any
-        if (d && d.protocol === proto) {
-          w.__liveProbe.messages.push({
-            type: d.type,
-            phase: d.phase ?? null,
-            code: d.code ?? null,
-            identity: d.identity ?? null,
-            sdkVersion: d.sdkVersion ?? null,
-          })
-        }
-      })
-    }, PROTOCOL)
+    await installLiveProbe(page)
 
     // 良性 4xx 白名单：产品页既有行为（建资产前的资产状态 404、通用数据集微震派生 409）
     const benign4xx = [
@@ -330,9 +239,12 @@ test.describe('v0.6.1 Task 14：32³/64³ 原生体渲染 live 门', () => {
     page.on('pageerror', (e) =>
       record.console.push({ type: 'pageerror', text: String(e).slice(0, 400), location: '' }),
     )
-    page.on('requestfailed', (r) =>
-      record.networkFailures.push(`${r.method()} ${pathOf(r.url())} ${r.failure()?.errorText}`),
-    )
+    page.on('requestfailed', (r) => {
+      // 导航式下载（location.assign → attachment）被浏览器以 ERR_ABORTED 中止属正常下载语义
+      const p = pathOf(r.url())
+      if (p.startsWith('/api/exports/') && r.failure()?.errorText === 'net::ERR_ABORTED') return
+      record.networkFailures.push(`${r.method()} ${p} ${r.failure()?.errorText}`)
+    })
     page.on('response', (r) => {
       const p = pathOf(r.url())
       record.network.push({ method: r.request().method(), path: p, status: r.status() })
@@ -357,6 +269,11 @@ test.describe('v0.6.1 Task 14：32³/64³ 原生体渲染 live 门', () => {
     expect(capability.units).toBe(seed.units)
     expect(capability.geolocation_status).toBe('display_anchor_only')
     expect(capability.display_transform?.contract).toBe('wgs84_display_anchor_v1')
+    // v0.7.0 第二批：候选成果渲染默认值 linear + viridis（Task 2 合同）；
+    // log 可用性由权威有效值是否全正决定（基准值域含负值 → 必须不可用）
+    expect(capability.render_profile?.default_palette).toBe('viridis')
+    expect(capability.render_profile?.default_scale).toBe('linear')
+    expect(capability.render_profile?.log_available).toBe(seed.value_range[0] > 0)
 
     // 全新隔离运行时：此前从未创建资产（纯查询 404，绝不隐式创建）
     const preAsset = await request.get(`/api/results/${seed.candidate_id}/render-assets/netcdf`)
@@ -414,7 +331,7 @@ test.describe('v0.6.1 Task 14：32³/64³ 原生体渲染 live 门', () => {
     const renderedMs = Date.now() - postStart
 
     // 协议身份：RENDER_STATE.rendered 的 identity 与源/网格/NetCDF 哈希一致
-    const messages: any[] = await page.evaluate(() => (window as any).__liveProbe.messages)
+    const messages = await probeMessages(page)
     const renderedMsg = messages.find((m) => m.type === 'RENDER_STATE' && m.phase === 'rendered')
     expect(renderedMsg).toBeTruthy()
     const expectedIdentity = {
@@ -472,143 +389,47 @@ test.describe('v0.6.1 Task 14：32³/64³ 原生体渲染 live 门', () => {
       sdk_version: record.sdkVersion,
     }
 
-    // --- 像素门：静帧噪声基线 → 基准非背景 → 四命令响应 ----------------------
+    // --- v0.7.0 第二批渲染门：体积 → X/Y/Z 剖面 → 等值面 → 控件 →
+    //     统计不变性 → 剖面导出（三源共用同一可观测检查序列） ---------------
     const frameLocator = page.getByTestId('volume-frame')
     await frameLocator.scrollIntoViewIfNeeded()
-    const frameBox = await frameLocator.boundingBox()
-    expect(frameBox).toBeTruthy()
-    const centralClip = {
-      x: frameBox!.x + frameBox!.width * 0.25,
-      y: frameBox!.y + frameBox!.height * 0.25,
-      width: frameBox!.width * 0.5,
-      height: frameBox!.height * 0.5,
-    }
-    const shotCentral = () => page.screenshot({ clip: centralClip })
-    const shotElement = () =>
-      page.getByTestId('volume-frame').screenshot()
+    const shot = () => page.getByTestId('volume-frame').screenshot()
+    const saveShot = (name: string, buf: Buffer) =>
+      writeFileSync(evidencePath(`${size}-${name}.png`), buf)
 
-    const noiseShot1 = await shotCentral()
-    await waitFrames(frame!, 10)
-    const noiseShot2 = await shotCentral()
-    const noiseDiff = await countDiff(page, noiseShot1, noiseShot2)
-    const pixelThreshold = Math.max(200, noiseDiff * 3 + 50)
-
-    const baseCentral = noiseShot2
-    const baseStats = await countNonBg(page, baseCentral)
-    expect(baseStats.nonBg).toBeGreaterThan(2000)
-    writeFileSync(evidencePath(`${size}-volume.png`), await shotElement())
-
-    const protocolCount = () => page.evaluate(() => (window as any).__liveProbe.messages.length)
-
-    // 命令后像素稳定等待：连续两帧差异 ≤ 静帧噪声口径即视为稳定；
-    // 返回 ack/settle/total 三段实测（settle 轮询上限 20s，超时如实记录）
-    const runCommand = async (
-      name: string,
-      act: () => Promise<void>,
-    ): Promise<{ timing: CommandTiming; central: Buffer }> => {
-      const cmdStart = Date.now()
-      const before = await protocolCount()
-      await act()
-      await page.waitForFunction((n) => (window as any).__liveProbe.messages.length > n, before, {
-        timeout: 30_000,
-      })
-      const ackMs = Date.now() - cmdStart
-      let previous = await shotCentral()
-      let settled = false
-      const settleStart = Date.now()
-      while (Date.now() - settleStart < 20_000) {
-        await page.waitForTimeout(250)
-        const next = await shotCentral()
-        const d = await countDiff(page, previous, next)
-        if (d <= Math.max(50, noiseDiff * 2)) {
-          settled = true
-          previous = next
-          break
-        }
-        previous = next
-      }
-      const settleMs = Date.now() - ackMs - cmdStart
-      const totalMs = Date.now() - cmdStart
-      if (!settled) {
-        console.warn(`[native-volume-live] ${size}³ ${name} 20s 内未稳定（如实记录）`)
-      }
-      return {
-        timing: { ack_ms: ackMs, settle_ms: settleMs, total_ms: totalMs },
-        central: previous,
-      }
-    }
-
-    const diffs: Record<string, number> = {}
-    const commandTimings: Record<string, CommandTiming> = {}
-
-    // filter：最小过滤值提到中位区间以上（走产品真实输入框 + 应用按钮）
-    const filterMin = vmin + (vmax - vmin) * 0.55
-    const filter = await runCommand('filter', async () => {
-      await page.getByTestId('filter-min').fill(filterMin.toFixed(6))
-      await page.getByTestId('filter-max').fill(vmax.toFixed(6))
-      await page.getByTestId('filter-apply').click()
+    const gates = await runV070RenderGates({
+      page,
+      request,
+      frame: frame!,
+      shot,
+      saveShot,
+      assetId: asset.id,
+      identity: {
+        assetId: asset.id,
+        gridSha256: asset.grid_sha256,
+        netcdfSha256: asset.netcdf_sha256,
+      },
+      valueRange: [vmin, vmax],
+      logAvailable: capability.render_profile?.log_available === true,
     })
-    diffs.filter = await countDiff(page, baseCentral, filter.central)
-    expect(diffs.filter).toBeGreaterThan(pixelThreshold)
-    commandTimings.filter = filter.timing
-    writeFileSync(evidencePath(`${size}-threshold.png`), await shotElement())
+    record.gates = gates
 
-    // opacity：不透明度压到 0.12（滑杆 input 事件，与用户拖拽同路径）
-    const opacity = await runCommand('opacity', async () => {
-      await page.getByTestId('opacity-slider').evaluate((el, v) => {
-        const input = el as HTMLInputElement
-        input.value = v
-        input.dispatchEvent(new Event('input', { bubbles: true }))
-      }, '0.12')
-    })
-    diffs.opacity = await countDiff(page, filter.central, opacity.central)
-    expect(diffs.opacity).toBeGreaterThan(pixelThreshold)
-    commandTimings.opacity = opacity.timing
-    if (size === '64') {
-      writeFileSync(evidencePath('64-opacity.png'), await shotElement())
-    }
-
-    // slice 模式
-    const slice = await runCommand('slice', async () => {
-      await page.getByTestId('mode-slice').click()
-    })
-    const sliceStats = await countNonBg(page, slice.central)
-    expect(sliceStats.nonBg, `${size}³ Slice 必须有非背景体数据像素`).toBeGreaterThan(500)
-    diffs.slice = await countDiff(page, opacity.central, slice.central)
-    expect(diffs.slice).toBeGreaterThan(pixelThreshold)
-    commandTimings.slice = slice.timing
-    if (size === '64') {
-      writeFileSync(evidencePath('64-slice.png'), await shotElement())
-    }
-
-    // contour 模式
-    const contour = await runCommand('contour', async () => {
-      await page.getByTestId('mode-contour').click()
-    })
-    const contourStats = await countNonBg(page, contour.central)
-    expect(contourStats.nonBg, `${size}³ Contour 必须有非背景等值面像素`).toBeGreaterThan(500)
-    diffs.contour = await countDiff(page, slice.central, contour.central)
-    expect(diffs.contour).toBeGreaterThan(pixelThreshold)
-    commandTimings.contour = contour.timing
-    if (size === '64') {
-      writeFileSync(evidencePath('64-contour.png'), await shotElement())
-    }
-
-    // 恢复体积模式 + 重置视角（产品面完整闭环，无协议错误）
-    await runCommand('restore-volume', () => page.getByTestId('mode-volume').click())
-    await runCommand('reset-view', () => page.getByTestId('reset-view').click())
+    // 重置视角（产品面完整闭环，无协议错误）
+    await runLiveCommand(page, shot, gates.noiseDiff, () =>
+      page.getByTestId('reset-view').click(),
+    )
 
     // 64³：每条命令点击后 5 秒内稳定（如实记录实测值）
     if (size === '64') {
-      for (const name of ['filter', 'opacity', 'slice', 'contour']) {
-        expect(commandTimings[name].total_ms, `64³ ${name} 稳定超过 5 秒`).toBeLessThanOrEqual(
+      for (const name of ['filter', 'opacity', 'slice-mode', 'contour']) {
+        expect(gates.timings[name], `64³ ${name} 稳定超过 5 秒`).toBeLessThanOrEqual(
           SETTLE_GATE_MS,
         )
       }
     }
 
     // --- 全局健康门：无协议错误/页面错误/资源失败 ----------------------------
-    const finalMessages: any[] = await page.evaluate(() => (window as any).__liveProbe.messages)
+    const finalMessages = await probeMessages(page)
     expect(finalMessages.filter((m) => m.type === 'ERROR')).toEqual([])
     expect(record.networkFailures).toEqual([])
     const consoleErrors = record.console.filter(
@@ -616,41 +437,44 @@ test.describe('v0.6.1 Task 14：32³/64³ 原生体渲染 live 门', () => {
         ['pageerror', 'error'].includes(c.type) &&
         !(
           c.text.includes('Failed to load resource') &&
-          benign4xx.some((p) => c.location.endsWith(p))
+          (benign4xx.some((p) => c.location.endsWith(p)) || c.location.includes('/api/exports/'))
         ),
     )
     expect(consoleErrors).toEqual([])
 
     record.pixelStats = {
-      clip: centralClip,
-      noise_diff: noiseDiff,
-      pixel_threshold: pixelThreshold,
-      base_non_bg: baseStats.nonBg,
-      base_total: baseStats.total,
-      slice_non_bg: sliceStats.nonBg,
-      contour_non_bg: contourStats.nonBg,
-      diffs,
+      noise_diff: gates.noiseDiff,
+      pixel_threshold: gates.pixelThreshold,
+      base_non_bg: gates.baseNonBg,
+      slice_mode_non_bg: gates.sliceModeNonBg,
+      contour_non_bg: gates.contourNonBg,
+      control_diffs: gates.controlDiffs,
+      slice_gates: gates.sliceGates,
+      stats_invariant: gates.statsInvariant,
+      unsettled_commands: gates.unsettledCommands,
       gates: {
         base_non_bg_min: 2000,
+        mode_non_bg_min: 500,
         response_over_noise: 'max(200, noise*3+50)',
+        control_over_noise: 'max(80, noise*2+20)',
       },
     }
     record.timings = {
       post_ms: postMs,
       rendered_ms: renderedMs,
       rendered_gate_ms: RENDERED_GATE_MS,
-      commands: commandTimings,
+      commands: gates.timings,
       settle_gate_ms: size === '64' ? SETTLE_GATE_MS : null,
       total_ms: Date.now() - t0,
     }
 
     console.log(
       `[native-volume-live] ${size}³ sdk=${record.sdkVersion} gpu=${record.gpuRenderer} ` +
-        `POST=${postMs}ms rendered=${renderedMs}ms 非背景=${baseStats.nonBg} 噪声=${noiseDiff} ` +
-        `阈值=${pixelThreshold} 差异: filter=${diffs.filter} opacity=${diffs.opacity} ` +
-        `slice=${diffs.slice} contour=${diffs.contour} ` +
-        `稳定ms: ${Object.entries(commandTimings)
-          .map(([k, v]) => `${k}=${v.total_ms}`)
+        `POST=${postMs}ms rendered=${renderedMs}ms 非背景=${gates.baseNonBg} 噪声=${gates.noiseDiff} ` +
+        `阈值=${gates.pixelThreshold} 剖面=${Object.entries(gates.sliceGates)
+          .map(([a, g]) => `${a}(q${g.quarterIndex}/q${g.threeQuarterIndex},Δ${g.diff})`)
+          .join(' ')} 控件差异=${Object.entries(gates.controlDiffs)
+          .map(([k, v]) => `${k}=${v}`)
           .join(' ')} 总耗时=${((Date.now() - t0) / 1000).toFixed(1)}s`,
     )
   }
@@ -690,6 +514,11 @@ test.describe('v0.6.1 Task 14：32³/64³ 原生体渲染 live 门', () => {
     })
     writeEvidenceJson('timings.json', {
       per_size: Object.fromEntries(Object.entries(records).map(([s, r]) => [s, r.timings])),
+    })
+    writeEvidenceJson('slice-exports.json', {
+      per_size: Object.fromEntries(
+        Object.entries(records).map(([s, r]) => [s, r.gates?.exportManifest ?? null]),
+      ),
     })
   })
 })

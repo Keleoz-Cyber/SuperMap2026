@@ -19,6 +19,12 @@
   - 统一案例工作台：电阻率（`builtin_legacy`）、微震预置（**`builtin_preset`**）、用户上传（`user_upload`）同一 `workspace_kind`/`capabilities`/primary_dataset/official_result DTO 与 `/#/cases/:caseId` 工作台壳；`/case/resistivity` 兼容重定向；首页全部由 DTO 驱动，无 case_id 分支。未 seed 时预置卡可见但能力全 false，工作台返回类型化 `PRESET_NOT_INITIALIZED`。
   - 微震 **DAT** 导入**退出产品面**：首页 DAT 文案、`MicroseismicImportView`、导入路由、`POST /api/cases/{id}/microseismic-imports` 与派生 GET 端点全部移除；历史运行时文件、派生服务层与 CLI 保留，历史 DAT 成果经通用结果 URL 只读查看，领域证据导出（`domain_evidence/` 七文件、哈希不符 409）契约不变。
   - 用户从预置数据版本新建实验拥有独立的 experiment/run/candidate 身份，官方正式选择不可被用户操作改写。
+- **v0.7.0 渲染与剖面分析 · 第二批（`feat/v0.7.0-rendering-slice-analysis` 分支，发布候选）**：
+  - iframe 协议 v2（`gmp-supermap-volume/v2`）：单调 `revision` 完整渲染状态，过期 revision 忽略；slice 模式必须携带权威 slice 载荷（axis/index/coordinate/relativePosition 一律来自剖面 API 响应），`FRAME_READY` 上报含 `singleAxisSlice` 的能力；单轴切片以负坐标隐藏非活动轴为 SDK 12.1 真实 GPU 实测技术（`docs/evidence/v0.7.0-single-axis-probe/`），非文档化 API 承诺。
+  - 渲染默认值（render_profile）：内置电阻率 log + native-spectrum，候选成果 linear + viridis；权威有效值非全正时 log 显式禁用并说明，绝不平移原始值。
+  - 权威剖面分析：`GET /api/render-assets/{id}/slice-analysis`（`std_population` ddof=0、numpy-linear 分位数、valid+nodata=total，服务端从原始网格重算）；`POST .../slice-exports` 原子导出 `slice-analysis.zip`（`slice-analysis/v1`：slice.csv 真实 x,y,z 轴列、statistics.json 与 API 一致、manifest.json 哈希齐备；PNG 为 `client_echarts_canvas` 展示工件）；三来源（候选成果/内置电阻率/微震预置）共用 RenderAsset API 与组件。
+  - 常驻渲染工具栏：模式/色带/标度/滤波/不透明度/光照/渐变透明度/包围盒运行时可调（受控色带/标度与剖面热力图共享）；X/Y/Z 正交切片控件（change 150ms 防抖、commit 立即）；等值面输入仅 contour 模式；no fallback——能力失败/哈希不符/协议错误/SDK 缺失均显式错误，无回退渲染器。
+  - 测试基线（Task 12 后实测，本分支）：后端便携 `1352 passed`、前端 vitest `208 passed`、Mock E2E `10 passed`、真实 SDK live `8 passed`（platform 2 + 32³/64³ + legacy + 微震预置 + 隔离帧 + 单轴探针）。
 - **v0.1.0 电阻率基线**：17,549 / 15,827 / 1,722 行，训练/验证空间柱重叠0；五模型各1,481 valid、241 NoData、XY mismatch 0；`baseline_passed=True`。
 - `RHO_KRIG_FINAL_20M_40` 是唯一登记为正式的 SuperMap 体元成果；`dataset_verified=False`，目前只有配置、文件和人工证据。
 - **微震 v0.2a 审计底座**：22个DAT、2,006条源记录、2,005条有限值和1条无效值；三张标准表、一维累计距离、问题清单、审计报告及CLI已经合并。
@@ -58,7 +64,7 @@
 - **连续体渲染 POC（已合并入 main，已被 v0.6.1 取代）**：独立 `/volume-demo` 曾把电阻率 S3M 缓存采样（7×21×48/7,056，采样值域 2.291–127.281）经三线性可视化重采样渲染为连续半透明体，本机验收通过。该 POC 已被 v0.6.1 的 SuperMap3D NetCDF 原生体渲染取代，其产品代码不进入 v0.6.1（Task 16 集成分支删除）；历史证据保留于 `docs/evidence/volume-rendering-poc/`。
 
 - **v0.6.1 NetCDF 原生体渲染（`feat/v0.6.1-netcdf-native-rendering` 分支，当前代码已实现（本分支），发布候选）**：
-  - 渲染器收敛：浏览器内唯一连续体渲染器为 SuperMap3D 12.1 `VoxelGridLayer3D` + 确定性 NetCDF classic/v3 体包（`volume.nc` + manifest v2 + checksums，同身份逐字节相同）；SuperMap3D 只加载于同源体渲染 iframe（`web/public/supermap-volume-frame/`，postMessage 协议 `gmp-supermap-volume/v1`），Vue 父页只持有业务状态与控件、不加载任何旧全局 Cesium。点元只是显式标注的 auxiliary points（辅助/证据层），与体共用同一显示变换，绝不把失败的体渲染变成成功；失败语义为 no silent fallback，不存在任何回退渲染器。
+  - 渲染器收敛：浏览器内唯一连续体渲染器为 SuperMap3D 12.1 `VoxelGridLayer3D` + 确定性 NetCDF classic/v3 体包（`volume.nc` + manifest v2 + checksums，同身份逐字节相同）；SuperMap3D 只加载于同源体渲染 iframe（`web/public/supermap-volume-frame/`，postMessage 协议 `gmp-supermap-volume/v1`，v0.7.0 第二批起升级为 v2 完整状态协议），Vue 父页只持有业务状态与控件、不加载任何旧全局 Cesium。点元只是显式标注的 auxiliary points（辅助/证据层），与体共用同一显示变换，绝不把失败的体渲染变成成功；失败语义为 no silent fallback，不存在任何回退渲染器。
   - 坐标契约：`wgs84_display_anchor_v1` 显示锚点（120°E / 30°N）把局部米制网格映射到规则 WGS84 显示网格；页面必须显示 `display_anchor_only`，不宣称真实地理配准。
   - 资产与 API：`render_assets` 表（SQLite v5→v6 事务迁移）；候选 `GET render-capability` / `POST|GET render-assets/netcdf`、legacy `GET /api/cases/resistivity/render-capability` / `POST|GET render-assets/netcdf`、不可变资产 `GET /api/render-assets/{id}/manifest` 与 `/volume.nc`；POST 是唯一创建路径（首个成功 201、ready 幂等 200、creating 409、failed/interrupted 须 `retry_failed=true` 显式重试），所有 GET 纯查询；manifest/grid/NetCDF 哈希双向核验，损坏资产原子隔离不自动删除（`RENDER_ASSET_CORRUPT`）。
   - legacy 边界：内置电阻率需经 `python -m geomodeling.render_cli import-csv` 登记权威规则网格才支持体渲染；未登记显示 `LEGACY_RENDER_SOURCE_NOT_REGISTERED` + auxiliary points 测点辅助层，绝不从散点自动重建正式网格、绝不重跑 Kriging。
