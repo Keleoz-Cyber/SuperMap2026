@@ -15,8 +15,11 @@
   var sdk = params.get('sdk') || ''
   var frameQuery = v ? '?v=' + encodeURIComponent(v) : ''
   var sdkQuery = sdk ? '?sdk=' + encodeURIComponent(sdk) : ''
-  // handoff 验证写法：SDK 加载前固定 CESIUM_BASE_URL（Workers/Assets 解析根）
+  // handoff 验证写法：SDK 加载前固定解析根（动态/带查询串的 script 会让 SDK 的
+  // 脚本标签自动探测失效，必须显式给出；SUPERMAP3D_BASE_URL 为本构建包实际读取
+  // 的全局，CESIUM_BASE_URL 供底层 Cesium Workers/Assets 解析）
   window.CESIUM_BASE_URL = '/SuperMap3D-2026/'
+  window.SUPERMAP3D_BASE_URL = '/SuperMap3D-2026/'
   var head = document.head
   function addStylesheet(href) {
     var link = document.createElement('link')

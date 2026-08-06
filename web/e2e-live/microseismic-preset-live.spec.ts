@@ -410,9 +410,9 @@ test.describe('v0.7.0 Batch 1：微震预置官方成果原生体渲染 live 门
     record.pixelStats = {
       noise_diff: gates.noiseDiff,
       pixel_threshold: gates.pixelThreshold,
-      base_non_bg: gates.baseNonBg,
-      slice_mode_non_bg: gates.sliceModeNonBg,
-      contour_non_bg: gates.contourNonBg,
+      base_metrics: gates.baseMetrics,
+      slice_mode_metrics: gates.sliceModeMetrics,
+      contour_metrics: gates.contourMetrics,
       control_diffs: gates.controlDiffs,
       slice_gates: gates.sliceGates,
       stats_invariant: gates.statsInvariant,
@@ -420,6 +420,9 @@ test.describe('v0.7.0 Batch 1：微震预置官方成果原生体渲染 live 门
       gates: {
         base_non_bg_min: 2000,
         mode_non_bg_min: 500,
+        coverage_min: 'volume 0.15 / modes 0.03（中央区域，去 Logo/罗盘）',
+        color_std_min: 5,
+        component_ratio_min: 0.9,
         response_over_noise: 'max(200, noise*3+50)',
         control_over_noise: 'max(80, noise*2+20)',
       },
@@ -434,8 +437,8 @@ test.describe('v0.7.0 Batch 1：微震预置官方成果原生体渲染 live 门
 
     console.log(
       `[preset-live] sdk=${record.sdkVersion} gpu=${record.gpuRenderer} ` +
-        `POST=${postMs}ms rendered=${renderedMs}ms 非背景=${gates.baseNonBg} 噪声=${gates.noiseDiff} ` +
-        `剖面=${Object.entries(gates.sliceGates)
+        `POST=${postMs}ms rendered=${renderedMs}ms 体积=${JSON.stringify(gates.baseMetrics)} ` +
+        `噪声=${gates.noiseDiff} 剖面=${Object.entries(gates.sliceGates)
           .map(([a, g]) => `${a}(q${g.quarterIndex}/q${g.threeQuarterIndex},Δ${g.diff})`)
           .join(' ')} 总耗时=${((Date.now() - t0) / 1000).toFixed(1)}s`,
     )

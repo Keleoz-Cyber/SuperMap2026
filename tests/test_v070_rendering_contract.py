@@ -121,6 +121,8 @@ def test_iframe_bootstrap_propagates_content_versions():
     assert "./app.js" in src  # 仅允许出现在动态拼接表达式中
     assert "./styles.css" in src
     assert "CESIUM_BASE_URL" in src
+    # 动态/带查询串加载会让 SDK 脚本标签探测失效，必须显式固定 SUPERMAP3D_BASE_URL
+    assert "SUPERMAP3D_BASE_URL" in src
 
 
 def test_vite_config_injects_frame_and_sdk_versions():

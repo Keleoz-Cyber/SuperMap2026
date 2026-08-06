@@ -132,6 +132,119 @@ export async function waitFrames(frame: Frame, frames: number): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// 视觉内容判据（v0.7.0 第二批发布阻断修复）：中央 50% 区域排除左下 Logo 与
+// 右上罗盘；彩色体素必须满足非背景数、覆盖率（排除线框-only）、颜色标准差
+// （排除近单色背景）与最大连通区占比（排除碎屑/细线）。黑屏必然失败。
+// ---------------------------------------------------------------------------
+
+export interface VolumePixelMetrics {
+  nonBg: number
+  total: number
+  coverage: number
+  colorStd: number
+  largestComponent: number
+  componentRatio: number
+}
+
+export async function analyzeVolumePixels(page: Page, shot: Buffer): Promise<VolumePixelMetrics> {
+  const dataUrl = 'data:image/png;base64,' + shot.toString('base64')
+  return page.evaluate(async (src: string) => {
+    const img = new Image()
+    await new Promise((res, rej) => {
+      img.onload = res
+      img.onerror = rej
+      img.src = src
+    })
+    const c = document.createElement('canvas')
+    c.width = img.width
+    c.height = img.height
+    const ctx = c.getContext('2d')!
+    ctx.drawImage(img, 0, 0)
+    // 中央 50% 区域：排除左下 SuperMap Logo 与右上罗盘
+    const x0 = Math.floor(img.width * 0.25)
+    const y0 = Math.floor(img.height * 0.25)
+    const w = Math.floor(img.width * 0.5)
+    const h = Math.floor(img.height * 0.5)
+    const d = ctx.getImageData(x0, y0, w, h).data
+    const n = w * h
+    const mask = new Uint8Array(n)
+    let nonBg = 0
+    let sr = 0, sg = 0, sb = 0, sr2 = 0, sg2 = 0, sb2 = 0
+    for (let i = 0; i < n; i += 1) {
+      const r = d[i * 4], g = d[i * 4 + 1], b = d[i * 4 + 2]
+      if (r > 12 || g > 12 || b > 12) {
+        mask[i] = 1
+        nonBg += 1
+        sr += r; sg += g; sb += b
+        sr2 += r * r; sg2 += g * g; sb2 += b * b
+      }
+    }
+    let colorStd = 0
+    if (nonBg > 0) {
+      const vr = sr2 / nonBg - (sr / nonBg) ** 2
+      const vg = sg2 / nonBg - (sg / nonBg) ** 2
+      const vb = sb2 / nonBg - (sb / nonBg) ** 2
+      colorStd = Math.sqrt(Math.max(0, vr) + Math.max(0, vg) + Math.max(0, vb))
+    }
+    // 4-邻接最大连通区（全分辨率掩膜）
+    const visited = new Uint8Array(n)
+    const stack = new Int32Array(n)
+    let largest = 0
+    for (let s = 0; s < n; s += 1) {
+      if (!mask[s] || visited[s]) continue
+      let size = 0
+      let sp = 0
+      stack[sp++] = s
+      visited[s] = 1
+      while (sp > 0) {
+        const cur = stack[--sp]
+        size += 1
+        const cx = cur % w
+        const cy = (cur - cx) / w
+        const neighbors = [
+          cy > 0 ? cur - w : -1,
+          cy < h - 1 ? cur + w : -1,
+          cx > 0 ? cur - 1 : -1,
+          cx < w - 1 ? cur + 1 : -1,
+        ]
+        for (const q of neighbors) {
+          if (q >= 0 && mask[q] && !visited[q]) {
+            visited[q] = 1
+            stack[sp++] = q
+          }
+        }
+      }
+      if (size > largest) largest = size
+    }
+    return {
+      nonBg,
+      total: n,
+      coverage: nonBg / n,
+      colorStd: Math.round(colorStd * 100) / 100,
+      largestComponent: largest,
+      componentRatio: nonBg > 0 ? largest / nonBg : 0,
+    }
+  }, dataUrl)
+}
+
+/** 体内容判据：真实体素为一整块连通彩色区域；黑屏/仅 Logo/仅线框一律失败。 */
+export function expectVolumeContent(
+  metrics: VolumePixelMetrics,
+  what: string,
+  opts: { minNonBg: number; minCoverage: number },
+): void {
+  expect(metrics.nonBg, `${what}：非背景体素不足（黑屏/仅覆盖物）`).toBeGreaterThan(opts.minNonBg)
+  expect(metrics.coverage, `${what}：中央区域覆盖率不足（仅线框/碎屑不能通过）`).toBeGreaterThan(
+    opts.minCoverage,
+  )
+  expect(metrics.colorStd, `${what}：颜色标准差不足（近单色背景）`).toBeGreaterThanOrEqual(5)
+  expect(
+    metrics.componentRatio,
+    `${what}：最大连通区占比不足（碎屑/细线不能通过）`,
+  ).toBeGreaterThanOrEqual(0.9)
+}
+
+// ---------------------------------------------------------------------------
 // 命令执行：协议回执 + 像素稳定等待（settle 轮询上限 20s，超时如实记录）
 // ---------------------------------------------------------------------------
 
@@ -446,14 +559,21 @@ export interface V070GateParams {
 export interface V070GateReport {
   noiseDiff: number
   pixelThreshold: number
-  baseNonBg: number
+  baseMetrics: VolumePixelMetrics
   controlDiffs: Record<string, number>
   sliceGates: Record<
     string,
-    { quarterIndex: number; threeQuarterIndex: number; quarterNonBg: number; diff: number }
+    {
+      quarterIndex: number
+      threeQuarterIndex: number
+      quarterNonBg: number
+      quarterCoverage: number
+      quarterColorStd: number
+      diff: number
+    }
   >
-  sliceModeNonBg: number
-  contourNonBg: number
+  sliceModeMetrics: VolumePixelMetrics
+  contourMetrics: VolumePixelMetrics
   statsInvariant: boolean
   exportManifest: Record<string, unknown>
   timings: Record<string, number>
@@ -488,8 +608,9 @@ export async function runV070RenderGates(params: V070GateParams): Promise<V070Ga
   const controlThreshold = Math.max(80, noiseDiff * 2 + 20)
 
   let previous = noiseShot2
-  const baseStats = await countNonBg(page, previous)
-  expect(baseStats.nonBg).toBeGreaterThan(2000)
+  // 基准体积内容判据：中央区域彩色体素（去 Logo/罗盘/线框/背景）
+  const baseMetrics = await analyzeVolumePixels(page, previous)
+  expectVolumeContent(baseMetrics, '基准体积', { minNonBg: 2000, minCoverage: 0.15 })
   saveShot('volume', previous)
 
   // 统计参照：渲染控件绝不改变权威统计（服务端从原始网格重算）
@@ -520,8 +641,8 @@ export async function runV070RenderGates(params: V070GateParams): Promise<V070Ga
   expect(bootstrap.axes.z.length).toBe(axesMeta.z.length)
   await expect(page.getByTestId('slice-heatmap')).toBeVisible()
   await expect(page.getByTestId('slice-valid-count')).toContainText(/有效 [1-9]/)
-  const sliceModeStats = await countNonBg(page, previous)
-  expect(sliceModeStats.nonBg, '剖面模式必须有非背景体数据像素').toBeGreaterThan(500)
+  const sliceModeMetrics = await analyzeVolumePixels(page, previous)
+  expectVolumeContent(sliceModeMetrics, '剖面模式', { minNonBg: 500, minCoverage: 0.03 })
 
   for (const axis of ['x', 'y', 'z'] as const) {
     await selectSliceAxis(page, axis)
@@ -531,8 +652,8 @@ export async function runV070RenderGates(params: V070GateParams): Promise<V070Ga
     await waitSliceApplied(page, request, frame, assetId, axis, quarter(axis))
     await expect(page.getByTestId('slice-valid-count')).toContainText(/有效 [1-9]/)
     const shotQuarter = await shot()
-    const quarterStats = await countNonBg(page, shotQuarter)
-    expect(quarterStats.nonBg, `${axis} 剖面必须有非背景体数据像素`).toBeGreaterThan(500)
+    const quarterMetrics = await analyzeVolumePixels(page, shotQuarter)
+    expectVolumeContent(quarterMetrics, `${axis} 剖面`, { minNonBg: 500, minCoverage: 0.03 })
     saveShot(`slice-${axis}-q${quarter(axis)}`, shotQuarter)
 
     await setSliceIndex(page, threeQuarter(axis))
@@ -544,7 +665,9 @@ export async function runV070RenderGates(params: V070GateParams): Promise<V070Ga
     sliceGates[axis] = {
       quarterIndex: quarter(axis),
       threeQuarterIndex: threeQuarter(axis),
-      quarterNonBg: quarterStats.nonBg,
+      quarterNonBg: quarterMetrics.nonBg,
+      quarterCoverage: quarterMetrics.coverage,
+      quarterColorStd: quarterMetrics.colorStd,
       diff,
     }
     previous = shotThreeQuarter
@@ -553,8 +676,8 @@ export async function runV070RenderGates(params: V070GateParams): Promise<V070Ga
   // --- 等值面门 ---------------------------------------------------------------
   const preContour = previous
   await command('contour', () => page.getByTestId('mode-contour').click(), false)
-  const contourStats = await countNonBg(page, previous)
-  expect(contourStats.nonBg, '等值面必须有非背景像素').toBeGreaterThan(500)
+  const contourMetrics = await analyzeVolumePixels(page, previous)
+  expectVolumeContent(contourMetrics, '等值面', { minNonBg: 500, minCoverage: 0.03 })
   controlDiffs['contour'] = await countDiff(page, preContour, previous)
   expect(controlDiffs['contour'], '等值面与剖面之间必须有超过噪声的像素差异').toBeGreaterThan(
     pixelThreshold,
@@ -636,11 +759,11 @@ export async function runV070RenderGates(params: V070GateParams): Promise<V070Ga
   return {
     noiseDiff,
     pixelThreshold,
-    baseNonBg: baseStats.nonBg,
+    baseMetrics,
     controlDiffs,
     sliceGates,
-    sliceModeNonBg: sliceModeStats.nonBg,
-    contourNonBg: contourStats.nonBg,
+    sliceModeMetrics,
+    contourMetrics,
     statsInvariant: true,
     exportManifest,
     timings,
