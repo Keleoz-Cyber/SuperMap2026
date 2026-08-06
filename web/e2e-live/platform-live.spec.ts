@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { verifySliceAnalysisZip } from './v070RenderGates'
 
 // Live E2E：真实 FastAPI + 独立临时 SQLite + 真实建模 Worker。
 // 不使用 Mock API、iServer、私有资料或本机绝对路径。
@@ -110,6 +111,101 @@ test('真实链路：上传 → 映射 → 质量 → IDW → 排行榜 → 成�
   await expect(page.getByTestId('slice-label')).toContainText(/X = -?\d+(\.\d+)? m/)
   await page.getByTestId('axis-y').click()
   await expect(page.getByTestId('slice-label')).toContainText(/Y = -?\d+(\.\d+)? m/)
+
+  // 6b. v0.7.0 第二批用户上传门：Case→Dataset→Experiment→Run→Candidate 已经
+  // 上方真实 UI 流程创建；此处继续走公开 HTTP：render-capability → 显式
+  // RenderAsset POST → X/Y/Z 剖面分析合同 → 剖面导出 multipart → ZIP 校验。
+  // CI 无专有 SDK，本门不宣称浏览器渲染（三源 SDK 门覆盖真实 GPU 链路）。
+  const resultId = page.url().match(/#\/results\/([0-9a-f-]+)/)![1]
+
+  const capResp = await request.get(`/api/results/${resultId}/render-capability`)
+  expect(capResp.ok()).toBe(true)
+  const capability = await capResp.json()
+  expect(capability.supported).toBe(true)
+  expect(capability.source_kind).toBe('candidate_result')
+  expect(capability.source_id).toBe(resultId)
+  expect(capability.render_profile?.default_palette).toBe('viridis')
+  expect(capability.render_profile?.default_scale).toBe('linear')
+
+  const assetResp = await request.post(`/api/results/${resultId}/render-assets/netcdf`, {
+    data: {},
+  })
+  expect([200, 201]).toContain(assetResp.status())
+  const renderAsset = await assetResp.json()
+  expect(renderAsset.status).toBe('ready')
+  expect(renderAsset.grid_sha256).toMatch(/^[0-9a-f]{64}$/)
+  expect(renderAsset.netcdf_sha256).toMatch(/^[0-9a-f]{64}$/)
+
+  // X/Y/Z 剖面分析合同：轴向/行优先/统计计数/sdk_relative_position
+  let zMid = 0
+  for (const axis of ['x', 'y', 'z'] as const) {
+    const resp = await request.get(
+      `/api/render-assets/${renderAsset.id}/slice-analysis?axis=${axis}&index=0`,
+    )
+    expect(resp.ok()).toBe(true)
+    const analysis = await resp.json()
+    expect(analysis.asset_identity.asset_id).toBe(renderAsset.id)
+    expect(analysis.slice.fixed_axis).toBe(axis)
+    expect(analysis.slice.row_axis).toBe(axis === 'z' ? 'y' : 'z')
+    expect(analysis.slice.column_axis).toBe(axis === 'x' ? 'y' : 'x')
+    for (const name of ['x', 'y', 'z'] as const) {
+      const coords = analysis.axes[name].coordinates
+      for (let i = 1; i < coords.length; i += 1) {
+        expect(coords[i]).toBeGreaterThan(coords[i - 1])
+      }
+    }
+    expect(analysis.slice.values.length).toBe(analysis.slice.row_coordinates.length)
+    expect(analysis.slice.values[0].length).toBe(analysis.slice.column_coordinates.length)
+    expect(analysis.statistics.valid_count + analysis.statistics.nodata_count).toBe(
+      analysis.statistics.total_count,
+    )
+    if (axis === 'z') zMid = Math.floor((analysis.axes.z.length - 1) / 2)
+  }
+
+  // 剖面导出：multipart（axis/index/image）；PNG 由页面 canvas 真实编码
+  // （CI 无 SDK/ECharts 渲染链，本门校验封包合同；真实 ECharts PNG 由三源
+  // SDK 门覆盖，provenance 语义不变）
+  const exportResp = await request.get(
+    `/api/render-assets/${renderAsset.id}/slice-analysis?axis=z&index=${zMid}`,
+  )
+  expect(exportResp.ok()).toBe(true)
+  const exportAnalysis = await exportResp.json()
+  expect(exportAnalysis.slice.sdk_relative_position).toBeCloseTo(
+    zMid / (exportAnalysis.axes.z.length - 1),
+  )
+  const pngDataUrl = await page.evaluate(() => {
+    const c = document.createElement('canvas')
+    c.width = 16
+    c.height = 16
+    const ctx = c.getContext('2d')!
+    ctx.fillStyle = '#123456'
+    ctx.fillRect(0, 0, 16, 16)
+    return c.toDataURL('image/png')
+  })
+  const pngBuf = Buffer.from(pngDataUrl.split(',')[1], 'base64')
+  const sliceExport = await request.post(
+    `/api/render-assets/${renderAsset.id}/slice-exports`,
+    {
+      multipart: {
+        axis: 'z',
+        index: String(zMid),
+        image: { name: 'slice.png', mimeType: 'image/png', buffer: pngBuf },
+      },
+    },
+  )
+  expect(sliceExport.status()).toBe(201)
+  const sliceExportBody = await sliceExport.json()
+  const zipDownload = await request.get(`/api/exports/${sliceExportBody.id}/download`)
+  expect(zipDownload.ok()).toBe(true)
+  const sliceZip = Buffer.from(await zipDownload.body())
+  verifySliceAnalysisZip(sliceZip, {
+    analysis: exportAnalysis,
+    identity: {
+      assetId: renderAsset.id,
+      gridSha256: renderAsset.grid_sha256,
+      netcdfSha256: renderAsset.netcdf_sha256,
+    },
+  })
 
   // 7. 正式选择（理由必填）并持久化
   const reason = `Live 选择 ${Date.now()}`

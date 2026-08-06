@@ -413,6 +413,64 @@ export async function installMockApi(page: Page): Promise<void> {
     value_range: [10, 60],
   })
 
+  // -------------------------------------- v0.7.0 第二批：RenderAsset 剖面分析 mock
+  // 三轴坐标严格递增；矩阵非方形；恰好 1 个 NoData 单元（与掩码一致）。
+  // 计数来自本夹具自身形状，绝不冒充真实数据统计。
+  const SLICE_MOCK_AXES = {
+    x: { length: 3, coordinates: [-150, -141, -132], unit: 'm' },
+    y: { length: 4, coordinates: [260, 292, 324, 356], unit: 'm' },
+    z: { length: 5, coordinates: [-800, -600, -400, -200, 0], unit: 'm' },
+  }
+  type SliceMockAxis = keyof typeof SLICE_MOCK_AXES
+  const sliceAnalysisBody = (assetId: string, axis: SliceMockAxis, index: number) => {
+    const rowAxis: SliceMockAxis = axis === 'z' ? 'y' : 'z'
+    const colAxis: SliceMockAxis = axis === 'x' ? 'y' : 'x'
+    const rows = SLICE_MOCK_AXES[rowAxis].coordinates
+    const cols = SLICE_MOCK_AXES[colAxis].coordinates
+    const values = rows.map((_, r) =>
+      cols.map((_, c) => (r === 1 && c === 1 ? null : 10 + r * 10 + c)),
+    )
+    const nodata = rows.map((_, r) => cols.map((_, c) => r === 1 && c === 1))
+    const total = rows.length * cols.length
+    const legacy = assetId.includes('ef')
+    return {
+      asset_identity: {
+        asset_id: assetId,
+        source_kind: legacy ? 'builtin_legacy' : 'candidate_result',
+        source_id: legacy ? 'resistivity' : 'cand-1',
+        grid_sha256: SHA,
+        netcdf_sha256: MICRO_SHA,
+      },
+      property: legacy ? { name: 'RHO', unit: 'unknown' } : { name: '电阻率', unit: 'unknown' },
+      axes: SLICE_MOCK_AXES,
+      slice: {
+        fixed_axis: axis,
+        index,
+        coordinate: SLICE_MOCK_AXES[axis].coordinates[index],
+        sdk_relative_position: index / (SLICE_MOCK_AXES[axis].length - 1),
+        row_axis: rowAxis,
+        column_axis: colAxis,
+        row_coordinates: rows,
+        column_coordinates: cols,
+        values,
+        nodata_mask: nodata,
+      },
+      statistics: {
+        total_count: total,
+        valid_count: total - 1,
+        nodata_count: 1,
+        min: 10,
+        max: 10 + (rows.length - 1) * 10 + (cols.length - 1),
+        mean: 20,
+        std_population: 5,
+        p10: 12,
+        p50: 20,
+        p90: 40,
+      },
+      render_profile: null,
+    }
+  }
+
   await page.route('**/api/**', async (route) => {
     const url = new URL(route.request().url())
     const path = url.pathname.replace(/^\/api/, '')
@@ -985,6 +1043,20 @@ export async function installMockApi(page: Page): Promise<void> {
           metres_per_degree_lon: 96486.3,
           metres_per_degree_lat: 110852.4,
         },
+        // v0.7.0 第二批：候选成果默认 linear + viridis
+        render_profile: {
+          property_name: '电阻率',
+          unit: 'unknown',
+          default_scale: 'linear',
+          default_palette: 'viridis',
+          log_available: true,
+          value_range: [10, 60],
+          filter_range: [10, 60],
+          lighting: true,
+          gradient_opacity: true,
+          bounding_box: true,
+          opacity: 1,
+        },
       })
     }
     if (path === '/results/cand-1/render-assets/netcdf' && method === 'GET') {
@@ -1098,6 +1170,7 @@ export async function installMockApi(page: Page): Promise<void> {
           units: 'unknown',
           geolocation_status: 'display_anchor_only',
           display_transform: transform,
+          render_profile: null,
         })
       }
       return json(route, {
@@ -1112,6 +1185,20 @@ export async function installMockApi(page: Page): Promise<void> {
         units: 'unknown',
         geolocation_status: 'display_anchor_only',
         display_transform: transform,
+        // v0.7.0 第二批：内置电阻率默认 log + native-spectrum
+        render_profile: {
+          property_name: 'RHO',
+          unit: 'unknown',
+          default_scale: 'log',
+          default_palette: 'native-spectrum',
+          log_available: true,
+          value_range: [10, 120],
+          filter_range: [10, 120],
+          lighting: true,
+          gradient_opacity: true,
+          bounding_box: true,
+          opacity: 1,
+        },
       })
     }
     if (path === '/cases/resistivity/render-sources/import' && method === 'POST') {
@@ -1148,6 +1235,33 @@ export async function installMockApi(page: Page): Promise<void> {
         netcdf_url: `/api/render-assets/${assetId}/volume.nc`,
         error: null,
       }, 201)
+    }
+    // ------------------------------------------- v0.7.0 第二批：RenderAsset 剖面分析/导出
+    if (path.startsWith('/render-assets/') && path.endsWith('/slice-analysis') && method === 'GET') {
+      const assetId = path.split('/')[2]
+      const axis = (url.searchParams.get('axis') ?? 'z') as 'x' | 'y' | 'z'
+      const index = Number(url.searchParams.get('index') ?? '0')
+      return json(route, sliceAnalysisBody(assetId, axis, index))
+    }
+    if (path.startsWith('/render-assets/') && path.endsWith('/slice-exports') && method === 'POST') {
+      return json(route, {
+        id: 'exp-slice-e2e',
+        candidate_result_id: 'cand-1',
+        case_id: 'case-e2e',
+        package_sha256: SHA,
+        file_count: 4,
+        files: ['slice.csv', 'statistics.json', 'slice.png', 'manifest.json'],
+        manifest: {},
+      }, 201)
+    }
+    if (path === '/exports/exp-slice-e2e/download' && method === 'GET') {
+      // attachment 语义：浏览器触发下载而非导航离开当前页面
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/zip',
+        headers: { 'content-disposition': 'attachment; filename="slice-analysis.zip"' },
+        body: 'mock-slice-analysis-zip',
+      })
     }
     // ---------------------------------------------------------------- v0.6 专业建模
     if (path === '/datasets/ds-e2e/professional-diagnostics' && method === 'POST') {

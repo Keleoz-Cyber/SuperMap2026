@@ -1,16 +1,20 @@
 /**
- * v0.6.1 Task 10：父页面（Vue）与隔离 SuperMap3D iframe 之间的类型化协议桥
- * （设计 §2.4，消息字段名与 web/public/supermap-volume-frame/app.js 逐字一致）。
+ * v0.7.0 Batch 2 Task 7：父页面（Vue）与隔离 SuperMap3D iframe 之间的 v2
+ * 类型化协议桥（设计 §8，消息字段名与 web/public/supermap-volume-frame/app.js
+ * 逐字一致）。
  *
- *   parent → INIT / SET_MODE / SET_FILTER / SET_OPACITY / SET_POINT_LAYER / RESET_VIEW
- *   child  → FRAME_READY / RENDER_STATE / ERROR
+ *   parent → INIT（完整初始状态）/ APPLY_RENDER_STATE（revision 完整状态）
+ *            / SET_POINT_LAYER / RESET_VIEW（均带 commandId）
+ *   child  → FRAME_READY（capabilities）/ RENDER_STATE / STATE_APPLIED
+ *            / COMMAND_APPLIED / ERROR
  *
  * 双向都强制四重校验：
  *   event.origin === window.location.origin
  *   event.source === 预期窗口
- *   message.protocol === 'gmp-supermap-volume/v1'
+ *   message.protocol === 'gmp-supermap-volume/v2'
  *   message.requestId === 活动 requestId
  * postMessage 目标 origin 恒为 window.location.origin，绝不 "*"。
+ * v1 与任何畸形消息一律静默忽略；父侧出站状态先完整校验再发送。
  */
 
 import type {
@@ -20,192 +24,384 @@ import type {
   RenderIdentity,
 } from '../../api/types'
 
-export const VOLUME_FRAME_PROTOCOL = 'gmp-supermap-volume/v1' as const
+export const VOLUME_FRAME_PROTOCOL = 'gmp-supermap-volume/v2' as const
 
 export type VolumeMode = 'volume' | 'slice' | 'contour'
-export interface SliceCoordinate {
-  x: number
-  y: number
-  z: number
-}
-
+export type SliceAxis = 'x' | 'y' | 'z'
 export type RenderPhase = 'loading' | 'rendered' | 'failed' | 'unsupported'
 
 // ---------------------------------------------------------------------------
-// 父 → 子命令
+// 完整渲染状态（设计 §8.1）
 // ---------------------------------------------------------------------------
 
-export interface InitMessage {
+export interface ColorStopWire {
+  value: number
+  color: string
+}
+
+export interface SliceStateV2 {
+  axis: SliceAxis
+  index: number
+  coordinate: number
+  relativePosition: number
+}
+
+export interface RenderStateV2 {
+  revision: number
+  mode: VolumeMode
+  filter: { min: number; max: number }
+  opacity: number
+  colorTransferFunction: ColorStopWire[]
+  lighting: boolean
+  gradientOpacity: boolean
+  boundingBox: boolean
+  slice?: SliceStateV2
+  contourValue?: number
+}
+
+export class ProtocolError extends Error {}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value)
+}
+
+function isHexColor(value: unknown): value is string {
+  return typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value)
+}
+
+/** 出站状态完整校验：通过返回原对象（调用方负责克隆），失败抛 ProtocolError。 */
+export function validateRenderState(state: RenderStateV2): RenderStateV2 {
+  if (!state || typeof state !== 'object') throw new ProtocolError('STATE_INVALID')
+  if (!Number.isInteger(state.revision) || state.revision < 1) {
+    throw new ProtocolError('REVISION_INVALID')
+  }
+  if (!['volume', 'slice', 'contour'].includes(state.mode)) {
+    throw new ProtocolError('MODE_INVALID')
+  }
+  const { filter, opacity } = state
+  if (
+    !filter ||
+    !isFiniteNumber(filter.min) ||
+    !isFiniteNumber(filter.max) ||
+    filter.min > filter.max
+  ) {
+    throw new ProtocolError('FILTER_INVALID')
+  }
+  if (!isFiniteNumber(opacity) || opacity < 0 || opacity > 1) {
+    throw new ProtocolError('OPACITY_INVALID')
+  }
+  if (
+    !Array.isArray(state.colorTransferFunction) ||
+    state.colorTransferFunction.length < 2 ||
+    !state.colorTransferFunction.every(
+      (stop) =>
+        stop &&
+        isFiniteNumber(stop.value) &&
+        isHexColor(stop.color),
+    )
+  ) {
+    throw new ProtocolError('COLOR_STOPS_INVALID')
+  }
+  for (const flag of ['lighting', 'gradientOpacity', 'boundingBox'] as const) {
+    if (typeof state[flag] !== 'boolean') throw new ProtocolError(`${flag.toUpperCase()}_INVALID`)
+  }
+  if (state.slice !== undefined) {
+    const slice = state.slice
+    if (
+      !slice ||
+      !['x', 'y', 'z'].includes(slice.axis) ||
+      !Number.isInteger(slice.index) ||
+      slice.index < 0 ||
+      !isFiniteNumber(slice.coordinate) ||
+      !isFiniteNumber(slice.relativePosition) ||
+      slice.relativePosition < 0 ||
+      slice.relativePosition > 1
+    ) {
+      throw new ProtocolError('SLICE_INVALID')
+    }
+  }
+  if (state.contourValue !== undefined && !isFiniteNumber(state.contourValue)) {
+    throw new ProtocolError('CONTOUR_VALUE_INVALID')
+  }
+  return state
+}
+
+// ---------------------------------------------------------------------------
+// 父 → 子消息
+// ---------------------------------------------------------------------------
+
+export interface InitMessageV2 {
   protocol: typeof VOLUME_FRAME_PROTOCOL
   type: 'INIT'
   requestId: string
   asset: RenderAssetRecord | null
   displayTransform: DisplayTransform
+  state: RenderStateV2
 }
 
-export interface SetModeMessage {
+export interface ApplyRenderStateMessageV2 {
   protocol: typeof VOLUME_FRAME_PROTOCOL
-  type: 'SET_MODE'
+  type: 'APPLY_RENDER_STATE'
   requestId: string
-  mode: VolumeMode
-  sliceCoordinate?: SliceCoordinate
-  contourValue?: number
+  commandId: string
+  state: RenderStateV2
 }
 
-export interface SetFilterMessage {
-  protocol: typeof VOLUME_FRAME_PROTOCOL
-  type: 'SET_FILTER'
-  requestId: string
-  min: number
-  max: number
-}
-
-export interface SetOpacityMessage {
-  protocol: typeof VOLUME_FRAME_PROTOCOL
-  type: 'SET_OPACITY'
-  requestId: string
-  opacity: number
-}
-
-export interface SetPointLayerMessage {
+export interface SetPointLayerMessageV2 {
   protocol: typeof VOLUME_FRAME_PROTOCOL
   type: 'SET_POINT_LAYER'
   requestId: string
+  commandId: string
   layer: PointLayerPayload
 }
 
-export interface ResetViewMessage {
+export interface ResetViewMessageV2 {
   protocol: typeof VOLUME_FRAME_PROTOCOL
   type: 'RESET_VIEW'
   requestId: string
+  commandId: string
 }
 
-export type ParentMessage =
-  | InitMessage
-  | SetModeMessage
-  | SetFilterMessage
-  | SetOpacityMessage
-  | SetPointLayerMessage
-  | ResetViewMessage
+export type ParentMessageV2 =
+  | InitMessageV2
+  | ApplyRenderStateMessageV2
+  | SetPointLayerMessageV2
+  | ResetViewMessageV2
+
+export function buildInitMessage(
+  requestId: string,
+  asset: RenderAssetRecord | null,
+  displayTransform: DisplayTransform,
+  state: RenderStateV2,
+): InitMessageV2 {
+  return {
+    protocol: VOLUME_FRAME_PROTOCOL,
+    type: 'INIT',
+    requestId,
+    asset,
+    displayTransform,
+    state: validateRenderState(state),
+  }
+}
+
+export function buildApplyRenderState(
+  requestId: string,
+  commandId: string,
+  state: RenderStateV2,
+): ApplyRenderStateMessageV2 {
+  return {
+    protocol: VOLUME_FRAME_PROTOCOL,
+    type: 'APPLY_RENDER_STATE',
+    requestId,
+    commandId,
+    state: validateRenderState(state),
+  }
+}
+
+export function buildSetPointLayer(
+  requestId: string,
+  commandId: string,
+  layer: PointLayerPayload,
+): SetPointLayerMessageV2 {
+  return { protocol: VOLUME_FRAME_PROTOCOL, type: 'SET_POINT_LAYER', requestId, commandId, layer }
+}
+
+export function buildResetView(requestId: string, commandId: string): ResetViewMessageV2 {
+  return { protocol: VOLUME_FRAME_PROTOCOL, type: 'RESET_VIEW', requestId, commandId }
+}
 
 // ---------------------------------------------------------------------------
-// 子 → 父事件
+// 子 → 父消息
 // ---------------------------------------------------------------------------
+
+export interface FrameCapabilities {
+  singleAxisSlice: boolean
+  lighting: boolean
+  gradientOpacity: boolean
+  boundingBox: boolean
+  transferFunction: boolean
+}
 
 export interface FrameReadyMessage {
-  protocol: typeof VOLUME_FRAME_PROTOCOL
   type: 'FRAME_READY'
   requestId: string
   sdkVersion: string
   contextType: number
+  capabilities: FrameCapabilities
 }
 
 export interface RenderStateMessage {
-  protocol: typeof VOLUME_FRAME_PROTOCOL
   type: 'RENDER_STATE'
   requestId: string
   phase: RenderPhase
   identity: RenderIdentity | null
 }
 
-export interface FrameErrorMessage {
-  protocol: typeof VOLUME_FRAME_PROTOCOL
+export interface StateAppliedMessage {
+  type: 'STATE_APPLIED'
+  requestId: string
+  commandId: string
+  revision: number
+  appliedState: RenderStateV2
+}
+
+export interface CommandAppliedMessage {
+  type: 'COMMAND_APPLIED'
+  requestId: string
+  commandId: string
+  commandType: 'SET_POINT_LAYER' | 'RESET_VIEW'
+}
+
+export interface ErrorMessageV2 {
   type: 'ERROR'
   requestId: string
+  commandId?: string
+  revision?: number
   code: string
   message: string
 }
 
-export type ChildMessage = FrameReadyMessage | RenderStateMessage | FrameErrorMessage
-
-// ---------------------------------------------------------------------------
-// 运行时守卫
-// ---------------------------------------------------------------------------
-
-const RENDER_PHASES: ReadonlySet<string> = new Set(['loading', 'rendered', 'failed', 'unsupported'])
+export type ChildMessageV2 =
+  | FrameReadyMessage
+  | RenderStateMessage
+  | StateAppliedMessage
+  | CommandAppliedMessage
+  | ErrorMessageV2
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function isRenderIdentity(value: unknown): value is RenderIdentity {
-  return (
-    isRecord(value) &&
-    (value.sourceKind === 'candidate_result' || value.sourceKind === 'builtin_legacy') &&
-    typeof value.sourceId === 'string' &&
-    typeof value.gridSha256 === 'string' &&
-    typeof value.netcdfSha256 === 'string'
-  )
+function parseCapabilities(value: unknown): FrameCapabilities | null {
+  if (!isRecord(value)) return null
+  for (const key of [
+    'singleAxisSlice',
+    'lighting',
+    'gradientOpacity',
+    'boundingBox',
+    'transferFunction',
+  ] as const) {
+    if (typeof value[key] !== 'boolean') return null
+  }
+  return value as unknown as FrameCapabilities
 }
 
-/**
- * 入站事件四重校验：origin / source / protocol / requestId 任一项不符即忽略。
- * 只做信封级校验；消息体形态由 parseChildMessage 进一步判别。
- */
-export function isVolumeFrameEvent(
-  event: MessageEvent,
-  expectedSource: Window | null,
-  activeRequestId: string,
-): boolean {
-  if (event.origin !== window.location.origin) return false
-  if (event.source !== expectedSource) return false
-  const data: unknown = event.data
-  if (!isRecord(data)) return false
-  if (data.protocol !== VOLUME_FRAME_PROTOCOL) return false
-  if (data.requestId !== activeRequestId) return false
-  return true
+function parseStateWire(value: unknown): RenderStateV2 | null {
+  if (!isRecord(value)) return null
+  const state = { ...value } as Record<string, unknown>
+  try {
+    return validateRenderState(state as unknown as RenderStateV2)
+  } catch {
+    return null
+  }
 }
 
-/** 判别并校验子帧消息形态；不合法一律返回 null（调用方忽略）。 */
-export function parseChildMessage(data: unknown): ChildMessage | null {
+export function parseChildMessage(data: unknown): ChildMessageV2 | null {
   if (!isRecord(data)) return null
   if (data.protocol !== VOLUME_FRAME_PROTOCOL) return null
-  if (typeof data.requestId !== 'string' || data.requestId === '') return null
+  if (typeof data.requestId !== 'string' || !data.requestId) return null
   switch (data.type) {
-    case 'FRAME_READY':
-      if (typeof data.sdkVersion !== 'string') return null
-      if (typeof data.contextType !== 'number' || !Number.isFinite(data.contextType)) return null
+    case 'FRAME_READY': {
+      if (typeof data.sdkVersion !== 'string' || typeof data.contextType !== 'number') return null
+      const capabilities = parseCapabilities(data.capabilities)
+      if (!capabilities) return null
       return {
-        protocol: VOLUME_FRAME_PROTOCOL,
         type: 'FRAME_READY',
         requestId: data.requestId,
         sdkVersion: data.sdkVersion,
         contextType: data.contextType,
+        capabilities,
       }
-    case 'RENDER_STATE':
-      if (typeof data.phase !== 'string' || !RENDER_PHASES.has(data.phase)) return null
-      if (data.identity !== null && !isRenderIdentity(data.identity)) return null
+    }
+    case 'RENDER_STATE': {
+      if (
+        !['loading', 'rendered', 'failed', 'unsupported'].includes(String(data.phase)) ||
+        (data.identity !== null && !isRecord(data.identity))
+      ) {
+        return null
+      }
       return {
-        protocol: VOLUME_FRAME_PROTOCOL,
         type: 'RENDER_STATE',
         requestId: data.requestId,
         phase: data.phase as RenderPhase,
-        identity: data.identity ?? null,
+        identity: (data.identity ?? null) as RenderIdentity | null,
       }
-    case 'ERROR':
+    }
+    case 'STATE_APPLIED': {
+      if (
+        typeof data.commandId !== 'string' ||
+        !Number.isInteger(data.revision) ||
+        (data.revision as number) < 1
+      ) {
+        return null
+      }
+      const appliedState = parseStateWire(data.appliedState)
+      if (!appliedState) return null
+      return {
+        type: 'STATE_APPLIED',
+        requestId: data.requestId,
+        commandId: data.commandId,
+        revision: data.revision as number,
+        appliedState,
+      }
+    }
+    case 'COMMAND_APPLIED': {
+      if (
+        typeof data.commandId !== 'string' ||
+        !['SET_POINT_LAYER', 'RESET_VIEW'].includes(String(data.commandType))
+      ) {
+        return null
+      }
+      return {
+        type: 'COMMAND_APPLIED',
+        requestId: data.requestId,
+        commandId: data.commandId,
+        commandType: data.commandType as 'SET_POINT_LAYER' | 'RESET_VIEW',
+      }
+    }
+    case 'ERROR': {
       if (typeof data.code !== 'string' || typeof data.message !== 'string') return null
       return {
-        protocol: VOLUME_FRAME_PROTOCOL,
         type: 'ERROR',
         requestId: data.requestId,
+        commandId: typeof data.commandId === 'string' ? data.commandId : undefined,
+        revision: Number.isInteger(data.revision) ? (data.revision as number) : undefined,
         code: data.code,
         message: data.message,
       }
+    }
     default:
       return null
   }
 }
 
-/** iframe URL：requestId 经 URL 编码，子帧据此完成首次握手关联。 */
-export function buildFrameUrl(requestId: string): string {
-  return `/supermap-volume-frame/index.html?request_id=${encodeURIComponent(requestId)}`
+// ---------------------------------------------------------------------------
+// 事件校验与工具
+// ---------------------------------------------------------------------------
+
+export function isVolumeFrameEvent(
+  event: MessageEvent,
+  expectedSource: Window | null,
+  expectedRequestId: string,
+): boolean {
+  if (event.origin !== window.location.origin) return false
+  if (expectedSource !== null && event.source !== expectedSource) return false
+  const data = event.data as { protocol?: unknown; requestId?: unknown } | null
+  if (!data || data.protocol !== VOLUME_FRAME_PROTOCOL) return false
+  return data.requestId === expectedRequestId
 }
 
-/** 活动 requestId：随机、每次组件实例唯一（子帧正则为 ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$）。 */
 export function newFrameRequestId(): string {
-  const cryptoApi = globalThis.crypto
-  if (cryptoApi && typeof cryptoApi.randomUUID === 'function') {
-    return `rvf-${cryptoApi.randomUUID()}`
-  }
-  return `rvf-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`
+  return `rvf-${crypto.randomUUID()}`
+}
+
+// iframe URL 携带帧运行时内容哈希（v）与 SDK 钉住哈希（sdk）：升级即换 URL，
+// 旧浏览器缓存中的旧版 app.js/index 永不命中（warm-cache 黑屏修复）。
+export function buildFrameUrl(requestId: string): string {
+  const params = new URLSearchParams({
+    request_id: requestId,
+    v: __VOLUME_FRAME_VERSION__,
+    sdk: __VOLUME_SDK_VERSION__,
+  })
+  return `/supermap-volume-frame/index.html?${params.toString()}`
 }

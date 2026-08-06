@@ -7,7 +7,8 @@ import { fileURLToPath } from 'node:url'
 import { syntheticLegacyGridCsv } from './fixtures/legacyGrid'
 
 /**
- * v0.6.1 Task 9 live 验收：隔离 SuperMap3D iframe 运行时 + gmp-supermap-volume/v1 协议。
+ * v0.6.1 Task 9 live 验收 + v0.7.0 第二批 Task 8：隔离 SuperMap3D iframe 运行时 +
+ * gmp-supermap-volume/v2 协议（完整状态 + revision + 回执）。
  *
  * 真实链路：便携合成规则网格 CSV → Task 5 CLI 原子登记（隔离 GEOMODELING_DATA_DIR）
  * → 真实 FastAPI capability/POST/manifest（Task 6/7）→ 轻量 parent harness 打开
@@ -23,7 +24,7 @@ import { syntheticLegacyGridCsv } from './fixtures/legacyGrid'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = path.resolve(HERE, '../..')
-const PROTOCOL = 'gmp-supermap-volume/v1'
+const PROTOCOL = 'gmp-supermap-volume/v2'
 const FRAME_PATH = '/supermap-volume-frame/index.html'
 
 function assertIsolatedDataDir(): string {
@@ -206,6 +207,39 @@ test.beforeAll(() => {
   expect(registration!.shape).toEqual([6, 7, 8])
 })
 
+interface RenderStateWire {
+  revision: number
+  mode: 'volume' | 'slice' | 'contour'
+  filter: { min: number; max: number }
+  opacity: number
+  colorTransferFunction: { value: number; color: string }[]
+  lighting: boolean
+  gradientOpacity: boolean
+  boundingBox: boolean
+  slice?: { axis: 'x' | 'y' | 'z'; index: number; coordinate: number; relativePosition: number }
+  contourValue?: number
+}
+
+function makeState(revision: number, overrides: Partial<RenderStateWire> = {}): RenderStateWire {
+  return {
+    revision,
+    mode: 'volume',
+    filter: { min: 10, max: 610 },
+    opacity: 1,
+    colorTransferFunction: [
+      { value: 10, color: '#1a40d9' },
+      { value: 160, color: '#1acccc' },
+      { value: 310, color: '#f2d926' },
+      { value: 460, color: '#f2591a' },
+      { value: 610, color: '#a60d1a' },
+    ],
+    lighting: true,
+    gradientOpacity: true,
+    boundingBox: true,
+    ...overrides,
+  }
+}
+
 test('隔离 SuperMap 帧：真实 NetCDF 体渲染 + 协议控制像素响应', async ({ page, request }) => {
   test.setTimeout(300_000)
   const t0 = Date.now()
@@ -317,10 +351,10 @@ test('隔离 SuperMap 帧：真实 NetCDF 体渲染 + 协议控制像素响应',
   expect(frameReady.contextType).toBe(2)
   expect(String(frameReady.sdkVersion)).toMatch(/\d+/)
 
-  // INIT：真实资产 + capability displayTransform
+  // INIT：真实资产 + capability displayTransform + 完整初始渲染状态（v2）
   await page.evaluate(
-    ([a, t]) => (window as any).__send({ type: 'INIT', asset: a, displayTransform: t }),
-    [asset, capability.display_transform],
+    ([a, t, st]) => (window as any).__send({ type: 'INIT', asset: a, displayTransform: t, state: st }),
+    [asset, capability.display_transform, makeState(1)],
   )
   await page.waitForFunction(
     () =>
@@ -368,49 +402,125 @@ test('隔离 SuperMap 帧：真实 NetCDF 体渲染 + 协议控制像素响应',
   const baseStats = await countNonBg(page, shotDefault)
   expect(baseStats.nonBg).toBeGreaterThan(5000)
 
-  const sendAndWaitAck = async (msg: Record<string, unknown>) => {
+  // v2 命令通道：APPLY_RENDER_STATE（revision 单调）→ STATE_APPLIED 回执
+  let revision = 1 // INIT 已应用 revision=1
+  let commandSeq = 0
+  const applyState = async (overrides: Partial<RenderStateWire>) => {
+    revision += 1
+    commandSeq += 1
+    const commandId = `live-cmd-${commandSeq}`
     const before: number = await page.evaluate(() => (window as any).__harness.received.length)
-    await page.evaluate((m) => (window as any).__send(m), msg)
-    await page.waitForFunction((n) => (window as any).__harness.received.length > n, before, {
-      timeout: 30_000,
-    })
+    await page.evaluate(
+      ([m, c]) => (window as any).__send({ ...m, commandId: c }),
+      [{ type: 'APPLY_RENDER_STATE', state: makeState(revision, overrides) }, commandId] as const,
+    )
+    await page.waitForFunction(
+      ([n, cmd, rev]) =>
+        (window as any).__harness.received.some(
+          (m: any) =>
+            m.type === 'STATE_APPLIED' && m.commandId === cmd && m.revision === rev,
+        ),
+      [before, commandId, revision] as const,
+      { timeout: 30_000 },
+    )
     const errors = await receivedOf("m.type === 'ERROR'")
     expect(errors).toEqual([])
   }
 
   // filter：最小过滤值提到中位区间（实时更新）
-  await sendAndWaitAck({ type: 'SET_FILTER', min: vmin + (vmax - vmin) * 0.55, max: vmax })
+  await applyState({ filter: { min: vmin + (vmax - vmin) * 0.55, max: vmax } })
   await waitFrames(frame, 45)
   const shotThreshold = await page.screenshot()
   const diffThreshold = await countDiff(page, shotDefault, shotThreshold)
   expect(diffThreshold).toBeGreaterThan(pixelThreshold)
 
   // opacity：整体不透明度压到 0.12（走 opacityTransferFunction）
-  await sendAndWaitAck({ type: 'SET_OPACITY', opacity: 0.12 })
+  await applyState({ opacity: 0.12 })
   await waitFrames(frame, 45)
   const shotOpacity = await page.screenshot()
   const diffOpacity = await countDiff(page, shotThreshold, shotOpacity)
   expect(diffOpacity).toBeGreaterThan(pixelThreshold)
 
-  // slice 模式
-  await sendAndWaitAck({ type: 'SET_MODE', mode: 'slice' })
+  // slice 模式（Z 轴单切面：Task 1 负坐标隐藏技术经 v2 状态下发）
+  await applyState({
+    mode: 'slice',
+    slice: { axis: 'z', index: 4, coordinate: -400, relativePosition: 0.5 },
+  })
   await waitFrames(frame, 45)
   const shotSlice = await page.screenshot()
   const diffSlice = await countDiff(page, shotOpacity, shotSlice)
   expect(diffSlice).toBeGreaterThan(pixelThreshold)
 
+  // X/Y 轴单切面：每个轴都必须是单切面（设计 §8.3 语义固定）
+  for (const axis of ['x', 'y'] as const) {
+    await applyState({
+      mode: 'slice',
+      slice: { axis, index: 3, coordinate: 0, relativePosition: 0.5 },
+    })
+    await waitFrames(frame, 45)
+    const shotAxis = await page.screenshot()
+    expect(await countNonBg(page, shotAxis)).toHaveProperty('nonBg')
+    const axisStats = await countNonBg(page, shotAxis)
+    expect(axisStats.nonBg).toBeGreaterThan(500)
+  }
+
   // contour 模式
-  await sendAndWaitAck({ type: 'SET_MODE', mode: 'contour' })
+  await applyState({ mode: 'contour', contourValue: (vmin + vmax) / 2 })
   await waitFrames(frame, 45)
   const shotContour = await page.screenshot()
   const diffContour = await countDiff(page, shotSlice, shotContour)
   expect(diffContour).toBeGreaterThan(pixelThreshold)
 
-  // 恢复 volume + RESET_VIEW + 点层冒烟（协议面完整，无错误即可）
-  await sendAndWaitAck({ type: 'SET_MODE', mode: 'volume' })
-  await sendAndWaitAck({ type: 'RESET_VIEW' })
-  await sendAndWaitAck({
+  // 光照/渐变透明度/包围盒运行时可调（体积模式像素响应）
+  await applyState({ mode: 'volume' })
+  await waitFrames(frame, 30)
+  await applyState({ lighting: false })
+  await waitFrames(frame, 30)
+  const shotNoLight = await page.screenshot()
+  expect(await countDiff(page, shotContour, shotNoLight)).toBeGreaterThan(pixelThreshold)
+  await applyState({ gradientOpacity: false })
+  await waitFrames(frame, 30)
+  const shotNoGradient = await page.screenshot()
+  expect(await countDiff(page, shotNoLight, shotNoGradient)).toBeGreaterThan(pixelThreshold)
+  await applyState({ boundingBox: false })
+  await waitFrames(frame, 30)
+  const shotNoBox = await page.screenshot()
+  expect(await countDiff(page, shotNoGradient, shotNoBox)).toBeGreaterThan(0)
+
+  // stale revision（<= lastAppliedRevision）整体忽略：无回执、无像素变化
+  {
+    const before: number = await page.evaluate(() => (window as any).__harness.received.length)
+    await page.evaluate(
+      (m) => (window as any).__send(m),
+      { type: 'APPLY_RENDER_STATE', commandId: 'live-cmd-stale', state: makeState(1, { opacity: 0.01 }) },
+    )
+    await waitFrames(frame, 20)
+    const staleApplied = await receivedOf(
+      "m.type === 'STATE_APPLIED' && m.commandId === 'live-cmd-stale'",
+    )
+    expect(staleApplied).toEqual([])
+    const shotStale = await page.screenshot()
+    expect(await countDiff(page, shotNoBox, shotStale)).toBeLessThanOrEqual(
+      Math.max(50, noiseDiff * 2 + 20),
+    )
+  }
+
+  // RESET_VIEW 回执 + 点层冒烟（协议面完整，无错误即可）
+  await page.evaluate((m) => (window as any).__send(m), {
+    type: 'RESET_VIEW',
+    commandId: 'live-cmd-reset',
+  })
+  await page.waitForFunction(
+    () =>
+      (window as any).__harness.received.some(
+        (m: any) => m.type === 'COMMAND_APPLIED' && m.commandId === 'live-cmd-reset',
+      ),
+    undefined,
+    { timeout: 30_000 },
+  )
+  await page.evaluate((m) => (window as any).__send(m), {
     type: 'SET_POINT_LAYER',
+    commandId: 'live-cmd-points',
     layer: {
       id: 'grid-samples',
       visible: true,
@@ -422,6 +532,14 @@ test('隔离 SuperMap 帧：真实 NetCDF 体渲染 + 协议控制像素响应',
       style: { color: '#ff3333', pixelSize: 6 },
     },
   })
+  await page.waitForFunction(
+    () =>
+      (window as any).__harness.received.some(
+        (m: any) => m.type === 'COMMAND_APPLIED' && m.commandId === 'live-cmd-points',
+      ),
+    undefined,
+    { timeout: 30_000 },
+  )
   await waitFrames(frame, 30)
   const diagAfter = await frame!.evaluate(() => (window as any).__GMP_VOLUME_FRAME__)
   expect(diagAfter.phase).toBe('rendered')
@@ -440,4 +558,347 @@ test('隔离 SuperMap 帧：真实 NetCDF 体渲染 + 协议控制像素响应',
       `噪声=${noiseDiff} 阈值=${pixelThreshold} 差异: filter=${diffThreshold} opacity=${diffOpacity} ` +
       `slice=${diffSlice} contour=${diffContour} 总耗时=${((Date.now() - t0) / 1000).toFixed(1)}s`,
   )
+})
+
+
+// ---------------------------------------------------------------------------
+// v0.7.0 Batch 2 Task 1：真实 SuperMap SDK 单轴切片硬门（协议无关探针）
+//
+// 设计 §9：必须证明 X/Y/Z 任一轴都能只显示一个切面。产品 iframe 的 app.js
+// 以 <script type="module"> 加载，模块作用域使 eval('volumeLayer') 不可达；
+// v1 协议的 SET_MODE 又把 sliceCoordinate 限制在 [0,1]，负坐标隐藏技术无法
+// 经协议驱动。因此本探针使用**测试自有**探针页（本文件内嵌 HTML，route.fulfill
+// 提供）：加载同一 SuperMap3D.js 与同一真实 NetCDF 资产，按 app.js 已验证的
+// 初始化配方创建独立 viewer + VoxelGridLayer3D，直接驱动公开 SDK 属性。
+// 零产品代码修改；探针页与 app.js 的对应步骤逐行注释，绝不复制私有字段。
+//
+// 负坐标隐藏平面（-1 vs -0.5 无可见差异），回到范围内坐标恢复平面。任一轴
+// 失败即停止第二批，不得以三正交切面、点云、Three.js 或自研渲染器冒充。
+//
+// 证据默认关闭：只有 GMP_CAPTURE_EVIDENCE=1 且测试代码处于干净提交时
+// 才写入 docs/evidence/v0.7.0-single-axis-probe/<run-id>/（仅逻辑文件名，
+// 绝不记录 REPO_ROOT、SDK 路径或运行时目录）。
+// ---------------------------------------------------------------------------
+
+type SliceAxis = 'x' | 'y' | 'z'
+
+function rawSliceCoordinate(axis: SliceAxis, position: number, inactive = -1) {
+  return {
+    x: axis === 'x' ? position : inactive,
+    y: axis === 'y' ? position : inactive,
+    z: axis === 'z' ? position : inactive,
+  }
+}
+
+// 测试自有探针页：初始化配方镜像 app.js handleInit 第 2/6/7/8/9/10/11 步
+// （contextType=2、addVoxelGridLayer、原始角度 layerBounds、米制 zBounds、
+// _frameState 等待、startRender 三维名、manifest 值域传递函数、lookAt）。
+function probePageHtml(payload: {
+  netcdfUrl: string
+  manifest: Record<string, unknown>
+}): string {
+  const data = JSON.stringify(payload)
+  return `<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8" />
+<link rel="icon" href="data:," />
+<title>single-axis-probe</title>
+<style>html,body{margin:0;height:100%;background:#000}#container{position:fixed;inset:0}</style>
+<script src="/SuperMap3D-2026/SuperMap3D.js"></script>
+</head>
+<body>
+<div id="container"></div>
+<script type="module">
+const payload = ${data}
+const manifest = payload.manifest
+const probe = { ready: false, error: null, layer: null, sdkVersion: String(SuperMap3D.MajorVersion || SuperMap3D.VERSION || 'unknown') }
+window.__probe = probe
+const fail = (e) => { probe.error = String(e && e.message ? e.message : e) }
+function waitLayerFrameState(layer, maxFrames = 600) {
+  return new Promise((resolve, reject) => {
+    let frames = 0
+    const tick = () => {
+      frames += 1
+      if (layer._frameState) { resolve(frames); return }
+      if (frames >= maxFrames) { reject(new Error('VOXEL_LAYER_LOAD_FAILED')); return }
+      requestAnimationFrame(tick)
+    }
+    requestAnimationFrame(tick)
+  })
+}
+try {
+  const bounds = manifest.layer_bounds_degrees
+  const zBounds = manifest.z_bounds_metres
+  const range = manifest.encoded_value_range || manifest.value_range
+  // 步骤 2：Viewer（contextType=2，与 app.js ensureViewer 同参）
+  const viewer = new SuperMap3D.Viewer('container', {
+    contextOptions: { contextType: 2, webgl: { preserveDrawingBuffer: true } },
+    animation: false, timeline: false, baseLayerPicker: false, geocoder: false,
+    homeButton: false, sceneModePicker: false, navigationHelpButton: false,
+    fullscreenButton: false, infoBox: false, selectionIndicator: false,
+  })
+  const scene = viewer.scenePromise ? await viewer.scenePromise : viewer.scene
+  try { scene.skyBox.show = false } catch (e) { /* 与 app.js 同：best effort */ }
+  try { scene.skyAtmosphere.show = false } catch (e) { /* ditto */ }
+  try { scene.globe.show = false } catch (e) { /* ditto */ }
+  // 步骤 6：添加 VoxelGridLayer3D
+  const layer = await scene.addVoxelGridLayer(payload.netcdfUrl, manifest.variable_name)
+  // 步骤 7：原始角度 layerBounds（裸 Rectangle）+ 米制 zBounds
+  layer.layerBounds = new SuperMap3D.Rectangle(bounds.west, bounds.south, bounds.east, bounds.north)
+  layer.zBounds = new SuperMap3D.Cartesian2(zBounds[0], zBounds[1])
+  // 步骤 8：有界帧循环等待 _frameState
+  await waitLayerFrameState(layer)
+  // 步骤 9：startRender（variableName/xDimName/yDimName/zDimName）
+  await Promise.resolve(layer.startRender({
+    variableName: manifest.variable_name,
+    xDimName: manifest.dimension_names[0],
+    yDimName: manifest.dimension_names[1],
+    zDimName: manifest.dimension_names[2],
+  }))
+  // 步骤 10：manifest 值域的过滤/颜色/透明度传递函数（与 app.js 同配方）
+  const vmin = range[0], vmax = range[1], styleSpan = vmax - vmin
+  const at = (f) => vmin + styleSpan * f
+  const colors = new SuperMap3D.ColorTransferFunction()
+  colors.addRGBPoint(at(0.0), 0.1, 0.25, 0.85)
+  colors.addRGBPoint(at(0.25), 0.1, 0.8, 0.8)
+  colors.addRGBPoint(at(0.5), 0.95, 0.85, 0.15)
+  colors.addRGBPoint(at(0.75), 0.95, 0.35, 0.1)
+  colors.addRGBPoint(at(1.0), 0.65, 0.05, 0.1)
+  const opacity = new SuperMap3D.PiecewiseFunction()
+  opacity.addPoint(at(0.0), 0.0)
+  opacity.addPoint(at(0.2), 0.05)
+  opacity.addPoint(at(0.5), 0.2)
+  opacity.addPoint(at(0.75), 0.55)
+  opacity.addPoint(at(1.0), 0.9)
+  layer.volumeRenderMode = SuperMap3D.VolumeRenderMode.VolumeRendering
+  layer.minFiltration = vmin
+  layer.maxFiltration = vmax
+  layer.enableLighting = true
+  layer.useGradientOpacity = true
+  layer.colorTransferFunction = colors
+  layer.opacityTransferFunction = opacity
+  // 步骤 11：lookAt 体积中心（经/纬用 manifest 变换的最大物理跨度）
+  const t = manifest.display_transform
+  const viewSpan = Math.max(
+    (bounds.east - bounds.west) * t.metres_per_degree_lon,
+    (bounds.north - bounds.south) * t.metres_per_degree_lat,
+    zBounds[1] - zBounds[0],
+  )
+  scene.camera.lookAt(
+    SuperMap3D.Cartesian3.fromDegrees(
+      (bounds.west + bounds.east) / 2, (bounds.south + bounds.north) / 2,
+      (zBounds[0] + zBounds[1]) / 2,
+    ),
+    new SuperMap3D.HeadingPitchRange(0.6, -0.9, viewSpan * 2.5),
+  )
+  probe.layer = layer
+  probe.ready = true
+} catch (e) {
+  fail(e)
+}
+</script>
+</body>
+</html>`
+}
+
+async function setRawSdkSlice(page: import('@playwright/test').Page, coordinate: Record<string, number>) {
+  await page.evaluate((c) => {
+    const probe = (window as any).__probe
+    probe.layer.sliceCoordinate = new (window as any).SuperMap3D.Cartesian3(c.x, c.y, c.z)
+    probe.layer.volumeRenderMode = (window as any).SuperMap3D.VolumeRenderMode.Slice
+  }, coordinate)
+}
+
+async function waitRaf(page: import('@playwright/test').Page, frames: number): Promise<void> {
+  await page.evaluate(
+    (n) =>
+      new Promise<void>((resolve) => {
+        let i = 0
+        const tick = () => {
+          i += 1
+          if (i >= n) resolve()
+          else requestAnimationFrame(tick)
+        }
+        requestAnimationFrame(tick)
+      }),
+    frames,
+  )
+}
+
+interface AxisMeasurement {
+  axis: SliceAxis
+  active_non_bg: number
+  jitter_diff: number
+  add_first_diff: number
+  add_second_diff: number
+  quarter_vs_three_quarter_diff: number
+  noise_ceiling: number
+  pixel_threshold: number
+}
+
+test('真实 SDK 单轴切片硬门：X/Y/Z 均能只显示一个切面', async ({ page, request }) => {
+  test.setTimeout(600_000)
+  // --- 真实 FastAPI：capability + 资产 + manifest（与产品同一资产链） ---------
+  const health = await request.get('/api/health')
+  expect(health.ok()).toBe(true)
+  const capResp = await request.get('/api/cases/resistivity/render-capability')
+  expect(capResp.ok()).toBe(true)
+  const capability = await capResp.json()
+  expect(capability.supported).toBe(true)
+
+  let asset: any = null
+  const statusResp = await request.get('/api/cases/resistivity/render-assets/netcdf')
+  if (statusResp.ok()) {
+    asset = await statusResp.json()
+  } else {
+    const postResp = await request.post('/api/cases/resistivity/render-assets/netcdf', { data: {} })
+    expect([200, 201]).toContain(postResp.status())
+    asset = await postResp.json()
+  }
+  expect(asset.status).toBe('ready')
+  expect(asset.grid_sha256).toBe(registration!.grid_sha256)
+  const manifestResp = await request.get(asset.manifest_url)
+  expect(manifestResp.ok()).toBe(true)
+  const manifest = await manifestResp.json()
+
+  // --- 测试自有探针页：同一 SDK + 同一真实 NetCDF ------------------------------
+  await page.route(
+    (url) => url.pathname === '/single-axis-probe',
+    (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: probePageHtml({ netcdfUrl: asset.netcdf_url, manifest }),
+      }),
+  )
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await page.goto('/single-axis-probe', { waitUntil: 'load', timeout: 60_000 })
+  await page.waitForFunction(
+    () => (window as any).__probe && ((window as any).__probe.ready || (window as any).__probe.error),
+    undefined,
+    { timeout: 300_000 },
+  )
+  const probeError = await page.evaluate(() => (window as any).__probe.error)
+  expect(probeError).toBeNull()
+
+  // --- 静帧噪声基线（Volume 模式、初始相机/传递函数固定） ---------------------
+  const noiseShot1 = await page.screenshot()
+  await waitRaf(page, 10)
+  const noiseShot2 = await page.screenshot()
+  const noiseDiff = await countDiff(page, noiseShot1, noiseShot2)
+  const noiseCeiling = Math.max(60, noiseDiff * 2 + 20)
+  const pixelThreshold = Math.max(200, noiseDiff * 3 + 50)
+
+  const measurements: AxisMeasurement[] = []
+  const screenshots: Record<string, Buffer> = {}
+
+  for (const axis of ['x', 'y', 'z'] as SliceAxis[]) {
+    // 0.25 与 0.75 两个非中心位置
+    await setRawSdkSlice(page, rawSliceCoordinate(axis, 0.25))
+    await waitRaf(page, 30)
+    const atQuarter = await page.screenshot()
+    await setRawSdkSlice(page, rawSliceCoordinate(axis, 0.75))
+    await waitRaf(page, 30)
+    const atThreeQuarter = await page.screenshot()
+    const quarterDiff = await countDiff(page, atQuarter, atThreeQuarter)
+    expect(quarterDiff).toBeGreaterThan(pixelThreshold)
+
+    const activeStats = await countNonBg(page, atThreeQuarter)
+    expect(activeStats.nonBg).toBeGreaterThan(500)
+    screenshots[`${axis}-active-only`] = atThreeQuarter
+
+    // 负坐标抖动：-1 → -0.5 不得产生可见差异（证明负值隐藏而非移出画面）
+    await setRawSdkSlice(page, rawSliceCoordinate(axis, 0.75, -0.5))
+    await waitRaf(page, 20)
+    const jitter = await page.screenshot()
+    const jitterDiff = await countDiff(page, atThreeQuarter, jitter)
+    expect(jitterDiff).toBeLessThanOrEqual(noiseCeiling)
+
+    // 逐个恢复另外两个轴到 0.5：每个恢复都必须产生超噪声像素变化
+    const restoreFirst: Record<string, number> = { ...rawSliceCoordinate(axis, 0.75) }
+    const firstInactive = (['x', 'y', 'z'] as SliceAxis[]).filter((a) => a !== axis)[0]
+    restoreFirst[firstInactive] = 0.5
+    await setRawSdkSlice(page, restoreFirst)
+    await waitRaf(page, 30)
+    const addFirst = await page.screenshot()
+    const addFirstDiff = await countDiff(page, atThreeQuarter, addFirst)
+    expect(addFirstDiff).toBeGreaterThan(pixelThreshold)
+
+    const restoreBoth = { ...restoreFirst }
+    const secondInactive = (['x', 'y', 'z'] as SliceAxis[]).filter((a) => a !== axis)[1]
+    restoreBoth[secondInactive] = 0.5
+    await setRawSdkSlice(page, restoreBoth)
+    await waitRaf(page, 30)
+    const addSecond = await page.screenshot()
+    const addSecondDiff = await countDiff(page, atThreeQuarter, addSecond)
+    expect(addSecondDiff).toBeGreaterThan(pixelThreshold)
+
+    measurements.push({
+      axis,
+      active_non_bg: activeStats.nonBg,
+      jitter_diff: jitterDiff,
+      add_first_diff: addFirstDiff,
+      add_second_diff: addSecondDiff,
+      quarter_vs_three_quarter_diff: quarterDiff,
+      noise_ceiling: noiseCeiling,
+      pixel_threshold: pixelThreshold,
+    })
+  }
+
+  // X→Y→Z→X 连续切换：每一步单轴有效且相邻状态差异超噪声
+  const sequenceStates: Buffer[] = []
+  for (const axis of ['x', 'y', 'z', 'x'] as SliceAxis[]) {
+    await setRawSdkSlice(page, rawSliceCoordinate(axis, 0.5))
+    await waitRaf(page, 30)
+    const shot = await page.screenshot()
+    const stats = await countNonBg(page, shot)
+    expect(stats.nonBg).toBeGreaterThan(500)
+    sequenceStates.push(shot)
+  }
+  for (let i = 1; i < sequenceStates.length; i += 1) {
+    expect(await countDiff(page, sequenceStates[i - 1], sequenceStates[i])).toBeGreaterThan(
+      pixelThreshold,
+    )
+  }
+
+  const probeSdkVersion = await page.evaluate(() => (window as any).__probe.sdkVersion)
+  console.log(
+    `[single-axis-probe] sdk=${probeSdkVersion} 噪声=${noiseDiff} 上限=${noiseCeiling} 阈值=${pixelThreshold} ` +
+      measurements
+        .map(
+          (m) =>
+            `${m.axis}: 非背景=${m.active_non_bg} 抖动=${m.jitter_diff} 恢复1=${m.add_first_diff} 恢复2=${m.add_second_diff} 位置差=${m.quarter_vs_three_quarter_diff}`,
+        )
+        .join(' | '),
+  )
+
+  // --- 证据（opt-in；干净提交专用） -------------------------------------------
+  if (process.env.GMP_CAPTURE_EVIDENCE === '1') {
+    const commit = execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: REPO_ROOT,
+      encoding: 'utf8',
+    }).trim()
+    const runId = `run-${new Date().toISOString().replace(/[-:.]/g, '')}-${commit.slice(0, 8)}`
+    const out = path.join(REPO_ROOT, 'docs', 'evidence', 'v0.7.0-single-axis-probe', runId)
+    mkdirSync(out, { recursive: true })
+    writeFileSync(
+      path.join(out, 'probe.json'),
+      JSON.stringify(
+        {
+          run_id: runId,
+          git_commit: commit,
+          sdk_version: probeSdkVersion,
+          technique:
+            'sliceCoordinate 负坐标隐藏非活动轴；测试自有探针页按 app.js 配方初始化公开 VoxelGridLayer3D（SDK 12.1 实测）',
+          noise_diff: noiseDiff,
+          axes: measurements,
+        },
+        null,
+        2,
+      ) + '\n',
+    )
+    for (const [name, bytes] of Object.entries(screenshots)) {
+      writeFileSync(path.join(out, `${name}.png`), bytes)
+    }
+  }
 })

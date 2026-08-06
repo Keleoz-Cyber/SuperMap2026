@@ -46,6 +46,7 @@ from geomodeling.platform.render_contracts import (
     RenderGridSource,
     ValidatedGrid,
 )
+from geomodeling.platform.render_profiles import build_render_profile
 from geomodeling.platform.render_coordinates import (
     display_transform_for_bounds,
     sha256_file,
@@ -85,7 +86,11 @@ _REGULAR_ATOL_SCALE = 1e-9
 
 @dataclass(frozen=True)
 class RenderCapability:
-    """候选渲染能力（设计 §2.3 响应的内部形态；路由层再序列化为公共 DTO）。"""
+    """候选渲染能力（设计 §2.3 响应的内部形态；路由层再序列化为公共 DTO）。
+
+    ``render_profile``（v0.7.0 第二批）由已验证网格的有效值域与来源类型
+    推导；不支持时为 None，绝不由前端猜测。
+    """
 
     source_kind: str
     source_id: str
@@ -98,6 +103,7 @@ class RenderCapability:
     units: str | None
     geolocation_status: str
     display_transform: dict[str, Any] | None
+    render_profile: dict[str, Any] | None = None
 
 
 def _validate_axis(axis: np.ndarray, name: str) -> np.ndarray:
@@ -323,6 +329,13 @@ def candidate_render_capability(runtime, result_id: str) -> RenderCapability:
         units=source.units,
         geolocation_status=anchor.geolocation_status,
         display_transform=transform,
+        render_profile=build_render_profile(
+            "candidate_result",
+            grid.valid_min,
+            grid.valid_max,
+            property_name=source.property_name,
+            unit=source.units,
+        ).to_public(),
     )
 
 

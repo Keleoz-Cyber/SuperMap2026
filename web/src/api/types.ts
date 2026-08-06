@@ -584,7 +584,8 @@ export interface FormalSelectionsResponse {
 
 export interface ExportRecord {
   id: string
-  candidate_result_id: string
+  // v0.7.0 第二批：legacy 剖面导出无候选成果（显式 null）
+  candidate_result_id: string | null
   case_id: string
   package_sha256: string
   file_count: number
@@ -1077,6 +1078,68 @@ export interface RenderCapability {
   units: string | null
   geolocation_status: string
   display_transform: DisplayTransform | null
+  // v0.7.0 第二批：来源驱动渲染默认值；不支持时为 null
+  render_profile?: RenderProfile | null
+}
+
+// v0.7.0 第二批：渲染默认值与剖面分析 DTO
+export type RenderScale = 'linear' | 'log'
+export type RenderPaletteId = 'native-spectrum' | 'viridis' | 'turbo' | 'coolwarm' | 'grayscale'
+export type SliceAxis = 'x' | 'y' | 'z'
+
+export interface RenderProfile {
+  property_name: string
+  unit: string
+  default_scale: RenderScale
+  default_palette: RenderPaletteId
+  log_available: boolean
+  value_range: [number, number]
+  filter_range: [number, number]
+  lighting: boolean
+  gradient_opacity: boolean
+  bounding_box: boolean
+  opacity: number
+}
+
+export interface SliceStatistics {
+  total_count: number
+  valid_count: number
+  nodata_count: number
+  min: number | null
+  max: number | null
+  mean: number | null
+  std_population: number | null
+  p10: number | null
+  p50: number | null
+  p90: number | null
+}
+
+export interface SlicePlane {
+  fixed_axis: SliceAxis
+  index: number
+  coordinate: number
+  sdk_relative_position: number
+  row_axis: SliceAxis
+  column_axis: SliceAxis
+  row_coordinates: number[]
+  column_coordinates: number[]
+  values: Array<Array<number | null>>
+  nodata_mask: boolean[][]
+}
+
+export interface SliceAnalysisResponse {
+  asset_identity: {
+    asset_id: string
+    source_kind: RenderSourceKind
+    source_id: string
+    grid_sha256: string
+    netcdf_sha256: string
+  }
+  property: { name: string; unit: string }
+  axes: Record<SliceAxis, { length: number; coordinates: number[]; unit: string }>
+  slice: SlicePlane
+  statistics: SliceStatistics
+  render_profile: RenderProfile | null
 }
 
 export interface RenderAssetError {

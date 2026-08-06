@@ -1,12 +1,15 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import ElementPlus from 'element-plus'
 import { ApiError } from '../../../api/client'
 import {
   createLegacyRhoRenderAsset,
+  createRenderAssetSliceExport,
   createResultRenderAsset,
   fetchLegacyRhoRenderAsset,
   fetchLegacyRhoRenderCapability,
+  fetchRenderAssetSliceAnalysis,
   fetchResultRenderAsset,
   fetchResultRenderCapability,
   materializeResult,
@@ -15,8 +18,21 @@ import type {
   DisplayTransform,
   RenderAssetRecord,
   RenderCapability,
+  RenderProfile,
+  SliceAnalysisResponse,
+  SliceAxis,
 } from '../../../api/types'
 import NativeVolumePanel from '../NativeVolumePanel.vue'
+import VolumeRenderToolbar from '../VolumeRenderToolbar.vue'
+import OrthogonalSliceControls from '../OrthogonalSliceControls.vue'
+import SliceAnalysisPanel from '../SliceAnalysisPanel.vue'
+import { PALETTES } from '../renderTransferFunctions'
+import type { RenderStateV2 } from '../renderProtocol'
+
+// v0.7.0 第二批 Task 11：统一 NativeVolumePanel 集成。
+// 面板 = 能力/资产生命周期 + 常驻工具栏（完整 v2 状态）+ 正交切片控件 +
+// 剖面分析面板（目标驱动）。3D slice 状态只来自权威剖面响应；slice 模式
+// 缺少 slice 载荷时绝不推送（app.js 硬要求）。
 
 const TRANSFORM: DisplayTransform = {
   contract: 'wgs84_display_anchor_v1',
@@ -42,6 +58,13 @@ const ASSET: RenderAssetRecord = {
   error: null,
 }
 
+const ASSET_B: RenderAssetRecord = {
+  ...ASSET,
+  id: `nc-${'b'.repeat(32)}`,
+  manifest_url: `/api/render-assets/nc-${'b'.repeat(32)}/manifest`,
+  netcdf_url: `/api/render-assets/nc-${'b'.repeat(32)}/volume.nc`,
+}
+
 const FAILED_ASSET: RenderAssetRecord = {
   ...ASSET,
   status: 'failed',
@@ -51,7 +74,37 @@ const FAILED_ASSET: RenderAssetRecord = {
   error: { code: 'NETCDF_EXPORT_FAILED', message: 'NetCDF 写盘失败', details: {} },
 }
 
-function supportedCapability(): RenderCapability {
+// 候选成果默认：linear + viridis（Task 2 合同）
+const CANDIDATE_PROFILE: RenderProfile = {
+  property_name: 'Vx',
+  unit: 'km/s',
+  default_scale: 'linear',
+  default_palette: 'viridis',
+  log_available: true,
+  value_range: [4.2, 5.8],
+  filter_range: [4.2, 5.8],
+  lighting: true,
+  gradient_opacity: true,
+  bounding_box: true,
+  opacity: 1,
+}
+
+// 内置电阻率默认：log + native-spectrum（Task 2 合同）
+const LEGACY_PROFILE: RenderProfile = {
+  property_name: 'RHO',
+  unit: 'unknown',
+  default_scale: 'log',
+  default_palette: 'native-spectrum',
+  log_available: true,
+  value_range: [1.4, 133.1],
+  filter_range: [1.4, 133.1],
+  lighting: true,
+  gradient_opacity: true,
+  bounding_box: true,
+  opacity: 1,
+}
+
+function supportedCapability(profile: RenderProfile | null = CANDIDATE_PROFILE): RenderCapability {
   return {
     source_kind: 'candidate_result',
     source_id: 'r1',
@@ -64,6 +117,7 @@ function supportedCapability(): RenderCapability {
     units: 'km/s',
     geolocation_status: 'display_anchor_only',
     display_transform: TRANSFORM,
+    render_profile: profile,
   }
 }
 
@@ -80,6 +134,7 @@ function unsupportedCapability(): RenderCapability {
     units: 'unknown',
     geolocation_status: 'display_anchor_only',
     display_transform: TRANSFORM,
+    render_profile: null,
   }
 }
 
@@ -93,11 +148,62 @@ const AUX_POINTS = {
   style: { color: '#22d3ee', pixelSize: 4 },
 }
 
+// 剖面分析夹具：x:2 / y:3 / z:4（z 默认中位索引 = floor((4-1)/2) = 1）
+function makeSliceAnalysis(axis: SliceAxis, index: number): SliceAnalysisResponse {
+  const axes = {
+    x: { length: 2, coordinates: [0, 100], unit: 'm' },
+    y: { length: 3, coordinates: [0, 10, 20], unit: 'm' },
+    z: { length: 4, coordinates: [0, -800, -1600, -2400], unit: 'm' },
+  }
+  return {
+    asset_identity: {
+      asset_id: ASSET.id,
+      source_kind: 'candidate_result',
+      source_id: 'r1',
+      grid_sha256: 'g'.repeat(64),
+      netcdf_sha256: 'n'.repeat(64),
+    },
+    property: { name: 'Vx', unit: 'km/s' },
+    axes,
+    slice: {
+      fixed_axis: axis,
+      index,
+      coordinate: axes[axis].coordinates[index],
+      sdk_relative_position: index / (axes[axis].length - 1),
+      row_axis: axis === 'z' ? 'y' : 'z',
+      column_axis: 'x',
+      row_coordinates: [0, 10, 20],
+      column_coordinates: [0, 100],
+      values: [
+        [1, 101],
+        [11, null],
+        [21, 121],
+      ],
+      nodata_mask: [
+        [false, false],
+        [false, true],
+        [false, false],
+      ],
+    },
+    statistics: {
+      total_count: 6,
+      valid_count: 5,
+      nodata_count: 1,
+      min: 1,
+      max: 121,
+      mean: 51.2,
+      std_population: 49.5,
+      p10: 5,
+      p50: 21,
+      p90: 105,
+    },
+    render_profile: null,
+  }
+}
+
 // frame stub：记录 props，暴露与真实组件同名的命令方法
 let frameExposed: {
-  setMode: ReturnType<typeof vi.fn>
-  setFilter: ReturnType<typeof vi.fn>
-  setOpacity: ReturnType<typeof vi.fn>
+  applyRenderState: ReturnType<typeof vi.fn>
   setPointLayer: ReturnType<typeof vi.fn>
   resetView: ReturnType<typeof vi.fn>
 }
@@ -107,13 +213,12 @@ const FrameStub = defineComponent({
   props: {
     asset: { type: Object, default: null },
     displayTransform: { type: Object, required: true },
+    initialState: { type: Object, required: true },
   },
   emits: ['ready', 'rendered', 'failed'],
   setup(_props, { expose }) {
     frameExposed = {
-      setMode: vi.fn(),
-      setFilter: vi.fn(),
-      setOpacity: vi.fn(),
+      applyRenderState: vi.fn().mockReturnValue(true),
       setPointLayer: vi.fn(),
       resetView: vi.fn(),
     }
@@ -122,10 +227,20 @@ const FrameStub = defineComponent({
   },
 })
 
+const HeatmapStub = {
+  name: 'SliceHeatmap',
+  template: '<div data-test="slice-heatmap-stub" />',
+  methods: {
+    capturePng: () => Promise.resolve(new Blob(['png'], { type: 'image/png' })),
+  },
+}
+
 interface FakeApi {
   fetchCapability: ReturnType<typeof vi.fn>
   fetchAsset: ReturnType<typeof vi.fn>
   createAsset: ReturnType<typeof vi.fn>
+  fetchSliceAnalysis: ReturnType<typeof vi.fn>
+  createSliceExport: ReturnType<typeof vi.fn>
 }
 
 function makeApi(overrides: Partial<FakeApi> = {}): FakeApi {
@@ -135,6 +250,12 @@ function makeApi(overrides: Partial<FakeApi> = {}): FakeApi {
       .fn()
       .mockRejectedValue(new ApiError('RENDER_ASSET_NOT_FOUND', '该渲染源尚未创建渲染资产', 404)),
     createAsset: vi.fn().mockResolvedValue(ASSET),
+    fetchSliceAnalysis: vi
+      .fn()
+      .mockImplementation((_id: string, axis: SliceAxis, index: number) =>
+        Promise.resolve(makeSliceAnalysis(axis, index)),
+      ),
+    createSliceExport: vi.fn().mockResolvedValue({ id: 'exp-1' }),
     ...overrides,
   }
 }
@@ -142,7 +263,10 @@ function makeApi(overrides: Partial<FakeApi> = {}): FakeApi {
 function mountPanel(api: FakeApi, auxPoints: typeof AUX_POINTS | null = null) {
   return mount(NativeVolumePanel, {
     props: { api, auxPoints },
-    global: { stubs: { SuperMapVolumeFrame: FrameStub } },
+    global: {
+      plugins: [ElementPlus],
+      stubs: { SuperMapVolumeFrame: FrameStub, SliceHeatmap: HeatmapStub },
+    },
     attachTo: document.body,
   })
 }
@@ -159,6 +283,12 @@ async function emitRendered(wrapper: ReturnType<typeof mount>) {
   await flushPromises()
 }
 
+function lastAppliedState(): RenderStateV2 {
+  const calls = frameExposed.applyRenderState.mock.calls
+  expect(calls.length).toBeGreaterThan(0)
+  return calls.at(-1)![0] as RenderStateV2
+}
+
 beforeEach(() => {
   document.body.innerHTML = ''
 })
@@ -169,7 +299,7 @@ afterEach(() => {
 })
 
 describe('NativeVolumePanel 能力与资产', () => {
-  it('支持但未生成资产：显示生成按钮与三句真值标签，体积控件禁用', async () => {
+  it('支持但未生成资产：显示生成按钮与三句真值标签，工具栏禁用', async () => {
     const api = makeApi()
     const wrapper = mountPanel(api)
     await flushPromises()
@@ -185,12 +315,10 @@ describe('NativeVolumePanel 能力与资产', () => {
     expect(text).toContain('辅助采样点：不参与连续体渲染')
     expect(text).toContain('display_anchor_only')
 
-    for (const sel of ['[data-test="mode-volume"]', '[data-test="opacity-slider"]', '[data-test="reset-view"]']) {
-      expect(wrapper.find(sel).attributes('disabled')).toBeDefined()
-    }
+    expect(wrapper.findComponent(VolumeRenderToolbar).props('enabled')).toBe(false)
   })
 
-  it('生成资产：点击按钮调用 createAsset(false)，资产身份与坐标状态可见', async () => {
+  it('生成资产：点击按钮调用 createAsset(false)，资产身份与完整 v2 初始状态可见', async () => {
     const api = makeApi()
     const wrapper = mountPanel(api)
     await flushPromises()
@@ -209,6 +337,15 @@ describe('NativeVolumePanel 能力与资产', () => {
     expect(frame.exists()).toBe(true)
     expect(frame.props('asset')).toEqual(ASSET)
     expect(frame.props('displayTransform')).toEqual(TRANSFORM)
+    const initial = frame.props('initialState') as RenderStateV2
+    expect(initial.revision).toBe(1)
+    expect(initial.mode).toBe('volume')
+    expect(initial.filter).toEqual({ min: 4.2, max: 5.8 })
+    expect(initial.colorTransferFunction).toHaveLength(5)
+    expect(initial.colorTransferFunction[0].color).toBe(PALETTES.viridis[0])
+    expect(initial.lighting).toBe(true)
+    expect(initial.gradientOpacity).toBe(true)
+    expect(initial.boundingBox).toBe(true)
   })
 
   it('已有 ready 资产：状态刷新用 GET 恢复，直接挂载 frame', async () => {
@@ -239,7 +376,7 @@ describe('NativeVolumePanel 能力与资产', () => {
     expect(wrapper.findComponent(FrameStub).props('asset')).toEqual(ASSET)
   })
 
-  it('unsupported capability：显示原因、INIT asset=null、绝不启用体积控件', async () => {
+  it('unsupported capability：显示原因、INIT asset=null、绝不启用工具栏', async () => {
     const api = makeApi({ fetchCapability: vi.fn().mockResolvedValue(unsupportedCapability()) })
     const wrapper = mountPanel(api)
     await flushPromises()
@@ -254,15 +391,14 @@ describe('NativeVolumePanel 能力与资产', () => {
     expect(frame.exists()).toBe(true)
     expect(frame.props('asset')).toBeNull()
 
-    // 即使 frame 误报 rendered，面板也绝不启用体积控件
+    // 即使 frame 误报 rendered，面板也绝不启用工具栏
     frame.vm.$emit('ready', { sdkVersion: '12.1.0', contextType: 2 })
     frame.vm.$emit('rendered', null)
     await flushPromises()
-    expect(wrapper.find('[data-test="mode-volume"]').attributes('disabled')).toBeDefined()
-    expect(wrapper.find('[data-test="opacity-slider"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.findComponent(VolumeRenderToolbar).props('enabled')).toBe(false)
   })
 
-  it('原生失败：显示错误且无任何 fallback 文案', async () => {
+  it('原生失败：显示错误且无任何 fallback 文案，工具栏保持禁用', async () => {
     const api = makeApi({ fetchAsset: vi.fn().mockResolvedValue(ASSET) })
     const wrapper = mountPanel(api)
     await flushPromises()
@@ -276,73 +412,141 @@ describe('NativeVolumePanel 能力与资产', () => {
     expect(errorBox.exists()).toBe(true)
     expect(errorBox.text()).toContain('VOXEL_LAYER_LOAD_FAILED')
     expect(wrapper.text()).not.toMatch(/fallback|回退|降级|替代渲染|切换.*点/)
-    // 失败不是成功：体积控件仍禁用
-    expect(wrapper.find('[data-test="mode-volume"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.findComponent(VolumeRenderToolbar).props('enabled')).toBe(false)
   })
 })
 
-describe('NativeVolumePanel 控件', () => {
-  it('控件 rendered 前禁用，rendered 后启用并发送命令', async () => {
+describe('NativeVolumePanel profile 驱动初始状态', () => {
+  it('候选成果 profile：linear + viridis，端点精确钉在值域上', async () => {
     const api = makeApi({ fetchAsset: vi.fn().mockResolvedValue(ASSET) })
     const wrapper = mountPanel(api)
     await flushPromises()
 
-    for (const sel of [
-      '[data-test="mode-volume"]',
-      '[data-test="mode-slice"]',
-      '[data-test="mode-contour"]',
-      '[data-test="opacity-slider"]',
-      '[data-test="filter-apply"]',
-      '[data-test="reset-view"]',
-    ]) {
-      expect(wrapper.find(sel).attributes('disabled')).toBeDefined()
-    }
+    const initial = wrapper.findComponent(FrameStub).props('initialState') as RenderStateV2
+    expect(initial.filter).toEqual({ min: 4.2, max: 5.8 })
+    expect(initial.colorTransferFunction[0]).toEqual({ value: 4.2, color: PALETTES.viridis[0] })
+    expect(initial.colorTransferFunction[4]).toEqual({ value: 5.8, color: PALETTES.viridis[4] })
+    // 线性中点
+    expect(initial.colorTransferFunction[2].value).toBeCloseTo(5.0)
+  })
 
-    await emitRendered(wrapper)
-
-    for (const sel of ['[data-test="mode-slice"]', '[data-test="opacity-slider"]', '[data-test="reset-view"]']) {
-      expect(wrapper.find(sel).attributes('disabled')).toBeUndefined()
-    }
-
-    await wrapper.find('[data-test="mode-slice"]').trigger('click')
-    expect(frameExposed.setMode).toHaveBeenCalledWith('slice', {
-      sliceCoordinate: { x: 0.5, y: 0.5, z: 0.5 },
+  it('legacy profile：log + native-spectrum，节点几何间隔', async () => {
+    const api = makeApi({
+      fetchCapability: vi.fn().mockResolvedValue(supportedCapability(LEGACY_PROFILE)),
+      fetchAsset: vi.fn().mockResolvedValue(ASSET),
     })
+    const wrapper = mountPanel(api)
+    await flushPromises()
 
-    const slider = wrapper.find('[data-test="opacity-slider"]')
-    await slider.setValue('0.5')
-    expect(frameExposed.setOpacity).toHaveBeenCalledWith(0.5)
+    const initial = wrapper.findComponent(FrameStub).props('initialState') as RenderStateV2
+    expect(initial.filter).toEqual({ min: 1.4, max: 133.1 })
+    expect(initial.colorTransferFunction[0].color).toBe(PALETTES['native-spectrum'][0])
+    expect(initial.colorTransferFunction[0].value).toBe(1.4)
+    expect(initial.colorTransferFunction[4].value).toBe(133.1)
+    // log 几何中点：sqrt(1.4 × 133.1)
+    expect(initial.colorTransferFunction[2].value).toBeCloseTo(Math.sqrt(1.4 * 133.1))
+  })
+})
 
-    await wrapper.find('[data-test="reset-view"]').trigger('click')
-    expect(frameExposed.resetView).toHaveBeenCalledTimes(1)
+describe('NativeVolumePanel 控件与 revision', () => {
+  it('rendered 后工具栏启用；每次变更推送完整状态且 revision 递增', async () => {
+    const api = makeApi({ fetchAsset: vi.fn().mockResolvedValue(ASSET) })
+    const wrapper = mountPanel(api)
+    await flushPromises()
+
+    expect(wrapper.findComponent(VolumeRenderToolbar).props('enabled')).toBe(false)
+    await emitRendered(wrapper)
+    expect(wrapper.findComponent(VolumeRenderToolbar).props('enabled')).toBe(true)
+
+    // 不透明度变更：完整状态，revision=2（1 由 INIT 消费）
+    const slider = wrapper.findComponent({ name: 'ElSlider' })
+    ;(slider.vm as unknown as { $emit: (e: string, v: number) => void }).$emit(
+      'update:modelValue',
+      0.5,
+    )
+    await flushPromises()
+    let state = lastAppliedState()
+    expect(state.revision).toBe(2)
+    expect(state.mode).toBe('volume')
+    expect(state.opacity).toBe(0.5)
+    expect(state.colorTransferFunction).toHaveLength(5)
+    expect(state.lighting).toBe(true)
+
+    // 滤波变更：revision=3
+    await wrapper.find('[data-test="filter-min"]').setValue('4.5')
+    await wrapper.find('[data-test="filter-max"]').setValue('5.5')
+    await wrapper.find('[data-test="filter-apply"]').trigger('click')
+    await flushPromises()
+    state = lastAppliedState()
+    expect(state.revision).toBe(3)
+    expect(state.filter).toEqual({ min: 4.5, max: 5.5 })
+    expect(state.opacity).toBe(0.5)
   })
 
-  it('滤波要求 min <= max：非法输入不发送命令并显示校验提示', async () => {
+  it('光照/渐变透明度可运行时切换，无「初始化固定」字样', async () => {
     const api = makeApi({ fetchAsset: vi.fn().mockResolvedValue(ASSET) })
     const wrapper = mountPanel(api)
     await flushPromises()
     await emitRendered(wrapper)
 
-    await wrapper.find('[data-test="filter-min"]').setValue('10')
-    await wrapper.find('[data-test="filter-max"]').setValue('2')
-    await wrapper.find('[data-test="filter-apply"]').trigger('click')
-    expect(frameExposed.setFilter).not.toHaveBeenCalled()
-    expect(wrapper.find('[data-test="filter-error"]').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('初始化固定')
+    expect(wrapper.find('[data-test="lighting-toggle"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="gradient-opacity-toggle"]').exists()).toBe(true)
 
-    await wrapper.find('[data-test="filter-max"]').setValue('20')
-    await wrapper.find('[data-test="filter-apply"]').trigger('click')
-    expect(frameExposed.setFilter).toHaveBeenCalledWith(10, 20)
+    await wrapper.find('[data-test="lighting-toggle"] input').setValue(false)
+    await flushPromises()
+    expect(lastAppliedState().lighting).toBe(false)
+
+    await wrapper.find('[data-test="gradient-opacity-toggle"] input').setValue(false)
+    await flushPromises()
+    const state = lastAppliedState()
+    expect(state.gradientOpacity).toBe(false)
+    expect(state.lighting).toBe(false)
   })
 
-  it('模式选项只有 体积/切片/等值线：体积绝不被名为「点」的显示模式隐藏', async () => {
+  it('等值面输入只在 contour 模式显示；值进入状态，留空回落值域中点语义', async () => {
+    const api = makeApi({ fetchAsset: vi.fn().mockResolvedValue(ASSET) })
+    const wrapper = mountPanel(api)
+    await flushPromises()
+    await emitRendered(wrapper)
+
+    expect(wrapper.find('[data-test="contour-value"]').exists()).toBe(false)
+
+    await wrapper.find('[data-test="mode-contour"] input').setValue(true)
+    await flushPromises()
+    // contour 模式无 contourValue 时由子帧取值域中点
+    let state = lastAppliedState()
+    expect(state.mode).toBe('contour')
+    expect(state.contourValue).toBeUndefined()
+
+    const input = wrapper.find('[data-test="contour-value"]')
+    expect(input.exists()).toBe(true)
+    await input.setValue('5.1')
+    await input.trigger('change')
+    await flushPromises()
+    state = lastAppliedState()
+    expect(state.mode).toBe('contour')
+    expect(state.contourValue).toBe(5.1)
+
+    // 清空后回落中点语义（不带 contourValue）
+    await input.setValue('')
+    await input.trigger('change')
+    await flushPromises()
+    expect(lastAppliedState().contourValue).toBeUndefined()
+  })
+
+  it('模式选项只有 体积/切片/等值面：体积绝不被名为「点」的显示模式隐藏', async () => {
     const api = makeApi({ fetchAsset: vi.fn().mockResolvedValue(ASSET) })
     const wrapper = mountPanel(api)
     await flushPromises()
 
-    const modes = wrapper.findAll('[data-test^="mode-"]').map((b) => b.text())
-    expect(modes).toHaveLength(3)
+    const modes = ['mode-volume', 'mode-slice', 'mode-contour'].map((id) => {
+      const el = wrapper.find(`[data-test="${id}"]`)
+      expect(el.exists()).toBe(true)
+      return el.text()
+    })
+    expect(modes).toEqual(['体积', '切片', '等值面'])
     expect(modes.join('|')).not.toContain('点')
-    // 没有任何途径把体积显示模式切到「点」
     expect(wrapper.find('[data-test="mode-points"]').exists()).toBe(false)
   })
 
@@ -366,7 +570,7 @@ describe('NativeVolumePanel 控件', () => {
     })
   })
 
-  it('点开关不改变体积 phase', async () => {
+  it('点开关不改变体积 phase；重置视角只发 reset-view', async () => {
     const api = makeApi({ fetchAsset: vi.fn().mockResolvedValue(ASSET) })
     const wrapper = mountPanel(api, AUX_POINTS)
     await flushPromises()
@@ -376,24 +580,157 @@ describe('NativeVolumePanel 控件', () => {
 
     await wrapper.find('[data-test="aux-points-toggle"]').setValue(true)
     await flushPromises()
-    const lastCall = frameExposed.setPointLayer.mock.calls.at(-1)?.[0]
-    expect(lastCall.visible).toBe(true)
+    expect(frameExposed.setPointLayer.mock.calls.at(-1)?.[0].visible).toBe(true)
     expect(wrapper.find('[data-test="volume-phase"]').text()).toContain('已渲染')
 
-    await wrapper.find('[data-test="aux-points-toggle"]').setValue(false)
-    await flushPromises()
-    expect(frameExposed.setPointLayer.mock.calls.at(-1)?.[0].visible).toBe(false)
-    expect(wrapper.find('[data-test="volume-phase"]').text()).toContain('已渲染')
+    await wrapper.find('[data-test="reset-view"]').trigger('click')
+    expect(frameExposed.resetView).toHaveBeenCalledTimes(1)
+    // 重置视角不产生渲染状态推送
+    expect(frameExposed.applyRenderState).not.toHaveBeenCalled()
   })
+})
 
-  it('光照与渐变透明度开关存在且标注为初始化固定启用（协议 v1 无运行时命令）', async () => {
+describe('NativeVolumePanel 切片集成', () => {
+  async function enterSliceMode(wrapper: ReturnType<typeof mount>) {
+    await wrapper.find('[data-test="mode-slice"] input').setValue(true)
+    await flushPromises()
+  }
+
+  it('进入切片：z/0 引导取轴元数据，目标转为 z 中位索引；3D slice 只来自权威响应', async () => {
     const api = makeApi({ fetchAsset: vi.fn().mockResolvedValue(ASSET) })
     const wrapper = mountPanel(api)
     await flushPromises()
+    await emitRendered(wrapper)
 
-    expect(wrapper.find('[data-test="lighting-toggle"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="gradient-opacity-toggle"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="style-note"]').text()).toContain('初始化')
+    expect(wrapper.findComponent(OrthogonalSliceControls).exists()).toBe(false)
+    expect(wrapper.findComponent(SliceAnalysisPanel).exists()).toBe(false)
+
+    await enterSliceMode(wrapper)
+
+    // 引导请求 z/0 + 中位索引 z/1 请求
+    const calls = api.fetchSliceAnalysis.mock.calls.map((c: unknown[]) => [c[1], c[2]])
+    expect(calls).toContainEqual(['z', 0])
+    expect(calls).toContainEqual(['z', 1])
+    expect(api.fetchSliceAnalysis.mock.calls[0][0]).toBe(ASSET.id)
+
+    // 两个子组件出现，目标 = z 中位索引（floor((4-1)/2) = 1）
+    expect(wrapper.findComponent(OrthogonalSliceControls).exists()).toBe(true)
+    const analysis = wrapper.findComponent(SliceAnalysisPanel)
+    expect(analysis.exists()).toBe(true)
+    expect(analysis.props('target')).toEqual({ axis: 'z', index: 1 })
+    expect(analysis.props('axesMeta')).toBeTruthy()
+    expect(wrapper.find('[data-test="slice-coordinate-label"]').text()).toContain('Z = -800')
+
+    // 3D slice 状态完全来自权威响应（coordinate / sdk_relative_position）
+    const state = lastAppliedState()
+    expect(state.mode).toBe('slice')
+    expect(state.slice).toEqual({
+      axis: 'z',
+      index: 1,
+      coordinate: -800,
+      relativePosition: 1 / 3,
+    })
+
+    // 离开切片模式：两个子组件消失
+    await wrapper.find('[data-test="mode-volume"] input').setValue(true)
+    await flushPromises()
+    expect(wrapper.findComponent(OrthogonalSliceControls).exists()).toBe(false)
+    expect(wrapper.findComponent(SliceAnalysisPanel).exists()).toBe(false)
+  })
+
+  it('slice 模式切换瞬间不推送无 slice 载荷的状态', async () => {
+    const api = makeApi({ fetchAsset: vi.fn().mockResolvedValue(ASSET) })
+    const wrapper = mountPanel(api)
+    await flushPromises()
+    await emitRendered(wrapper)
+
+    await wrapper.find('[data-test="mode-slice"] input').setValue(true)
+    // 不等剖面链完成：此刻任何已推送状态都不得是缺 slice 载荷的 slice 模式
+    for (const call of frameExposed.applyRenderState.mock.calls) {
+      const state = call[0] as RenderStateV2
+      if (state.mode === 'slice') expect(state.slice).toBeTruthy()
+    }
+    await flushPromises()
+    // 最终状态：slice 载荷齐备
+    expect(lastAppliedState().slice).toBeTruthy()
+  })
+
+  it('轴切换 commit 立即请求新剖面并更新 3D slice 状态', async () => {
+    const api = makeApi({ fetchAsset: vi.fn().mockResolvedValue(ASSET) })
+    const wrapper = mountPanel(api)
+    await flushPromises()
+    await emitRendered(wrapper)
+    await enterSliceMode(wrapper)
+
+    const controls = wrapper.findComponent(OrthogonalSliceControls)
+    ;(controls.vm as unknown as { $emit: (e: string, v: unknown) => void }).$emit('commit', {
+      axis: 'x',
+      index: 1,
+    })
+    await flushPromises()
+
+    expect(api.fetchSliceAnalysis).toHaveBeenCalledWith(ASSET.id, 'x', 1)
+    const state = lastAppliedState()
+    expect(state.mode).toBe('slice')
+    expect(state.slice).toEqual({ axis: 'x', index: 1, coordinate: 100, relativePosition: 1 })
+  })
+
+  it('滑块 change 经 150ms 防抖更新目标', async () => {
+    const api = makeApi({ fetchAsset: vi.fn().mockResolvedValue(ASSET) })
+    const wrapper = mountPanel(api)
+    await flushPromises()
+    await emitRendered(wrapper)
+    await enterSliceMode(wrapper)
+
+    vi.useFakeTimers()
+    try {
+      const controls = wrapper.findComponent(OrthogonalSliceControls)
+      const emitChange = (payload: unknown) =>
+        (controls.vm as unknown as { $emit: (e: string, v: unknown) => void }).$emit(
+          'change',
+          payload,
+        )
+      const yCalls = () =>
+        api.fetchSliceAnalysis.mock.calls.filter(
+          (c: unknown[]) => c[1] === 'y' && c[2] === 2,
+        ).length
+
+      emitChange({ axis: 'y', index: 2, coordinate: 20 })
+      vi.advanceTimersByTime(100)
+      expect(yCalls()).toBe(0)
+      vi.advanceTimersByTime(60)
+      await flushPromises()
+      expect(yCalls()).toBe(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('切换资产：剖面目标/轴元数据清空，渲染状态回 profile 默认，revision 重置', async () => {
+    const api = makeApi({ fetchAsset: vi.fn().mockResolvedValue(ASSET) })
+    const wrapper = mountPanel(api)
+    await flushPromises()
+    await emitRendered(wrapper)
+    await enterSliceMode(wrapper)
+    expect(wrapper.findComponent(SliceAnalysisPanel).exists()).toBe(true)
+
+    // 资产身份切换（A → B）：刷新状态后一切切片上下文清空
+    api.fetchAsset.mockResolvedValue(ASSET_B)
+    await wrapper.find('[data-test="refresh-asset"]').trigger('click')
+    await flushPromises()
+
+    const frame = wrapper.findComponent(FrameStub)
+    expect(frame.props('asset')).toEqual(ASSET_B)
+    const initial = frame.props('initialState') as RenderStateV2
+    expect(initial.revision).toBe(1)
+    expect(initial.mode).toBe('volume')
+    expect(wrapper.findComponent(SliceAnalysisPanel).exists()).toBe(false)
+    expect(wrapper.findComponent(OrthogonalSliceControls).exists()).toBe(false)
+
+    // 重新进入切片模式：对新资产重新引导
+    await emitRendered(wrapper)
+    await enterSliceMode(wrapper)
+    expect(api.fetchSliceAnalysis).toHaveBeenCalledWith(ASSET_B.id, 'z', 0)
   })
 })
 
@@ -437,22 +774,39 @@ describe('渲染资产 API 客户端（POST/GET 纪律）', () => {
     expect(calls[0].init?.method).toBe('POST')
   })
 
-  it('状态/能力刷新一律 GET：绝不隐式 POST、绝不带请求体', async () => {
+  it('状态/能力/剖面分析刷新一律 GET：绝不隐式 POST、绝不带请求体', async () => {
     const calls = stubFetchOk(ASSET)
     await fetchResultRenderAsset('r1')
     await fetchResultRenderCapability('r1')
     await fetchLegacyRhoRenderAsset()
     await fetchLegacyRhoRenderCapability()
+    await fetchRenderAssetSliceAnalysis('nc-1', 'x', 3)
     expect(calls.map((c) => c.url)).toEqual([
       '/api/results/r1/render-assets/netcdf',
       '/api/results/r1/render-capability',
       '/api/cases/resistivity/render-assets/netcdf',
       '/api/cases/resistivity/render-capability',
+      '/api/render-assets/nc-1/slice-analysis?axis=x&index=3',
     ])
     for (const call of calls) {
       expect(call.init?.method ?? 'GET').toBe('GET')
       expect(call.init?.body).toBeUndefined()
     }
+  })
+
+  it('剖面导出是显式 multipart POST（axis/index/image 同名字段）', async () => {
+    const calls = stubFetchOk({ id: 'exp-1' })
+    const png = new Blob(['png'], { type: 'image/png' })
+    await createRenderAssetSliceExport('nc-1', 'z', 1, png)
+    expect(calls).toHaveLength(1)
+    expect(calls[0].url).toBe('/api/render-assets/nc-1/slice-exports')
+    expect(calls[0].init?.method).toBe('POST')
+    const body = calls[0].init?.body
+    expect(body).toBeInstanceOf(FormData)
+    const form = body as FormData
+    expect(form.get('axis')).toBe('z')
+    expect(form.get('index')).toBe('1')
+    expect(form.get('image')).toBeTruthy()
   })
 
   it('物化是显式 POST（结果元数据返回）', async () => {

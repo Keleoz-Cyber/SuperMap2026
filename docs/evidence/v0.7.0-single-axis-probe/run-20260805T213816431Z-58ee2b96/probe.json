@@ -1,0 +1,39 @@
+{
+  "run_id": "run-20260805T213816431Z-58ee2b96",
+  "git_commit": "58ee2b96980a3645647e686061a79a942313d7ba",
+  "sdk_version": "12.1.0",
+  "technique": "sliceCoordinate 负坐标隐藏非活动轴；测试自有探针页按 app.js 配方初始化公开 VoxelGridLayer3D（SDK 12.1 实测）",
+  "noise_diff": 0,
+  "axes": [
+    {
+      "axis": "x",
+      "active_non_bg": 7056,
+      "jitter_diff": 0,
+      "add_first_diff": 3469,
+      "add_second_diff": 5136,
+      "quarter_vs_three_quarter_diff": 6846,
+      "noise_ceiling": 60,
+      "pixel_threshold": 200
+    },
+    {
+      "axis": "y",
+      "active_non_bg": 7182,
+      "jitter_diff": 0,
+      "add_first_diff": 2347,
+      "add_second_diff": 4445,
+      "quarter_vs_three_quarter_diff": 7610,
+      "noise_ceiling": 60,
+      "pixel_threshold": 200
+    },
+    {
+      "axis": "z",
+      "active_non_bg": 9082,
+      "jitter_diff": 0,
+      "add_first_diff": 1767,
+      "add_second_diff": 3395,
+      "quarter_vs_three_quarter_diff": 8448,
+      "noise_ceiling": 60,
+      "pixel_threshold": 200
+    }
+  ]
+}

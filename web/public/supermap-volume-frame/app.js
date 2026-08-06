@@ -1,8 +1,12 @@
-/* v0.6.1 Task 9：隔离 SuperMap3D 体渲染 iframe 运行时。
+/* v0.7.0 Batch 2 Task 8：隔离 SuperMap3D 体渲染 iframe 运行时（协议 v2）。
  *
- * 协议 gmp-supermap-volume/v1（计划 §2.4）：
- *   parent → INIT / SET_MODE / SET_FILTER / SET_OPACITY / SET_POINT_LAYER / RESET_VIEW
- *   child  → FRAME_READY / RENDER_STATE / ERROR
+ * 协议 gmp-supermap-volume/v2（设计 §8）：
+ *   parent → INIT（完整初始状态）/ APPLY_RENDER_STATE（revision 完整状态）
+ *            / SET_POINT_LAYER / RESET_VIEW（均带 commandId）
+ *   child  → FRAME_READY（capabilities）/ RENDER_STATE / STATE_APPLIED
+ *            / COMMAND_APPLIED / ERROR
+ * revision 单调递增；iframe 忽略 <= 最后已应用 revision 的状态；
+ * 应用失败回滚上一份已确认状态，回滚失败进入 failed，绝不继续显示已渲染。
  *
  * SDK API 写法以 origin/codex/v0.6.1-supermap-netcdf-handoff 实测为准：
  *   contextType=2（WebGL2）；startRender 前等待 layer._frameState 就绪；
@@ -17,7 +21,7 @@
  * 绝不暴露 viewer/layer/token/文件路径。
  */
 
-const PROTOCOL = 'gmp-supermap-volume/v1'
+const PROTOCOL = 'gmp-supermap-volume/v2'
 const CONTEXT_TYPE = 2
 const MANIFEST_PREFIX = '/api/render-assets/'
 const MAX_POINTS_PER_LAYER = 500_000
@@ -51,6 +55,11 @@ const diag = {
   layerType: null,
   mode: null, // volume | slice | contour（协议命名）
   identity: null, // { sourceKind, sourceId, gridSha256, netcdfSha256 }
+  boundingBoxVisible: false,
+  // 体盒几何只读诊断（INIT 后写入，全模式不变；绝不暴露 viewer/layer 本体）：
+  // { layerBoundsDegrees: {west,south,east,north}, zBoundsMetres: [z0,z1],
+  //   cameraSpanMetres: 最大物理跨度（相机取景依据） }
+  geometry: null,
   errors: [], // [{ code, message }]
 }
 
@@ -61,6 +70,17 @@ function publishDiag() {
     layerType: diag.layerType,
     mode: diag.mode,
     identity: diag.identity ? Object.freeze({ ...diag.identity }) : null,
+    boundingBoxVisible: diag.boundingBoxVisible,
+    geometry: diag.geometry
+      ? Object.freeze({
+          layerBoundsDegrees: Object.freeze({ ...diag.geometry.layerBoundsDegrees }),
+          zBoundsMetres: Object.freeze([...diag.geometry.zBoundsMetres]),
+          dimensionOrder: Object.freeze([...diag.geometry.dimensionOrder]),
+          cellSizeMetres: Object.freeze([...diag.geometry.cellSizeMetres]),
+          bboxSpansMetres: Object.freeze([...diag.geometry.bboxSpansMetres]),
+          cameraSpanMetres: diag.geometry.cameraSpanMetres,
+        })
+      : null,
     errors: Object.freeze(diag.errors.map((e) => Object.freeze({ ...e }))),
   })
 }
@@ -91,15 +111,20 @@ function emitRenderState() {
   post({ type: 'RENDER_STATE', phase: diag.phase, identity: diag.identity ? { ...diag.identity } : null })
 }
 
-function emitError(code, message) {
-  post({ type: 'ERROR', code, message: String(message).slice(0, 500) })
+function emitError(code, message, commandId, revision) {
+  const payload = { type: 'ERROR', code, message: String(message).slice(0, 500) }
+  if (typeof commandId === 'string') payload.commandId = commandId
+  if (Number.isInteger(revision)) payload.revision = revision
+  post(payload)
 }
 
-// 失败通道：记录诊断 + 覆盖层 + ERROR 消息；未 rendered 前同时翻转相位。
-function fail(code, message) {
+// 失败通道：记录诊断 + 覆盖层 + ERROR 消息；未 rendered 前同时翻转相位；
+// fatal=true 时即使已经 rendered 也必须翻转相位并通知父页（恢复失败等
+// 终态错误绝不允许继续显示已渲染）。
+function fail(code, message, fatal) {
   const text = String(message).slice(0, 500)
   diag.errors.push({ code, message: text })
-  if (diag.phase !== 'rendered') {
+  if (diag.phase !== 'rendered' || fatal) {
     diag.phase = 'failed'
     publishDiag()
     emitRenderState()
@@ -133,6 +158,15 @@ post({
   // 本构建包导出版本号为 MajorVersion（"12.1.0"）；Cesium 风格 VERSION 兜底
   sdkVersion: String(SuperMap3D.MajorVersion || SuperMap3D.VERSION || 'unknown'),
   contextType: CONTEXT_TYPE,
+  // 公开 SDK 表面能力检查（不替代真实 GPU 单轴探针，见 Task 1 证据）
+  capabilities: {
+    singleAxisSlice:
+      !!SuperMap3D.VolumeRenderMode && 'Slice' in SuperMap3D.VolumeRenderMode,
+    lighting: true,
+    gradientOpacity: true,
+    boundingBox: !!SuperMap3D.PolylineCollection,
+    transferFunction: !!SuperMap3D.ColorTransferFunction,
+  },
 })
 
 // ---------------------------------------------------------------------------
@@ -319,6 +353,58 @@ function lookAtVolume() {
   scene.camera.lookAt(target, new SuperMap3D.HeadingPitchRange(0.6, -0.9, span * 2.5))
 }
 
+// 独立包围盒线框：八个角点严格来自 layerBounds/zBounds（真实体元边界，
+// 绝无任意固定外扩）。SDK fillStyle 自带的线框样式实测既不贴体数据、
+// Slice 模式也不显示，因此包围盒一律由本实体承担，三模式共用；
+// boundingBox 状态只控制它的 show。depthTest=false：线框与体素外表面
+// 共面会被体渲染遮挡，包围盒语义要求全框可见（X 射线式）。
+function addVolumeBoundingBox(bounds, zBounds) {
+  const w = bounds.west
+  const e = bounds.east
+  const s = bounds.south
+  const n = bounds.north
+  const z0 = zBounds[0]
+  const z1 = zBounds[1]
+  // 底面四角 + 顶面四角
+  const corners = [
+    [w, s, z0],
+    [e, s, z0],
+    [e, n, z0],
+    [w, n, z0],
+    [w, s, z1],
+    [e, s, z1],
+    [e, n, z1],
+    [w, n, z1],
+  ]
+  const edges = [
+    [0, 1], [1, 2], [2, 3], [3, 0],
+    [4, 5], [5, 6], [6, 7], [7, 4],
+    [0, 4], [1, 5], [2, 6], [3, 7],
+  ]
+  const created = []
+  for (const [a, b] of edges) {
+    created.push(
+      viewer.entities.add({
+        polyline: {
+          positions: SuperMap3D.Cartesian3.fromDegreesArrayHeights(
+            [corners[a], corners[b]].flat(),
+          ),
+          width: 1.5,
+          material: SuperMap3D.Color.WHITE.withAlpha(0.65),
+          depthTest: false,
+        },
+      }),
+    )
+  }
+  bboxPrimitives = created
+}
+
+function setBoundingBoxVisible(visible) {
+  if (!bboxPrimitives) return
+  for (const entity of bboxPrimitives) entity.show = visible
+  diag.boundingBoxVisible = visible
+}
+
 // ---------------------------------------------------------------------------
 // INIT：12 步（计划 Task 9 Step 3）
 // ---------------------------------------------------------------------------
@@ -430,17 +516,12 @@ async function handleInit(msg) {
     }),
   )
 
-  // 10. 按 manifest min/max 设置颜色与透明度传递函数
-  const [vmin, vmax] = valueRange
-  const { colors, opacity } = buildTransferFunctions(vmin, vmax)
-  layer.volumeRenderMode = SuperMap3D.VolumeRenderMode.VolumeRendering
-  layer.minFiltration = vmin
-  layer.maxFiltration = vmax
-  layer.enableLighting = true
-  layer.useGradientOpacity = true
-  layer.colorTransferFunction = colors
-  layer.opacityTransferFunction = opacity
-  diag.mode = 'volume'
+  // 10. INIT 携带的完整渲染状态（先校验后应用；Task 8 起替代默认传递函数）
+  const initialState = validateStateWire(msg.state, 'INIT')
+  applyRenderStateToLayer(layer, initialState)
+  lastAppliedState = initialState
+  lastAppliedRevision = initialState.revision
+  diag.mode = initialState.mode
 
   // 11. lookAt 体积中心（距离按最大物理跨度，经/纬用 manifest 变换的米/度）
   const t = manifest.display_transform
@@ -454,6 +535,26 @@ async function handleInit(msg) {
       zBounds[1] - zBounds[0],
     ),
   }
+  // 体盒几何只读诊断：边界/维度顺序/cell 尺寸/包围盒跨度/相机跨度（全模式不变）
+  const spansMetres = [
+    (bounds.east - bounds.west) * t.metres_per_degree_lon,
+    (bounds.north - bounds.south) * t.metres_per_degree_lat,
+    zBounds[1] - zBounds[0],
+  ]
+  diag.geometry = {
+    layerBoundsDegrees: { west: bounds.west, south: bounds.south, east: bounds.east, north: bounds.north },
+    zBoundsMetres: [zBounds[0], zBounds[1]],
+    dimensionOrder: manifest.dimension_names.slice(),
+    cellSizeMetres: spansMetres.map((span, i) =>
+      manifest.shape[i] > 1 ? span / (manifest.shape[i] - 1) : span,
+    ),
+    bboxSpansMetres: spansMetres,
+    cameraSpanMetres: viewParams.span,
+  }
+  publishDiag()
+  // 独立包围盒线框（角点=真实体元边界；初始显隐由 INIT 状态决定）
+  addVolumeBoundingBox(bounds, zBounds)
+  setBoundingBoxVisible(initialState.boundingBox)
   lookAtVolume()
 
   // 12. 画布像素探针确认体积像素后才 emit rendered
@@ -466,6 +567,169 @@ async function handleInit(msg) {
   }
   diag.phase = 'rendered'
   publishDiag()
+  emitRenderState()
+}
+
+// ---------------------------------------------------------------------------
+// v2 完整渲染状态：校验 → 应用 → revision 跟踪（设计 §8.3）
+// ---------------------------------------------------------------------------
+
+let lastAppliedState = null // 上一份已确认状态（应用失败回滚依据）
+let lastAppliedRevision = 0 // iframe 会话内单调递增；<= 的一律忽略
+let bboxPrimitives = null // 独立包围盒线框（PolylineCollection；三模式共用同一几何）
+
+function isHexColorString(v) {
+  return typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v)
+}
+
+function validateStateWire(state, what) {
+  if (!state || typeof state !== 'object') throw new Error(`${what}：state 缺失`)
+  if (!Number.isInteger(state.revision) || state.revision < 1) {
+    throw new Error(`${what}：revision 必须是 ≥1 的整数`)
+  }
+  if (!VOLUME_MODES.has(state.mode)) throw new Error(`${what}：mode ${state.mode} 非法`)
+  const filter = state.filter
+  if (
+    !filter ||
+    !isFiniteNumber(filter.min) ||
+    !isFiniteNumber(filter.max) ||
+    filter.min > filter.max
+  ) {
+    throw new Error(`${what}：filter 必须是 min ≤ max 的有限数值`)
+  }
+  if (!isFiniteNumber(state.opacity) || state.opacity < 0 || state.opacity > 1) {
+    throw new Error(`${what}：opacity 必须是 [0,1] 内的有限数值`)
+  }
+  if (
+    !Array.isArray(state.colorTransferFunction) ||
+    state.colorTransferFunction.length < 2 ||
+    !state.colorTransferFunction.every(
+      (stop) => stop && isFiniteNumber(stop.value) && isHexColorString(stop.color),
+    )
+  ) {
+    throw new Error(`${what}：colorTransferFunction 必须是有限数值+十六进制色值节点`)
+  }
+  for (const flag of ['lighting', 'gradientOpacity', 'boundingBox']) {
+    if (typeof state[flag] !== 'boolean') throw new Error(`${what}：${flag} 必须是布尔值`)
+  }
+  if (state.slice !== undefined) {
+    const slice = state.slice
+    if (
+      !slice ||
+      !['x', 'y', 'z'].includes(slice.axis) ||
+      !Number.isInteger(slice.index) ||
+      slice.index < 0 ||
+      !isFiniteNumber(slice.coordinate) ||
+      !isFiniteNumber(slice.relativePosition) ||
+      slice.relativePosition < 0 ||
+      slice.relativePosition > 1
+    ) {
+      throw new Error(`${what}：slice.axis/index/coordinate/relativePosition 合同不符`)
+    }
+  }
+  if (state.contourValue !== undefined && !isFiniteNumber(state.contourValue)) {
+    throw new Error(`${what}：contourValue 必须是有限数值`)
+  }
+  return state
+}
+
+// 色带线节点 → SDK ColorTransferFunction（值域节点已由父侧按标度展开）
+function colorFunctionFromWireStops(stops) {
+  const fn = new SuperMap3D.ColorTransferFunction()
+  for (const stop of stops) {
+    const color = SuperMap3D.Color.fromCssColorString(stop.color)
+    fn.addRGBPoint(stop.value, color.red, color.green, color.blue)
+  }
+  return fn
+}
+
+// 单轴切片坐标：Task 1 实测技术——非活动轴以负坐标隐藏（-1）
+function sdkSliceCoordinate(slice) {
+  const hidden = -1
+  return new SuperMap3D.Cartesian3(
+    slice.axis === 'x' ? slice.relativePosition : hidden,
+    slice.axis === 'y' ? slice.relativePosition : hidden,
+    slice.axis === 'z' ? slice.relativePosition : hidden,
+  )
+}
+
+function applyRenderStateToLayer(layer, state) {
+  const [vmin, vmax] = valueRange
+  layer.minFiltration = state.filter.min
+  layer.maxFiltration = state.filter.max
+  layer.opacityTransferFunction = opacityFunction(vmin, vmax, state.opacity)
+  layer.colorTransferFunction = colorFunctionFromWireStops(state.colorTransferFunction)
+  layer.enableLighting = state.lighting
+  layer.useGradientOpacity = state.gradientOpacity
+  // fillStyle 恒为 Fill：SDK 线框样式实测超界且 Slice 模式不显示；
+  // 包围盒由独立实体承担，boundingBox 只控制它的显隐
+  layer.fillStyle = SuperMap3D.FillStyle.Fill
+  setBoundingBoxVisible(state.boundingBox)
+  const mode =
+    state.mode === 'volume'
+      ? SuperMap3D.VolumeRenderMode.VolumeRendering
+      : state.mode === 'slice'
+        ? SuperMap3D.VolumeRenderMode.Slice
+        : SuperMap3D.VolumeRenderMode.ContourValue
+  if (state.mode === 'slice') {
+    if (!state.slice) throw new Error('APPLY_RENDER_STATE：slice 模式缺少 slice 载荷')
+    layer.sliceCoordinate = sdkSliceCoordinate(state.slice)
+  }
+  if (state.mode === 'contour') {
+    const requested = state.contourValue === undefined ? (vmin + vmax) / 2 : state.contourValue
+    layer.contourValue = Math.min(vmax, Math.max(vmin, requested))
+  }
+  layer.volumeRenderMode = mode
+  diag.mode = state.mode
+  publishDiag()
+}
+
+function nextFrames(count) {
+  return new Promise((resolve) => {
+    let frames = 0
+    const tick = () => {
+      frames += 1
+      if (frames >= count) resolve(frames)
+      else requestAnimationFrame(tick)
+    }
+    requestAnimationFrame(tick)
+  })
+}
+
+async function handleApplyRenderState(msg) {
+  const layer = requireVolume('APPLY_RENDER_STATE')
+  const state = validateStateWire(msg.state, 'APPLY_RENDER_STATE')
+  // revision 单调递增：小于或等于最后已应用 revision 的状态整体忽略
+  if (state.revision <= lastAppliedRevision) return
+  const previousState = lastAppliedState
+  const previousRevision = lastAppliedRevision
+  try {
+    applyRenderStateToLayer(layer, state)
+  } catch (applyError) {
+    // 应用异常：尝试恢复上一份已确认状态；恢复失败进入 failed
+    try {
+      if (previousState) applyRenderStateToLayer(layer, previousState)
+    } catch (recoveryError) {
+      // 恢复失败是终态错误：即使曾 rendered 也必须翻转相位并通知父页
+      fail('RENDER_STATE_RECOVERY_FAILED', recoveryError, true)
+      emitError('RENDER_STATE_RECOVERY_FAILED', recoveryError, msg.commandId, state.revision)
+      return
+    }
+    lastAppliedState = previousState
+    lastAppliedRevision = previousRevision
+    emitError('RENDER_STATE_APPLY_FAILED', applyError, msg.commandId, state.revision)
+    return
+  }
+  lastAppliedState = state
+  lastAppliedRevision = state.revision
+  // STATE_APPLIED 只能在属性设置完成且至少经过一个后续渲染帧后返回
+  await nextFrames(2)
+  post({
+    type: 'STATE_APPLIED',
+    commandId: msg.commandId,
+    revision: state.revision,
+    appliedState: state,
+  })
   emitRenderState()
 }
 
@@ -483,59 +747,6 @@ function requireVolume(what) {
   return volumeLayer
 }
 
-function handleSetMode(msg) {
-  const layer = requireVolume('SET_MODE')
-  if (!VOLUME_MODES.has(msg.mode)) throw new Error(`INVALID_MODE：${msg.mode}`)
-  const mode =
-    msg.mode === 'volume'
-      ? SuperMap3D.VolumeRenderMode.VolumeRendering
-      : msg.mode === 'slice'
-        ? SuperMap3D.VolumeRenderMode.Slice
-        : SuperMap3D.VolumeRenderMode.ContourValue
-  if (msg.sliceCoordinate !== undefined) {
-    const c = msg.sliceCoordinate
-    if (
-      !c ||
-      typeof c !== 'object' ||
-      !['x', 'y', 'z'].every((key) => isFiniteNumber(c[key]) && c[key] >= 0 && c[key] <= 1)
-    ) {
-      throw new Error('INVALID_SLICE_COORDINATE：x/y/z 必须是 [0,1] 内的有限数值')
-    }
-    layer.sliceCoordinate = new SuperMap3D.Cartesian3(c.x, c.y, c.z)
-  } else if (msg.mode === 'slice') {
-    layer.sliceCoordinate = new SuperMap3D.Cartesian3(0.5, 0.5, 0.5)
-  }
-  if (msg.mode === 'contour') {
-    const requested = msg.contourValue === undefined ? (valueRange[0] + valueRange[1]) / 2 : msg.contourValue
-    if (!isFiniteNumber(requested)) throw new Error('INVALID_CONTOUR_VALUE：必须是有限数值')
-    layer.contourValue = Math.min(valueRange[1], Math.max(valueRange[0], requested))
-  }
-  layer.volumeRenderMode = mode
-  diag.mode = msg.mode
-  publishDiag()
-  emitRenderState()
-}
-
-function handleSetFilter(msg) {
-  const layer = requireVolume('SET_FILTER')
-  if (!isFiniteNumber(msg.min) || !isFiniteNumber(msg.max) || msg.min > msg.max) {
-    throw new Error(`INVALID_FILTER：min/max 必须是有限数值且 min<=max（${msg.min}, ${msg.max}）`)
-  }
-  layer.minFiltration = msg.min
-  layer.maxFiltration = msg.max
-  emitRenderState()
-}
-
-function handleSetOpacity(msg) {
-  const layer = requireVolume('SET_OPACITY')
-  if (!isFiniteNumber(msg.opacity) || msg.opacity < 0 || msg.opacity > 1) {
-    throw new Error(`INVALID_OPACITY：opacity 必须在 [0,1]（${msg.opacity}）`)
-  }
-  layer.opacityTransferFunction = opacityFunction(valueRange[0], valueRange[1], msg.opacity)
-  emitRenderState()
-}
-
-// 点层：INIT.displayTransform 局部米制 → 显示锚点经纬度（与后端 display_anchor_points 同式）
 function localToDisplay(t, x, y, z) {
   return {
     lon: t.anchor_longitude + (x - t.origin_x) / t.metres_per_degree_lon,
@@ -602,12 +813,14 @@ function handleSetPointLayer(msg) {
       outlineWidth,
     })
   }
+  post({ type: 'COMMAND_APPLIED', commandId: msg.commandId, commandType: 'SET_POINT_LAYER' })
   emitRenderState()
 }
 
-function handleResetView() {
+function handleResetView(msg) {
   if (!viewParams) throw new Error('RESET_VIEW 在 INIT 之前不可用')
   lookAtVolume()
+  post({ type: 'COMMAND_APPLIED', commandId: msg.commandId, commandType: 'RESET_VIEW' })
   emitRenderState()
 }
 
@@ -617,9 +830,7 @@ function handleResetView() {
 
 const handlers = {
   INIT: handleInit,
-  SET_MODE: handleSetMode,
-  SET_FILTER: handleSetFilter,
-  SET_OPACITY: handleSetOpacity,
+  APPLY_RENDER_STATE: handleApplyRenderState,
   SET_POINT_LAYER: handleSetPointLayer,
   RESET_VIEW: handleResetView,
 }

@@ -181,10 +181,17 @@ def download_export(
                 {"export_id": export_id},
                 http_status=404,
             )
+    # v0.7.0 第二批：剖面分析包与成果证据包按 export_kind 区分下载文件名
+    manifest = tables.loads_canonical(row.manifest_json) if row.manifest_json else {}
+    filename = (
+        "slice-analysis.zip"
+        if manifest.get("export_kind") == "slice_analysis"
+        else "result-package.zip"
+    )
     return FileResponse(
         row.package_path,
         media_type="application/zip",
-        filename="result-package.zip",
+        filename=filename,
     )
 
 

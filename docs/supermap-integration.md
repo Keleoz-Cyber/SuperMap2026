@@ -15,9 +15,9 @@ iframe 中原生渲染：
   `--verify-only` 预检核验钉住哈希与完整资源树，fail-closed。前端 build 后
   live 验收加载 `web/dist/SuperMap3D-2026/SuperMap3D.js`。
 - **运行时边界**：SuperMap3D 只在体渲染 iframe
-  （`web/public/supermap-volume-frame/`）内加载，经 `gmp-supermap-volume/v1`
-  postMessage 协议与 Vue 父页通信（握手、加载、filter/opacity/Slice/Contour
-  命令、rendered/error 回执）；Vue 父页不加载任何旧全局 Cesium。
+  （`web/public/supermap-volume-frame/`）内加载，经 postMessage 协议与 Vue
+  父页通信（v1 逐控件命令已升级为 v0.7.0 第二批的
+  `gmp-supermap-volume/v2` 完整渲染状态协议，见 §0.1）；Vue 父页不加载任何旧全局 Cesium。
 - **数据链**：FastAPI `POST .../render-assets/netcdf` 显式创建不可变资产
   （`render_assets` 表，SQLite v6），`GET /api/render-assets/{id}/volume.nc`
   下发前重算哈希双向核验；坐标为 `wgs84_display_anchor_v1` 显示锚点
@@ -27,6 +27,28 @@ iframe 中原生渲染：
   `manual_required` 不变。被取代的 `/volume-demo` 自研 WebGL2 光线步进 POC
   （main 分支 PR #10，已合并入 main）不是产品路由。
 - 安装、验收与诊断命令见 [v0.6.1 运行手册](v0.6.1-netcdf-native-rendering-runbook.md)。
+
+### 0.1 v0.7.0 第二批：协议 v2、渲染默认值与权威剖面分析
+
+- **协议 v2**：iframe 协议升级为 `gmp-supermap-volume/v2`——父页发送单调递增
+  `revision` 的完整渲染状态（模式/滤波/不透明度/色带/光照/渐变透明度/包围盒，
+  slice 模式必须携带权威 slice 载荷），取代 v1 逐控件命令；过期 revision 被
+  忽略，`FRAME_READY` 上报 `FrameCapabilities`（含 `singleAxisSlice`）。
+- **单轴切片技术**：SDK 12.1 真实 GPU 实测（`docs/evidence/v0.7.0-single-axis-probe/`）
+  非活动轴以负坐标 sliceCoordinate = -1 隐藏，只显示一个切面；该行为是本
+  SDK 版本的实测事实而非文档化 API 承诺，验收必须附真实像素证据。
+- **渲染默认值（render_profile）**：内置电阻率默认 log 标度 + native-spectrum
+  色带；候选成果默认 linear + viridis；权威有效值非全正时 log 显式禁用并
+  说明，绝不丢弃或平移原始值。
+- **权威剖面分析**：`GET /api/render-assets/{id}/slice-analysis` 从资产规则
+  网格重算剖面与统计（`std_population` ddof=0、numpy-linear 分位数、
+  valid+nodata=total）；`POST .../slice-exports` 原子生成
+  `slice-analysis.zip`（`slice-analysis/v1`：slice.csv 真实 x,y,z 轴列、
+  statistics.json 与 API 一致、slice.png、manifest.json 含网格/NetCDF 哈希）。
+  PNG 是客户端 ECharts 展示工件（`client_echarts_canvas`），矩阵/统计/manifest
+  一律服务端重算，绝不接受客户端提交。
+- **no fallback**：能力失败、哈希不符、协议错误、SDK 缺失都只显示显式错误；
+  不存在任何回退渲染器或点云回退（no fallback）。
 
 ## 1. 职责边界
 

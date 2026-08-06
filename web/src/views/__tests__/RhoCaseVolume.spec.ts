@@ -195,11 +195,9 @@ async function chooseImportFile(wrapper: { find: (selector: string) => any }): P
   return file
 }
 
-// frame stub：与 NativeVolumePanel.spec 同一约定，记录 props 并暴露同名命令方法
+// frame stub：与 NativeVolumePanel.spec 同一约定（v2 协议），记录 props 并暴露同名命令方法
 let frameExposed: {
-  setMode: ReturnType<typeof vi.fn>
-  setFilter: ReturnType<typeof vi.fn>
-  setOpacity: ReturnType<typeof vi.fn>
+  applyRenderState: ReturnType<typeof vi.fn>
   setPointLayer: ReturnType<typeof vi.fn>
   resetView: ReturnType<typeof vi.fn>
 }
@@ -209,13 +207,12 @@ const FrameStub = defineComponent({
   props: {
     asset: { type: Object, default: null },
     displayTransform: { type: Object, required: true },
+    initialState: { type: Object, required: true },
   },
   emits: ['ready', 'rendered', 'failed'],
   setup(_props, { expose }) {
     frameExposed = {
-      setMode: vi.fn(),
-      setFilter: vi.fn(),
-      setOpacity: vi.fn(),
+      applyRenderState: vi.fn().mockReturnValue(true),
       setPointLayer: vi.fn(),
       resetView: vi.fn(),
     }
@@ -342,7 +339,7 @@ describe('RhoCaseView legacy 体渲染能力真值', () => {
     frame.vm.$emit('rendered', null)
     await flushPromises()
     expect(wrapper.find('[data-test="volume-phase"]').text()).toContain('不支持体渲染')
-    expect(wrapper.find('[data-test="mode-volume"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-test="mode-volume"]').classes()).toContain('is-disabled')
   })
 
   it('原生创建失败：显示稳定错误，无任何 S3M/点云 fallback 成功徽标', async () => {
