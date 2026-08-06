@@ -1,5 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import SuperMapVolumeFrame from '../SuperMapVolumeFrame.vue'
 import {
   VOLUME_FRAME_PROTOCOL,
@@ -196,5 +196,63 @@ describe('SuperMapVolumeFrame v2', () => {
     emitChild({ type: 'ERROR', code: 'STATE_INVALID', message: 'bad state' })
     await flushPromises()
     expect(wrapper.emitted('failed')).toHaveLength(1)
+  })
+})
+
+describe('SuperMapVolumeFrame 握手/渲染超时（黑屏不得无限停留）', () => {
+  const CAPS = {
+    singleAxisSlice: true,
+    lighting: true,
+    gradientOpacity: true,
+    boundingBox: true,
+    transferFunction: true,
+  }
+
+  it('FRAME_READY 超时：发出类型化 FRAME_READY_TIMEOUT', async () => {
+    vi.useFakeTimers()
+    try {
+      const { wrapper } = mountFrame()
+      await vi.advanceTimersByTimeAsync(30_000)
+      const failed = wrapper.emitted('failed')
+      expect(failed).toHaveLength(1)
+      expect(failed![0][0]).toMatchObject({ code: 'FRAME_READY_TIMEOUT' })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('握手后无 RENDER_STATE：发出类型化 RENDER_STATE_TIMEOUT', async () => {
+    vi.useFakeTimers()
+    try {
+      const { wrapper, emitChild } = mountFrame()
+      await vi.advanceTimersByTimeAsync(1_000)
+      emitChild({ type: 'FRAME_READY', sdkVersion: '12.1.0', contextType: 2, capabilities: CAPS })
+      await flushPromises()
+      // FRAME_READY 已到达：不得再报 READY 超时
+      await vi.advanceTimersByTimeAsync(30_000)
+      expect(wrapper.emitted('failed') ?? []).toHaveLength(0)
+      // 但渲染状态 60s 未至：类型化超时
+      await vi.advanceTimersByTimeAsync(30_000)
+      const failed = wrapper.emitted('failed')
+      expect(failed).toHaveLength(1)
+      expect(failed![0][0]).toMatchObject({ code: 'RENDER_STATE_TIMEOUT' })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('正常 rendered 后任何超时都不再触发', async () => {
+    vi.useFakeTimers()
+    try {
+      const { wrapper, emitChild } = mountFrame()
+      emitChild({ type: 'FRAME_READY', sdkVersion: '12.1.0', contextType: 2, capabilities: CAPS })
+      await flushPromises()
+      emitChild({ type: 'RENDER_STATE', phase: 'rendered', identity: RENDERED_IDENTITY })
+      await flushPromises()
+      await vi.advanceTimersByTimeAsync(120_000)
+      expect(wrapper.emitted('failed') ?? []).toHaveLength(0)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
