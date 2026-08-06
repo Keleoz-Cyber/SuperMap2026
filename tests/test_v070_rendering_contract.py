@@ -56,7 +56,7 @@ def test_frame_uses_public_sdk_properties_only():
         "layer.sliceCoordinate",
         "layer.contourValue",
         "new SuperMap3D.Cartesian3",
-        "SuperMap3D.FillStyle.Fill_And_WireFrame",
+        "SuperMap3D.PolylineCollection",
     ):
         assert token in src, token
     # 私有 SDK 字段绝不检查或改写
@@ -77,7 +77,7 @@ def test_single_axis_technique_uses_negative_coordinates():
     src = _frame_source()
     # Task 1 实测技术：非活动轴以负坐标隐藏（-1 与 -0.5 无可见差异）
     assert "sliceCoordinate" in src
-    assert "Fill_And_WireFrame" in src
+    assert "PolylineCollection" in src
 
 
 def test_recovery_failure_is_fatal_even_after_rendered():
@@ -141,7 +141,35 @@ def test_frame_publishes_geometry_diagnostic():
     """
 
     src = _frame_source()
-    assert "geometry" in src
-    assert "layerBoundsDegrees" in src
-    assert "zBoundsMetres" in src
-    assert "cameraSpanMetres" in src
+    for token in (
+        "geometry",
+        "layerBoundsDegrees",
+        "zBoundsMetres",
+        "cameraSpanMetres",
+        "dimensionOrder",
+        "cellSizeMetres",
+        "bboxSpansMetres",
+        "boundingBoxVisible",
+    ):
+        assert token in src, token
+
+
+def test_bbox_is_independent_polyline_collection():
+    """包围盒 = 独立 wireframe primitive，三模式共用；不再依赖 fillStyle 线框。"""
+
+    src = _frame_source()
+    assert "PolylineCollection" in src
+    assert "setBoundingBoxVisible(state.boundingBox)" in src
+    # SDK 的 Fill_And_WireFrame 线框在 Slice 模式不显示且实测超界：一律 Fill
+    assert "Fill_And_WireFrame" not in src
+    assert "FillStyle.Fill" in src
+
+
+def test_bbox_corners_derive_from_layer_bounds():
+    """包围盒角点必须由 layerBounds/zBounds 派生（真实体元边界），无固定 padding。"""
+
+    src = _frame_source()
+    assert "addVolumeBoundingBox" in src
+    assert re.search(r"fromDegreesArrayHeights|Cartesian3\.fromDegrees", src)
+    for banned in ("padding", "PAD"):
+        assert banned not in src

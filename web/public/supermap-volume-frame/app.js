@@ -55,6 +55,7 @@ const diag = {
   layerType: null,
   mode: null, // volume | slice | contour（协议命名）
   identity: null, // { sourceKind, sourceId, gridSha256, netcdfSha256 }
+  boundingBoxVisible: false,
   // 体盒几何只读诊断（INIT 后写入，全模式不变；绝不暴露 viewer/layer 本体）：
   // { layerBoundsDegrees: {west,south,east,north}, zBoundsMetres: [z0,z1],
   //   cameraSpanMetres: 最大物理跨度（相机取景依据） }
@@ -69,10 +70,14 @@ function publishDiag() {
     layerType: diag.layerType,
     mode: diag.mode,
     identity: diag.identity ? Object.freeze({ ...diag.identity }) : null,
+    boundingBoxVisible: diag.boundingBoxVisible,
     geometry: diag.geometry
       ? Object.freeze({
           layerBoundsDegrees: Object.freeze({ ...diag.geometry.layerBoundsDegrees }),
           zBoundsMetres: Object.freeze([...diag.geometry.zBoundsMetres]),
+          dimensionOrder: Object.freeze([...diag.geometry.dimensionOrder]),
+          cellSizeMetres: Object.freeze([...diag.geometry.cellSizeMetres]),
+          bboxSpansMetres: Object.freeze([...diag.geometry.bboxSpansMetres]),
           cameraSpanMetres: diag.geometry.cameraSpanMetres,
         })
       : null,
@@ -159,7 +164,7 @@ post({
       !!SuperMap3D.VolumeRenderMode && 'Slice' in SuperMap3D.VolumeRenderMode,
     lighting: true,
     gradientOpacity: true,
-    boundingBox: !!SuperMap3D.FillStyle && 'Fill_And_WireFrame' in SuperMap3D.FillStyle,
+    boundingBox: !!SuperMap3D.PolylineCollection,
     transferFunction: !!SuperMap3D.ColorTransferFunction,
   },
 })
@@ -348,6 +353,58 @@ function lookAtVolume() {
   scene.camera.lookAt(target, new SuperMap3D.HeadingPitchRange(0.6, -0.9, span * 2.5))
 }
 
+// 独立包围盒线框：八个角点严格来自 layerBounds/zBounds（真实体元边界，
+// 绝无任意固定外扩）。SDK fillStyle 自带的线框样式实测既不贴体数据、
+// Slice 模式也不显示，因此包围盒一律由本实体承担，三模式共用；
+// boundingBox 状态只控制它的 show。depthTest=false：线框与体素外表面
+// 共面会被体渲染遮挡，包围盒语义要求全框可见（X 射线式）。
+function addVolumeBoundingBox(bounds, zBounds) {
+  const w = bounds.west
+  const e = bounds.east
+  const s = bounds.south
+  const n = bounds.north
+  const z0 = zBounds[0]
+  const z1 = zBounds[1]
+  // 底面四角 + 顶面四角
+  const corners = [
+    [w, s, z0],
+    [e, s, z0],
+    [e, n, z0],
+    [w, n, z0],
+    [w, s, z1],
+    [e, s, z1],
+    [e, n, z1],
+    [w, n, z1],
+  ]
+  const edges = [
+    [0, 1], [1, 2], [2, 3], [3, 0],
+    [4, 5], [5, 6], [6, 7], [7, 4],
+    [0, 4], [1, 5], [2, 6], [3, 7],
+  ]
+  const created = []
+  for (const [a, b] of edges) {
+    created.push(
+      viewer.entities.add({
+        polyline: {
+          positions: SuperMap3D.Cartesian3.fromDegreesArrayHeights(
+            [corners[a], corners[b]].flat(),
+          ),
+          width: 1.5,
+          material: SuperMap3D.Color.WHITE.withAlpha(0.65),
+          depthTest: false,
+        },
+      }),
+    )
+  }
+  bboxPrimitives = created
+}
+
+function setBoundingBoxVisible(visible) {
+  if (!bboxPrimitives) return
+  for (const entity of bboxPrimitives) entity.show = visible
+  diag.boundingBoxVisible = visible
+}
+
 // ---------------------------------------------------------------------------
 // INIT：12 步（计划 Task 9 Step 3）
 // ---------------------------------------------------------------------------
@@ -478,13 +535,26 @@ async function handleInit(msg) {
       zBounds[1] - zBounds[0],
     ),
   }
-  // 体盒几何只读诊断：包围盒/米制 Z 边界/相机取景跨度（全模式不变）
+  // 体盒几何只读诊断：边界/维度顺序/cell 尺寸/包围盒跨度/相机跨度（全模式不变）
+  const spansMetres = [
+    (bounds.east - bounds.west) * t.metres_per_degree_lon,
+    (bounds.north - bounds.south) * t.metres_per_degree_lat,
+    zBounds[1] - zBounds[0],
+  ]
   diag.geometry = {
     layerBoundsDegrees: { west: bounds.west, south: bounds.south, east: bounds.east, north: bounds.north },
     zBoundsMetres: [zBounds[0], zBounds[1]],
+    dimensionOrder: manifest.dimension_names.slice(),
+    cellSizeMetres: spansMetres.map((span, i) =>
+      manifest.shape[i] > 1 ? span / (manifest.shape[i] - 1) : span,
+    ),
+    bboxSpansMetres: spansMetres,
     cameraSpanMetres: viewParams.span,
   }
   publishDiag()
+  // 独立包围盒线框（角点=真实体元边界；初始显隐由 INIT 状态决定）
+  addVolumeBoundingBox(bounds, zBounds)
+  setBoundingBoxVisible(initialState.boundingBox)
   lookAtVolume()
 
   // 12. 画布像素探针确认体积像素后才 emit rendered
@@ -506,6 +576,7 @@ async function handleInit(msg) {
 
 let lastAppliedState = null // 上一份已确认状态（应用失败回滚依据）
 let lastAppliedRevision = 0 // iframe 会话内单调递增；<= 的一律忽略
+let bboxPrimitives = null // 独立包围盒线框（PolylineCollection；三模式共用同一几何）
 
 function isHexColorString(v) {
   return typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v)
@@ -590,9 +661,10 @@ function applyRenderStateToLayer(layer, state) {
   layer.colorTransferFunction = colorFunctionFromWireStops(state.colorTransferFunction)
   layer.enableLighting = state.lighting
   layer.useGradientOpacity = state.gradientOpacity
-  layer.fillStyle = state.boundingBox
-    ? SuperMap3D.FillStyle.Fill_And_WireFrame
-    : SuperMap3D.FillStyle.Fill
+  // fillStyle 恒为 Fill：SDK 线框样式实测超界且 Slice 模式不显示；
+  // 包围盒由独立实体承担，boundingBox 只控制它的显隐
+  layer.fillStyle = SuperMap3D.FillStyle.Fill
+  setBoundingBoxVisible(state.boundingBox)
   const mode =
     state.mode === 'volume'
       ? SuperMap3D.VolumeRenderMode.VolumeRendering

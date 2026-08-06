@@ -245,6 +245,101 @@ export function expectVolumeContent(
 }
 
 // ---------------------------------------------------------------------------
+// 包围盒线框像素测量：近白细线像素（自定义 PolylineCollection 线框），
+// 排除左下 Logo 与右上罗盘；体数据区域取有色饱和像素。用于验收线框贴体
+// （不得超出体数据）与 Slice 模式线框可见。
+// ---------------------------------------------------------------------------
+
+export interface WireBodyMetrics {
+  wireCount: number
+  wireBox: { minX: number; minY: number; maxX: number; maxY: number } | null
+  bodyCount: number
+  bodyBox: { minX: number; minY: number; maxX: number; maxY: number } | null
+  frame: { width: number; height: number }
+}
+
+export async function measureWireAndBody(page: Page, shot: Buffer): Promise<WireBodyMetrics> {
+  const dataUrl = 'data:image/png;base64,' + shot.toString('base64')
+  return page.evaluate(async (src: string) => {
+    const img = new Image()
+    await new Promise((res, rej) => {
+      img.onload = res
+      img.onerror = rej
+      img.src = src
+    })
+    const c = document.createElement('canvas')
+    c.width = img.width
+    c.height = img.height
+    const ctx = c.getContext('2d')!
+    ctx.drawImage(img, 0, 0)
+    const d = ctx.getImageData(0, 0, c.width, c.height).data
+    const W = c.width
+    const H = c.height
+    // 覆盖物遮罩：左下 Logo（20%×12%）、右上罗盘（14%×16%）
+    const isOverlay = (x: number, y: number) =>
+      (x < W * 0.2 && y > H * 0.88) || (x > W * 0.86 && y < H * 0.16)
+    const newBox = () => ({ minX: Infinity, minY: Infinity, maxX: -1, maxY: -1 })
+    const wire = newBox()
+    const body = newBox()
+    let wireCount = 0
+    let bodyCount = 0
+    const grow = (box: ReturnType<typeof newBox>, x: number, y: number) => {
+      if (x < box.minX) box.minX = x
+      if (x > box.maxX) box.maxX = x
+      if (y < box.minY) box.minY = y
+      if (y > box.maxY) box.maxY = y
+    }
+    for (let y = 0; y < H; y += 1) {
+      for (let x = 0; x < W; x += 1) {
+        if (isOverlay(x, y)) continue
+        const i = (y * W + x) * 4
+        const r = d[i]
+        const g = d[i + 1]
+        const b = d[i + 2]
+        if (r > 150 && g > 150 && b > 150) {
+          wireCount += 1
+          grow(wire, x, y)
+        } else {
+          const mx = Math.max(r, g, b)
+          const mn = Math.min(r, g, b)
+          if (mx > 40 && mx - mn > 25) {
+            bodyCount += 1
+            grow(body, x, y)
+          }
+        }
+      }
+    }
+    const fin = (box: ReturnType<typeof newBox>, count: number) =>
+      count > 0
+        ? { minX: box.minX, minY: box.minY, maxX: box.maxX, maxY: box.maxY }
+        : null
+    return {
+      wireCount,
+      wireBox: fin(wire, wireCount),
+      bodyCount,
+      bodyBox: fin(body, bodyCount),
+      frame: { width: W, height: H },
+    }
+  }, dataUrl)
+}
+
+/** 线框必须贴体：线框包围区落在体数据包围区外扩 12% 以内（前后不得超出）。 */
+export function expectWireframeHugsBody(m: WireBodyMetrics, what: string): void {
+  expect(m.wireCount, `${what}：包围盒线框必须可见`).toBeGreaterThan(200)
+  expect(m.bodyCount, `${what}：体数据像素必须存在`).toBeGreaterThan(500)
+  expect(m.wireBox, `${what}：线框区域必须可测`).toBeTruthy()
+  expect(m.bodyBox, `${what}：体数据区域必须可测`).toBeTruthy()
+  const mx = m.frame.width * 0.12
+  const my = m.frame.height * 0.12
+  const wb = m.wireBox!
+  const bb = m.bodyBox!
+  expect(wb.minX, `${what}：线框左缘超出体数据`).toBeGreaterThanOrEqual(bb.minX - mx)
+  expect(wb.maxX, `${what}：线框右缘超出体数据`).toBeLessThanOrEqual(bb.maxX + mx)
+  expect(wb.minY, `${what}：线框上缘超出体数据`).toBeGreaterThanOrEqual(bb.minY - my)
+  expect(wb.maxY, `${what}：线框下缘超出体数据`).toBeLessThanOrEqual(bb.maxY + my)
+}
+
+// ---------------------------------------------------------------------------
 // 命令执行：协议回执 + 像素稳定等待（settle 轮询上限 20s，超时如实记录）
 // ---------------------------------------------------------------------------
 
@@ -570,6 +665,14 @@ export interface V070GateReport {
     cameraSpanMetres: number
     invariantAcrossModes: boolean
   }
+  wireframe: {
+    volumeWireCount: number
+    contourWireCount: number
+    offPixelDiff: number
+    onPixelDiff: number
+    visibilityStateVerified: boolean
+    hugChecks: string
+  }
   controlDiffs: Record<string, number>
   sliceGates: Record<
     string,
@@ -609,6 +712,10 @@ export async function runV070RenderGates(params: V070GateParams): Promise<V070Ga
   const quarter = (a: SliceAxisName) => Math.floor((axesMeta[a].length - 1) / 4)
   const threeQuarter = (a: SliceAxisName) => Math.floor((3 * (axesMeta[a].length - 1)) / 4)
 
+  // 父页的 Element Plus loading mask 可能在 iframe 已报告 rendered 后仍处于
+  // 离场动画；此时元素截图会被整层遮罩压暗，不能作为视觉证据。
+  await expect(page.locator('.el-loading-mask:visible')).toHaveCount(0, { timeout: 30_000 })
+
   // --- 静帧噪声基线 + 基准非背景 ---------------------------------------------
   const noiseShot1 = await shot()
   await waitFrames(frame, 10)
@@ -630,8 +737,11 @@ export async function runV070RenderGates(params: V070GateParams): Promise<V070Ga
   const dt = manifest.display_transform
   const readGeometry = () =>
     frame.evaluate(() => (window as any).__GMP_VOLUME_FRAME__.geometry)
+  const readBoundingBoxVisible = () =>
+    frame.evaluate(() => (window as any).__GMP_VOLUME_FRAME__.boundingBoxVisible)
   const baseGeometry = await readGeometry()
   expect(baseGeometry, 'diag.geometry 必须存在').toBeTruthy()
+  expect(await readBoundingBoxVisible(), '体积模式包围盒状态必须为可见').toBe(true)
   const spanTolerance = params.spansToleranceRatio ?? 0.01
   const spansMetres: [number, number, number] = [
     (baseGeometry.layerBoundsDegrees.east - baseGeometry.layerBoundsDegrees.west) *
@@ -650,6 +760,10 @@ export async function runV070RenderGates(params: V070GateParams): Promise<V070Ga
   // 相机取景按最大物理跨度
   expect(baseGeometry.cameraSpanMetres).toBeCloseTo(Math.max(...spansMetres), 6)
   const geometryInvariant = { ok: true }
+
+  // --- 包围盒线框门（体积模式，默认开）：独立线框贴体、不超出体数据 ----------
+  const baseWire = await measureWireAndBody(page, previous)
+  expectWireframeHugsBody(baseWire, '体积模式包围盒')
 
   // 统计参照：渲染控件绝不改变权威统计（服务端从原始网格重算）
   const statsBefore = await captureSliceStatistics(request, assetId, 'z', mid('z'))
@@ -691,6 +805,9 @@ export async function runV070RenderGates(params: V070GateParams): Promise<V070Ga
     await expect(page.getByTestId('slice-valid-count')).toContainText(/有效 [1-9]/)
     // 剖面模式下包围盒/相机跨度必须保持体积模式读数（体盒几何不变）
     expect(await readGeometry(), `${axis} 剖面模式体盒几何不得变化`).toEqual(baseGeometry)
+    // 剖面模式包围盒线框必须可见（独立 primitive，三模式共用同一几何）
+    const sliceWire = await measureWireAndBody(page, await shot())
+    expect(sliceWire.wireCount, `${axis} 剖面模式包围盒线框必须可见`).toBeGreaterThan(200)
     const shotQuarter = await shot()
     const quarterMetrics = await analyzeVolumePixels(page, shotQuarter)
     expectVolumeContent(quarterMetrics, `${axis} 剖面`, { minNonBg: 500, minCoverage: 0.03 })
@@ -717,6 +834,8 @@ export async function runV070RenderGates(params: V070GateParams): Promise<V070Ga
   const preContour = previous
   await command('contour', () => page.getByTestId('mode-contour').click(), false)
   expect(await readGeometry(), '等值面模式体盒几何不得变化').toEqual(baseGeometry)
+  const contourWire = await measureWireAndBody(page, previous)
+  expect(contourWire.wireCount, '等值面模式包围盒线框必须可见').toBeGreaterThan(200)
   const contourMetrics = await analyzeVolumePixels(page, previous)
   expectVolumeContent(contourMetrics, '等值面', { minNonBg: 500, minCoverage: 0.03 })
   controlDiffs['contour'] = await countDiff(page, preContour, previous)
@@ -754,7 +873,11 @@ export async function runV070RenderGates(params: V070GateParams): Promise<V070Ga
   await command('opacity', () => clickSliderRunwayAt(page, 'opacity-slider', 0.5))
   await command('lighting-off', () => page.getByTestId('lighting-toggle').click())
   await command('gradient-off', () => page.getByTestId('gradient-opacity-toggle').click())
+  const preBoundingOff = previous
   await command('bounding-box-off', () => page.getByTestId('bounding-box-toggle').click())
+  const offPixelDiff = await countDiff(page, preBoundingOff, previous)
+  expect(offPixelDiff, '关闭 boundingBox 必须产生可见像素变化').toBeGreaterThan(controlThreshold)
+  expect(await readBoundingBoxVisible(), '关闭 boundingBox 后运行时状态必须为 false').toBe(false)
 
   // 统计不变性：palette/log/linear/filter/opacity/lighting/gradient/bbox 之后
   const statsAfter = await captureSliceStatistics(request, assetId, 'z', mid('z'))
@@ -775,7 +898,11 @@ export async function runV070RenderGates(params: V070GateParams): Promise<V070Ga
   )
   await command('lighting-on', () => page.getByTestId('lighting-toggle').click(), false)
   await command('gradient-on', () => page.getByTestId('gradient-opacity-toggle').click(), false)
+  const preBoundingOn = previous
   await command('bounding-box-on', () => page.getByTestId('bounding-box-toggle').click(), false)
+  const onPixelDiff = await countDiff(page, preBoundingOn, previous)
+  expect(onPixelDiff, '重开 boundingBox 必须产生可见像素变化').toBeGreaterThan(controlThreshold)
+  expect(await readBoundingBoxVisible(), '重开 boundingBox 后运行时状态必须为 true').toBe(true)
 
   // --- 剖面分析包导出（每源一份，真实浏览器下载事件） --------------------------
   const exportAxis = params.exportAxis ?? 'z'
@@ -805,6 +932,14 @@ export async function runV070RenderGates(params: V070GateParams): Promise<V070Ga
       spansMetres,
       cameraSpanMetres: baseGeometry.cameraSpanMetres,
       invariantAcrossModes: geometryInvariant.ok,
+    },
+    wireframe: {
+      volumeWireCount: baseWire.wireCount,
+      contourWireCount: contourWire.wireCount,
+      offPixelDiff,
+      onPixelDiff,
+      visibilityStateVerified: true,
+      hugChecks: 'wire box within body box +12% frame margin',
     },
     controlDiffs,
     sliceGates,
