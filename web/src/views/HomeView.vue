@@ -7,12 +7,20 @@ import {
   Bell,
   Connection,
   Cpu,
+  Delete,
   Lock,
   Monitor,
+  MoreFilled,
   Odometer,
   Plus,
 } from '@element-plus/icons-vue'
-import { fetchCases, fetchRhoPublishStatus, PLATFORM_DEMO_3D_DOWNLOAD_URL } from '../api/client'
+import {
+  fetchCases,
+  fetchRhoPublishStatus,
+  fetchTrashCases,
+  PLATFORM_DEMO_3D_DOWNLOAD_URL,
+  trashCase,
+} from '../api/client'
 import { WEB_VERSION } from '../version'
 import type { CaseSummary } from '../api/types'
 
@@ -57,6 +65,7 @@ const cases = ref<CaseSummary[]>([])
 const loading = ref(true)
 const loadError = ref<string | null>(null)
 const iserverOnline = ref<boolean | null>(null)
+const trashCount = ref(0)
 
 type WorkspaceKind = 'builtin_legacy' | 'builtin_preset' | 'user_upload'
 
@@ -107,6 +116,17 @@ function openOfficialResult(c: CaseSummary) {
 }
 
 onMounted(async () => {
+  await loadCases()
+  try {
+    const ps = await fetchRhoPublishStatus()
+    iserverOnline.value = ps.iserver_available
+  } catch {
+    iserverOnline.value = false
+  }
+  await loadTrashCount()
+})
+
+async function loadCases() {
   try {
     const resp = await fetchCases()
     cases.value = resp.cases
@@ -115,13 +135,26 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
+}
+
+async function loadTrashCount() {
   try {
-    const ps = await fetchRhoPublishStatus()
-    iserverOnline.value = ps.iserver_available
+    const resp = await fetchTrashCases()
+    trashCount.value = resp.cases.length
   } catch {
-    iserverOnline.value = false
+    trashCount.value = 0
   }
-})
+}
+
+async function handleTrashCase(caseId: string) {
+  try {
+    await trashCase(caseId)
+    await loadCases()
+    await loadTrashCount()
+  } catch {
+    // 静默失败：回收站操作错误不阻断首页浏览
+  }
+}
 </script>
 
 <template>
@@ -133,6 +166,16 @@ onMounted(async () => {
             <h1>GeoModelingPlatform <span>地矿属性模拟与三维建模平台</span></h1>
           </div>
           <el-tag type="primary" effect="dark" round>v{{ WEB_VERSION }} 建模平台</el-tag>
+          <router-link
+            to="/trash"
+            class="trash-entry"
+            data-test="trash-entry"
+          >
+            <el-badge :value="trashCount" :hidden="trashCount === 0" :max="99">
+              <el-icon :size="18"><Delete /></el-icon>
+            </el-badge>
+            <span>回收站</span>
+          </router-link>
         </div>
         <p class="tagline">
           上传点数据即可完成二维/三维插值建模、空间验证与成果导出；内置电阻率案例保留 SuperMap iServer 发布证据链闭环。
@@ -161,6 +204,19 @@ onMounted(async () => {
             <el-tag :type="meta(c).badgeType" effect="dark" size="small">
               {{ meta(c).badgeText }}
             </el-tag>
+            <div v-if="kindOf(c) === 'user_upload'" class="card-overflow" @click.stop>
+              <el-dropdown
+                data-test="trash-case-btn"
+                @command="handleTrashCase(c.case_id)"
+              >
+                <el-icon :size="18" class="overflow-trigger"><MoreFilled /></el-icon>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="trash">移入回收站</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+            </div>
           </div>
           <div class="case-body">
             <template v-if="kindOf(c) === 'user_upload'">
@@ -340,6 +396,26 @@ onMounted(async () => {
   margin-left: 10px;
 }
 
+.trash-entry {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 8px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--gmp-border);
+  background: var(--gmp-card);
+  color: var(--gmp-text-dim);
+  font-size: 13px;
+  text-decoration: none;
+  transition: border-color 0.2s, color 0.2s;
+}
+
+.trash-entry:hover {
+  border-color: var(--gmp-accent);
+  color: var(--gmp-accent);
+}
+
 .tagline {
   margin: 14px 0 0;
   color: var(--gmp-text-dim);
@@ -422,6 +498,21 @@ onMounted(async () => {
   margin: 0;
   font-size: 17px;
   flex: 1;
+}
+
+.card-overflow {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.overflow-trigger {
+  color: var(--gmp-text-faint);
+  transition: color 0.2s;
+}
+
+.card-overflow:hover .overflow-trigger {
+  color: var(--gmp-accent);
 }
 
 .case-body {

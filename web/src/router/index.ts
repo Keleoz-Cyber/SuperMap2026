@@ -7,12 +7,14 @@ import ExperimentView from '../views/ExperimentView.vue'
 import ProfessionalDiagnosisView from '../views/ProfessionalDiagnosisView.vue'
 import ProfessionalAnalysisView from '../views/ProfessionalAnalysisView.vue'
 import ResultWorkbenchView from '../views/ResultWorkbenchView.vue'
+import TrashView from '../views/TrashView.vue'
 
 // 构建产物由 FastAPI StaticFiles 直接托管，hash 模式可避免刷新深链 404。
 const router = createRouter({
   history: createWebHashHistory(),
   routes: [
     { path: '/', name: 'home', component: HomeView },
+    { path: '/trash', name: 'trash', component: TrashView },
     // v0.7.0：统一案例工作台；/case/resistivity 保留为兼容别名（重定向）
     { path: '/case/resistivity', redirect: '/cases/resistivity' },
     { path: '/cases/:caseId', name: 'case-workspace', component: CaseWorkspaceView },

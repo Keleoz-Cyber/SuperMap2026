@@ -28,7 +28,11 @@ export interface CaseSummary {
     experiments: boolean
     official_result: boolean
     native_volume: boolean
+    delete_case?: boolean
   }
+  // v0.7.0：案例生命周期状态与回收站时间戳
+  lifecycle_state?: 'active' | 'trashed'
+  trashed_at?: string | null
   official_result?: FeaturedResultLink | null
   provenance_summary?: Record<string, unknown>
   links: {
@@ -52,6 +56,7 @@ export interface WorkspaceCapabilities {
   experiments: boolean
   official_result: boolean
   native_volume: boolean
+  delete_case?: boolean
 }
 
 export interface CaseWorkspaceSummary extends CaseSummary {
