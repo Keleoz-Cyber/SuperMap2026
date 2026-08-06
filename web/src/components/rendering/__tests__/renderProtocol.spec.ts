@@ -1,3 +1,6 @@
+import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   VOLUME_FRAME_PROTOCOL,
@@ -208,7 +211,22 @@ describe('renderProtocol v2', () => {
     ).toBe(false)
   })
 
-  it('buildFrameUrl 携带 requestId', () => {
-    expect(buildFrameUrl('abc-123')).toContain('request_id=abc-123')
+  it('buildFrameUrl 携带 requestId 与帧内容版本（缓存升级即换 URL）', () => {
+    const url = buildFrameUrl('abc-123')
+    expect(url).toContain('request_id=abc-123')
+    // 版本化：帧运行时（index/app/styles）内容哈希 + SDK 钉住哈希进入查询串，
+    // 升级即换 URL，旧缓存条目永不命中（warm-cache 黑屏修复）
+    expect(url).toMatch(/[?&]v=[0-9a-f]{16}/)
+    expect(url).toMatch(/[?&]sdk=([0-9a-f]{16}|unpinned)/)
+  })
+
+  it('帧版本与 public/supermap-volume-frame 三文件内容哈希一致', () => {
+    const hash = createHash('sha256')
+    for (const name of ['index.html', 'app.js', 'styles.css']) {
+      hash.update(
+        readFileSync(resolve(__dirname, '../../../../public/supermap-volume-frame', name)),
+      )
+    }
+    expect(buildFrameUrl('x')).toContain(`v=${hash.digest('hex').slice(0, 16)}`)
   })
 })

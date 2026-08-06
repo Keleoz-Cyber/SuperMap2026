@@ -77,3 +77,40 @@ def test_single_axis_technique_uses_negative_coordinates():
     # Task 1 实测技术：非活动轴以负坐标隐藏（-1 与 -0.5 无可见差异）
     assert "sliceCoordinate" in src
     assert "Fill_And_WireFrame" in src
+
+
+# ---------------------------------------------------------------------------
+# warm-cache 升级黑屏修复（v0.7.0 第二批发布阻断）：iframe 运行时资产必须
+# 经内容哈希版本化 URL 加载；index.html 内联 bootstrap 把 v/sdk 透传到
+# styles.css 与 app.js（SDK 走独立的钉住哈希 sdk 参数）。
+# ---------------------------------------------------------------------------
+
+FRAME_INDEX = Path("web/public/supermap-volume-frame/index.html")
+VITE_CONFIG = Path("web/vite.config.ts")
+
+
+def test_iframe_index_has_no_unversioned_runtime_references():
+    src = FRAME_INDEX.read_text(encoding="utf-8")
+    # 静态直引即稳定 URL 缓存入口，一律禁止
+    assert 'src="./app.js"' not in src
+    assert 'href="./styles.css"' not in src
+    assert 'src="../SuperMap3D-2026/SuperMap3D.js"' not in src
+
+
+def test_iframe_bootstrap_propagates_content_versions():
+    src = FRAME_INDEX.read_text(encoding="utf-8")
+    # 内联 bootstrap 从查询串读取 v/sdk 并拼到运行时资产 URL
+    assert "URLSearchParams" in src
+    assert "params.get('v')" in src
+    assert "params.get('sdk')" in src
+    assert "./app.js" in src  # 仅允许出现在动态拼接表达式中
+    assert "./styles.css" in src
+    assert "CESIUM_BASE_URL" in src
+
+
+def test_vite_config_injects_frame_and_sdk_versions():
+    src = VITE_CONFIG.read_text(encoding="utf-8")
+    assert "__VOLUME_FRAME_VERSION__" in src
+    assert "__VOLUME_SDK_VERSION__" in src
+    assert "supermap-volume-frame" in src
+    assert "SuperMap3D.js" in src

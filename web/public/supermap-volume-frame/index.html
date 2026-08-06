@@ -5,14 +5,42 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <link rel="icon" href="data:," />
 <title>gmp-supermap-volume-frame</title>
-<link rel="stylesheet" href="../SuperMap3D-2026/Widgets/widgets.css" />
-<link rel="stylesheet" href="./styles.css" />
 <script>
-// handoff 验证写法：SDK 加载前固定 CESIUM_BASE_URL（Workers/Assets 解析根）
-window.CESIUM_BASE_URL = '/SuperMap3D-2026/';
+// warm-cache 升级安全：运行时资产 URL 全部携带父页注入的内容版本查询串
+// （v=帧运行时哈希，sdk=SDK 钉住哈希）；升级即换 URL，旧缓存条目永不命中。
+// 内联 bootstrap 自身几乎不变；即便被旧缓存命中，它也按父页给定的新版本取新资产。
+(function () {
+  var params = new URLSearchParams(window.location.search)
+  var v = params.get('v') || ''
+  var sdk = params.get('sdk') || ''
+  var frameQuery = v ? '?v=' + encodeURIComponent(v) : ''
+  var sdkQuery = sdk ? '?sdk=' + encodeURIComponent(sdk) : ''
+  // handoff 验证写法：SDK 加载前固定 CESIUM_BASE_URL（Workers/Assets 解析根）
+  window.CESIUM_BASE_URL = '/SuperMap3D-2026/'
+  var head = document.head
+  function addStylesheet(href) {
+    var link = document.createElement('link')
+    link.rel = 'stylesheet'
+    link.href = href
+    head.appendChild(link)
+  }
+  addStylesheet('../SuperMap3D-2026/Widgets/widgets.css' + sdkQuery)
+  addStylesheet('./styles.css' + frameQuery)
+  function addApp() {
+    var app = document.createElement('script')
+    app.type = 'module'
+    app.src = './app.js' + frameQuery
+    head.appendChild(app)
+  }
+  // SDK 必须先于 app.js（app 启动时检查 SuperMap3D 全局）；SDK 加载失败也继续
+  // 加载 app.js，由其报 FRAME_BOOT_SDK_MISSING 类型化错误
+  var sdkScript = document.createElement('script')
+  sdkScript.src = '../SuperMap3D-2026/SuperMap3D.js' + sdkQuery
+  sdkScript.onload = addApp
+  sdkScript.onerror = addApp
+  head.appendChild(sdkScript)
+})()
 </script>
-<script src="../SuperMap3D-2026/SuperMap3D.js"></script>
-<script type="module" src="./app.js"></script>
 </head>
 <body>
 <div id="container"></div>

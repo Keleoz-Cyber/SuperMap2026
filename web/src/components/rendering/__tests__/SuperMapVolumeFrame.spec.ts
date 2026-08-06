@@ -56,6 +56,14 @@ function mountFrame(initialState = makeState(1)) {
 }
 
 describe('SuperMapVolumeFrame v2', () => {
+  it('iframe src 携带帧内容版本查询参数（warm-cache 升级安全）', () => {
+    const { wrapper } = mountFrame()
+    const src = wrapper.find('iframe').attributes('src') ?? ''
+    expect(src).toContain('/supermap-volume-frame/index.html?')
+    expect(src).toContain('request_id=')
+    expect(src).toMatch(/[?&]v=[0-9a-f]{16}/)
+  })
+
   it('FRAME_READY 后恰好一次 INIT，携带完整初始状态', async () => {
     const { posted, emitChild } = mountFrame()
     emitChild({

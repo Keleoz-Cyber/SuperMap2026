@@ -395,6 +395,13 @@ export function newFrameRequestId(): string {
   return `rvf-${crypto.randomUUID()}`
 }
 
+// iframe URL 携带帧运行时内容哈希（v）与 SDK 钉住哈希（sdk）：升级即换 URL，
+// 旧浏览器缓存中的旧版 app.js/index 永不命中（warm-cache 黑屏修复）。
 export function buildFrameUrl(requestId: string): string {
-  return `/supermap-volume-frame/index.html?request_id=${encodeURIComponent(requestId)}`
+  const params = new URLSearchParams({
+    request_id: requestId,
+    v: __VOLUME_FRAME_VERSION__,
+    sdk: __VOLUME_SDK_VERSION__,
+  })
+  return `/supermap-volume-frame/index.html?${params.toString()}`
 }
