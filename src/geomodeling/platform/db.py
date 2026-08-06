@@ -24,6 +24,7 @@ from geomodeling.platform.tables import (
     RUN_INFLIGHT_STATUSES,
     AnalysisJob,
     Base,
+    CasePurgeOperation,
     RenderAsset,
     Run,
     RunStatus,
@@ -37,7 +38,8 @@ from geomodeling.platform.tables import (
 # v5: professional_diagnostics / professional_confirmations /
 # professional_result_artifacts / anomaly_extractions / analysis_jobs 五表。
 # v6: render_assets（NetCDF 渲染资产状态表，v0.6.1 设计 §2.2）。
-SCHEMA_VERSION = 6
+# v7: cases.lifecycle_state/trashed_at + case_purge_operations（v0.7.0 第三批设计 §4）。
+SCHEMA_VERSION = 7
 
 _BUSY_TIMEOUT_MS = 30000
 
@@ -70,7 +72,7 @@ def _create_v5_tables(conn: engine.Connection) -> None:
 
 
 def _create_v6_tables(conn: engine.Connection) -> None:
-    """v5→v6：在同一事务内用 ORM metadata 创建 render_assets 并显式核验。
+    """v5->v6：在同一事务内用 ORM metadata 创建 render_assets 并显式核验。
 
     与 v5 迁移同构：metadata-backed 创建消除表定义漂移，``checkfirst``
     保证绝不触碰既有 v5 行；新表迁移前不存在，始终为空表。
@@ -81,6 +83,34 @@ def _create_v6_tables(conn: engine.Connection) -> None:
     missing = [name for name in _V6_NEW_TABLES if not inspector.has_table(name)]
     if missing:
         raise RuntimeError(f"v6 migration did not create tables: {missing}")
+
+
+def _create_v7_schema(conn: engine.Connection) -> None:
+    """v6->v7：在同一事务内添加 Case 生命周期列、索引和 purge 操作表。
+
+    幂等：``inspect`` 检查列是否已存在，``checkfirst`` 保证索引和表不重建。
+    迁移前所有既有 Case 行由 ALTER TABLE DEFAULT 'active' 赋值为 active。
+    """
+
+    columns = {item["name"] for item in inspect(conn).get_columns("cases")}
+    if "lifecycle_state" not in columns:
+        conn.exec_driver_sql(
+            "ALTER TABLE cases ADD COLUMN lifecycle_state VARCHAR(16) "
+            "NOT NULL DEFAULT 'active'"
+        )
+    if "trashed_at" not in columns:
+        conn.exec_driver_sql("ALTER TABLE cases ADD COLUMN trashed_at TEXT")
+    conn.exec_driver_sql(
+        "CREATE INDEX IF NOT EXISTS ix_cases_lifecycle_state ON cases(lifecycle_state)"
+    )
+    CasePurgeOperation.__table__.create(bind=conn, checkfirst=True)
+
+    inspector = inspect(conn)
+    if not inspector.has_table("case_purge_operations"):
+        raise RuntimeError("v7 migration did not create case_purge_operations")
+    case_columns = {c["name"] for c in inspector.get_columns("cases")}
+    if "lifecycle_state" not in case_columns or "trashed_at" not in case_columns:
+        raise RuntimeError("v7 migration did not add lifecycle columns to cases")
 
 
 # 逐版本迁移步骤：键为起始版本。步骤为 SQL 字符串或接受连接的可调用对象；
@@ -100,6 +130,7 @@ _MIGRATIONS: dict[int, tuple[str | Callable[[engine.Connection], None], ...]] = 
     ),
     4: (_create_v5_tables,),
     5: (_create_v6_tables,),
+    6: (_create_v7_schema,),
 }
 
 

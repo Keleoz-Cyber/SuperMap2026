@@ -17,13 +17,19 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from geomodeling.platform.tables import RunStatus
+from geomodeling.platform.tables import (
+    CaseLifecycleState,
+    PurgeOperationState,
+    RunStatus,
+)
 
 __all__ = [
     "Algorithm",
     "AnalysisJobRecord",
     "AnomalyExtractionRecord",
     "CaseCreateRequest",
+    "CaseLifecycleState",
+    "CasePurgeOperationRecord",
     "CaseRecord",
     "CandidateResultRecord",
     "ContractModel",
@@ -37,6 +43,7 @@ __all__ = [
     "FormalSelectionRecord",
     "FormalSelectionRequest",
     "GridSpec",
+    "PurgeOperationState",
     "ProfessionalConfirmationRecord",
     "ProfessionalConfirmationRequest",
     "ProfessionalDiagnosisRequest",
@@ -71,6 +78,7 @@ class DatasetStatus(str, Enum):
     MAPPED = "mapped"
     VALIDATED = "validated"
     BLOCKED = "blocked"
+    ABANDONED = "abandoned"
 
 
 class Algorithm(str, Enum):
@@ -238,6 +246,8 @@ class CaseRecord(ContractModel):
     name: str
     case_type: str
     config: dict[str, Any] = Field(default_factory=dict)
+    lifecycle_state: str = "active"
+    trashed_at: str | None = None
     created_at: str
     updated_at: str
 
@@ -433,3 +443,25 @@ class RenderAssetRecord(ContractModel):
     manifest_url: str | None = None
     netcdf_url: str | None = None
     error: RenderAssetError | None = None
+
+
+# ---------------------------------------------------------------------------
+# v0.7.0 case lifecycle records (SQLite v7)
+# ---------------------------------------------------------------------------
+
+
+class CasePurgeOperationRecord(ContractModel):
+    """永久删除操作记录（v0.7.0 第三批设计 §4.2）。
+
+    ``manifest`` 和 ``receipt`` 为解析后的字典；``error`` 为类型化
+    失败信息或 None。公共序列化不得包含绝对路径。
+    """
+
+    id: str
+    case_id: str
+    state: str
+    manifest: dict[str, Any] = Field(default_factory=dict)
+    receipt: dict[str, Any] = Field(default_factory=dict)
+    error: dict[str, Any] | None = None
+    created_at: str
+    updated_at: str

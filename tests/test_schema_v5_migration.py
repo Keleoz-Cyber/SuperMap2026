@@ -224,7 +224,7 @@ def test_v4_to_v5_migration_creates_professional_tables_and_preserves_rows(tmp_p
     runtime.initialize()
 
     # v4 夹具沿迁移链逐版本升到当前 schema（v6 起经 v5→v6 步骤）。
-    assert runtime.schema_version() == 6
+    assert runtime.schema_version() == 7
     with runtime.session() as session:
         existing_candidate = session.get(CandidateResult, "cand-1")
         assert existing_candidate is not None
@@ -282,7 +282,7 @@ def test_v5_initialize_is_idempotent_and_never_recreates_rows(tmp_path):
     reopened = PlatformRuntime(tmp_path / "runtime")
     reopened.initialize()
     reopened.initialize()  # 同一实例重复 initialize 同样幂等
-    assert reopened.schema_version() == 6
+    assert reopened.schema_version() == 7
     with reopened.engine.connect() as conn:
         inspector = inspect(conn)
         assert all(inspector.has_table(t) for t in NEW_V5_TABLES)
@@ -293,12 +293,12 @@ def test_v5_initialize_is_idempotent_and_never_recreates_rows(tmp_path):
     reopened.close()
 
 
-def test_initialize_rejects_schema_newer_than_v6(tmp_path):
+def test_initialize_rejects_schema_newer_than_v7(tmp_path):
     runtime = PlatformRuntime(tmp_path / "runtime")
     runtime.initialize()
     runtime.close()
     with sqlite3.connect(runtime.db_path) as conn:
-        conn.execute("PRAGMA user_version = 7")
+        conn.execute("PRAGMA user_version = 8")
 
     with pytest.raises(RuntimeError, match="newer than code"):
         PlatformRuntime(tmp_path / "runtime").initialize()

@@ -172,7 +172,7 @@ def test_v5_to_v6_migration_creates_render_assets_and_preserves_rows(tmp_path):
     runtime = PlatformRuntime(tmp_path / "runtime")
     runtime.initialize()
 
-    assert runtime.schema_version() == 6
+    assert runtime.schema_version() == 7
     with runtime.session() as session:
         existing_candidate = session.get(CandidateResult, "cand-1")
         assert existing_candidate is not None
@@ -310,7 +310,7 @@ def test_v6_initialize_is_idempotent_and_never_recreates_rows(tmp_path):
     reopened = PlatformRuntime(tmp_path / "runtime")
     reopened.initialize()
     reopened.initialize()  # 同一实例重复 initialize 同样幂等
-    assert reopened.schema_version() == 6
+    assert reopened.schema_version() == 7
     with reopened.engine.connect() as conn:
         inspector = inspect(conn)
         assert inspector.has_table("render_assets")
@@ -322,12 +322,12 @@ def test_v6_initialize_is_idempotent_and_never_recreates_rows(tmp_path):
     reopened.close()
 
 
-def test_initialize_rejects_schema_newer_than_v6(tmp_path):
+def test_initialize_rejects_schema_newer_than_v7(tmp_path):
     runtime = PlatformRuntime(tmp_path / "runtime")
     runtime.initialize()
     runtime.close()
     with sqlite3.connect(runtime.db_path) as conn:
-        conn.execute("PRAGMA user_version = 7")
+        conn.execute("PRAGMA user_version = 8")
 
     with pytest.raises(RuntimeError, match="newer than code"):
         PlatformRuntime(tmp_path / "runtime").initialize()

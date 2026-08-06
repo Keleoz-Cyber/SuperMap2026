@@ -55,6 +55,7 @@ from geomodeling.platform.schemas import (
     AnomalyExtractionRecord,
     CandidateResultRecord,
     CaseCreateRequest,
+    CasePurgeOperationRecord,
     CaseRecord,
     DatasetStatus,
     DatasetVersionRecord,
@@ -75,6 +76,7 @@ from geomodeling.platform.tables import (
     AnomalyExtraction,
     CandidateResult,
     Case,
+    CasePurgeOperation,
     DatasetVersion,
     Experiment,
     FormalSelection,
@@ -91,17 +93,23 @@ from geomodeling.platform.tables import (
 # ---------------------------------------------------------------------------
 
 # 数据集生命周期：uploaded→mapped→validated，或 uploaded→blocked→mapped→validated。
-# validated 为终态；重新映射通过产生新 DatasetVersion 完成，不回退状态。
-DATASET_STATUS_TRANSITIONS: dict[str, frozenset[str]] = {
+# v7: uploaded/mapped/blocked 可放弃（abandoned），abandoned 为终态。
+ALLOWED_DATASET_TRANSITIONS: dict[str, frozenset[str]] = {
     DatasetStatus.UPLOADED.value: frozenset(
-        {DatasetStatus.MAPPED.value, DatasetStatus.BLOCKED.value}
+        {DatasetStatus.MAPPED.value, DatasetStatus.BLOCKED.value, DatasetStatus.ABANDONED.value}
     ),
     DatasetStatus.MAPPED.value: frozenset(
-        {DatasetStatus.VALIDATED.value, DatasetStatus.BLOCKED.value}
+        {DatasetStatus.VALIDATED.value, DatasetStatus.BLOCKED.value, DatasetStatus.ABANDONED.value}
     ),
-    DatasetStatus.BLOCKED.value: frozenset({DatasetStatus.MAPPED.value}),
+    DatasetStatus.BLOCKED.value: frozenset(
+        {DatasetStatus.MAPPED.value, DatasetStatus.ABANDONED.value}
+    ),
     DatasetStatus.VALIDATED.value: frozenset(),
+    DatasetStatus.ABANDONED.value: frozenset(),
 }
+
+# Backward-compatible alias for any code still referencing the old name.
+DATASET_STATUS_TRANSITIONS = ALLOWED_DATASET_TRANSITIONS
 
 # 仅 failed/canceled/interrupted 可重试；重试产生新 run（retry_of_run_id），
 # 不覆盖原记录。queued/running 不可重试。
@@ -130,6 +138,8 @@ def _case_record(row: Case) -> CaseRecord:
         name=row.name,
         case_type=row.case_type,
         config=tables.loads_canonical(row.config_json),
+        lifecycle_state=row.lifecycle_state,
+        trashed_at=row.trashed_at,
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
@@ -193,6 +203,23 @@ def _formal_selection_record(row: FormalSelection) -> FormalSelectionRecord:
         selected_by=row.selected_by,
         note=row.note,
         created_at=row.created_at,
+    )
+
+
+def _case_purge_operation_record(row: CasePurgeOperation) -> CasePurgeOperationRecord:
+    return CasePurgeOperationRecord(
+        id=row.id,
+        case_id=row.case_id,
+        state=row.state,
+        manifest=tables.loads_canonical(row.manifest_json),
+        receipt=tables.loads_canonical(row.receipt_json),
+        error=(
+            tables.loads_canonical(row.error_json)
+            if row.error_json is not None
+            else None
+        ),
+        created_at=row.created_at,
+        updated_at=row.updated_at,
     )
 
 
@@ -318,7 +345,7 @@ class DatasetRepository:
         target_value = DatasetStatus(target).value
         row = self._get_row(dataset_id)
         current = row.status
-        allowed = DATASET_STATUS_TRANSITIONS.get(current, frozenset())
+        allowed = ALLOWED_DATASET_TRANSITIONS.get(current, frozenset())
         if target_value not in allowed:
             raise PlatformError(
                 INVALID_STATUS_TRANSITION,

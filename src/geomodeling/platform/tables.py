@@ -8,6 +8,8 @@ and timestamps are UTC ISO-8601 strings.
 v5 增加专业建模状态表：诊断、不可变确认快照、按候选唯一的专业工件、
 幂等异常提取与持久化分析任务（设计 §5.1）。
 v6 增加 NetCDF 渲染资产状态表 render_assets（v0.6.1 设计 §2.2）。
+v7 增加案例生命周期字段（lifecycle_state、trashed_at）和永久删除操作表
+case_purge_operations（v0.7.0 第三批设计 §4）。
 """
 
 from __future__ import annotations
@@ -63,17 +65,41 @@ RUN_TERMINAL_STATUSES = frozenset(
 ERROR_PROCESS_RESTARTED = "PROCESS_RESTARTED"
 
 
+class CaseLifecycleState(str, Enum):
+    ACTIVE = "active"
+    TRASHED = "trashed"
+    PURGING = "purging"
+
+
+class PurgeOperationState(str, Enum):
+    PREPARED = "prepared"
+    QUARANTINED = "quarantined"
+    COMMITTED = "committed"
+    CLEANED = "cleaned"
+    ROLLED_BACK = "rolled_back"
+    FAILED = "failed"
+
+
 class Base(DeclarativeBase):
     pass
 
 
 class Case(Base):
     __tablename__ = "cases"
+    __table_args__ = (
+        Index("ix_cases_lifecycle_state", "lifecycle_state"),
+    )
 
     id: Mapped[str] = mapped_column(String(128), primary_key=True)
     name: Mapped[str] = mapped_column(String(256))
     case_type: Mapped[str] = mapped_column(String(64))
     config_json: Mapped[str] = mapped_column(Text, default="{}")
+    # v7: 案例生命周期状态（active/trashed/purging）和回收时间
+    lifecycle_state: Mapped[str] = mapped_column(
+        String(16), default=CaseLifecycleState.ACTIVE.value,
+        server_default=CaseLifecycleState.ACTIVE.value,
+    )
+    trashed_at: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     created_at: Mapped[str] = mapped_column(Text, default=utc_now_iso)
     updated_at: Mapped[str] = mapped_column(Text, default=utc_now_iso, onupdate=utc_now_iso)
 
@@ -369,6 +395,31 @@ class RenderAsset(Base):
     # 服务端内部目录；公共 DTO 序列化永不暴露
     asset_dir: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     manifest_json: Mapped[str] = mapped_column(Text, default="{}")
+    error_json: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    created_at: Mapped[str] = mapped_column(Text, default=utc_now_iso)
+    updated_at: Mapped[str] = mapped_column(Text, default=utc_now_iso, onupdate=utc_now_iso)
+
+
+# ---------------------------------------------------------------------------
+# v7: case lifecycle purge operations
+# ---------------------------------------------------------------------------
+
+
+class CasePurgeOperation(Base):
+    """永久删除操作表（v0.7.0 第三批设计 §4.2）。
+
+    崩溃恢复日志，不作为用户历史数据浏览功能。``case_id`` 不建外键，
+    案例删除后仍保留回执。``manifest_json`` 只含相对路径和哈希；
+    ``error_json`` 只含类型化失败码/消息，不含绝对路径。
+    """
+
+    __tablename__ = "case_purge_operations"
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    case_id: Mapped[str] = mapped_column(String(128), index=True)
+    state: Mapped[str] = mapped_column(String(32))
+    manifest_json: Mapped[str] = mapped_column(Text, default="{}")
+    receipt_json: Mapped[str] = mapped_column(Text, default="{}")
     error_json: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     created_at: Mapped[str] = mapped_column(Text, default=utc_now_iso)
     updated_at: Mapped[str] = mapped_column(Text, default=utc_now_iso, onupdate=utc_now_iso)

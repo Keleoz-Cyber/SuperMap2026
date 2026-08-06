@@ -45,6 +45,8 @@ EXPECTED_TABLES = {
     "analysis_jobs",
     # v6: NetCDF 渲染资产状态表
     "render_assets",
+    # v7: 案例生命周期永久删除操作表
+    "case_purge_operations",
 }
 
 
@@ -237,3 +239,82 @@ def test_initialize_rejects_schema_newer_than_code(tmp_path):
 
     with pytest.raises(RuntimeError, match="newer than code"):
         PlatformRuntime(tmp_path / "runtime").initialize()
+
+
+# ---------------------------------------------------------------------------
+# v7: case lifecycle migration
+# ---------------------------------------------------------------------------
+
+
+def _create_v6_database(db_path: Path, case_id: str = "case-v6") -> None:
+    """Create a real v6 database with a cases table lacking lifecycle columns."""
+
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(str(db_path)) as conn:
+        conn.execute(
+            "CREATE TABLE cases ("
+            "id VARCHAR(128) PRIMARY KEY, "
+            "name VARCHAR(256), "
+            "case_type VARCHAR(64), "
+            "config_json TEXT, "
+            "created_at TEXT, "
+            "updated_at TEXT)"
+        )
+        conn.execute(
+            "INSERT INTO cases (id, name, case_type, config_json, created_at, updated_at) "
+            "VALUES (?, 'v6 Case', 'generic', '{}', "
+            "'2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00')",
+            (case_id,),
+        )
+        conn.execute("PRAGMA user_version = 6")
+
+
+def test_v6_to_v7_migration_adds_lifecycle_columns_and_purge_table(tmp_path):
+    db_path = tmp_path / "runtime" / "platform.sqlite3"
+    _create_v6_database(db_path)
+
+    runtime = PlatformRuntime(tmp_path / "runtime")
+    runtime.initialize()
+
+    assert runtime.schema_version() == 7
+    with runtime.engine.connect() as conn:
+        inspector = inspect(conn)
+        columns = {c["name"] for c in inspector.get_columns("cases")}
+        assert "lifecycle_state" in columns
+        assert "trashed_at" in columns
+        assert inspector.has_table("case_purge_operations")
+        index_names = {idx["name"] for idx in inspector.get_indexes("cases")}
+        assert "ix_cases_lifecycle_state" in index_names
+
+    # Existing v6 case is migrated to active with trashed_at=None
+    with runtime.session() as session:
+        case = session.get(Case, "case-v6")
+        assert case is not None
+        assert case.lifecycle_state == "active"
+        assert case.trashed_at is None
+
+
+def test_fresh_database_is_v7_with_lifecycle_artifacts(tmp_path):
+    runtime = initialized_runtime(tmp_path)
+    assert runtime.schema_version() == 7
+    with runtime.engine.connect() as conn:
+        inspector = inspect(conn)
+        assert inspector.has_table("case_purge_operations")
+        columns = {c["name"] for c in inspector.get_columns("cases")}
+        assert "lifecycle_state" in columns
+        assert "trashed_at" in columns
+        index_names = {idx["name"] for idx in inspector.get_indexes("cases")}
+        assert "ix_cases_lifecycle_state" in index_names
+
+
+def test_repeated_initialize_on_v7_is_idempotent(tmp_path):
+    runtime = PlatformRuntime(tmp_path / "runtime")
+    runtime.initialize()
+    runtime.initialize()
+    assert runtime.schema_version() == 7
+    with runtime.engine.connect() as conn:
+        inspector = inspect(conn)
+        assert inspector.has_table("case_purge_operations")
+        assert "ix_cases_lifecycle_state" in {
+            idx["name"] for idx in inspector.get_indexes("cases")
+        }
