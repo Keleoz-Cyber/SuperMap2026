@@ -29,6 +29,7 @@ __all__ = [
     "AnomalyExtractionRecord",
     "CaseCreateRequest",
     "CaseLifecycleState",
+    "CasePurgeManifest",
     "CasePurgeOperationRecord",
     "CaseRecord",
     "CandidateResultRecord",
@@ -43,6 +44,7 @@ __all__ = [
     "FormalSelectionRecord",
     "FormalSelectionRequest",
     "GridSpec",
+    "PurgeFileMove",
     "PurgeOperationState",
     "ProfessionalConfirmationRecord",
     "ProfessionalConfirmationRequest",
@@ -465,3 +467,24 @@ class CasePurgeOperationRecord(ContractModel):
     error: dict[str, Any] | None = None
     created_at: str
     updated_at: str
+
+
+class PurgeFileMove(ContractModel):
+    """单文件在受控根目录下的相对路径与哈希（v0.7.0 第三批设计 §5.4）。"""
+
+    root: Literal[
+        "uploads", "datasets", "experiments", "results", "exports",
+        "render_assets", "comparisons",
+    ]
+    relative_path: str
+    sha256: str
+    size_bytes: int
+
+
+class CasePurgeManifest(ContractModel):
+    """案例永久删除清单（v0.7.0 第三批设计 §5.4）。"""
+
+    version: Literal[1] = 1
+    case_id: str
+    row_ids: dict[str, list[str]]
+    files: list[PurgeFileMove]

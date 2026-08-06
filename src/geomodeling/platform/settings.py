@@ -69,6 +69,16 @@ class PlatformSettings:
         return self.data_dir / "render-assets"
 
     @property
+    def comparisons_dir(self) -> Path:
+        """Deep candidate comparison registry root (v0.7.0 batch 3)."""
+        return self.data_dir / "comparisons"
+
+    @property
+    def purge_quarantine_dir(self) -> Path:
+        """Quarantine root for case purge file moves (v0.7.0 batch 3 §5.4)."""
+        return self.data_dir / "purge-quarantine"
+
+    @property
     def display_anchor(self) -> DisplayAnchor:
         return DisplayAnchor(longitude=120.0, latitude=30.0, height=0.0)
 
@@ -137,4 +147,6 @@ class PlatformSettings:
             self.exports_dir,
             self.render_sources_dir,
             self.render_assets_dir,
+            self.comparisons_dir,
+            self.purge_quarantine_dir,
         )
