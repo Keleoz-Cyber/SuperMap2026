@@ -6,6 +6,7 @@ Field3D/Three.js/自研渲染器回退重新进入产品面。
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 FRAME_JS = Path("web/public/supermap-volume-frame/app.js")
@@ -77,6 +78,20 @@ def test_single_axis_technique_uses_negative_coordinates():
     # Task 1 实测技术：非活动轴以负坐标隐藏（-1 与 -0.5 无可见差异）
     assert "sliceCoordinate" in src
     assert "Fill_And_WireFrame" in src
+
+
+def test_recovery_failure_is_fatal_even_after_rendered():
+    """状态恢复失败必须翻转 failed 相位并通知父页，绝不停留在 rendered。"""
+
+    src = _frame_source()
+    assert "RENDER_STATE_RECOVERY_FAILED" in src
+    # fail() 必须支持 fatal 语义：即使已经 rendered 也翻转相位 + emitRenderState
+    assert re.search(r"function fail\(code, message, fatal\)", src)
+    assert re.search(
+        r"diag\.phase !== 'rendered' \|\| fatal", src
+    ), "fail() 在 rendered 之后遇 fatal 错误不得保持 rendered"
+    # 恢复失败分支必须以 fatal 调用
+    assert re.search(r"fail\('RENDER_STATE_RECOVERY_FAILED', recoveryError, true\)", src)
 
 
 # ---------------------------------------------------------------------------

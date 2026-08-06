@@ -102,11 +102,13 @@ function emitError(code, message, commandId, revision) {
   post(payload)
 }
 
-// 失败通道：记录诊断 + 覆盖层 + ERROR 消息；未 rendered 前同时翻转相位。
-function fail(code, message) {
+// 失败通道：记录诊断 + 覆盖层 + ERROR 消息；未 rendered 前同时翻转相位；
+// fatal=true 时即使已经 rendered 也必须翻转相位并通知父页（恢复失败等
+// 终态错误绝不允许继续显示已渲染）。
+function fail(code, message, fatal) {
   const text = String(message).slice(0, 500)
   diag.errors.push({ code, message: text })
-  if (diag.phase !== 'rendered') {
+  if (diag.phase !== 'rendered' || fatal) {
     diag.phase = 'failed'
     publishDiag()
     emitRenderState()
@@ -618,7 +620,8 @@ async function handleApplyRenderState(msg) {
     try {
       if (previousState) applyRenderStateToLayer(layer, previousState)
     } catch (recoveryError) {
-      fail('RENDER_STATE_RECOVERY_FAILED', recoveryError)
+      // 恢复失败是终态错误：即使曾 rendered 也必须翻转相位并通知父页
+      fail('RENDER_STATE_RECOVERY_FAILED', recoveryError, true)
       emitError('RENDER_STATE_RECOVERY_FAILED', recoveryError, msg.commandId, state.revision)
       return
     }
