@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import { ApiError, fetchCaseWorkspace } from '../api/client'
 import type { CaseWorkspaceSummary } from '../api/types'
+import DataPreparationPanel from '../components/cases/DataPreparationPanel.vue'
 import RhoCaseView from './RhoCaseView.vue'
 
 // v0.7.0：统一案例工作台壳——三种来源（builtin_legacy / builtin_preset /
@@ -206,6 +207,11 @@ watch(caseId, (next, prev) => {
           <p v-if="workspace.provenance_summary.badge" class="provenance-line">
             {{ workspace.provenance_summary.badge }}
           </p>
+          <DataPreparationPanel
+            v-if="workspace.data_preparation"
+            :preparation="workspace.data_preparation"
+            :case-id="caseId"
+          />
         </section>
 
         <section class="workspace-section" data-test="workspace-experiments">

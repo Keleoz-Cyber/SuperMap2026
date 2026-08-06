@@ -2,6 +2,7 @@ import { createRouter, createWebHashHistory } from 'vue-router'
 import HomeView from '../views/HomeView.vue'
 import CaseWorkspaceView from '../views/CaseWorkspaceView.vue'
 import CaseCreateView from '../views/CaseCreateView.vue'
+import DatasetUploadView from '../views/DatasetUploadView.vue'
 import DatasetWizardView from '../views/DatasetWizardView.vue'
 import ExperimentView from '../views/ExperimentView.vue'
 import ProfessionalDiagnosisView from '../views/ProfessionalDiagnosisView.vue'
@@ -19,6 +20,11 @@ const router = createRouter({
     { path: '/case/resistivity', redirect: '/cases/resistivity' },
     { path: '/cases/:caseId', name: 'case-workspace', component: CaseWorkspaceView },
     { path: '/cases/new', name: 'case-create', component: CaseCreateView },
+    {
+      path: '/cases/:caseId/datasets/new',
+      name: 'dataset-upload',
+      component: DatasetUploadView,
+    },
     // v0.7.0：微震 DAT 导入路由已移除（CSV 预置案例取代）
     {
       path: '/cases/:caseId/datasets/:datasetId/prepare',

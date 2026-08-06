@@ -68,6 +68,10 @@ export interface CaseWorkspaceSummary extends CaseSummary {
   official_result: FeaturedResultLink | null
   // 只含允许公开的来源说明、字段、坐标语义、单位和摘要指纹
   provenance_summary: Record<string, unknown>
+  // v0.7.0：服务端权威的数据准备恢复状态（user_upload 案例携带，其余为 null）
+  data_preparation?: DataPreparationSummary | null
+  // v0.7.0：已校验数据版本列表（user_upload 案例携带，其余为空）
+  validated_datasets?: DatasetVersionRecord[]
 }
 
 export interface CasesResponse {
@@ -339,7 +343,7 @@ export interface ApiErrorBody {
   }
 }
 
-export type DatasetStatus = 'uploaded' | 'mapped' | 'validated' | 'blocked'
+export type DatasetStatus = 'uploaded' | 'mapped' | 'validated' | 'blocked' | 'abandoned'
 
 export interface PlatformCaseRecord {
   id: string
