@@ -311,7 +311,9 @@ window.parent.postMessage({ protocol: 'gmp-supermap-volume/v1', type: 'FRAME_REA
     // 普通刷新回到产品页：版本化 URL 必须绕过陈旧条目
     await page.goto(`${BASE}/#/case/resistivity`, { waitUntil: 'load', timeout: 60_000 })
     result = await gateScenario(page, request, asset.id, '4-warm-cache-upgrade')
-    // 版本化 app.js 必须从网络真实加载（不得命中陈旧缓存条目）
+    // 版本化 app.js 必须携带当前内容版本；陈旧毒化条目（无查询串 URL）不得被命中。
+    // 注意：同一版本 URL 的缓存命中（fromCache=true）是合法的同源缓存语义，
+    // 不是断言目标——真正的证明是 rendered + diag v2 + 无协议错误（gateScenario 已门禁）。
     const frame = page.frames().find((f) => f.url().includes('/supermap-volume-frame/'))
     const appJsEntry = await frame!.evaluate(() => {
       const hit = performance.getEntriesByType('resource').find((e) => e.name.includes('app.js'))
@@ -320,8 +322,13 @@ window.parent.postMessage({ protocol: 'gmp-supermap-volume/v1', type: 'FRAME_REA
         : null
     })
     expect(appJsEntry, '版本化 app.js 资源条目必须存在').toBeTruthy()
-    expect(appJsEntry!.name).toContain('v=')
-    expect(appJsEntry!.fromCache, '版本化 URL 不得命中陈旧缓存').toBe(false)
+    const entryUrl = new URL(appJsEntry!.name)
+    expect(entryUrl.searchParams.get('v'), '必须携带当前帧内容版本').toMatch(/^[0-9a-f]{16}$/)
+    // 且与父页注入的 iframe 版本一致（同源同一构建）
+    const frameUrl = new URL(frame!.url())
+    expect(entryUrl.searchParams.get('v')).toBe(frameUrl.searchParams.get('v'))
+    // 陈旧条目是无查询串的裸 URL；命中它意味着版本化失效（此处防御性钉死）
+    expect(entryUrl.search).not.toBe('')
     scenarioReport.push({ scenario: 'warm-cache-upgrade', appJs: appJsEntry, ...result })
 
     await context.close()
