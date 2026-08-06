@@ -1,6 +1,6 @@
 # Acceptance Notes
 
-适用对象：当前代码基线（v0.1.0 电阻率基线 + 微震 v0.2a 审计底座 + v0.3.1 iServer 纵向闭环 + v0.4 通用建模平台 + v0.5 微震第二案例建模闭环（已随 v0.5.0 发布）+ v0.6 专业建模增强（`feat/v0.6-professional-modeling` 分支）+ v0.6.1 NetCDF 原生体渲染（`feat/v0.6.1-netcdf-native-rendering` 分支））。
+适用对象：当前代码基线（v0.1.0 电阻率基线 + 微震 v0.2a 审计底座 + v0.3.1 iServer 纵向闭环 + v0.4 通用建模平台 + v0.5 微震第二案例建模闭环（已随 v0.5.0 发布）+ v0.6 专业建模增强（`feat/v0.6-professional-modeling` 分支）+ v0.6.1 NetCDF 原生体渲染（`feat/v0.6.1-netcdf-native-rendering` 分支）+ v0.7.0 案例生命周期、专业诊断解耦与跨实验比较（`feat/v0.7.0-lifecycle-professional-comparison` 分支））。
 
 ## 验收命令
 
