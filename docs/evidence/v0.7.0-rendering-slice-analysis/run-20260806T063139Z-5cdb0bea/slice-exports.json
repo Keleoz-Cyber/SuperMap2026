@@ -1,0 +1,170 @@
+{
+  "run_id": "run-20260806T063139Z-5cdb0bea",
+  "git_commit": "248ed07620fef15402470cf1dd46fb032fc7d291",
+  "sdk_sha256": "d69dadab01fc452a79f1fa88a46aced3cf29885df7bf4febbd6f24ce5b578120",
+  "sdk_version": "12.1.0",
+  "browser": {
+    "name": "chromium",
+    "version": "149.0.7827.55"
+  },
+  "gpu_renderer": "ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 4070 Laptop GPU/PCIe/SSE2, OpenGL 4.5.0)",
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "device_pixel_ratio": 1,
+  "results": {
+    "32": {
+      "candidate_id": "ff940ffc-078f-524f-bdba-b453b4cb84ca",
+      "case_id": "3da11535-5cc0-5a73-8628-be8ac2e2c924",
+      "dataset_version_id": "b642a68b-d144-5ce6-8a2c-deb23bec7261",
+      "experiment_id": "1f2c03f1-0072-5b34-810a-f9f9649a0b7a",
+      "run_id": "a55b1d58-e8ef-59b2-b99b-eb2d0d5e02af",
+      "grid_sha256": "172fb54decffa0e31c4460c20c9747e70a34e3321b6cd80c40125bc2b319aa8c",
+      "netcdf_sha256": "f5dbef652ec0a73d7333091cdd7967b9ef0d182a134d4121fc4c170955239492",
+      "asset_id": "nc-7cf00c6de12028fd870bcf32745e4d00"
+    },
+    "64": {
+      "candidate_id": "223806eb-5cc2-5ca3-aa13-212e4aaab31c",
+      "case_id": "48a2390c-3959-516f-998d-f0ce5a3b9650",
+      "dataset_version_id": "c1ebf14f-dc15-58ad-9676-a0bbda74ecf4",
+      "experiment_id": "69ce5d69-54e1-5c4f-8681-66b59552dfcb",
+      "run_id": "e85d76ac-f247-5b62-85f3-5a660eb7f1d3",
+      "grid_sha256": "f2f0d4dad8f10a0de22cabc11b7e3f361918f54e06ada8d9d9cdc4be873bbb03",
+      "netcdf_sha256": "17dc705f601dd32380e780638cc2ce979d7df48541352bdb0bba62bd8c13be62",
+      "asset_id": "nc-0c13c6b5176878ed2f83fcb1d68c8b2e"
+    }
+  },
+  "per_size": {
+    "32": {
+      "format_version": "slice-analysis/v1",
+      "export_kind": "slice_analysis",
+      "image_provenance": "client_echarts_canvas",
+      "asset_identity": {
+        "asset_id": "nc-7cf00c6de12028fd870bcf32745e4d00",
+        "source_kind": "candidate_result",
+        "source_id": "ff940ffc-078f-524f-bdba-b453b4cb84ca",
+        "grid_sha256": "172fb54decffa0e31c4460c20c9747e70a34e3321b6cd80c40125bc2b319aa8c",
+        "netcdf_sha256": "f5dbef652ec0a73d7333091cdd7967b9ef0d182a134d4121fc4c170955239492"
+      },
+      "property": {
+        "name": "BENCH",
+        "unit": "arb.unit"
+      },
+      "axes": {
+        "x": {
+          "length": 32
+        },
+        "y": {
+          "length": 32
+        },
+        "z": {
+          "length": 32
+        }
+      },
+      "slice": {
+        "fixed_axis": "z",
+        "index": 15,
+        "coordinate": -258.06451612903226
+      },
+      "statistics_contract": {
+        "valid_definition": "is_nodata=false 且数值有限",
+        "std": "population(ddof=0)",
+        "quantiles": "numpy-linear",
+        "counts": "valid_count + nodata_count = total_count"
+      },
+      "statistics": {
+        "total_count": 1024,
+        "valid_count": 1024,
+        "nodata_count": 0,
+        "min": -0.668463110138765,
+        "max": 2.3302816345008073,
+        "mean": 0.8597159527050212,
+        "std_population": 0.7632178681938562,
+        "p10": -0.07734693985988185,
+        "p50": 0.6962317328601676,
+        "p90": 1.9873218326094069
+      },
+      "files": {
+        "slice.csv": {
+          "sha256": "bfdf98fc9cc00247493edab4b59b9f22471d4e2450565df391ee982116b2a72e",
+          "size_bytes": 82417
+        },
+        "statistics.json": {
+          "sha256": "256f4fd833fbc528f869b12a26f8c29baa8ce96bfbd556b65c94d06bbaebcf44",
+          "size_bytes": 287
+        },
+        "slice.png": {
+          "sha256": "5f993790d30c3c64b110c4fe342f2fb1266ff571f119ce6300270288f2147d90",
+          "size_bytes": 84992
+        }
+      },
+      "created_at": "2026-08-06T06:32:07.137126+00:00"
+    },
+    "64": {
+      "format_version": "slice-analysis/v1",
+      "export_kind": "slice_analysis",
+      "image_provenance": "client_echarts_canvas",
+      "asset_identity": {
+        "asset_id": "nc-0c13c6b5176878ed2f83fcb1d68c8b2e",
+        "source_kind": "candidate_result",
+        "source_id": "223806eb-5cc2-5ca3-aa13-212e4aaab31c",
+        "grid_sha256": "f2f0d4dad8f10a0de22cabc11b7e3f361918f54e06ada8d9d9cdc4be873bbb03",
+        "netcdf_sha256": "17dc705f601dd32380e780638cc2ce979d7df48541352bdb0bba62bd8c13be62"
+      },
+      "property": {
+        "name": "BENCH",
+        "unit": "arb.unit"
+      },
+      "axes": {
+        "x": {
+          "length": 64
+        },
+        "y": {
+          "length": 64
+        },
+        "z": {
+          "length": 64
+        }
+      },
+      "slice": {
+        "fixed_axis": "z",
+        "index": 31,
+        "coordinate": -253.96825396825398
+      },
+      "statistics_contract": {
+        "valid_definition": "is_nodata=false 且数值有限",
+        "std": "population(ddof=0)",
+        "quantiles": "numpy-linear",
+        "counts": "valid_count + nodata_count = total_count"
+      },
+      "statistics": {
+        "total_count": 4096,
+        "valid_count": 4096,
+        "nodata_count": 0,
+        "min": -0.6846434397507627,
+        "max": 2.31495549932385,
+        "mean": 0.84786154559709,
+        "std_population": 0.757937019529642,
+        "p10": -0.08395626089242725,
+        "p50": 0.6735497188425257,
+        "p90": 1.971050215924441
+      },
+      "files": {
+        "slice.csv": {
+          "sha256": "7fb6a97f1d3962c5bff4c768b15ebf178812913f9991d3701495cb6152e3844f",
+          "size_bytes": 334204
+        },
+        "statistics.json": {
+          "sha256": "72d266e230c889e4548e570f6d27abc8281b0c516f2d3a009852211d54e84eac",
+          "size_bytes": 282
+        },
+        "slice.png": {
+          "sha256": "788f11ec54b6d4301f1fa8d0c1ea69955e8a68bcc2a32457176f7cc9798fe131",
+          "size_bytes": 90514
+        }
+      },
+      "created_at": "2026-08-06T06:32:43.306102+00:00"
+    }
+  }
+}

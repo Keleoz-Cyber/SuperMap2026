@@ -1,0 +1,29 @@
+{
+  "run_id": "run-20260806T063139Z-5ec5e263",
+  "git_commit": "248ed07620fef15402470cf1dd46fb032fc7d291",
+  "sdk_sha256": "d69dadab01fc452a79f1fa88a46aced3cf29885df7bf4febbd6f24ce5b578120",
+  "sdk_version": "12.1.0",
+  "browser": {
+    "name": "chromium",
+    "version": "149.0.7827.55"
+  },
+  "gpu_renderer": "ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 4070 Laptop GPU/PCIe/SSE2, OpenGL 4.5.0)",
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "device_pixel_ratio": 1,
+  "results": {
+    "legacy": {
+      "source_kind": "builtin_legacy",
+      "source_id": "resistivity",
+      "grid_sha256": "7478647fe412d16025372383966e8d689a441dadef3e646893e588f475def9b2",
+      "netcdf_sha256": "5379fee179e7e5548623923411932d9919eeaa89fc7ca7d1a9f382c50cdb3bb4",
+      "asset_id": "nc-47990ecd77598f60be678f7d6c8cc99c"
+    }
+  },
+  "created_at": "2026-08-06T06:32:07.606Z",
+  "platform": "win32/x64",
+  "node": "v24.13.1",
+  "grid_source": "fixtures/legacyGrid.ts synthetic-6x7x8（与 frame-live 同字节）"
+}

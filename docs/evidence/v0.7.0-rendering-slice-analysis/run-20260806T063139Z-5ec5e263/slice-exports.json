@@ -1,0 +1,90 @@
+{
+  "run_id": "run-20260806T063139Z-5ec5e263",
+  "git_commit": "248ed07620fef15402470cf1dd46fb032fc7d291",
+  "sdk_sha256": "d69dadab01fc452a79f1fa88a46aced3cf29885df7bf4febbd6f24ce5b578120",
+  "sdk_version": "12.1.0",
+  "browser": {
+    "name": "chromium",
+    "version": "149.0.7827.55"
+  },
+  "gpu_renderer": "ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 4070 Laptop GPU/PCIe/SSE2, OpenGL 4.5.0)",
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "device_pixel_ratio": 1,
+  "results": {
+    "legacy": {
+      "source_kind": "builtin_legacy",
+      "source_id": "resistivity",
+      "grid_sha256": "7478647fe412d16025372383966e8d689a441dadef3e646893e588f475def9b2",
+      "netcdf_sha256": "5379fee179e7e5548623923411932d9919eeaa89fc7ca7d1a9f382c50cdb3bb4",
+      "asset_id": "nc-47990ecd77598f60be678f7d6c8cc99c"
+    }
+  },
+  "legacy": {
+    "format_version": "slice-analysis/v1",
+    "export_kind": "slice_analysis",
+    "image_provenance": "client_echarts_canvas",
+    "asset_identity": {
+      "asset_id": "nc-47990ecd77598f60be678f7d6c8cc99c",
+      "source_kind": "builtin_legacy",
+      "source_id": "resistivity",
+      "grid_sha256": "7478647fe412d16025372383966e8d689a441dadef3e646893e588f475def9b2",
+      "netcdf_sha256": "5379fee179e7e5548623923411932d9919eeaa89fc7ca7d1a9f382c50cdb3bb4"
+    },
+    "property": {
+      "name": "RHO",
+      "unit": "ohm-m"
+    },
+    "axes": {
+      "x": {
+        "length": 6
+      },
+      "y": {
+        "length": 7
+      },
+      "z": {
+        "length": 8
+      }
+    },
+    "slice": {
+      "fixed_axis": "z",
+      "index": 3,
+      "coordinate": -500
+    },
+    "statistics_contract": {
+      "valid_definition": "is_nodata=false 且数值有限",
+      "std": "population(ddof=0)",
+      "quantiles": "numpy-linear",
+      "counts": "valid_count + nodata_count = total_count"
+    },
+    "statistics": {
+      "total_count": 42,
+      "valid_count": 42,
+      "nodata_count": 0,
+      "min": 139.167148,
+      "max": 597.315351,
+      "mean": 377.5568825,
+      "std_population": 127.26911197797091,
+      "p10": 228.84424009999998,
+      "p50": 332.119629,
+      "p90": 543.4969978
+    },
+    "files": {
+      "slice.csv": {
+        "sha256": "aed695d1a65a0ae716cab6520171e68655282f5666db7a29f8cd79537165948b",
+        "size_bytes": 1498
+      },
+      "statistics.json": {
+        "sha256": "d9ae6157d72ceb0f5dd27c2bcfdb4ca4a8c961c62d2daba884c1c6f3bf67da01",
+        "size_bytes": 243
+      },
+      "slice.png": {
+        "sha256": "d0aaefa60aa89f5621170916a9fed9d9358f16af531b8d02b1c53a2edabb8f8c",
+        "size_bytes": 37327
+      }
+    },
+    "created_at": "2026-08-06T06:32:06.076673+00:00"
+  }
+}
