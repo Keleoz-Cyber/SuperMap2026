@@ -189,6 +189,7 @@ def merged_case_cards(
     datasets = primary_datasets or {}
     persisted = list(records)
     cards = legacy_case_cards()
+    builtin_ids = {card["case_id"] for card in cards}
     if not any(record.id == PRESET_CASE_ID for record in persisted):
         cards.append(preset_workspace_card())
     cards += [
@@ -198,5 +199,8 @@ def merged_case_cards(
             primary_dataset=datasets.get(record.id),
         )
         for record in persisted
+        # builtin 身份由适配器卡片唯一承载；数据库中同 id 的行（如剖面导出的
+        # FK 支撑行）只是运行记录，绝不能再生成一张上传卡
+        if record.id not in builtin_ids
     ]
     return cards

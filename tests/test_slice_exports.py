@@ -196,6 +196,30 @@ def test_legacy_slice_export_has_no_candidate(tmp_path, monkeypatch):
         assert manifest["asset_identity"]["source_id"] == "resistivity"
 
 
+def test_legacy_slice_export_does_not_duplicate_home_card(tmp_path, monkeypatch):
+    """导出的 FK 支撑行不得让首页出现第二张 resistivity 卡（builtin 卡唯一）。"""
+
+    app = make_app(tmp_path, monkeypatch)
+    with TestClient(app) as client:
+        runtime = app.state.platform_runtime
+        register_legacy_grid(runtime)
+        asset = client.post("/api/cases/resistivity/render-assets/netcdf").json()
+        before = client.get("/api/cases").json()["cases"]
+        before_ids = [c["case_id"] for c in before]
+        assert before_ids.count("resistivity") == 1
+
+        resp = _post_export(client, asset["id"], axis="z", index=0)
+        assert resp.status_code == 201, resp.text
+
+        after = client.get("/api/cases").json()["cases"]
+        after_ids = [c["case_id"] for c in after]
+        assert after_ids.count("resistivity") == 1, after_ids
+        # 唯一的卡仍是 builtin_legacy 身份，不得翻转为 user_upload
+        card = next(c for c in after if c["case_id"] == "resistivity")
+        assert card.get("source_kind") == "builtin_legacy"
+        assert card.get("workspace_kind") == "builtin_legacy"
+
+
 def test_result_package_download_name_unchanged(tmp_path, monkeypatch):
     app = make_app(tmp_path, monkeypatch)
     with TestClient(app) as client:
