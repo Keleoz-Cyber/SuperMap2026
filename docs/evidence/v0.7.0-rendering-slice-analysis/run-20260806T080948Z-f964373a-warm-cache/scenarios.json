@@ -1,0 +1,93 @@
+{
+  "run_id": "run-20260806T080948Z-f964373a",
+  "git_commit": "e9132b4f1324546270e1078577f5925f5b525946",
+  "sdk_sha256": "d69dadab01fc452a79f1fa88a46aced3cf29885df7bf4febbd6f24ce5b578120",
+  "browser": "chromium(persistent)",
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "scenarios": [
+    {
+      "scenario": "fresh-context",
+      "volumeMetrics": {
+        "nonBg": 128832,
+        "total": 181440,
+        "coverage": 0.71005291005291,
+        "colorStd": 17.31,
+        "largestComponent": 128272,
+        "componentRatio": 0.9956532538499752
+      },
+      "sliceMetrics": {
+        "nonBg": 70315,
+        "total": 181440,
+        "coverage": 0.38753858024691357,
+        "colorStd": 109,
+        "largestComponent": 70315,
+        "componentRatio": 1
+      }
+    },
+    {
+      "scenario": "normal-reload",
+      "volumeMetrics": {
+        "nonBg": 128833,
+        "total": 181440,
+        "coverage": 0.7100584215167548,
+        "colorStd": 16.59,
+        "largestComponent": 128273,
+        "componentRatio": 0.9956532875893599
+      },
+      "sliceMetrics": {
+        "nonBg": 70315,
+        "total": 181440,
+        "coverage": 0.38753858024691357,
+        "colorStd": 109,
+        "largestComponent": 70315,
+        "componentRatio": 1
+      }
+    },
+    {
+      "scenario": "server-restart-reload",
+      "volumeMetrics": {
+        "nonBg": 128833,
+        "total": 181440,
+        "coverage": 0.7100584215167548,
+        "colorStd": 17.23,
+        "largestComponent": 128273,
+        "componentRatio": 0.9956532875893599
+      },
+      "sliceMetrics": {
+        "nonBg": 70315,
+        "total": 181440,
+        "coverage": 0.38753858024691357,
+        "colorStd": 109,
+        "largestComponent": 70315,
+        "componentRatio": 1
+      }
+    },
+    {
+      "scenario": "warm-cache-upgrade",
+      "appJs": {
+        "name": "http://127.0.0.1:5203/supermap-volume-frame/app.js?v=9b5b99a4a6ac7bfa",
+        "transferSize": 0,
+        "fromCache": true
+      },
+      "volumeMetrics": {
+        "nonBg": 128833,
+        "total": 181440,
+        "coverage": 0.7100584215167548,
+        "colorStd": 17.29,
+        "largestComponent": 128273,
+        "componentRatio": 0.9956532875893599
+      },
+      "sliceMetrics": {
+        "nonBg": 70315,
+        "total": 181440,
+        "coverage": 0.38753858024691357,
+        "colorStd": 109,
+        "largestComponent": 70315,
+        "componentRatio": 1
+      }
+    }
+  ]
+}
