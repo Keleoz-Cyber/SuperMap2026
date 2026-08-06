@@ -995,6 +995,22 @@ class ProfessionalDiagnosticRepository:
     def get(self, diagnosis_id: str) -> ProfessionalDiagnosticRecord:
         return _professional_diagnostic_record(self._get_row(diagnosis_id))
 
+    def list_for_dataset(
+        self, dataset_id: str, limit: int = 50,
+    ) -> list[ProfessionalDiagnosticRecord]:
+        """List diagnostics for a dataset, newest-first."""
+        rows = (
+            self._s.query(ProfessionalDiagnostic)
+            .filter(ProfessionalDiagnostic.dataset_version_id == dataset_id)
+            .order_by(
+                ProfessionalDiagnostic.created_at.desc(),
+                ProfessionalDiagnostic.id.desc(),
+            )
+            .limit(limit)
+            .all()
+        )
+        return [_professional_diagnostic_record(row) for row in rows]
+
     def _cas_transition(
         self,
         diagnosis_id: str,

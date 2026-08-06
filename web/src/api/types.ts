@@ -1215,3 +1215,84 @@ export interface PointLayerPayload {
   isNodata?: boolean[]
   style: PointLayerStyle
 }
+
+// ---------------------------------------------------------------------------
+// v0.7.0 batch 3: case lifecycle, data preparation, diagnostics, comparison
+// ---------------------------------------------------------------------------
+
+export interface TrashCaseSummary {
+  case_id: string
+  name: string
+  trashed_at: string
+  counts: { datasets: number; experiments: number; results: number }
+  can_restore: boolean
+  can_purge: boolean
+  reason: string | null
+}
+
+export interface DataPreparationNextAction {
+  step: 'upload' | 'mapping' | 'quality_review' | 'experiment' | 'repair'
+  label: string
+  url: string | null
+}
+
+export interface DataPreparationSummary {
+  state: 'needs_upload' | 'needs_mapping' | 'needs_quality_review' | 'ready' | 'blocked'
+  dataset_id: string | null
+  latest_validated_dataset_id: string | null
+  next_action: DataPreparationNextAction
+  error: { code: string; dataset_id: string } | null
+}
+
+export interface ProfessionalDiagnosticListItem {
+  diagnosis: Record<string, unknown>
+  job: Record<string, unknown> | null
+  url: string
+}
+
+export interface ProfessionalDiagnosticList {
+  dataset_id: string
+  diagnostics: ProfessionalDiagnosticListItem[]
+}
+
+export interface ProfessionalConfirmationSummary {
+  confirmation: Record<string, unknown>
+  diagnosis_id: string
+  diagnosis_status: string
+  dataset_id: string
+  case_id: string
+  fingerprint: string
+  config_summary: Record<string, unknown>
+}
+
+export interface ComparisonCandidateSummary {
+  candidate_result_id: string
+  experiment_id: string
+  run_id: string
+  algorithm: string
+  parameters: Record<string, unknown>
+  selectable: boolean
+  metrics: { rmse: number | null; mae: number | null; r2: number | null; bias: number | null }
+  result_url: string
+}
+
+export interface CandidateCatalogGroup {
+  experiment_id: string
+  experiment_name: string
+  candidates: ComparisonCandidateSummary[]
+}
+
+export interface CandidateCatalog {
+  dataset_id: string
+  groups: CandidateCatalogGroup[]
+}
+
+export interface MultiCandidateComparison {
+  candidate_result_ids: string[]
+  dataset_version_id: string
+  comparable: boolean
+  mismatches: string[]
+  candidates: ComparisonCandidateSummary[]
+  ranking: string[] | null
+  comparison_fingerprint: string
+}

@@ -67,7 +67,7 @@ from geomodeling.platform.public_dto import (
 from geomodeling.platform.repositories import AnalysisJobRepository, DatasetRepository
 from geomodeling.platform.results import CANDIDATE_NOT_SUCCEEDED, _load_candidate, preview
 from geomodeling.platform.schemas import ContractModel, ProfessionalDiagnosisRequest
-from geomodeling.platform.tables import RunStatus
+from geomodeling.platform.tables import AnalysisJob, RunStatus
 
 router = APIRouter(tags=["v0.6-professional"])
 
@@ -130,6 +130,80 @@ def request_professional_diagnosis(
         if worker is not None:
             worker.enqueue_analysis(record.job_id)
     return JSONResponse(status_code=200 if record.reused else 202, content=body)
+
+
+@router.get("/api/datasets/{dataset_id}/professional-diagnostics")
+def list_professional_diagnostics(
+    dataset_id: str,
+    runtime: PlatformRuntime = Depends(get_platform_runtime),
+) -> dict[str, Any]:
+    """List diagnostics for a dataset, newest-first, with job summary and view URL."""
+
+    from geomodeling.platform.repositories import (
+        ProfessionalDiagnosticRepository,
+        AnalysisJobRepository,
+        _analysis_job_record,
+    )
+    from geomodeling.platform.public_dto import public_professional_diagnosis, public_analysis_job
+    from sqlalchemy import select as sa_select
+
+    with runtime.session() as session:
+        diagnoses = ProfessionalDiagnosticRepository(session).list_for_dataset(dataset_id)
+        items = []
+        for diag in diagnoses:
+            job_record = None
+            job_row = session.scalar(
+                sa_select(AnalysisJob)
+                .where(
+                    AnalysisJob.subject_id == diag.id,
+                    AnalysisJob.job_kind == "professional_diagnosis",
+                )
+                .order_by(AnalysisJob.created_at.desc())
+                .limit(1)
+            )
+            if job_row is not None:
+                job_record = _analysis_job_record(job_row)
+            items.append({
+                "diagnosis": public_professional_diagnosis(diag),
+                "job": public_analysis_job(job_record) if job_record else None,
+                "url": f"/datasets/{dataset_id}/professional-diagnosis?diagnosis={diag.id}",
+            })
+    return {"dataset_id": dataset_id, "diagnostics": items}
+
+
+@router.get("/api/professional-confirmations/{confirmation_id}")
+def get_professional_confirmation(
+    confirmation_id: str,
+    runtime: PlatformRuntime = Depends(get_platform_runtime),
+) -> dict[str, Any]:
+    """Read a confirmation snapshot with diagnosis/dataset/case identity."""
+
+    from geomodeling.platform.repositories import (
+        ProfessionalConfirmationRepository,
+        ProfessionalDiagnosticRepository,
+        DatasetRepository,
+        CaseRepository,
+    )
+    from geomodeling.platform.public_dto import public_confirmation, public_professional_diagnosis
+    from geomodeling.platform.errors import PROFESSIONAL_DIAGNOSIS_NOT_SUCCEEDED
+
+    with runtime.session() as session:
+        conf_repo = ProfessionalConfirmationRepository(session)
+        confirmation = conf_repo.get(confirmation_id)
+        diag_repo = ProfessionalDiagnosticRepository(session)
+        diagnosis = diag_repo.get(confirmation.diagnostic_id)
+        dataset = DatasetRepository(session).get(diagnosis.dataset_version_id)
+        case = CaseRepository(session).get_active(dataset.case_id)
+
+        return {
+            "confirmation": public_confirmation(confirmation),
+            "diagnosis_id": diagnosis.id,
+            "diagnosis_status": getattr(diagnosis.status, "value", diagnosis.status),
+            "dataset_id": dataset.id,
+            "case_id": case.id,
+            "fingerprint": confirmation.fingerprint,
+            "config_summary": confirmation.config,
+        }
 
 
 def _load_succeeded_diagnosis(runtime: PlatformRuntime, diagnosis_id: str):

@@ -4,6 +4,7 @@ import type {
   AnomalyExtractionPayload,
   AnomalyExtractionRecord,
   ApiErrorBody,
+  CandidateCatalog,
   CandidateComparisonResult,
   CandidatesResponse,
   CaseDatasetsResponse,
@@ -13,8 +14,12 @@ import type {
   ExperimentCreatePayload,
   ExperimentRecord,
   FoldEvidence,
+  MultiCandidateComparison,
+  ProfessionalConfirmationSummary,
+  ProfessionalDiagnosticList,
   ProfessionalResultEvidence,
   ResidualEvidence,
+  TrashCaseSummary,
   UncertaintyLayerKind,
   UncertaintyPreview,
   FieldMappingPayload,
@@ -442,3 +447,37 @@ export function importLegacyRhoRenderSource(
     body: form,
   })
 }
+
+// ---------------------------------------------------------------------------
+// v0.7.0 batch 3: lifecycle, data preparation, diagnostics, comparison
+// ---------------------------------------------------------------------------
+
+export const trashCase = (id: string) =>
+  requestJson<Record<string, unknown>>(`/cases/${id}`, { method: 'DELETE' })
+
+export const fetchTrashCases = () =>
+  getJson<{ cases: TrashCaseSummary[] }>('/trash/cases')
+
+export const restoreCase = (id: string) =>
+  requestJson<Record<string, unknown>>(`/cases/${id}/restore`, { method: 'POST' })
+
+export const purgeCase = (id: string, name: string) =>
+  requestJson<Record<string, unknown>>(`/cases/${id}/purge`, {
+    method: 'POST',
+    body: JSON.stringify({ confirmation_name: name }),
+  })
+
+export const abandonDataset = (id: string) =>
+  requestJson<Record<string, unknown>>(`/datasets/${id}/abandon`, { method: 'POST' })
+
+export const fetchProfessionalDiagnostics = (datasetId: string) =>
+  getJson<ProfessionalDiagnosticList>(`/datasets/${datasetId}/professional-diagnostics`)
+
+export const fetchProfessionalConfirmation = (id: string) =>
+  getJson<ProfessionalConfirmationSummary>(`/professional-confirmations/${id}`)
+
+export const fetchComparisonCandidates = (datasetId: string) =>
+  getJson<CandidateCatalog>(`/datasets/${datasetId}/comparison-candidates`)
+
+export const compareCandidates = (ids: string[]) =>
+  postJson<MultiCandidateComparison>('/candidate-comparisons', { candidate_result_ids: ids })
