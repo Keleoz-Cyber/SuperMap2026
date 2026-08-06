@@ -161,6 +161,15 @@ describe('VolumeRenderToolbar', () => {
     expect(next.boundingBox).toBe(false)
   })
 
+  it('滤波 min == max 是退化区间：不发射且不抛异常（buildColorStops 拒绝空值域）', async () => {
+    const wrapper = mountToolbar()
+    await wrapper.find('[data-test="filter-min"]').setValue('42')
+    await wrapper.find('[data-test="filter-max"]').setValue('42')
+    await wrapper.find('[data-test="filter-apply"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+  })
+
   it('滤波上下限合法时发射；非法时不发射且不报错打断', async () => {
     const wrapper = mountToolbar()
     await wrapper.find('[data-test="filter-min"]').setValue('20')

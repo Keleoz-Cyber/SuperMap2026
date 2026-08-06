@@ -135,13 +135,14 @@ const boundingBoxModel = computed<boolean>({
 const filterDraft = reactive({ min: '', max: '' })
 
 function applyFilter() {
-  // 单侧留空回退为当前状态值；两侧都空或非法或 min > max 时不发射
+  // 单侧留空回退为当前状态值；两侧都空或非法或退化区间（min >= max）时不发射；
+  // min == max 会让 buildColorStops 的空值域校验抛 VALUE_RANGE_INVALID，必须先拦截
   const minInput = filterDraft.min.trim()
   const maxInput = filterDraft.max.trim()
   if (minInput === '' && maxInput === '') return
   const min = minInput === '' ? state.value.filter.min : Number(minInput)
   const max = maxInput === '' ? state.value.filter.max : Number(maxInput)
-  if (!Number.isFinite(min) || !Number.isFinite(max) || min > max) return
+  if (!Number.isFinite(min) || !Number.isFinite(max) || min >= max) return
   cloneWith((next) => {
     next.filter = { min, max }
     next.colorTransferFunction = buildColorStops(currentPaletteId.value, currentScale.value, [min, max])
