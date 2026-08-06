@@ -147,13 +147,20 @@ interface MockState {
   runStarted: boolean
   selections: unknown[]
   exported: boolean
-  datasetStatus: 'uploaded' | 'mapped' | 'validated'
+  datasetStatus: 'uploaded' | 'mapped' | 'validated' | 'abandoned'
   diagnosisJobPolls: number
   extractionJobPolls: number
-  // v0.6.1：cand-1 物化状态机——GET /results 未物化 404，POST materialize 后 200
+  // v0.6.1：cand-1 物化状态机--GET /results 未物化 404，POST materialize 后 200
   resultMaterialized: boolean
-  // v0.6.1：内置电阻率 legacy 渲染源登记状态机——导入 POST 前未登记，导入后 supported
+  // v0.6.1：内置电阻率 legacy 渲染源登记状态机--导入 POST 前未登记，导入后 supported
   legacyRenderSourceRegistered: boolean
+  // v0.7.0 batch 3：案例生命周期状态机
+  caseName: string | null
+  caseTrashed: boolean
+  casePurged: boolean
+  caseTrashedAt: string | null
+  // v0.7.0 batch 3：多候选比较调用计数（首次 comparable，后续 incompatible）
+  comparisonCalls: number
 }
 
 // ---------------------------------------------------------------- v0.6 专业建模
@@ -352,6 +359,11 @@ export async function installMockApi(page: Page): Promise<void> {
     extractionJobPolls: 0,
     resultMaterialized: false,
     legacyRenderSourceRegistered: false,
+    caseName: null,
+    caseTrashed: false,
+    casePurged: false,
+    caseTrashedAt: null,
+    comparisonCalls: 0,
   }
 
   const runBody = (status: string, completed: number) => ({
@@ -502,13 +514,52 @@ export async function installMockApi(page: Page): Promise<void> {
       })
     }
     if (path === '/cases/case-e2e/workspace' && method === 'GET') {
+      if (state.casePurged) {
+        return json(route, { error: { code: 'CASE_NOT_FOUND', message: '案例不存在', details: { case_id: 'case-e2e' } } }, 404)
+      }
+      if (state.caseTrashed) {
+        return json(route, { error: { code: 'CASE_TRASHED', message: '案例已移入回收站', details: { case_id: 'case-e2e' } } }, 410)
+      }
+      const prepMap: Record<string, { state: string; step: string; label: string; url: string | null }> = {
+        uploaded: { state: 'needs_mapping', step: 'mapping', label: '继续字段映射', url: `/#/cases/case-e2e/datasets/ds-e2e/prepare` },
+        mapped: { state: 'needs_quality_review', step: 'quality_review', label: '继续质量检查', url: `/#/cases/case-e2e/datasets/ds-e2e/prepare` },
+        validated: { state: 'ready', step: 'experiment', label: '新建实验', url: `/#/cases/case-e2e/experiments/new` },
+        abandoned: { state: 'needs_upload', step: 'upload', label: '上传数据', url: `/#/cases/case-e2e/datasets/new` },
+      }
+      const prep = prepMap[state.datasetStatus] ?? prepMap.uploaded
+      const validatedDatasets = state.datasetStatus === 'validated'
+        ? [{
+            id: 'ds-e2e',
+            case_id: 'case-e2e',
+            version: 1,
+            status: 'validated',
+            created_at: T,
+            profile: {
+              mapping: {
+                dimension: '3d',
+                x: 'x',
+                y: 'y',
+                z: 'z',
+                value: 'rho',
+                value_name: '电阻率',
+                value_unit: 'unknown',
+                coordinate_kind: 'local_linear',
+              },
+              row_count: 1722,
+              valid_row_count: 1722,
+              invalid_row_count: 0,
+            },
+          }]
+        : []
       return json(route, {
         case_id: 'case-e2e',
-        title: 'E2E 案例',
+        title: state.caseName ?? 'E2E 案例',
         case_type: 'generic',
         status: 'active',
         source_kind: 'upload',
         workspace_kind: 'user_upload',
+        lifecycle_state: 'active',
+        trashed_at: null,
         created_at: T,
         updated_at: T,
         capabilities: {
@@ -521,7 +572,7 @@ export async function installMockApi(page: Page): Promise<void> {
           id: 'ds-e2e',
           case_id: 'case-e2e',
           version: 1,
-          status: 'validated',
+          status: state.datasetStatus === 'abandoned' ? 'abandoned' : state.datasetStatus,
           created_at: T,
           profile: {
             mapping: {
@@ -545,6 +596,14 @@ export async function installMockApi(page: Page): Promise<void> {
           value_unit: 'unknown',
           coordinate_kind: 'local_linear',
         },
+        data_preparation: {
+          state: prep.state,
+          dataset_id: state.datasetStatus === 'abandoned' ? null : 'ds-e2e',
+          latest_validated_dataset_id: state.datasetStatus === 'validated' ? 'ds-e2e' : null,
+          next_action: { step: prep.step, label: prep.label, url: prep.url },
+          error: null,
+        },
+        validated_datasets: validatedDatasets,
         links: { detail: '/api/cases/case-e2e', publish_status: null },
       })
     }
@@ -637,8 +696,7 @@ export async function installMockApi(page: Page): Promise<void> {
       })
     }
     if (path === '/cases' && method === 'GET') {
-      return json(route, {
-        cases: [
+      const cases: unknown[] = [
           {
             case_id: 'resistivity',
             title: '地下电阻率',
@@ -723,19 +781,39 @@ export async function installMockApi(page: Page): Promise<void> {
             },
             links: { detail: '/api/cases/case-bench-32', publish_status: null },
           },
-        ],
-      })
+      ]
+      // v0.7.0 batch 3：动态注入已创建的 user_upload 案例（trashed/purged 时排除）
+      if (state.caseName && !state.caseTrashed && !state.casePurged) {
+        cases.push({
+          case_id: 'case-e2e',
+          title: state.caseName,
+          case_type: 'generic',
+          status: 'active',
+          source_kind: 'upload',
+          workspace_kind: 'user_upload',
+          lifecycle_state: 'active',
+          trashed_at: null,
+          created_at: T,
+          updated_at: T,
+          links: { detail: '/api/cases/case-e2e', publish_status: null },
+        })
+      }
+      return json(route, { cases })
     }
     if (path === '/cases' && method === 'POST') {
       const body = route.request().postDataJSON() as { name: string; case_type?: string }
       if (body.case_type === 'microseismic') {
         return json(
           route,
-          { id: 'case-micro', name: body.name, case_type: 'microseismic', config: {}, created_at: T, updated_at: T },
+          { id: 'case-micro', name: body.name, case_type: 'microseismic', config: {}, lifecycle_state: 'active', trashed_at: null, created_at: T, updated_at: T },
           201,
         )
       }
-      return json(route, { id: 'case-e2e', name: 'E2E 案例', case_type: 'generic', config: {}, created_at: T, updated_at: T }, 201)
+      state.caseName = body.name
+      state.caseTrashed = false
+      state.casePurged = false
+      state.caseTrashedAt = null
+      return json(route, { id: 'case-e2e', name: body.name, case_type: 'generic', config: { workspace_kind: 'user_upload' }, lifecycle_state: 'active', trashed_at: null, created_at: T, updated_at: T }, 201)
     }
     if (path === '/cases/case-e2e/datasets/uploads' && method === 'POST') {
       return json(route, {
@@ -746,6 +824,88 @@ export async function installMockApi(page: Page): Promise<void> {
         profile: { original_filename: 'platform_demo_3d.csv', suffix: 'csv', size_bytes: 4096, source_sha256: SHA },
         created_at: T,
       }, 201)
+    }
+    // ---------------------------------- v0.7.0 batch 3：案例生命周期
+    if (path === '/cases/case-e2e' && method === 'DELETE') {
+      if (state.casePurged || !state.caseName) {
+        return json(route, { error: { code: 'CASE_NOT_FOUND', message: '案例不存在', details: { case_id: 'case-e2e' } } }, 404)
+      }
+      state.caseTrashed = true
+      state.caseTrashedAt = T
+      return json(route, {
+        id: 'case-e2e',
+        name: state.caseName,
+        case_type: 'generic',
+        config: { workspace_kind: 'user_upload' },
+        lifecycle_state: 'trashed',
+        trashed_at: T,
+        created_at: T,
+        updated_at: T,
+      })
+    }
+    if (path === '/trash/cases' && method === 'GET') {
+      const items: unknown[] = []
+      if (state.caseName && state.caseTrashed && !state.casePurged) {
+        items.push({
+          case_id: 'case-e2e',
+          name: state.caseName,
+          trashed_at: state.caseTrashedAt ?? T,
+          counts: { datasets: 1, experiments: 0, results: 0 },
+          can_restore: true,
+          can_purge: true,
+          reason: null,
+        })
+      }
+      return json(route, { cases: items })
+    }
+    if (path === '/cases/case-e2e/restore' && method === 'POST') {
+      if (state.casePurged || !state.caseName) {
+        return json(route, { error: { code: 'CASE_NOT_FOUND', message: '案例不存在', details: { case_id: 'case-e2e' } } }, 404)
+      }
+      if (!state.caseTrashed) {
+        return json(route, { error: { code: 'CASE_PURGE_BLOCKED', message: '案例不在回收站', details: { case_id: 'case-e2e' } } }, 409)
+      }
+      state.caseTrashed = false
+      state.caseTrashedAt = null
+      return json(route, {
+        id: 'case-e2e',
+        name: state.caseName,
+        case_type: 'generic',
+        config: { workspace_kind: 'user_upload' },
+        lifecycle_state: 'active',
+        trashed_at: null,
+        created_at: T,
+        updated_at: T,
+      })
+    }
+    if (path === '/cases/case-e2e/purge' && method === 'POST') {
+      const body = route.request().postDataJSON() as { confirmation_name: string }
+      if (state.casePurged || !state.caseName) {
+        return json(route, { error: { code: 'CASE_NOT_FOUND', message: '案例不存在', details: { case_id: 'case-e2e' } } }, 404)
+      }
+      if (!state.caseTrashed) {
+        return json(route, { error: { code: 'CASE_PURGE_BLOCKED', message: '案例未在回收站，无法永久删除', details: { case_id: 'case-e2e' } } }, 409)
+      }
+      if (body.confirmation_name !== state.caseName) {
+        return json(route, { error: { code: 'CASE_PURGE_CONFIRMATION_MISMATCH', message: '确认名称与案例名称不匹配', details: { case_id: 'case-e2e' } } }, 422)
+      }
+      state.casePurged = true
+      return json(route, { operation_id: 'op-purge-1', state: 'cleaned' })
+    }
+    // ---------------------------------- v0.7.0 batch 3：数据集放弃
+    if (path === '/datasets/ds-e2e/abandon' && method === 'POST') {
+      if (state.datasetStatus === 'validated' || state.datasetStatus === 'abandoned') {
+        return json(route, { error: { code: 'DATASET_ABANDON_FORBIDDEN', message: '只有未完成的数据版本可以放弃', details: { dataset_id: 'ds-e2e', status: state.datasetStatus } } }, 409)
+      }
+      state.datasetStatus = 'abandoned'
+      return json(route, {
+        id: 'ds-e2e',
+        case_id: 'case-e2e',
+        version: 1,
+        status: 'abandoned',
+        profile: { original_filename: 'platform_demo_3d.csv', suffix: 'csv', size_bytes: 4096, source_sha256: SHA },
+        created_at: T,
+      })
     }
     if (path === '/datasets/ds-e2e' && method === 'GET') {
       return json(route, {
@@ -1271,6 +1431,73 @@ export async function installMockApi(page: Page): Promise<void> {
         202,
       )
     }
+    // v0.7.0 batch 3：GET 诊断列表（newest-first，含 job 摘要与 view URL）
+    if (path === '/datasets/ds-e2e/professional-diagnostics' && method === 'GET') {
+      return json(route, {
+        dataset_id: 'ds-e2e',
+        diagnostics: [
+          {
+            diagnosis: {
+              id: 'diag-pro-1',
+              dataset_version_id: 'ds-e2e',
+              status: 'succeeded',
+              fingerprint: 'fp-diag-pro-1',
+              config: {
+                variogram: {
+                  lag_count: 12,
+                  min_pairs_per_bin: 30,
+                  max_pairs: 50000,
+                  directions: [
+                    { dimension: '2d', azimuth_deg: 0, azimuth_tolerance_deg: 15 },
+                    { dimension: '2d', azimuth_deg: 90, azimuth_tolerance_deg: 15 },
+                  ],
+                },
+              },
+              manifest: PRO_DIAGNOSIS_MANIFEST,
+              error: null,
+              created_at: T,
+              updated_at: T,
+              finished_at: T,
+            },
+            job: {
+              id: 'job-diag-1',
+              job_kind: 'professional_diagnosis',
+              subject_type: 'professional_diagnostic',
+              subject_id: 'diag-pro-1',
+              request_fingerprint: 'fp-req-diag-1',
+              status: 'succeeded',
+              retry_of_job_id: null,
+              progress: { phase: 'finalize' },
+              error: null,
+              created_at: T,
+              updated_at: T,
+              started_at: T,
+              finished_at: T,
+            },
+            url: '/datasets/ds-e2e/professional-diagnosis?diagnosis=diag-pro-1',
+          },
+        ],
+      })
+    }
+    // v0.7.0 batch 3：GET 确认快照（含诊断/数据集/案例身份）
+    if (path === '/professional-confirmations/conf-pro-1' && method === 'GET') {
+      return json(route, {
+        confirmation: {
+          id: 'conf-pro-1',
+          diagnostic_id: 'diag-pro-1',
+          fingerprint: 'fp-conf-pro-1',
+          note: '采纳诊断候选主方向（mock 夹具）',
+          config: { parameter_origin: 'manual_confirmed', prior: 'user_prior' },
+          created_at: T,
+        },
+        diagnosis_id: 'diag-pro-1',
+        diagnosis_status: 'succeeded',
+        dataset_id: 'ds-e2e',
+        case_id: 'case-e2e',
+        fingerprint: 'fp-conf-pro-1',
+        config_summary: { parameter_origin: 'manual_confirmed', prior: 'user_prior' },
+      })
+    }
     if (path === '/analysis-jobs/job-diag-1' && method === 'GET') {
       state.diagnosisJobPolls += 1
       const done = state.diagnosisJobPolls > 1
@@ -1705,6 +1932,89 @@ export async function installMockApi(page: Page): Promise<void> {
         standardized_sha256: MICRO_SHA,
         confirmed: true,
         confirmed_issue_codes: [],
+      })
+    }
+    // ---------------------------------- v0.7.0 batch 3：候选目录与多候选比较
+    if (path === '/datasets/ds-e2e/comparison-candidates' && method === 'GET') {
+      const candidateSummary = (id: string, expId: string, runId: string, algo: string, params: Record<string, unknown>, rmse: number, mae: number, r2: number, bias: number) => ({
+        candidate_result_id: id,
+        experiment_id: expId,
+        run_id: runId,
+        algorithm: algo,
+        parameters: params,
+        selectable: true,
+        metrics: { rmse, mae, r2, bias },
+        result_url: `/results/${id}`,
+      })
+      return json(route, {
+        dataset_id: 'ds-e2e',
+        groups: [
+          {
+            experiment_id: 'exp-e2e',
+            experiment_name: 'E2E 实验',
+            candidates: [
+              candidateSummary('cand-1', 'exp-e2e', 'run-e2e', 'idw', { power: 1.5, neighbor_count: 8 }, 1.2, 0.9, 0.94, 0.05),
+              candidateSummary('cand-2', 'exp-e2e', 'run-e2e', 'idw', { power: 2, neighbor_count: 8 }, 2.4, 1.6, 0.88, -0.1),
+            ],
+          },
+          {
+            experiment_id: 'exp-pro',
+            experiment_name: '专业 Kriging 实验',
+            candidates: [
+              candidateSummary('cand-pro-1', 'exp-pro', 'run-pro', 'ordinary_kriging', { variogram_model: 'spherical', neighbor_count: 16 }, 1.21, 0.92, 0.93, 0.04),
+              candidateSummary('cand-pro-2', 'exp-pro', 'run-pro', 'ordinary_kriging', { variogram_model: 'spherical', neighbor_count: 24 }, 1.33, 1.0, 0.91, 0.05),
+            ],
+          },
+        ],
+      })
+    }
+    if (path === '/candidate-comparisons' && method === 'POST') {
+      const body = route.request().postDataJSON() as { candidate_result_ids: string[] }
+      const ids = body.candidate_result_ids
+      if (ids.length !== new Set(ids).size || ids.length < 2 || ids.length > 4) {
+        return json(route, { error: { code: 'COMPARISON_SELECTION_INVALID', message: '比较选择必须为 2-4 个唯一候选', details: { candidate_result_ids: ids } } }, 422)
+      }
+      state.comparisonCalls += 1
+      const catalog: Record<string, { exp: string; run: string; algo: string; params: Record<string, unknown>; rmse: number; mae: number; r2: number; bias: number }> = {
+        'cand-1': { exp: 'exp-e2e', run: 'run-e2e', algo: 'idw', params: { power: 1.5, neighbor_count: 8 }, rmse: 1.2, mae: 0.9, r2: 0.94, bias: 0.05 },
+        'cand-2': { exp: 'exp-e2e', run: 'run-e2e', algo: 'idw', params: { power: 2, neighbor_count: 8 }, rmse: 2.4, mae: 1.6, r2: 0.88, bias: -0.1 },
+        'cand-pro-1': { exp: 'exp-pro', run: 'run-pro', algo: 'ordinary_kriging', params: { variogram_model: 'spherical', neighbor_count: 16 }, rmse: 1.21, mae: 0.92, r2: 0.93, bias: 0.04 },
+        'cand-pro-2': { exp: 'exp-pro', run: 'run-pro', algo: 'ordinary_kriging', params: { variogram_model: 'spherical', neighbor_count: 24 }, rmse: 1.33, mae: 1.0, r2: 0.91, bias: 0.05 },
+      }
+      const summaries = ids.map((id) => {
+        const c = catalog[id]
+        return {
+          candidate_result_id: id,
+          experiment_id: c.exp,
+          run_id: c.run,
+          algorithm: c.algo,
+          parameters: c.params,
+          selectable: true,
+          metrics: { rmse: c.rmse, mae: c.mae, r2: c.r2, bias: c.bias },
+          result_url: `/results/${id}`,
+        }
+      })
+      // 首次比较返回 comparable + ranking；后续返回 incompatible 演示不兼容字段
+      if (state.comparisonCalls === 1) {
+        const ranking = [...summaries].sort((a, b) => a.metrics.rmse! - b.metrics.rmse!).map((s) => s.candidate_result_id)
+        return json(route, {
+          candidate_result_ids: ids,
+          dataset_version_id: 'ds-e2e',
+          comparable: true,
+          mismatches: [],
+          candidates: summaries,
+          ranking,
+          comparison_fingerprint: 'fp-multi-cmp-1',
+        })
+      }
+      return json(route, {
+        candidate_result_ids: ids,
+        dataset_version_id: 'ds-e2e',
+        comparable: false,
+        mismatches: ['candidate_not_succeeded:cand-2'],
+        candidates: summaries,
+        ranking: null,
+        comparison_fingerprint: 'fp-multi-cmp-2',
       })
     }
     return json(route, { error: { code: 'MOCK_NOT_FOUND', message: `未 mock 的端点：${method} ${path}`, details: {} } }, 404)

@@ -153,7 +153,7 @@ test.describe('v0.6 专业建模流程（mock API）', () => {
     await expect(page.getByTestId('confirmation-id')).toContainText('conf-pro-1')
     await page.getByTestId('goto-experiment').click()
     await expect(page).toHaveURL(
-      /#\/cases\/case-e2e\/experiments\/new\?dataset=ds-e2e&confirmation=conf-pro-1/,
+      /#\/cases\/case-e2e\/experiments\/new\?dataset=ds-e2e&professional_confirmation=conf-pro-1/,
     )
 
     // 专业 Kriging 实验：网格搜索两组邻点数 → 两个成功候选
@@ -277,5 +277,186 @@ test.describe('v0.6.1 实验成果状态区（mock API）', () => {
     await page.getByTestId('view-result').click()
     await expect(page).toHaveURL(/#\/results\/cand-1/)
     await expect(page.getByTestId('tab-slices')).toBeVisible()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// v0.7.0 batch 3：案例生命周期、数据准备恢复、数据集优先诊断、多候选比较
+// （mock API）。每个 test 独立 installMockApi，互不依赖。
+// ---------------------------------------------------------------------------
+test.describe('v0.7 生命周期与比较流程（mock API）', () => {
+  test('恢复数据准备：上传 -> 停在映射 -> 工作台恢复 -> 映射/质量 -> 已验证', async ({ page }) => {
+    await installMockApi(page)
+
+    // 创建案例 + 上传 -> 停在映射步骤（不提交映射）
+    await page.goto('/')
+    await page.getByTestId('create-case-card').click()
+    await page.getByTestId('case-name').fill('恢复测试')
+    await page.getByTestId('case-file').setInputFiles({
+      name: 'platform_demo_3d.csv',
+      mimeType: 'text/csv',
+      buffer: Buffer.from('x,y,z,rho\n-50,300,-50,67.05\n'),
+    })
+    await page.getByTestId('case-submit').click()
+    await expect(page).toHaveURL(/#\/cases\/case-e2e\/datasets\/ds-e2e\/prepare/)
+
+    // 未映射时返回工作台 -> data_preparation 面板显示"继续"
+    await page.goto('/#/cases/case-e2e')
+    await expect(page.getByTestId('case-workspace-header')).toBeVisible()
+    await expect(page.getByTestId('data-preparation-panel')).toBeVisible()
+    await expect(page.getByTestId('prep-action-continue')).toBeVisible()
+
+    // 点击"继续" -> 回到数据准备页 -> 映射 + 质量 -> 已验证
+    await page.getByTestId('prep-action-continue').click()
+    await expect(page).toHaveURL(/#\/cases\/case-e2e\/datasets\/ds-e2e\/prepare/)
+    await page.getByTestId('mapping-value-name').fill('电阻率')
+    await page.getByTestId('mapping-submit').click()
+    await expect(page.getByTestId('quality-banner')).toContainText('质量校验通过')
+    await page.getByTestId('enter-workspace').click()
+    await expect(page).toHaveURL(/#\/cases\/case-e2e$/)
+    // 验证后工作台显示"新建实验"恢复按钮
+    await expect(page.getByTestId('prep-action-experiment')).toBeVisible()
+  })
+
+  test('回收与恢复：删除案例 -> 首页消失 -> 回收站可见 -> 恢复 -> 工作台可用', async ({ page }) => {
+    await installMockApi(page)
+
+    // 创建案例
+    await page.goto('/')
+    await page.getByTestId('create-case-card').click()
+    await page.getByTestId('case-name').fill('回收测试')
+    await page.getByTestId('case-file').setInputFiles({
+      name: 'platform_demo_3d.csv',
+      mimeType: 'text/csv',
+      buffer: Buffer.from('x,y,z,rho\n-50,300,-50,67.05\n'),
+    })
+    await page.getByTestId('case-submit').click()
+    await expect(page).toHaveURL(/#\/cases\/case-e2e\/datasets\/ds-e2e\/prepare/)
+
+    // 首页 -> 移入回收站
+    await page.goto('/')
+    const caseCard = page.locator('.case-card', { hasText: '回收测试' })
+    await caseCard.getByTestId('trash-case-btn').click()
+    await page.locator('.el-dropdown-menu__item:visible', { hasText: '移入回收站' }).click()
+
+    // 案例从首页消失
+    await expect(page.locator('.case-card', { hasText: '回收测试' })).toHaveCount(0)
+
+    // 回收站 -> 案例可见 -> 恢复
+    await page.goto('/#/trash')
+    await expect(page.getByTestId('trash-list')).toBeVisible()
+    await expect(page.getByText('回收测试')).toBeVisible()
+    await page.getByTestId('restore-case').click()
+    await expect(page.getByText('回收测试')).toHaveCount(0)
+
+    // 恢复后工作台可用
+    await page.goto('/#/cases/case-e2e')
+    await expect(page.getByTestId('case-workspace-header')).toContainText('回收测试')
+  })
+
+  test('永久删除：回收 -> 输入精确名称 -> 删除 -> 深链返回未找到', async ({ page }) => {
+    await installMockApi(page)
+
+    // 创建案例
+    await page.goto('/')
+    await page.getByTestId('create-case-card').click()
+    await page.getByTestId('case-name').fill('永久删除测试')
+    await page.getByTestId('case-file').setInputFiles({
+      name: 'platform_demo_3d.csv',
+      mimeType: 'text/csv',
+      buffer: Buffer.from('x,y,z,rho\n-50,300,-50,67.05\n'),
+    })
+    await page.getByTestId('case-submit').click()
+
+    // 首页 -> 移入回收站
+    await page.goto('/')
+    const caseCard = page.locator('.case-card', { hasText: '永久删除测试' })
+    await caseCard.getByTestId('trash-case-btn').click()
+    await page.locator('.el-dropdown-menu__item:visible', { hasText: '移入回收站' }).click()
+
+    // 回收站 -> 永久删除
+    await page.goto('/#/trash')
+    await expect(page.getByText('永久删除测试')).toBeVisible()
+    await page.getByTestId('purge-case-open').click()
+    await expect(page.getByTestId('purge-dialog')).toBeVisible()
+    await page.getByTestId('purge-name-input').fill('永久删除测试')
+    await page.getByTestId('purge-confirm-btn').click()
+
+    // 案例从回收站消失
+    await expect(page.getByText('永久删除测试')).toHaveCount(0)
+
+    // 深链工作台 -> 未找到
+    await page.goto('/#/cases/case-e2e')
+    await expect(page.getByTestId('workspace-load-error')).toBeVisible()
+  })
+
+  test('数据集优先诊断：验证 -> 诊断 -> 确认 -> 应用到 Kriging 实验', async ({ page }) => {
+    await installMockApi(page)
+
+    // 创建案例 + 上传 + 映射 + 质量 -> 已验证
+    await page.goto('/')
+    await page.getByTestId('create-case-card').click()
+    await page.getByTestId('case-name').fill('诊断优先测试')
+    await page.getByTestId('case-file').setInputFiles({
+      name: 'platform_demo_3d.csv',
+      mimeType: 'text/csv',
+      buffer: Buffer.from('x,y,z,rho\n-50,300,-50,67.05\n'),
+    })
+    await page.getByTestId('case-submit').click()
+    await page.getByTestId('mapping-value-name').fill('电阻率')
+    await page.getByTestId('mapping-submit').click()
+    await expect(page.getByTestId('quality-banner')).toContainText('质量校验通过')
+    await page.getByTestId('enter-workspace').click()
+    await expect(page).toHaveURL(/#\/cases\/case-e2e$/)
+
+    // 工作台 -> 已验证数据集区 -> 专业诊断入口
+    await expect(page.getByTestId('validated-datasets')).toBeVisible()
+    await page.getByTestId('professional-diagnosis-btn').click()
+    await expect(page).toHaveURL(/#\/datasets\/ds-e2e\/professional-diagnosis\?case=case-e2e/)
+
+    // 诊断：提交 -> 任务轮询 -> 变异函数证据
+    await expect(page.getByTestId('diagnosis-config')).toBeVisible()
+    await page.getByTestId('start-diagnosis').click()
+    await expect(page.getByTestId('variogram-panel')).toBeVisible({ timeout: 15000 })
+
+    // 不可变确认
+    await page.getByTestId('confirm-model').selectOption('spherical')
+    await page.getByTestId('confirm-note').fill('数据集优先确认')
+    await page.getByTestId('confirm-submit').click()
+    await expect(page.getByTestId('confirmation-snapshot')).toBeVisible()
+
+    // 应用到 Kriging 实验
+    await page.getByTestId('goto-experiment').click()
+    await expect(page).toHaveURL(/professional_confirmation=conf-pro-1/)
+    await page.getByTestId('professional-toggle').check()
+    await page.getByTestId('algo-kriging').check()
+    await expect(page.getByTestId('professional-confirmation')).toContainText('conf-pro-1')
+    await page.getByTestId('exp-submit').click()
+    await expect(page).toHaveURL(/#\/experiments\/exp-pro/)
+  })
+
+  test('候选比较：跨实验选择 -> 排名；然后不兼容字段', async ({ page }) => {
+    await installMockApi(page)
+
+    await page.goto('/#/datasets/ds-e2e/candidate-comparison')
+    await expect(page.getByTestId('candidate-comparison-view')).toBeVisible()
+    await expect(page.getByTestId('candidate-table')).toBeVisible()
+
+    // 从两个实验各选一个候选
+    const checkboxes = page.getByTestId('candidate-checkbox')
+    await checkboxes.nth(0).click()
+    await checkboxes.nth(2).click()
+
+    // 比较 -> 可排名
+    await page.getByTestId('compare-btn').click()
+    await expect(page.getByTestId('ranking-result')).toBeVisible()
+    await expect(page.getByTestId('ranking-row-0')).toBeVisible()
+
+    // 更换选择 -> 再比较 -> 不兼容字段
+    await checkboxes.nth(0).click()
+    await expect(page.getByTestId('ranking-result')).toHaveCount(0)
+    await checkboxes.nth(1).click()
+    await page.getByTestId('compare-btn').click()
+    await expect(page.getByTestId('mismatch-list')).toBeVisible()
   })
 })
