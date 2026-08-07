@@ -567,3 +567,62 @@ class TestProfessionalParameterLanding:
         for key in ("variogram_model", "variogram_mode", "anisotropy"):
             assert key not in merged
         IDWParameters.model_validate(merged)
+
+
+# ---------------------------------------------------------------------------
+# Task 1: Normalize horizontal-only 3D confirmation geometry
+# ---------------------------------------------------------------------------
+
+
+def test_horizontal_only_3d_confirmation_uses_neutral_vertical_defaults():
+    """3D confirmation with null dip/roll/vertical_ratio normalizes to neutral defaults."""
+    from geomodeling.platform.experiments import _confirmation_anisotropy_spec
+
+    spec = _confirmation_anisotropy_spec(
+        {
+            "keep_isotropic": False,
+            "azimuth_deg": 90.0,
+            "dip_deg": None,
+            "roll_deg": None,
+            "major_minor_ratio": 2.0,
+            "major_vertical_ratio": None,
+        },
+        "3d",
+    )
+    assert spec.azimuth_deg == 90.0
+    assert spec.dip_deg == 0.0
+    assert spec.roll_deg == 0.0
+    assert spec.major_scale == 1.0
+    assert spec.minor_scale == 0.5
+    assert spec.vertical_scale == 1.0
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("major_minor_ratio", 0.0),
+        ("major_minor_ratio", -1.0),
+        ("major_minor_ratio", float("nan")),
+        ("major_vertical_ratio", 0.0),
+        ("major_vertical_ratio", float("inf")),
+        ("azimuth_deg", float("nan")),
+    ],
+)
+def test_confirmation_geometry_rejects_non_finite_or_non_positive_values(field, value):
+    from geomodeling.platform.experiments import (
+        PROFESSIONAL_CONFIG_INVALID,
+        _confirmation_anisotropy_spec,
+    )
+
+    payload = {
+        "keep_isotropic": False,
+        "azimuth_deg": 45.0,
+        "dip_deg": None,
+        "roll_deg": None,
+        "major_minor_ratio": 2.0,
+        "major_vertical_ratio": None,
+    }
+    payload[field] = value
+    with pytest.raises(PlatformError) as exc_info:
+        _confirmation_anisotropy_spec(payload, "3d")
+    assert exc_info.value.code == PROFESSIONAL_CONFIG_INVALID
