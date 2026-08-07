@@ -64,7 +64,12 @@ from geomodeling.platform.public_dto import (
     public_residuals,
     public_variogram_evidence,
 )
-from geomodeling.platform.repositories import AnalysisJobRepository, DatasetRepository
+from geomodeling.platform.repositories import (
+    AnalysisJobRepository,
+    DatasetRepository,
+    require_active_dataset,
+    require_active_candidate,
+)
 from geomodeling.platform.results import CANDIDATE_NOT_SUCCEEDED, _load_candidate, preview
 from geomodeling.platform.schemas import ContractModel, ProfessionalDiagnosisRequest
 from geomodeling.platform.tables import AnalysisJob, RunStatus
@@ -114,6 +119,7 @@ def request_professional_diagnosis(
 ) -> JSONResponse:
     """创建专业诊断请求：202 + 任务身份；同指纹成功幂等返回 200。"""
 
+    require_active_dataset(runtime, dataset_id)
     record = create_professional_diagnosis(
         runtime, dataset_id, request_body.model_dump(mode="json")
     )
@@ -139,6 +145,7 @@ def list_professional_diagnostics(
 ) -> dict[str, Any]:
     """List diagnostics for a dataset, newest-first, with job summary and view URL."""
 
+    require_active_dataset(runtime, dataset_id)
     from geomodeling.platform.repositories import (
         ProfessionalDiagnosticRepository,
         AnalysisJobRepository,
@@ -210,8 +217,7 @@ def _load_succeeded_diagnosis(runtime: PlatformRuntime, diagnosis_id: str):
     """解析诊断与归属数据版本；非 succeeded 诊断 409（证据只在成功态公开）。"""
 
     record = get_professional_diagnosis(runtime, diagnosis_id)
-    with runtime.session() as session:
-        DatasetRepository(session).get(record.dataset_version_id)
+    require_active_dataset(runtime, record.dataset_version_id)
     if record.status != RunStatus.SUCCEEDED.value:
         raise PlatformError(
             PROFESSIONAL_DIAGNOSIS_NOT_SUCCEEDED,
@@ -230,8 +236,7 @@ def get_professional_diagnosis_dto(
     """诊断状态、指纹、manifest 摘要（逻辑工件名/大小/SHA-256）与错误。"""
 
     record = get_professional_diagnosis(runtime, diagnosis_id)
-    with runtime.session() as session:
-        DatasetRepository(session).get(record.dataset_version_id)
+    require_active_dataset(runtime, record.dataset_version_id)
     return public_professional_diagnosis(record)
 
 
@@ -322,6 +327,8 @@ def confirm_diagnosis(
 ) -> dict[str, Any]:
     """为成功诊断创建不可变确认快照（201）；非 succeeded 诊断 409。"""
 
+    _diag = get_professional_diagnosis(runtime, diagnosis_id)
+    require_active_dataset(runtime, _diag.dataset_version_id)
     record = confirm_professional_diagnosis(
         runtime,
         diagnosis_id,
@@ -421,6 +428,7 @@ def get_professional_result(
     绝不伪造零值指标或能力。
     """
 
+    require_active_candidate(runtime, result_id)
     candidate, _run, experiment = _load_succeeded_candidate(runtime, result_id)
     params = tables.loads_canonical(experiment.params_json)
     algorithm = params["algorithm"]
@@ -477,6 +485,7 @@ def get_result_folds(
 ) -> dict[str, Any]:
     """折分证据：折数、逐折训练/验证计数、空间组身份、泄漏检查与逐折指标（有界）。"""
 
+    require_active_candidate(runtime, result_id)
     candidate, _run, _experiment = _load_succeeded_candidate(runtime, result_id)
     assignments_path = (
         runtime.settings.professional_result_dir(result_id) / "fold_assignments.parquet"
@@ -527,6 +536,7 @@ def get_result_residuals(
 ) -> dict[str, Any]:
     """OOF 残差表：行数上限内联 + decimate 抽稀；完整 parquet 走白名单下载。"""
 
+    require_active_candidate(runtime, result_id)
     _load_succeeded_candidate(runtime, result_id)
     oof_path = (
         runtime.settings.professional_result_dir(result_id) / "out_of_fold_predictions.parquet"
@@ -579,6 +589,7 @@ def get_result_uncertainty(
     能力不适用（IDW 请求 kriging_std）409；层未物化 404；绝不返回 0 场。
     """
 
+    require_active_candidate(runtime, result_id)
     return preview(runtime, result_id, layer=kind)
 
 
@@ -596,6 +607,7 @@ def request_anomaly_extraction(
 ) -> JSONResponse:
     """创建异常提取请求：202 + 任务身份；同成果同配置成功幂等返回 200。"""
 
+    require_active_candidate(runtime, result_id)
     record = create_anomaly_extraction(runtime, result_id, config)
     # 先读 subject 状态再入队：响应身份不受 worker 并发翻转影响（确定性）
     subject = get_anomaly_extraction(runtime, record.id)
@@ -620,6 +632,7 @@ def get_anomaly_extraction_dto(
     """提取状态、配置、manifest 摘要与有界 components 预览。"""
 
     record = get_anomaly_extraction(runtime, extraction_id)
+    require_active_candidate(runtime, record.candidate_result_id)
     _load_candidate(runtime, record.candidate_result_id)  # 归属链核验
     components = None
     if record.status == "succeeded" and record.manifest:
@@ -681,6 +694,8 @@ def create_comparison(
 ) -> dict[str, Any]:
     """比较两个成功候选（只读已登记工件）；结论以 comparison_fingerprint 登记。"""
 
+    require_active_candidate(runtime, request_body.first_result_id)
+    require_active_candidate(runtime, request_body.second_result_id)
     comparison = compare_candidates(
         runtime, request_body.first_result_id, request_body.second_result_id
     )
@@ -829,6 +844,7 @@ def list_comparison_candidates(
 ) -> dict[str, Any]:
     """List comparable candidates across experiments for a dataset version."""
 
+    require_active_dataset(runtime, dataset_id)
     from geomodeling.platform.candidate_comparisons import candidate_catalog
 
     return candidate_catalog(runtime, dataset_id)
@@ -847,5 +863,7 @@ def compare_candidates_route(
     )
 
     req = CandidateComparisonRequest(**request_body)
+    for cid in req.candidate_result_ids:
+        require_active_candidate(runtime, cid)
     result = compare_candidates_multi(runtime, req.candidate_result_ids)
     return result.model_dump(mode="json")

@@ -60,7 +60,7 @@ from geomodeling.platform.slice_exports import (
     MAX_SLICE_IMAGE_BYTES,
     SLICE_EXPORT_UPLOAD_TOO_LARGE,
 )
-from geomodeling.platform.repositories import RenderAssetRepository
+from geomodeling.platform.repositories import RenderAssetRepository, require_active_candidate
 from geomodeling.platform.schemas import (
     STATUS_READY,
     ContractModel,
@@ -165,6 +165,7 @@ def get_result_render_capability(
     result_id: str,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
+    require_active_candidate(runtime, result_id)
     # 纯查询：不物化、不建文件、不改行
     return dataclasses.asdict(render_assets.candidate_render_capability(runtime, result_id))
 
@@ -176,6 +177,7 @@ def create_result_render_asset(
     body: RenderAssetCreateBody | None = None,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
+    require_active_candidate(runtime, result_id)
     # POST 是显式变异：先显式物化（幂等），再解析源创建资产
     platform_results.materialize(runtime, result_id)
     source = render_assets.resolve_candidate_render_source(runtime, result_id)
@@ -191,6 +193,7 @@ def get_result_render_asset(
     result_id: str,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
+    require_active_candidate(runtime, result_id)
     return _status_payload(runtime, "candidate_result", result_id)
 
 

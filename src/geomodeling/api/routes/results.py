@@ -17,7 +17,12 @@ from geomodeling.platform import PlatformRuntime, tables
 from geomodeling.platform.errors import PlatformError, READ_ONLY_CASE_FORMAL_SELECTION
 from geomodeling.platform.exports import build_export
 from geomodeling.platform.publications import request_publication
-from geomodeling.platform.repositories import FormalSelectionRepository
+from geomodeling.platform.repositories import (
+    FormalSelectionRepository,
+    require_active_candidate,
+    require_active_case,
+    require_active_export,
+)
 from geomodeling.platform.results import (
     materialize,
     preview,
@@ -34,6 +39,7 @@ def materialize_result(
     result_id: str,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
+    require_active_candidate(runtime, result_id)
     return materialize(runtime, result_id)
 
 
@@ -42,6 +48,7 @@ def get_result(
     result_id: str,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
+    require_active_candidate(runtime, result_id)
     # 纯查询：只读已物化 metadata；未物化 404，绝不隐式物化
     return read_materialized_metadata(runtime, result_id)
 
@@ -51,6 +58,7 @@ def get_result_preview(
     result_id: str,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
+    require_active_candidate(runtime, result_id)
     return preview(runtime, result_id)
 
 
@@ -61,6 +69,7 @@ def get_result_slice(
     index: int = Query(..., ge=0),
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
+    require_active_candidate(runtime, result_id)
     return serve_slice(runtime, result_id, axis, index)
 
 
@@ -79,6 +88,7 @@ def select_formal(
     request: FormalSelectionBody,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
+    require_active_candidate(runtime, result_id)
     with runtime.session() as session:
         candidate = session.get(tables.CandidateResult, result_id)
         if candidate is None:
@@ -134,6 +144,7 @@ def list_formal_selections(
     case_id: str,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
+    require_active_case(runtime, case_id)
     with runtime.session() as session:
         rows = (
             session.query(tables.FormalSelection)
@@ -164,6 +175,7 @@ def create_export(
     result_id: str,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
+    require_active_candidate(runtime, result_id)
     return build_export(runtime, result_id)
 
 
@@ -172,6 +184,7 @@ def download_export(
     export_id: str,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> FileResponse:
+    require_active_export(runtime, export_id)
     with runtime.session() as session:
         row = session.get(tables.Export, export_id)
         if row is None:
@@ -200,4 +213,5 @@ def create_publication(
     result_id: str,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
+    require_active_candidate(runtime, result_id)
     return request_publication(runtime, result_id)

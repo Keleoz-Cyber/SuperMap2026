@@ -79,6 +79,7 @@ from geomodeling.platform.tables import (
     CasePurgeOperation,
     DatasetVersion,
     Experiment,
+    Export,
     FormalSelection,
     ProfessionalConfirmation,
     ProfessionalDiagnostic,

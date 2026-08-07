@@ -33,6 +33,7 @@ def get_dataset(
     dataset_id: str,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
+    require_active_dataset(runtime, dataset_id)
     with runtime.session() as session:
         record = DatasetRepository(session).get(dataset_id)
     return public_dataset(record)
@@ -46,6 +47,7 @@ def dataset_points(
 ) -> dict[str, Any]:
     """标准化点数据（实测点叠加层用）；只读，始终来自标准化工件。"""
 
+    require_active_dataset(runtime, dataset_id)
     record, profile = _load_quality_context(runtime, dataset_id)
     standardized = record.standardized_path or profile.get("standardized_path")
     if record.status == DatasetStatus.UPLOADED or not standardized:
@@ -82,6 +84,7 @@ def inspect_dataset(
     sheet: str | None = Query(default=None),
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
+    require_active_dataset(runtime, dataset_id)
     settings = runtime.settings
     with runtime.session() as session:
         record = DatasetRepository(session).get(dataset_id)
@@ -102,6 +105,7 @@ def map_dataset(
     sheet: str | None = Query(default=None),
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
+    require_active_dataset(runtime, dataset_id)
     settings = runtime.settings
     with runtime.session() as session:
         repo = DatasetRepository(session)
@@ -159,6 +163,7 @@ def validate_dataset(
     dataset_id: str,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
+    require_active_dataset(runtime, dataset_id)
     record, profile = _load_quality_context(runtime, dataset_id)
     if record.status not in (DatasetStatus.MAPPED, DatasetStatus.BLOCKED, DatasetStatus.VALIDATED):
         raise PlatformError(
@@ -194,6 +199,7 @@ def get_quality(
     dataset_id: str,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
+    require_active_dataset(runtime, dataset_id)
     _, profile = _load_quality_context(runtime, dataset_id)
     report = profile.get("quality")
     if report is None:
@@ -212,6 +218,7 @@ def confirm_warnings(
     payload: dict[str, Any],
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
+    require_active_dataset(runtime, dataset_id)
     _, profile = _load_quality_context(runtime, dataset_id)
     report = profile.get("quality")
     if report is None:

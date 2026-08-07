@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, Request
 from geomodeling.api.deps import get_platform_runtime
 from geomodeling.platform import PlatformRuntime, tables
 from geomodeling.platform.errors import PlatformError, RUN_NOT_RETRYABLE
-from geomodeling.platform.repositories import RunRepository
+from geomodeling.platform.repositories import RunRepository, require_active_run
 from geomodeling.platform.schemas import RunRecord
 
 router = APIRouter(prefix="/api/runs", tags=["v0.4-runs"])
@@ -24,6 +24,7 @@ def get_run(
     run_id: str,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
+    require_active_run(runtime, run_id)
     with runtime.session() as session:
         record = RunRepository(session).get(run_id)
     body = record.model_dump(mode="json")
@@ -39,6 +40,7 @@ def cancel_run(
     request: Request,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> RunRecord:
+    require_active_run(runtime, run_id)
     with runtime.session() as session:
         repo = RunRepository(session)
         record = repo.get(run_id)
@@ -67,6 +69,7 @@ def retry_run(
     request: Request,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> RunRecord:
+    require_active_run(runtime, run_id)
     with runtime.session() as session:
         record = RunRepository(session).retry(run_id)
     worker = _worker(request)
