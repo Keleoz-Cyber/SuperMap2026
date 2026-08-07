@@ -215,6 +215,21 @@ def public_confirmation(record: ProfessionalConfirmationRecord) -> dict[str, Any
     }
 
 
+def public_confirmation_summary(
+    record: ProfessionalConfirmationRecord,
+    *,
+    applicable: bool,
+) -> dict[str, Any]:
+    """Bounded confirmation summary for diagnosis list/detail (no config, no paths)."""
+    return {
+        "id": record.id,
+        "diagnostic_id": record.diagnostic_id,
+        "fingerprint": record.fingerprint,
+        "created_at": record.created_at,
+        "applicable": applicable,
+    }
+
+
 def public_professional_result(
     result_id: str,
     *,

@@ -1110,3 +1110,54 @@ class TestOwnershipChain:
         resp = ns.client.post("/api/experiments", json=body)
         assert resp.status_code == 409
         assert resp.json()["error"]["code"] == "PROFESSIONAL_CAPABILITY_NOT_APPLICABLE"
+
+
+# ---------------------------------------------------------------------------
+# Task 2: Expose latest_confirmation on diagnosis list/detail
+# ---------------------------------------------------------------------------
+
+
+class TestLatestConfirmation:
+    def test_list_returns_latest_confirmation(self, professional_api):
+        """Diagnosis list returns latest_confirmation summary (newest confirmation)."""
+        ns = professional_api
+        resp = ns.client.get(
+            f"/api/datasets/{ns.dataset_id}/professional-diagnostics"
+        )
+        assert resp.status_code == 200, resp.text
+        items = resp.json()["diagnostics"]
+        assert len(items) >= 1
+        item = items[0]
+        assert "latest_confirmation" in item
+        lc = item["latest_confirmation"]
+        assert lc is not None
+        # The fixture creates auto then manual; manual is newest
+        assert lc["id"] == ns.manual_confirmation_id
+        assert lc["diagnostic_id"] == ns.diagnosis_id
+        assert lc["applicable"] is True
+        assert "config" not in lc
+        assert "path" not in json.dumps(lc).lower()
+
+    def test_detail_returns_latest_confirmation(self, professional_api):
+        """Diagnosis detail returns latest_confirmation summary (newest confirmation)."""
+        ns = professional_api
+        resp = ns.client.get(
+            f"/api/professional-diagnostics/{ns.diagnosis_id}"
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert "latest_confirmation" in body
+        lc = body["latest_confirmation"]
+        assert lc is not None
+        assert lc["id"] == ns.manual_confirmation_id
+
+    def test_no_confirmation_returns_null(self, diagnosis_api):
+        """Before any confirmation, latest_confirmation is null."""
+        ns = diagnosis_api
+        resp = ns.client.get(
+            f"/api/datasets/{ns.dataset_id}/professional-diagnostics"
+        )
+        assert resp.status_code == 200, resp.text
+        items = resp.json()["diagnostics"]
+        assert len(items) >= 1
+        assert "latest_confirmation" in items[0]

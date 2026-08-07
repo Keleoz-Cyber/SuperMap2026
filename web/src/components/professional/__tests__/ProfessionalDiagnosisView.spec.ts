@@ -701,7 +701,7 @@ describe('诊断恢复（query.diagnosis）', () => {
   ): ProfessionalDiagnosticList {
     return {
       dataset_id: diagnosis.dataset_version_id,
-      diagnostics: [{ diagnosis: diagnosis as unknown as Record<string, unknown>, job: job as unknown as Record<string, unknown> | null, url: `/datasets/${diagnosis.dataset_version_id}/professional-diagnosis?diagnosis=${diagnosis.id}` }],
+      diagnostics: [{ diagnosis: diagnosis as unknown as Record<string, unknown>, job: job as unknown as Record<string, unknown> | null, url: `/datasets/${diagnosis.dataset_version_id}/professional-diagnosis?diagnosis=${diagnosis.id}`, latest_confirmation: null }],
     }
   }
 

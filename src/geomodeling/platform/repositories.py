@@ -1159,6 +1159,21 @@ class ProfessionalConfirmationRepository:
         )
         return [_professional_confirmation_record(row) for row in rows]
 
+    def latest_for_diagnostic(
+        self, diagnostic_id: str
+    ) -> ProfessionalConfirmationRecord | None:
+        """Return the newest confirmation for a diagnostic, or None."""
+        row = (
+            self._s.query(ProfessionalConfirmation)
+            .filter(ProfessionalConfirmation.diagnostic_id == diagnostic_id)
+            .order_by(
+                ProfessionalConfirmation.created_at.desc(),
+                ProfessionalConfirmation.id.desc(),
+            )
+            .first()
+        )
+        return _professional_confirmation_record(row) if row is not None else None
+
 
 class ProfessionalResultArtifactsRepository:
     def __init__(self, session: Session) -> None:

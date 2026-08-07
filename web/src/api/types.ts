@@ -1255,10 +1255,19 @@ export interface DataPreparationSummary {
   error: { code: string; dataset_id: string } | null
 }
 
+export interface ProfessionalConfirmationListSummary {
+  id: string
+  diagnostic_id: string
+  fingerprint: string
+  created_at: string
+  applicable: boolean
+}
+
 export interface ProfessionalDiagnosticListItem {
   diagnosis: Record<string, unknown>
   job: Record<string, unknown> | null
   url: string
+  latest_confirmation: ProfessionalConfirmationListSummary | null
 }
 
 export interface ProfessionalDiagnosticList {

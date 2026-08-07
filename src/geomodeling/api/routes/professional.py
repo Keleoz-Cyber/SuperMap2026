@@ -160,14 +160,20 @@ def list_professional_diagnostics(
     require_active_dataset(runtime, dataset_id)
     from geomodeling.platform.repositories import (
         ProfessionalDiagnosticRepository,
+        ProfessionalConfirmationRepository,
         AnalysisJobRepository,
         _analysis_job_record,
     )
-    from geomodeling.platform.public_dto import public_professional_diagnosis, public_analysis_job
+    from geomodeling.platform.public_dto import (
+        public_professional_diagnosis,
+        public_analysis_job,
+        public_confirmation_summary,
+    )
     from sqlalchemy import select as sa_select
 
     with runtime.session() as session:
         diagnoses = ProfessionalDiagnosticRepository(session).list_for_dataset(dataset_id)
+        conf_repo = ProfessionalConfirmationRepository(session)
         items = []
         for diag in diagnoses:
             job_record = None
@@ -182,10 +188,22 @@ def list_professional_diagnostics(
             )
             if job_row is not None:
                 job_record = _analysis_job_record(job_row)
+            latest = conf_repo.latest_for_diagnostic(diag.id)
             items.append({
                 "diagnosis": public_professional_diagnosis(diag),
                 "job": public_analysis_job(job_record) if job_record else None,
                 "url": f"/datasets/{dataset_id}/professional-diagnosis?diagnosis={diag.id}",
+                "latest_confirmation": (
+                    public_confirmation_summary(
+                        latest,
+                        applicable=(
+                            latest.diagnostic_id == diag.id
+                            and getattr(diag.status, "value", diag.status) == "succeeded"
+                        ),
+                    )
+                    if latest is not None
+                    else None
+                ),
             })
     return {"dataset_id": dataset_id, "diagnostics": items}
 
@@ -256,7 +274,27 @@ def get_professional_diagnosis_dto(
 
     record = get_professional_diagnosis(runtime, diagnosis_id)
     require_active_dataset(runtime, record.dataset_version_id)
-    return public_professional_diagnosis(record)
+    body = public_professional_diagnosis(record)
+    # Attach latest_confirmation summary
+    from geomodeling.platform.repositories import ProfessionalConfirmationRepository
+    from geomodeling.platform.public_dto import public_confirmation_summary
+
+    with runtime.session() as session:
+        conf_repo = ProfessionalConfirmationRepository(session)
+        latest = conf_repo.latest_for_diagnostic(diagnosis_id)
+    body["latest_confirmation"] = (
+        public_confirmation_summary(
+            latest,
+            applicable=(
+                latest is not None
+                and latest.diagnostic_id == diagnosis_id
+                and getattr(record.status, "value", record.status) == "succeeded"
+            ),
+        )
+        if latest is not None
+        else None
+    )
+    return body
 
 
 def _bounded_rows(frame: pd.DataFrame, decimate: int, cap: int) -> dict[str, Any]:
