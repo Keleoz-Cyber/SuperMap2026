@@ -805,7 +805,7 @@ describe('ExperimentView 专业联动', () => {
     expect(wrapper.find('[data-test="professional-confirmation"]').text()).toContain('conf1')
     expect(wrapper.find('[data-test="professional-confirmation"]').text()).toContain('fp-conf1')
 
-    await wrapper.find('[data-test="professional-toggle"]').setValue(true)
+    // v0.7.0: professional mode auto-enabled, neighborhood section visible
     await wrapper.find('[data-test="nb-radii"]').setValue('80, 40, 20')
     await wrapper.find('[data-test="exp-submit"]').trigger('click')
     await flushPromises()
@@ -829,19 +829,21 @@ describe('ExperimentView 专业联动', () => {
     wrapper.unmount()
   })
 
-  it('专业确认模式不开启专业模式：仍携带确认 ID，无邻域/经验不确定性', async () => {
+  it('专业确认模式自动启用：确认 ID 存在时邻域/经验不确定性自动包含', async () => {
     mockExperimentCreate()
     const { wrapper } = await mountExperiment(
       '/cases/c1/experiments/new?dataset=ds1&professional_confirmation=conf1',
     )
+    // v0.7.0: no toggle - confirmation auto-enables professional mode
+    expect(wrapper.find('[data-test="professional-neighborhood"]').exists()).toBe(true)
     await wrapper.find('[data-test="exp-submit"]').trigger('click')
     await flushPromises()
 
     const payload = vi.mocked(client.createExperiment).mock.calls[0][0]
     expect(payload.algorithm).toBe('ordinary_kriging')
     expect(payload.professional_confirmation_id).toBe('conf1')
-    expect(payload).not.toHaveProperty('neighborhood')
-    expect(payload).not.toHaveProperty('empirical_uncertainty')
+    expect(payload).toHaveProperty('neighborhood')
+    expect(payload).toHaveProperty('empirical_uncertainty')
     wrapper.unmount()
   })
 
@@ -859,17 +861,19 @@ describe('ExperimentView 专业联动', () => {
     wrapper.unmount()
   })
 
-  it('Kriging 专业模式缺确认快照时阻断提交并提示', async () => {
+  it('无确认快照时普通 Kriging 可正常提交（不含专业参数）', async () => {
     mockExperimentCreate()
     const { wrapper } = await mountExperiment('/cases/c1/experiments/new?dataset=ds1')
-    await wrapper.find('[data-test="professional-toggle"]').setValue(true)
+    // v0.7.0: no toggle - without confirmation, professional section is hidden
+    expect(wrapper.find('[data-test="professional-neighborhood"]').exists()).toBe(false)
     await wrapper.find('[data-test="algo-kriging"]').setValue(true)
-    expect(wrapper.find('[data-test="professional-confirmation-missing"]').exists()).toBe(true)
-
     await wrapper.find('[data-test="exp-submit"]').trigger('click')
     await flushPromises()
-    expect(client.createExperiment).not.toHaveBeenCalled()
-    expect(wrapper.find('[data-test="action-error"]').text()).toContain('确认快照')
+    expect(client.createExperiment).toHaveBeenCalledTimes(1)
+    const payload = vi.mocked(client.createExperiment).mock.calls[0][0]
+    expect(payload.algorithm).toBe('ordinary_kriging')
+    expect(payload).not.toHaveProperty('professional_confirmation_id')
+    expect(payload).not.toHaveProperty('neighborhood')
     wrapper.unmount()
   })
 })
