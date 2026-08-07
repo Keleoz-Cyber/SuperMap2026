@@ -582,8 +582,12 @@ class CaseLifecycleService:
                 session.commit()
 
         except Exception:
+            restore_failed = False
             if quarantine_dir.exists():
-                self._restore_files_from_quarantine_v2(manifest, quarantine_dir)
+                try:
+                    self._restore_files_from_quarantine_v2(manifest, quarantine_dir)
+                except OSError:
+                    restore_failed = True
             with self._runtime.session() as session:
                 # Revert case from purging back to trashed so user can retry
                 case_row = session.get(Case, case_id)
@@ -591,11 +595,20 @@ class CaseLifecycleService:
                     case_row.lifecycle_state = CaseLifecycleState.TRASHED.value
                 op_row = session.get(CasePurgeOperation, operation_id)
                 if op_row is not None and op_row.state not in ("committed", "cleaned"):
-                    op_row.state = "rolled_back"
-                    op_row.error_json = json.dumps(
-                        {"code": "PURGE_ROLLBACK", "message": "文件已恢复，案例回到回收站"},
-                        ensure_ascii=False, sort_keys=True, separators=(",", ":"),
-                    )
+                    if restore_failed:
+                        # Partial restore -- files not fully recovered, need manual intervention
+                        op_row.state = "failed"
+                        op_row.error_json = json.dumps(
+                            {"code": "CASE_PURGE_RECOVERY_REQUIRED",
+                             "message": "部分文件恢复失败，需人工介入"},
+                            ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+                        )
+                    else:
+                        op_row.state = "rolled_back"
+                        op_row.error_json = json.dumps(
+                            {"code": "PURGE_ROLLBACK", "message": "文件已恢复，案例回到回收站"},
+                            ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+                        )
                 session.commit()
             raise
 
@@ -849,9 +862,13 @@ class CaseLifecycleService:
     def _restore_files_from_quarantine(
         manifest: CasePurgeManifest, quarantine_dir: Path,
     ) -> None:
-        """Restore quarantined files to their original locations."""
+        """Restore quarantined files to their original locations.
+
+        Raises OSError if any file restore fails.
+        """
 
         roots: dict[str, Path] = {}
+        errors: list[str] = []
         for fm in manifest.files:
             root_dir = roots.get(fm.root)
             if root_dir is None:
@@ -863,13 +880,19 @@ class CaseLifecycleService:
             dst.parent.mkdir(parents=True, exist_ok=True)
             try:
                 os.replace(src, dst)
-            except OSError:
-                pass
+            except OSError as e:
+                errors.append(f"{fm.relative_path}: {e}")
+        if errors:
+            raise OSError("Partial restore failure: " + "; ".join(errors))
 
     def _restore_files_from_quarantine_v2(
         self, manifest: CasePurgeManifest, quarantine_dir: Path,
     ) -> None:
-        """Restore quarantined files to their original locations using runtime settings."""
+        """Restore quarantined files to their original locations using runtime settings.
+
+        Raises OSError if any file restore fails -- partial recovery must not
+        be silently swallowed.
+        """
 
         settings = self._runtime.settings
         roots = {
@@ -881,6 +904,7 @@ class CaseLifecycleService:
             "render_assets": settings.render_assets_dir,
             "comparisons": settings.comparisons_dir,
         }
+        errors: list[str] = []
         for fm in manifest.files:
             root_dir = roots[fm.root]
             src = quarantine_dir / fm.root / fm.relative_path
@@ -890,8 +914,10 @@ class CaseLifecycleService:
             dst.parent.mkdir(parents=True, exist_ok=True)
             try:
                 os.replace(src, dst)
-            except OSError:
-                pass
+            except OSError as e:
+                errors.append(f"{fm.relative_path}: {e}")
+        if errors:
+            raise OSError("Partial restore failure: " + "; ".join(errors))
 
     # ------------------------------------------------------------------
     # Row deletion

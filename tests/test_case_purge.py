@@ -415,3 +415,54 @@ class TestPurgeConcurrencySafety:
         with pytest.raises(PlatformError) as excinfo:
             CaseLifecycleService(runtime).purge(case_id, confirmation_name="重复清理")
         assert excinfo.value.code == "CASE_PURGE_BLOCKED"
+
+    def test_partial_restore_failure_marks_recovery_required(self, runtime, monkeypatch):
+        """If the second file restore fails during rollback, mark CASE_PURGE_RECOVERY_REQUIRED."""
+        from geomodeling.platform.tables import Case as CaseTbl
+        import geomodeling.platform.case_lifecycle as cl_module
+
+        ids = build_complete_case(runtime, name="部分恢复失败")
+        case_id = ids["case_id"]
+        CaseLifecycleService(runtime).trash(case_id)
+
+        source_file = runtime.settings.upload_source(case_id, ids["dataset_id"], "csv")
+        assert source_file.exists()
+
+        # Track os.replace calls; fail on the second call during restore
+        original_replace = os.replace
+        call_count = {"n": 0}
+
+        def patched_replace(src, dst):
+            call_count["n"] += 1
+            # Let the quarantine move (forward) succeed, but fail on restore (backward)
+            # The forward move goes quarantine -> original, the restore goes quarantine -> original
+            # We detect restore by checking if the src is in quarantine_dir
+            if "purge-quarantine" in str(src) and call_count["n"] > 2:
+                raise OSError("Simulated restore failure for second file")
+            return original_replace(src, dst)
+
+        def fail_after_quarantined(stage):
+            if stage == "after_quarantined":
+                raise RuntimeError("simulated crash")
+
+        monkeypatch.setattr(cl_module.os, "replace", patched_replace)
+
+        with pytest.raises(RuntimeError, match="simulated crash"):
+            CaseLifecycleService(runtime).purge(
+                case_id, confirmation_name="部分恢复失败",
+                failpoint=fail_after_quarantined,
+            )
+
+        # Operation should be "failed" (not "rolled_back") because restore failed
+        with runtime.session() as session:
+            ops = session.query(CasePurgeOperation).filter_by(case_id=case_id).all()
+            assert len(ops) == 1
+            assert ops[0].state == "failed"
+            import json as _json
+            error = _json.loads(ops[0].error_json)
+            assert error["code"] == "CASE_PURGE_RECOVERY_REQUIRED"
+
+        # Case should be back in trashed state
+        with runtime.session() as session:
+            case = session.get(CaseTbl, case_id)
+            assert case.lifecycle_state == "trashed"
