@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ApiError, compareCandidates, fetchComparisonCandidates } from '../api/client'
 import type {
@@ -141,7 +141,13 @@ function paramsPreview(parameters: Record<string, unknown>): string {
     .join(' ')
 }
 
-onMounted(async () => {
+async function loadCatalog() {
+  loading.value = true
+  loadError.value = null
+  catalog.value = null
+  selectedIds.value = new Set()
+  comparison.value = null
+  compareError.value = null
   try {
     catalog.value = await fetchComparisonCandidates(datasetId.value)
   } catch (e) {
@@ -149,6 +155,12 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
+}
+
+onMounted(loadCatalog)
+
+watch(datasetId, (next, prev) => {
+  if (next !== prev) void loadCatalog()
 })
 </script>
 

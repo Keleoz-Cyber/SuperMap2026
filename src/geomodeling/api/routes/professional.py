@@ -80,6 +80,7 @@ router = APIRouter(tags=["v0.6-professional"])
 ANALYSIS_JOB_NOT_CANCELABLE = "ANALYSIS_JOB_NOT_CANCELABLE"
 PROFESSIONAL_ARTIFACT_NOT_FOUND = "PROFESSIONAL_ARTIFACT_NOT_FOUND"
 COMPARISON_NOT_FOUND = "COMPARISON_NOT_FOUND"
+DATASET_NOT_VALIDATED = "DATASET_NOT_VALIDATED"
 
 # 大表内联行数硬上限（decimate 之外的第二道闸，与微震诊断点同一范式）
 MAX_VARIOGRAM_ROWS = 2_000
@@ -121,6 +122,15 @@ def request_professional_diagnosis(
     """创建专业诊断请求：202 + 任务身份；同指纹成功幂等返回 200。"""
 
     require_active_dataset(runtime, dataset_id)
+    with runtime.session() as session:
+        dv = session.get(tables.DatasetVersion, dataset_id)
+        if dv is None or dv.status != "validated":
+            raise PlatformError(
+                DATASET_NOT_VALIDATED,
+                "只有已校验（validated）的数据集才能发起专业诊断",
+                {"dataset_id": dataset_id, "status": dv.status if dv else None},
+                http_status=409,
+            )
     record = create_professional_diagnosis(
         runtime, dataset_id, request_body.model_dump(mode="json")
     )

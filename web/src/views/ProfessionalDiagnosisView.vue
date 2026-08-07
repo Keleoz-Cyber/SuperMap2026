@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ApiError,
@@ -109,7 +109,15 @@ function describeError(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
 }
 
-onMounted(async () => {
+async function loadForDataset() {
+  loading.value = true
+  loadError.value = null
+  dataset.value = null
+  diagnosis.value = null
+  evidence.value = null
+  confirmation.value = null
+  phase.value = { kind: 'config' }
+  stopPolling()
   try {
     dataset.value = await fetchDataset(datasetId.value)
     if (queryDiagnosisId.value) {
@@ -120,6 +128,12 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
+}
+
+onMounted(loadForDataset)
+
+watch(datasetId, (next, prev) => {
+  if (next !== prev) void loadForDataset()
 })
 
 // 从 query.diagnosis 恢复已有诊断：获取诊断与任务，校验数据集归属，按状态恢复轮询/证据

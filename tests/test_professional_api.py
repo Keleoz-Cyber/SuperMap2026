@@ -575,6 +575,20 @@ class TestDiagnosisEndpoints:
         assert resp.status_code == 404
         assert resp.json()["error"]["code"] == "DATASET_NOT_FOUND"
 
+    def test_diagnostic_requires_validated_dataset(self, jobs_api):
+        """Only validated datasets can start professional diagnosis (409)."""
+        upload = jobs_api.client.post(
+            f"/api/cases/{jobs_api.case_id}/datasets/uploads",
+            files={"file": ("grid.csv", io.BytesIO(GRID_CSV.encode()), "application/octet-stream")},
+        )
+        assert upload.status_code == 201, upload.text
+        dataset_id = upload.json()["id"]
+        resp = jobs_api.client.post(
+            f"/api/datasets/{dataset_id}/professional-diagnostics", json=DIAGNOSIS_CONFIG
+        )
+        assert resp.status_code == 409
+        assert resp.json()["error"]["code"] == "DATASET_NOT_VALIDATED"
+
 
 # ---------------------------------------------------------------------------
 # analysis-jobs 生命周期（cancel 只改当前任务；retry 新身份且不改写原记录）
