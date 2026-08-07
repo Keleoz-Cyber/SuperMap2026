@@ -69,74 +69,72 @@ onMounted(load)
 
 <template>
   <div class="trash-page">
-    <PageNavigation home />
+    <PageNavigation current-label="回收站" />
     <header class="page-header">
       <h1>回收站</h1>
       <p class="page-sub">已移入回收站的案例可恢复或永久删除。永久删除不可恢复。</p>
     </header>
 
-    <div v-if="actionError" class="action-error" data-test="action-error">{{ actionError }}</div>
+    <div v-if="actionError" class="action-error" role="alert" data-test="action-error">{{ actionError }}</div>
 
     <el-result
       v-if="loadError"
       icon="error"
       title="回收站加载失败"
       :sub-title="loadError"
+      role="alert"
     />
 
-    <el-table
-      v-else
-      v-loading="loading"
-      :data="trashCases"
-      data-test="trash-list"
-      stripe
-      style="width: 100%"
-    >
-      <el-table-column prop="name" label="案例名称" min-width="160" />
-      <el-table-column label="移入时间" width="180">
-        <template #default="{ row }">
-          {{ formatDateTime(row.trashed_at || '') }}
-        </template>
-      </el-table-column>
-      <el-table-column label="数据集" width="90" align="center">
-        <template #default="{ row }">{{ row.counts?.datasets ?? 0 }}</template>
-      </el-table-column>
-      <el-table-column label="实验" width="90" align="center">
-        <template #default="{ row }">{{ row.counts?.experiments ?? 0 }}</template>
-      </el-table-column>
-      <el-table-column label="成果" width="90" align="center">
-        <template #default="{ row }">{{ row.counts?.results ?? 0 }}</template>
-      </el-table-column>
-      <el-table-column label="操作" width="180" fixed="right">
-        <template #default="{ row }">
-          <div class="row-actions" data-test="trash-row">
-            <el-button
-              size="small"
-              type="primary"
-              plain
-              :disabled="!row.can_restore"
-              data-test="restore-case"
-              @click="handleRestore(row.case_id)"
-            >
-              恢复
-            </el-button>
-            <el-button
-              size="small"
-              type="danger"
-              plain
-              :disabled="!row.can_purge"
-              data-test="purge-case-open"
-              @click="openPurge(row)"
-            >
-              永久删除
-            </el-button>
-          </div>
-        </template>
-      </el-table-column>
-      <template #empty>
-        <span>回收站为空</span>
-      </template>
-    </el-table>
+    <div v-else v-loading="loading" data-test="trash-list">
+    <table class="trash-table">
+      <thead>
+        <tr>
+          <th>案例名称</th>
+          <th>移入时间</th>
+          <th class="col-num">数据集</th>
+          <th class="col-num">实验</th>
+          <th class="col-num">成果</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr v-for="row in trashCases" :key="row.case_id" data-test="trash-row">
+          <td>{{ row.name }}</td>
+          <td>{{ formatDateTime(row.trashed_at || '') }}</td>
+          <td class="col-num">{{ row.counts?.datasets ?? 0 }}</td>
+          <td class="col-num">{{ row.counts?.experiments ?? 0 }}</td>
+          <td class="col-num">{{ row.counts?.results ?? 0 }}</td>
+          <td>
+            <div class="row-actions">
+              <el-button
+                size="small"
+                type="primary"
+                plain
+                :disabled="!row.can_restore"
+                data-test="restore-case"
+                @click="handleRestore(row.case_id)"
+              >
+                恢复
+              </el-button>
+              <el-button
+                size="small"
+                type="danger"
+                plain
+                :disabled="!row.can_purge"
+                data-test="purge-case-open"
+                @click="openPurge(row)"
+              >
+                永久删除
+              </el-button>
+            </div>
+          </td>
+        </tr>
+        <tr v-if="trashCases.length === 0">
+          <td colspan="6" class="empty-cell">回收站为空</td>
+        </tr>
+      </tbody>
+    </table>
+    </div>
 
     <CasePurgeDialog
       v-model:visible="purgeVisible"
@@ -183,5 +181,34 @@ onMounted(load)
 .row-actions {
   display: flex;
   gap: 8px;
+}
+
+.trash-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.trash-table th,
+.trash-table td {
+  border: 1px solid var(--gmp-border);
+  padding: 8px 12px;
+  text-align: left;
+}
+
+.trash-table th {
+  background: var(--gmp-bg-soft);
+  color: var(--gmp-text-dim);
+  font-weight: 600;
+}
+
+.trash-table .col-num {
+  text-align: center;
+}
+
+.trash-table .empty-cell {
+  text-align: center;
+  color: var(--gmp-text-faint);
+  padding: 24px;
 }
 </style>

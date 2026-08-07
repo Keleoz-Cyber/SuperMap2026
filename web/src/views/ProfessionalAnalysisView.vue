@@ -198,7 +198,12 @@ const capabilityEntries = computed(() => {
 
 <template>
   <div class="analysis-page">
-    <PageNavigation home :experiment-id="metadata?.experiment_id" />
+    <PageNavigation
+      :case-id="experiment?.case_id"
+      :experiment-id="metadata?.experiment_id"
+      :result-id="selectedResultId || routeResultId"
+      current-label="模型评估"
+    />
     <header class="page-header">
       <h1>模型评估</h1>
       <p class="page-sub">
@@ -221,6 +226,7 @@ const capabilityEntries = computed(() => {
       title="评估加载失败"
       :sub-title="loadError"
       data-test="load-error"
+      role="alert"
     >
       <template #extra>
         <button type="button" class="back-link" data-test="error-back-to-workbench" @click="gotoResultWorkbench">

@@ -371,6 +371,7 @@ function makeTestRouter(): Router {
     history: createMemoryHistory(),
     routes: [
       { path: '/', name: 'home', component: { template: '<div />' } },
+      { path: '/cases/:caseId', name: 'case-workspace', component: { template: '<div />' } },
       { path: '/experiments/:experimentId', name: 'experiment-detail', component: { template: '<div />' } },
       { path: '/results/:resultId', name: 'result-workbench', component: ResultWorkbenchView },
       {
@@ -510,7 +511,7 @@ describe('单候选联动与参数快照', () => {
     expect(client.fetchProfessionalResult).not.toHaveBeenCalled()
     expect(client.fetchResultFolds).not.toHaveBeenCalled()
     expect(client.fetchResultResiduals).not.toHaveBeenCalled()
-    expect(wrapper.find('[data-test="nav-home"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="crumb-home"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="back-to-workbench"]').exists()).toBe(true)
     wrapper.unmount()
   })
@@ -568,8 +569,8 @@ describe('FoldInspector 折分检查', () => {
     expect(wrapper.find('[data-test="fold-inspector"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="uncertainty-panel"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="anomaly-panel"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="nav-home"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="nav-experiment"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="crumb-home"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="crumb-experiment"]').exists()).toBe(true)
     wrapper.unmount()
   })
 })
@@ -781,7 +782,7 @@ describe('只读性与导航契约', () => {
   it('加载失败保留返回首页/实验导航', async () => {
     vi.mocked(client.fetchResult).mockRejectedValue(new client.ApiError('RESULT_NOT_FOUND', '成果不存在', 404))
     const { wrapper } = await mountAnalysis()
-    expect(wrapper.find('[data-test="nav-home"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="crumb-home"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="load-error"]').exists()).toBe(true)
     wrapper.unmount()
   })

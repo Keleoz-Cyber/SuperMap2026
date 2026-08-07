@@ -388,7 +388,7 @@ onBeforeUnmount(stopPolling)
 
 <template>
   <div class="diagnosis-page">
-    <PageNavigation home :case-id="caseId || undefined" new-experiment />
+    <PageNavigation :case-id="caseId || undefined" :dataset-id="datasetId" current-label="空间结构分析" />
     <header class="page-header">
       <h1>空间结构分析</h1>
       <p class="page-sub">
@@ -400,7 +400,7 @@ onBeforeUnmount(stopPolling)
       </p>
     </header>
 
-    <el-result v-if="loadError" icon="error" title="数据集加载失败" :sub-title="loadError" />
+    <el-result v-if="loadError" icon="error" title="数据集加载失败" :sub-title="loadError" role="alert" />
     <div v-else-if="loading" v-loading="true" class="page-loading" data-test="page-loading" />
 
     <div v-else-if="gated" class="gate-blocked" data-test="quality-gate-blocked">
@@ -409,7 +409,7 @@ onBeforeUnmount(stopPolling)
     </div>
 
     <main v-else class="diagnosis-main">
-      <div v-if="actionError" class="action-error" data-test="action-error">{{ actionError }}</div>
+      <div v-if="actionError" class="action-error" role="alert" data-test="action-error">{{ actionError }}</div>
 
       <section v-if="phase.kind === 'config'" class="config-section" data-test="diagnosis-config">
         <h2 class="section-heading">分析配置</h2>
@@ -421,15 +421,15 @@ onBeforeUnmount(stopPolling)
             <div class="cfg-grid">
               <label class="field">
                 <span>滞后 bin 数 lag_count</span>
-                <input v-model.number="lagCount" type="number" min="4" max="48" class="gmp-input" data-test="cfg-lag-count" />
+                <input v-model.number="lagCount" type="number" min="4" max="48" class="gmp-input" data-test="cfg-lag-count" name="lag-count" autocomplete="off" />
               </label>
               <label class="field">
                 <span>每 bin 最小点对</span>
-                <input v-model.number="minPairs" type="number" min="2" max="10000" class="gmp-input" data-test="cfg-min-pairs" />
+                <input v-model.number="minPairs" type="number" min="2" max="10000" class="gmp-input" data-test="cfg-min-pairs" name="min-pairs" autocomplete="off" />
               </label>
               <label class="field">
                 <span>点对上限 max_pairs</span>
-                <input v-model.number="maxPairs" type="number" min="100" max="500000" class="gmp-input" data-test="cfg-max-pairs" />
+                <input v-model.number="maxPairs" type="number" min="100" max="500000" class="gmp-input" data-test="cfg-max-pairs" name="max-pairs" autocomplete="off" />
               </label>
             </div>
             <div class="cfg-directions">
@@ -457,7 +457,7 @@ onBeforeUnmount(stopPolling)
         </div>
       </section>
 
-      <section v-else-if="running" class="job-section" data-test="job-status">
+      <section v-else-if="running" class="job-section" data-test="job-status" aria-live="polite">
         <p>
           诊断任务 <span class="mono">{{ running.jobId }}</span> · 状态 {{ running.status }}
           <template v-if="running.progress.phase"> · 阶段 {{ running.progress.phase }}</template>
@@ -469,7 +469,7 @@ onBeforeUnmount(stopPolling)
       </section>
 
       <section v-else-if="failed" class="job-section">
-        <div class="job-error" data-test="job-error">
+        <div class="job-error" role="alert" data-test="job-error">
           <p class="error-head">
             {{ failed.status === 'interrupted' ? '诊断任务已中断' : '诊断任务未成功' }}（{{ failed.status }}）
           </p>

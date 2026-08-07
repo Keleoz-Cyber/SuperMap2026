@@ -76,6 +76,10 @@ describe('TrashView', () => {
     const { wrapper } = await mountView()
     const rows = wrapper.findAll('[data-test="trash-row"]')
     expect(rows).toHaveLength(3)
+    // Semantic table: one <table> with <thead> and <tbody>
+    expect(wrapper.findAll('table').length).toBe(1)
+    expect(wrapper.find('thead').exists()).toBe(true)
+    expect(wrapper.find('tbody').exists()).toBe(true)
     wrapper.unmount()
   })
 

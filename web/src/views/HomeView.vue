@@ -156,6 +156,11 @@ async function handleTrashCase(caseId: string) {
     // 静默失败：回收站操作错误不阻断首页浏览
   }
 }
+
+function openCaseMenu(event: KeyboardEvent) {
+  const target = event.target as HTMLElement
+  target.click()
+}
 </script>
 
 <template>
@@ -210,7 +215,10 @@ async function handleTrashCase(caseId: string) {
                 data-test="trash-case-btn"
                 @command="handleTrashCase(c.case_id)"
               >
-                <el-icon :size="18" class="overflow-trigger" role="button" aria-label="案例操作菜单" tabindex="0"><MoreFilled /></el-icon>
+                <el-icon :size="18" class="overflow-trigger" role="button" aria-label="案例操作菜单" tabindex="0"
+                  @keydown.enter.prevent="openCaseMenu"
+                  @keydown.space.prevent="openCaseMenu"
+                ><MoreFilled /></el-icon>
                 <template #dropdown>
                   <el-dropdown-menu>
                     <el-dropdown-item command="trash">移入回收站</el-dropdown-item>
@@ -297,7 +305,11 @@ async function handleTrashCase(caseId: string) {
           </div>
         </div>
 
-        <div class="case-card create-card" data-test="create-case-card" @click="router.push('/cases/new')">
+        <router-link
+          to="/cases/new"
+          class="case-card create-card"
+          data-test="create-case-card"
+        >
           <div class="case-head">
             <el-icon :size="20" class="case-icon"><Plus /></el-icon>
             <h2>新建建模案例</h2>
@@ -306,7 +318,7 @@ async function handleTrashCase(caseId: string) {
             <p>上传 CSV / XLSX 点数据，完成字段映射与质量校验后开始二维 / 三维插值调参。</p>
           </div>
           <div class="case-foot">
-            <el-button type="primary" plain>
+            <el-button type="primary" plain tag="span">
               上传数据
               <el-icon style="margin-left: 4px"><ArrowRight /></el-icon>
             </el-button>
@@ -320,7 +332,7 @@ async function handleTrashCase(caseId: string) {
               下载演示数据
             </a>
           </div>
-        </div>
+        </router-link>
       </div>
     </main>
 
@@ -453,6 +465,8 @@ async function handleTrashCase(caseId: string) {
     border-color 0.2s,
     background 0.2s,
     transform 0.2s;
+  text-decoration: none;
+  color: inherit;
 }
 
 .case-card:not(.disabled) {
@@ -472,6 +486,8 @@ async function handleTrashCase(caseId: string) {
 .create-card {
   border-style: dashed;
   cursor: pointer;
+  text-decoration: none;
+  color: inherit;
 }
 
 .demo-download {

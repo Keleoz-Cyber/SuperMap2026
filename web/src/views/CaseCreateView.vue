@@ -77,7 +77,7 @@ async function submit() {
         <button class="gmp-btn primary" data-test="case-submit" :disabled="!canSubmit" @click="submit">
           {{ busy ? '创建并上传中…' : '创建并进入数据准备' }}
         </button>
-        <PageNavigation home />
+        <PageNavigation current-label="新建案例" />
       </div>
     </div>
   </div>

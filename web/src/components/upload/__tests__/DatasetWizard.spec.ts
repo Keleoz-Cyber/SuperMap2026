@@ -278,7 +278,7 @@ describe('导航', () => {
     const wrapper = mount(DatasetWizardView, { global: { plugins: [router, ElementPlus] } })
     await flushPromises()
     expect(wrapper.text()).toContain('加载失败')
-    const navHome = wrapper.get('[data-test="nav-home"]')
+    const navHome = wrapper.get('[data-test="crumb-home"]')
     await navHome.trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.name).toBe('home')

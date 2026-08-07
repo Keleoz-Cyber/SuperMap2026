@@ -5,6 +5,7 @@ import { ArrowLeft } from '@element-plus/icons-vue'
 import { ApiError, fetchCaseWorkspace, fetchProfessionalDiagnostics } from '../api/client'
 import type { CaseWorkspaceSummary, ProfessionalDiagnosticListItem } from '../api/types'
 import DataPreparationPanel from '../components/cases/DataPreparationPanel.vue'
+import PageNavigation from '../components/navigation/PageNavigation.vue'
 import RhoCaseView from './RhoCaseView.vue'
 
 const route = useRoute()
@@ -101,7 +102,10 @@ function reanalyzeDataset(datasetId: string) {
   })
 }
 function gotoComparisonForDataset(datasetId: string) {
-  void router.push(`/datasets/${datasetId}/candidate-comparison`)
+  void router.push({
+    path: `/datasets/${datasetId}/candidate-comparison`,
+    query: { case: caseId.value },
+  })
 }
 
 function diagnosisStatusText(datasetId: string): string {
@@ -190,10 +194,12 @@ watch(caseId, (next, prev) => {
 <template>
   <div class="case-workspace-page">
     <div v-if="notInitialized" class="workspace-state" data-test="workspace-not-initialized">
+      <PageNavigation current-label="案例工作台" />
       <el-result
         icon="warning"
         title="微震预置案例尚未初始化"
         sub-title="需由维护者执行文档化 seed 命令；初始化完成后官方普通克里金成果自动可用，无需任何用户操作。"
+        role="alert"
       >
         <template #extra>
           <el-button type="primary" data-test="back-home" @click="router.push('/')">
@@ -204,7 +210,8 @@ watch(caseId, (next, prev) => {
     </div>
 
     <div v-else-if="loadError" class="workspace-state" data-test="workspace-load-error">
-      <el-result icon="error" title="案例工作台加载失败" :sub-title="loadError">
+      <PageNavigation current-label="案例工作台" />
+      <el-result icon="error" title="案例工作台加载失败" :sub-title="loadError" role="alert">
         <template #extra>
           <el-button @click="router.push('/')">返回首页</el-button>
         </template>
@@ -213,6 +220,7 @@ watch(caseId, (next, prev) => {
 
     <div v-else v-loading="loading">
       <template v-if="workspace">
+        <PageNavigation :case-id="caseId" :case-name="workspace.title" current-label="案例工作台" />
         <header class="workspace-header" data-test="case-workspace-header">
           <div class="header-left">
             <el-button :icon="ArrowLeft" circle title="返回首页" @click="router.push('/')" />

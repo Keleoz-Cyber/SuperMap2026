@@ -193,7 +193,7 @@ function onStart() {
 
 <template>
   <div class="wizard-page">
-    <PageNavigation home />
+    <PageNavigation :case-id="caseId" current-label="数据准备向导" />
     <header class="wizard-header">
       <h1>数据准备向导</h1>
       <p class="wizard-sub">

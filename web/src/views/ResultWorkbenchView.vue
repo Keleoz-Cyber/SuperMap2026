@@ -113,8 +113,13 @@ onMounted(async () => {
 
 <template>
   <div class="workbench-page">
-    <PageNavigation home :experiment-id="metadata?.experiment_id" />
-    <el-result v-if="loadError" icon="error" title="成果加载失败" :sub-title="loadError" />
+    <PageNavigation
+      :case-id="experiment?.case_id"
+      :experiment-id="metadata?.experiment_id"
+      :result-id="resultId"
+      current-label="成果工作台"
+    />
+    <el-result v-if="loadError" icon="error" title="成果加载失败" :sub-title="loadError" role="alert" />
 
     <template v-else-if="metadata">
       <header class="page-header">

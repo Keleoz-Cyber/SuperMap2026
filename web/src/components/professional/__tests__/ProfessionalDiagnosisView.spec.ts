@@ -348,6 +348,7 @@ function makeTestRouter(): Router {
     history: createMemoryHistory(),
     routes: [
       { path: '/', name: 'home', component: { template: '<div />' } },
+      { path: '/cases/:caseId', name: 'case-workspace', component: { template: '<div />' } },
       { path: '/cases/:caseId/experiments/new', name: 'experiment-create', component: ExperimentView },
       { path: '/experiments/:experimentId', name: 'experiment-detail', component: { template: '<div />' } },
       {
@@ -424,8 +425,8 @@ describe('数据集入口与质量门禁', () => {
     const { wrapper } = await mountDiagnosis('/datasets/ds1/professional-diagnosis?case=c1')
     expect(wrapper.find('[data-test="quality-gate-blocked"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="start-diagnosis"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="nav-home"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="nav-new-experiment"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="crumb-home"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="crumb-case"]').exists()).toBe(true)
     wrapper.unmount()
   })
 
@@ -701,8 +702,8 @@ describe('任务失败与重试', () => {
     const jobError = wrapper.find('[data-test="job-error"]')
     expect(jobError.text()).toContain('VARIOGRAM_FIT_FAILED')
     expect(jobError.text()).toContain('变异函数拟合失败')
-    expect(wrapper.find('[data-test="nav-home"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="nav-new-experiment"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="crumb-home"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="crumb-case"]').exists()).toBe(true)
 
     await wrapper.find('[data-test="retry-diagnosis"]').trigger('click')
     await flushPromises()
@@ -732,17 +733,17 @@ describe('任务失败与重试', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-test="job-error"]').text()).toContain('PROCESS_RESTARTED')
-    expect(wrapper.find('[data-test="nav-home"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="nav-new-experiment"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="crumb-home"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="crumb-case"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="retry-diagnosis"]').exists()).toBe(true)
     wrapper.unmount()
   })
 
-  it('初始加载中保留首页与实验导航', async () => {
+  it('初始加载中保留首页与案例导航', async () => {
     vi.mocked(client.fetchDataset).mockReturnValue(new Promise(() => {}))
     const { wrapper } = await mountDiagnosis('/datasets/ds1/professional-diagnosis?case=c1')
-    expect(wrapper.find('[data-test="nav-home"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="nav-new-experiment"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="crumb-home"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="crumb-case"]').exists()).toBe(true)
     wrapper.unmount()
   })
 })

@@ -357,9 +357,9 @@ onBeforeUnmount(stopPolling)
 
 <template>
   <div class="experiment-page">
-    <PageNavigation v-if="isCreate" home />
-    <PageNavigation v-else home :case-id="experiment?.case_id" new-experiment />
-    <el-result v-if="loadError" icon="error" title="加载失败" :sub-title="loadError" />
+    <PageNavigation v-if="isCreate" :case-id="caseId" current-label="新建实验" />
+    <PageNavigation v-else :case-id="experiment?.case_id" :experiment-id="experimentId" :current-label="experiment?.name ?? '实验详情'" />
+    <el-result v-if="loadError" icon="error" title="加载失败" :sub-title="loadError" role="alert" />
 
     <template v-else-if="isCreate">
       <header class="page-header">
@@ -370,10 +370,10 @@ onBeforeUnmount(stopPolling)
           <span class="mono">{{ caseId }}</span>
         </p>
       </header>
-      <div v-if="actionError" class="action-error" data-test="action-error">{{ actionError }}</div>
+      <div v-if="actionError" class="action-error" role="alert" data-test="action-error">{{ actionError }}</div>
       <label class="name-field">
         <span>实验名称</span>
-        <input v-model="name" class="gmp-input" data-test="exp-name" maxlength="256" />
+        <input v-model="name" class="gmp-input" data-test="exp-name" maxlength="256" name="experiment-name" autocomplete="off" />
       </label>
       <div class="editor-wrap" @change="onEditorChange">
         <ParameterEditor
@@ -512,7 +512,7 @@ onBeforeUnmount(stopPolling)
           实验 <span class="mono">{{ experimentId }}</span>
         </p>
       </header>
-      <div v-if="actionError" class="action-error" data-test="action-error">{{ actionError }}</div>
+      <div v-if="actionError" class="action-error" role="alert" data-test="action-error">{{ actionError }}</div>
       <SearchSummary v-if="experiment" :params="experiment.params" />
       <RunProgress :run="latestRun" :acting="acting" @cancel="onCancel" @retry="onRetry" />
       <ResultStatusPanel :run="latestRun" :candidates="candidates" />

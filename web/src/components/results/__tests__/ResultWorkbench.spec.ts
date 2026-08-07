@@ -350,11 +350,12 @@ describe('ResultWorkbenchView', () => {
 })
 
 describe('导航', () => {
-  it('成果页显示 nav-home 与 nav-experiment（精确实验 ID）', async () => {
+  it('成果页显示面包屑首页与实验链接（精确实验 ID）', async () => {
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [
         { path: '/', name: 'home', component: { template: '<div />' } },
+        { path: '/cases/:caseId', name: 'case-workspace', component: { template: '<div />' } },
         { path: '/experiments/:experimentId', name: 'experiment-detail', component: { template: '<div />' } },
         { path: '/results/:resultId', name: 'result-workbench', component: ResultWorkbenchView },
       ],
@@ -369,7 +370,7 @@ describe('导航', () => {
     const wrapper = mount(ResultWorkbenchView, { global: { plugins: [router, ElementPlus] } })
     await flushPromises()
 
-    await wrapper.get('[data-test="nav-experiment"]').trigger('click')
+    await wrapper.get('[data-test="crumb-experiment"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value).toMatchObject({
       name: 'experiment-detail',
@@ -378,7 +379,7 @@ describe('导航', () => {
 
     await router.push('/results/r1')
     await flushPromises()
-    await wrapper.get('[data-test="nav-home"]').trigger('click')
+    await wrapper.get('[data-test="crumb-home"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.name).toBe('home')
   })
@@ -401,7 +402,7 @@ describe('导航', () => {
     // 物化失败绝不继续取切片/预览
     expect(client.fetchResultSlice).not.toHaveBeenCalled()
     expect(client.fetchResultPreview).not.toHaveBeenCalled()
-    await wrapper.get('[data-test="nav-home"]').trigger('click')
+    await wrapper.get('[data-test="crumb-home"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.name).toBe('home')
   })

@@ -13,6 +13,10 @@ import PageNavigation from '../components/navigation/PageNavigation.vue'
 const route = useRoute()
 const router = useRouter()
 const datasetId = computed(() => String(route.params.datasetId ?? ''))
+const queryCaseId = computed(() => {
+  const q = route.query.case
+  return typeof q === 'string' ? q : ''
+})
 
 const MIN_SELECTION = 2
 const MAX_SELECTION = 4
@@ -231,7 +235,7 @@ watch(datasetId, (next, prev) => {
 
 <template>
   <div class="comparison-page" data-test="candidate-comparison-view">
-    <PageNavigation home />
+    <PageNavigation :case-id="queryCaseId || undefined" :dataset-id="datasetId" current-label="模型对比" />
     <header class="page-header">
       <h1>模型对比</h1>
       <p class="page-sub">同一数据版本和验证方法下比较不同实验结果</p>
@@ -244,6 +248,7 @@ watch(datasetId, (next, prev) => {
       title="候选目录加载失败"
       :sub-title="loadError"
       data-test="load-error"
+      role="alert"
     />
     <div v-else-if="loading" v-loading="true" class="page-loading" data-test="page-loading" />
 
@@ -331,7 +336,7 @@ watch(datasetId, (next, prev) => {
           </el-table>
         </section>
 
-        <div v-if="compareError" class="action-error" data-test="compare-error">{{ compareError }}</div>
+        <div v-if="compareError" class="action-error" role="alert" data-test="compare-error">{{ compareError }}</div>
 
         <section v-if="comparison" class="result-section">
           <div class="result-header">
@@ -348,6 +353,7 @@ watch(datasetId, (next, prev) => {
               v-if="deepCompareChecking"
               class="deep-status"
               data-test="deep-compare-checking"
+              aria-live="polite"
             >
               正在检查详细差异能力…
             </span>
