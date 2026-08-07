@@ -33,9 +33,9 @@ const route = useRoute()
 const router = useRouter()
 const resultId = computed(() => String(route.params.resultId))
 
-// v0.6：统一专业分析台入口；只跳转路由，不改变现有完整场/切片/选择/导出行为
-function gotoProfessionalAnalysis() {
-  void router.push({ name: 'professional-analysis', params: { resultId: resultId.value } })
+// v0.7.0：每个已物化成果都有模型评估入口
+function gotoModelEvaluation() {
+  void router.push({ name: 'model-evaluation', params: { resultId: resultId.value } })
 }
 
 const metadata = ref<ResultMetadata | null>(null)
@@ -127,16 +127,12 @@ onMounted(async () => {
           值域 {{ metadata.value_range[0] }} ~ {{ metadata.value_range[1] }}
         </p>
         <button
-          v-if="metadata.professional_analysis_supported"
           class="professional-entry"
-          data-test="professional-entry"
-          @click="gotoProfessionalAnalysis"
+          data-test="model-evaluation-entry"
+          @click="gotoModelEvaluation"
         >
-          专业分析
+          模型评估
         </button>
-        <span v-else class="professional-disabled" data-test="professional-disabled">
-          仅生成专业证据的成果支持专业分析
-        </span>
       </header>
 
       <section class="panel">
@@ -227,13 +223,6 @@ onMounted(async () => {
 
 .professional-entry:hover {
   background: rgba(79, 209, 197, 0.1);
-}
-
-.professional-disabled {
-  margin-top: 10px;
-  font-size: 12px;
-  color: var(--gmp-text-faint);
-  align-self: flex-start;
 }
 
 .panel {

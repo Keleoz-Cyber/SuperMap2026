@@ -1107,6 +1107,18 @@ export async function installMockApi(page: Page): Promise<void> {
         validation: { folds: 5 },
         created_at: T,
         professional_analysis_supported: false,
+        evaluation_summary: {
+          common_valid_count: 96,
+          candidate_valid_count: 96,
+          candidate_nodata_count: 4,
+          total_count: 100,
+          coverage: 0.96,
+          rmse: 1.2,
+          mae: 0.9,
+          r2: 0.94,
+          bias: 0.05,
+          enhanced_evidence_available: false,
+        },
       })
     }
     if (path === '/results/cand-1/preview') {
@@ -1194,6 +1206,18 @@ export async function installMockApi(page: Page): Promise<void> {
         fingerprint: 'fp-1',
         validation: { folds: 5 },
         created_at: T,
+        evaluation_summary: {
+          common_valid_count: 96,
+          candidate_valid_count: 96,
+          candidate_nodata_count: 4,
+          total_count: 100,
+          coverage: 0.96,
+          rmse: 1.2,
+          mae: 0.9,
+          r2: 0.94,
+          bias: 0.05,
+          enhanced_evidence_available: false,
+        },
       })
     }
     if (path === '/results/cand-1/render-capability' && method === 'GET') {
@@ -1702,6 +1726,18 @@ export async function installMockApi(page: Page): Promise<void> {
         validation: { folds: 5 },
         created_at: T,
         professional_analysis_supported: true,
+        evaluation_summary: {
+          common_valid_count: 96,
+          candidate_valid_count: 96,
+          candidate_nodata_count: 0,
+          total_count: 96,
+          coverage: 1.0,
+          rmse: 1.21,
+          mae: 0.92,
+          r2: 0.93,
+          bias: 0.04,
+          enhanced_evidence_available: true,
+        },
       })
     }
     if (path === '/results/cand-pro-1/materialize' && method === 'POST') {
@@ -1726,6 +1762,18 @@ export async function installMockApi(page: Page): Promise<void> {
         validation: { folds: 5 },
         created_at: T,
         professional_analysis_supported: true,
+        evaluation_summary: {
+          common_valid_count: 96,
+          candidate_valid_count: 96,
+          candidate_nodata_count: 0,
+          total_count: 96,
+          coverage: 1.0,
+          rmse: 1.21,
+          mae: 0.92,
+          r2: 0.93,
+          bias: 0.04,
+          enhanced_evidence_available: true,
+        },
       })
     }
     if (path === '/results/cand-pro-1/render-capability' && method === 'GET') {

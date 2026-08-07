@@ -58,9 +58,17 @@ const router = createRouter({
       component: ResultWorkbenchView,
     },
     {
-      path: '/results/:resultId/professional',
-      name: 'professional-analysis',
+      path: '/results/:resultId/evaluation',
+      name: 'model-evaluation',
       component: ProfessionalAnalysisView,
+    },
+    {
+      path: '/results/:resultId/professional',
+      redirect: (to) => ({
+        name: 'model-evaluation',
+        params: { resultId: to.params.resultId },
+        query: to.query,
+      }),
     },
   ],
 })

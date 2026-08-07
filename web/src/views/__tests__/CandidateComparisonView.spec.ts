@@ -106,8 +106,8 @@ async function mountView(): Promise<{ wrapper: ReturnType<typeof mount>; router:
         component: { template: '<div />' },
       },
       {
-        path: '/results/:resultId/professional',
-        name: 'professional-analysis',
+        path: '/results/:resultId/evaluation',
+        name: 'model-evaluation',
         component: { template: '<div />' },
       },
     ],
@@ -263,7 +263,7 @@ describe('CandidateComparisonView', () => {
 
     await wrapper.find('[data-test="deep-compare-btn"]').trigger('click')
     await flushPromises()
-    expect(router.currentRoute.value.name).toBe('professional-analysis')
+    expect(router.currentRoute.value.name).toBe('model-evaluation')
     expect(router.currentRoute.value.params.resultId).toBe('r-1')
     wrapper.unmount()
   })

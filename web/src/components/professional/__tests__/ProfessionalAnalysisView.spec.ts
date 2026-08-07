@@ -72,6 +72,18 @@ const META_R1: ResultMetadata = {
   validation: { method: 'spatial_kfold', folds: 2 },
   created_at: T,
   professional_analysis_supported: true,
+  evaluation_summary: {
+    common_valid_count: 96,
+    candidate_valid_count: 96,
+    candidate_nodata_count: 4,
+    total_count: 100,
+    coverage: 0.96,
+    rmse: 1.2,
+    mae: 0.9,
+    r2: 0.94,
+    bias: 0.05,
+    enhanced_evidence_available: true,
+  },
 }
 
 const META_R2: ResultMetadata = { ...META_R1, result_id: 'r2', algorithm: 'idw', fingerprint: 'fp-r2' }
@@ -168,13 +180,6 @@ const PROF_IDW: ProfessionalResultEvidence = {
     validation: { origin: 'fold_training_subsets', scope: 'fold_training_subsets' },
     final: { origin: 'final_full_data_fit', scope: 'all_valid_rows' },
   },
-}
-
-const PROF_LEGACY: ProfessionalResultEvidence = {
-  result_id: 'r9',
-  available: false,
-  reason: 'LEGACY_RESULT_NOT_COMPUTED',
-  algorithm: 'idw',
 }
 
 const FOLDS_R1: FoldEvidence = {
@@ -369,15 +374,19 @@ function makeTestRouter(): Router {
       { path: '/experiments/:experimentId', name: 'experiment-detail', component: { template: '<div />' } },
       { path: '/results/:resultId', name: 'result-workbench', component: ResultWorkbenchView },
       {
-        path: '/results/:resultId/professional',
-        name: 'professional-analysis',
+        path: '/results/:resultId/evaluation',
+        name: 'model-evaluation',
         component: ProfessionalAnalysisView,
+      },
+      {
+        path: '/results/:resultId/professional',
+        redirect: (to) => ({ name: 'model-evaluation', params: { resultId: to.params.resultId }, query: to.query }),
       },
     ],
   })
 }
 
-async function mountAnalysis(path = '/results/r1/professional') {
+async function mountAnalysis(path = '/results/r1/evaluation') {
   const router = makeTestRouter()
   await router.push(path)
   const wrapper = mount(ProfessionalAnalysisView, { global: { plugins: [router, ElementPlus] } })
@@ -471,19 +480,55 @@ describe('单候选联动与参数快照', () => {
     wrapper.unmount()
   })
 
-  it('legacy 成果显示不可用原因并保留导航，不渲染分析面板', async () => {
-    vi.mocked(client.fetchResult).mockResolvedValue({ ...META_R1, result_id: 'r9' })
+  it('基线评估：enhanced_evidence_available=false 时显示基线指标且不请求增强证据', async () => {
+    const baselineMeta: ResultMetadata = {
+      ...META_R1,
+      result_id: 'r9',
+      algorithm: 'idw',
+      evaluation_summary: {
+        common_valid_count: 96,
+        candidate_valid_count: 96,
+        candidate_nodata_count: 4,
+        total_count: 100,
+        coverage: 0.96,
+        rmse: 1.2,
+        mae: 0.9,
+        r2: null,
+        bias: 0.05,
+        enhanced_evidence_available: false,
+      },
+    }
+    vi.mocked(client.fetchResult).mockResolvedValue(baselineMeta)
     vi.mocked(client.fetchExperiment).mockResolvedValue(EXP)
     vi.mocked(client.fetchCandidates).mockResolvedValue(CANDIDATES)
-    vi.mocked(client.fetchProfessionalResult).mockResolvedValue(PROF_LEGACY)
 
-    const { wrapper } = await mountAnalysis('/results/r9/professional')
-    expect(wrapper.find('[data-test="legacy-unavailable"]').text()).toContain(
-      'LEGACY_RESULT_NOT_COMPUTED',
-    )
-    expect(wrapper.find('[data-test="fold-inspector"]').exists()).toBe(false)
+    const { wrapper } = await mountAnalysis('/results/r9/evaluation')
+
+    expect(wrapper.find('[data-test="baseline-metrics"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="baseline-only-note"]').text()).toContain('基础评估可用')
+    expect(wrapper.find('[data-test="baseline-r2"]').text()).toContain('不可计算')
+    expect(client.fetchProfessionalResult).not.toHaveBeenCalled()
+    expect(client.fetchResultFolds).not.toHaveBeenCalled()
+    expect(client.fetchResultResiduals).not.toHaveBeenCalled()
     expect(wrapper.find('[data-test="nav-home"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="nav-experiment"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="back-to-workbench"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('缺少 evaluation_summary 时显示类型化评估错误与返回链接', async () => {
+    vi.mocked(client.fetchResult).mockResolvedValue({
+      ...META_R1,
+      result_id: 'r9',
+      evaluation_summary: undefined,
+    })
+    vi.mocked(client.fetchExperiment).mockResolvedValue(EXP)
+
+    const { wrapper } = await mountAnalysis('/results/r9/evaluation')
+
+    expect(wrapper.find('[data-test="load-error"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="load-error"]').text()).toContain('EVALUATION_UNAVAILABLE')
+    expect(wrapper.find('[data-test="error-back-to-workbench"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="baseline-metrics"]').exists()).toBe(false)
     wrapper.unmount()
   })
 })
@@ -513,12 +558,13 @@ describe('FoldInspector 折分检查', () => {
     wrapper.unmount()
   })
 
-  it('泄漏检查失败阻断分析视图并显示失败态，导航保留', async () => {
+  it('泄漏检查失败：基线评估仍可见，增强面板阻断，导航保留', async () => {
     mockKrigingPath()
     vi.mocked(client.fetchResultFolds).mockResolvedValue(FOLDS_LEAKED)
     const { wrapper } = await mountAnalysis()
 
     expect(wrapper.find('[data-test="leakage-blocked"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="baseline-metrics"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="fold-inspector"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="uncertainty-panel"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="anomaly-panel"]').exists()).toBe(false)
@@ -741,9 +787,8 @@ describe('只读性与导航契约', () => {
   })
 })
 
-describe('ResultWorkbenchView 专业分析入口', () => {
-  it('成果工作台显示专业分析链接并跳转，现有切片行为不变', async () => {
-    // v0.6.1：成果工作台挂载时显式物化（POST），不再走 fetchResult
+describe('ResultWorkbenchView 模型评估入口', () => {
+  it('成果工作台显示模型评估链接并跳转，现有切片行为不变', async () => {
     vi.mocked(client.materializeResult).mockResolvedValue(META_R1)
     vi.mocked(client.fetchExperiment).mockResolvedValue(EXP)
     vi.mocked(client.fetchDatasetPoints).mockResolvedValue({
@@ -767,14 +812,13 @@ describe('ResultWorkbenchView 专业分析入口', () => {
     const wrapper = mount(ResultWorkbenchView, { global: { plugins: [router, ElementPlus] } })
     await flushPromises()
 
-    // 现有行为不变：2D 成果仍显示切片面板
     expect(wrapper.find('[data-test="slice-panel"]').exists()).toBe(true)
-    const entry = wrapper.find('[data-test="professional-entry"]')
+    const entry = wrapper.find('[data-test="model-evaluation-entry"]')
     expect(entry.exists()).toBe(true)
     await entry.trigger('click')
     await flushPromises()
     expect(router.currentRoute.value).toMatchObject({
-      name: 'professional-analysis',
+      name: 'model-evaluation',
       params: { resultId: 'r1' },
     })
     wrapper.unmount()

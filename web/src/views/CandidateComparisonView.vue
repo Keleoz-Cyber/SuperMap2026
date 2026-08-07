@@ -98,7 +98,7 @@ async function runComparison() {
 function gotoDeepCompare() {
   if (!canDeepCompare.value) return
   void router.push({
-    name: 'professional-analysis',
+    name: 'model-evaluation',
     params: { resultId: selectedIdList.value[0] },
   })
 }
