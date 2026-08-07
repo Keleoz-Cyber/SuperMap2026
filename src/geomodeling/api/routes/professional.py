@@ -198,9 +198,11 @@ def get_professional_confirmation(
     """Read a confirmation snapshot with diagnosis/dataset/case identity."""
 
     from geomodeling.platform.repositories import (
+        CaseRepository,
         ProfessionalConfirmationRepository,
         ProfessionalDiagnosticRepository,
     )
+    from geomodeling.platform.public_dto import public_confirmation
 
     with runtime.session() as session:
         conf_repo = ProfessionalConfirmationRepository(session)
