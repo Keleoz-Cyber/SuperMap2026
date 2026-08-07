@@ -298,15 +298,13 @@ test.describe('v0.6 专业建模流程（真实链路）', () => {
       timeout: 30_000,
     })
 
-    // 4. 诊断入口（质量门禁通过后才可用；v0.7.0 经统一工作台进入实验创建页）
+    // 4. 诊断入口（从工作台的空间结构分析进入）
     await page.getByTestId('enter-workspace').click()
     await expect(page).toHaveURL(/#\/cases\/[0-9a-f-]+$/)
-    await page.getByTestId('new-experiment').click()
-    await expect(page).toHaveURL(/#\/cases\/[0-9a-f-]+\/experiments\/new\?dataset=[0-9a-f-]+/)
-    await page.getByTestId('professional-entry').click()
-    await expect(page).toHaveURL(/#\/datasets\/[0-9a-f-]+\/professional-diagnosis\?case=[0-9a-f-]+/)
+    await page.getByTestId('reanalyze-btn').click()
+    await expect(page).toHaveURL(/#\/datasets\/[0-9a-f-]+\/professional-diagnosis/)
 
-    // 5. 诊断：提交 → 有界轮询 → 证据（候选恒为诊断建议）
+    // 5. 诊断：提交 -> 有界轮询 -> 证据（候选恒为诊断建议）
     await page.getByTestId('start-diagnosis').click()
     await expect(page.getByTestId('job-status')).toBeVisible()
     await expect(page.getByTestId('variogram-panel')).toBeVisible({ timeout: 60_000 })
@@ -320,10 +318,10 @@ test.describe('v0.6 专业建模流程（真实链路）', () => {
     await page.getByTestId('confirm-note').fill('人工确认合成场主方向（Live 夹具）')
     await page.getByTestId('confirm-submit').click()
     await expect(page.getByTestId('confirmation-snapshot')).toBeVisible({ timeout: 30_000 })
-    await page.getByTestId('goto-experiment').click()
+    await page.getByTestId('apply-confirmation').click()
     await expect(page).toHaveURL(/experiments\/new\?dataset=[0-9a-f-]+&professional_confirmation=[0-9a-f-]+/)
 
-    // 7. 专业 Kriging 实验：网格搜索 spherical × 邻点 {16, 24} → 两个成功候选
+    // 7. 专业 Kriging 实验：网格搜索 spherical × 邻点 {16, 24} -> 两个成功候选
     await expect(page.getByTestId('professional-confirmation')).toBeVisible()
     await page.getByTestId('mode-grid').check()
     await expect(page.getByTestId('count-preview')).toContainText('2 个候选组合')
@@ -333,12 +331,12 @@ test.describe('v0.6 专业建模流程（真实链路）', () => {
     await expect(page.getByTestId('run-progress')).toContainText('succeeded', { timeout: 90_000 })
     await expect(page.getByTestId('candidate-row')).toHaveCount(2, { timeout: 30_000 })
 
-    // 8. 成果工作台 → 专业分析台（真实物化：值场 + 原生标准差 + 经验误差尺度）
+    // 8. 成果工作台 -> 模型评估（真实物化：值场 + 原生标准差 + 经验误差尺度）
     await page.getByTestId('open-result').first().click()
     await expect(page).toHaveURL(/#\/results\/[0-9a-f-]+/)
     const resultUrl = page.url()
-    await page.getByTestId('professional-entry').click()
-    await expect(page).toHaveURL(/#\/results\/[0-9a-f-]+\/professional/)
+    await page.getByTestId('model-evaluation-entry').click()
+    await expect(page).toHaveURL(/#\/results\/[0-9a-f-]+\/evaluation/)
     await expect(page.getByTestId('summary-algorithm')).toContainText('ordinary_kriging', {
       timeout: 30_000,
     })
