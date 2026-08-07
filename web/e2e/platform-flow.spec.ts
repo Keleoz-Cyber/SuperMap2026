@@ -456,4 +456,52 @@ test.describe('v0.7 生命周期与比较流程（mock API）', () => {
     await page.getByTestId('compare-btn').click()
     await expect(page.getByTestId('mismatch-list')).toBeVisible()
   })
+
+  test('移动端 390x844：VariogramPanel 无横向溢出', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await installMockApi(page)
+
+    // Navigate through mapping flow to get validated dataset
+    await page.goto('/#/cases/case-e2e/datasets/ds-e2e/prepare')
+    await page.getByTestId('mapping-value-name').fill('电阻率')
+    await page.getByTestId('mapping-submit').click()
+    await expect(page.getByTestId('quality-banner')).toContainText('质量校验通过', { timeout: 5000 })
+    await page.getByTestId('enter-workspace').click()
+    await expect(page).toHaveURL(/#\/cases\/case-e2e$/)
+
+    // Enter professional diagnosis from workspace
+    await page.getByTestId('professional-diagnosis-btn').click()
+    await expect(page.getByTestId('diagnosis-config')).toBeVisible()
+    await page.getByTestId('start-diagnosis').click()
+    await expect(page.getByTestId('variogram-panel')).toBeVisible({ timeout: 15000 })
+
+    // Wait for chart to render
+    await page.waitForTimeout(500)
+
+    // Assert no horizontal overflow at 390px viewport
+    const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth)
+    expect(scrollWidth).toBeLessThanOrEqual(390)
+
+    // Assert panel fits within viewport
+    const panelBox = await page.getByTestId('variogram-panel').boundingBox()
+    expect(panelBox).not.toBeNull()
+    expect(panelBox!.width).toBeLessThanOrEqual(390)
+
+    // Check sampling info is visible (not clipped)
+    await expect(page.getByTestId('sampling-mode')).toBeVisible()
+    await expect(page.getByTestId('sampling-pairs')).toBeVisible()
+
+    // Check bins table container doesn't overflow page
+    const tableWrap = page.locator('.bins-table-wrap')
+    if (await tableWrap.isVisible()) {
+      const wrapBox = await tableWrap.boundingBox()
+      expect(wrapBox!.width).toBeLessThanOrEqual(390)
+    }
+
+    // Screenshot for visual verification
+    await page.screenshot({
+      path: 'test-results/variogram-mobile-390x844.png',
+      fullPage: true,
+    })
+  })
 })

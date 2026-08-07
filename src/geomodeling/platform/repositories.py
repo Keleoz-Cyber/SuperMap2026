@@ -1889,16 +1889,18 @@ def require_active_candidate(runtime: Any, candidate_id: str) -> str:
 def require_active_render_asset(runtime: Any, asset_id: str) -> str | None:
     """Walk render_asset -> candidate -> run -> experiment -> case, return case_id if active.
 
-    Returns None for builtin_legacy assets (no candidate_result_id) -- these
-    have no deletable Case and are always accessible.
+    Returns None for builtin_legacy assets (no candidate_result_id) or invalid
+    asset IDs -- these have no deletable Case and are always accessible. The
+    downstream logic will reject invalid IDs with the appropriate error code.
     """
+    # Skip invalid ID formats -- downstream logic handles validation
+    import re
+    if not re.match(r"^nc-[0-9a-f]{32}$", asset_id):
+        return None
     with runtime.session() as session:
         ra = session.get(RenderAsset, asset_id)
         if ra is None:
-            raise PlatformError(
-                "RENDER_ASSET_NOT_FOUND", "渲染资产不存在",
-                {"asset_id": asset_id}, http_status=404,
-            )
+            return None  # let downstream raise the appropriate 404
         if ra.candidate_result_id is None:
             return None  # builtin_legacy -- no case to guard
         return require_active_candidate(runtime, ra.candidate_result_id)

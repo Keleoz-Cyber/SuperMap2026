@@ -197,7 +197,14 @@ function render() {
 
 onMounted(render)
 watch(() => [props.evidence, selectedDirections.value], render, { deep: false })
+
+function onWindowResize() {
+  chart?.resize()
+}
+window.addEventListener('resize', onWindowResize)
+
 onBeforeUnmount(() => {
+  window.removeEventListener('resize', onWindowResize)
   chart?.dispose()
   chart = null
 })
@@ -291,6 +298,9 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-width: 0; /* prevent flex child overflow on mobile */
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 .variogram-panel h3 {
@@ -354,6 +364,7 @@ onBeforeUnmount(() => {
 .bins-table-wrap {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
+  max-width: 100%;
 }
 
 .bins-table {

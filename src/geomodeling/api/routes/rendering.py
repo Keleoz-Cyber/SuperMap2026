@@ -90,6 +90,17 @@ _UPLOAD_CHUNK_BYTES = 1024 * 1024
 _ASSET_ID_RE = re.compile(r"^nc-[0-9a-f]{32}$")
 
 
+def _validate_asset_id(asset_id: str) -> None:
+    """Validate asset ID format before any DB lookup or guard."""
+    if not _ASSET_ID_RE.fullmatch(asset_id):
+        raise PlatformError(
+            RENDER_ASSET_ID_INVALID,
+            "渲染资产 ID 形态非法",
+            {"asset_id": asset_id},
+            http_status=400,
+        )
+
+
 class RenderAssetCreateBody(ContractModel):
     """渲染资产创建请求体；空体即首次创建语义（``retry_failed=False``）。"""
 

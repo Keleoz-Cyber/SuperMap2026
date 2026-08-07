@@ -492,6 +492,7 @@ onBeforeUnmount(stopPolling)
   display: flex;
   flex-direction: column;
   gap: 16px;
+  overflow-x: hidden;
 }
 
 .page-header h1 {

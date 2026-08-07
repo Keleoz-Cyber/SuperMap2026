@@ -819,18 +819,28 @@ def download_professional_artifact(
     kind, subject_id, logical_name = parts
 
     # Guard: trashed case must not expose professional artifacts
-    if kind == "diagnosis":
-        # subject_id is a diagnosis ID; resolve to dataset
-        with runtime.session() as session:
-            diag = session.get(AnalysisJob, subject_id)  # wrong table
-        # Actually resolve via ProfessionalDiagnostic
-        from geomodeling.platform.tables import ProfessionalDiagnostic
-        with runtime.session() as session:
-            diag_row = session.get(ProfessionalDiagnostic, subject_id)
-            if diag_row is not None:
-                require_active_dataset(runtime, diag_row.dataset_version_id)
-    elif kind in ("result", "extraction"):
-        require_active_candidate(runtime, subject_id)
+    # Wrap in try/except to convert entity-not-found to artifact-not-found
+    try:
+        if kind == "diagnosis":
+            from geomodeling.platform.tables import ProfessionalDiagnostic
+            with runtime.session() as session:
+                diag_row = session.get(ProfessionalDiagnostic, subject_id)
+                if diag_row is not None:
+                    require_active_dataset(runtime, diag_row.dataset_version_id)
+        elif kind == "result":
+            require_active_candidate(runtime, subject_id)
+        elif kind == "extraction":
+            from geomodeling.platform.tables import AnomalyExtraction
+            with runtime.session() as session:
+                ext_row = session.get(AnomalyExtraction, subject_id)
+                if ext_row is not None:
+                    require_active_candidate(runtime, ext_row.candidate_result_id)
+    except PlatformError as exc:
+        if exc.http_status == 404:
+            raise _artifact_not_found(
+                "专业工件身份未登记", artifact_kind=kind, subject_id=subject_id,
+            ) from exc
+        raise
     manifest = _subject_manifest(runtime, kind, subject_id)
     entry = (manifest.get("artifacts") or {}).get(logical_name)
     if not isinstance(entry, dict):
