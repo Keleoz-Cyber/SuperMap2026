@@ -102,8 +102,69 @@ class TestCandidateCatalog:
         catalog = candidate_catalog(runtime, dataset_id)
         assert catalog["dataset_id"] == dataset_id
         assert len(catalog["groups"]) == 2
+
+    def test_catalog_includes_configuration_fingerprint(self, runtime):
+        """Catalog candidates include configuration_fingerprint."""
+        case_id = create_case(runtime)
+        dataset_id = create_dataset(runtime, case_id)
+        exp1 = create_experiment(runtime, case_id, dataset_id, name="exp1")
+        run1 = create_run(runtime, exp1)
+        drive_run_succeeded(runtime, run1)
+        create_succeeded_candidate(runtime, run1, {"rmse": 0.5})
+
+        catalog = candidate_catalog(runtime, dataset_id)
+        assert len(catalog["groups"]) == 1
+        c = catalog["groups"][0]["candidates"][0]
+        assert "configuration_fingerprint" in c
+        assert len(c["configuration_fingerprint"]) == 64  # SHA-256 hex
+
+    def test_same_config_same_fingerprint_different_experiments(self, runtime):
+        """Same dataset/algorithm/parameters/validation -> same fingerprint."""
+        case_id = create_case(runtime)
+        dataset_id = create_dataset(runtime, case_id)
+        exp1 = create_experiment(runtime, case_id, dataset_id, name="exp1")
+        run1 = create_run(runtime, exp1)
+        drive_run_succeeded(runtime, run1)
+        create_succeeded_candidate(runtime, run1, {"rmse": 0.5})
+
+        exp2 = create_experiment(runtime, case_id, dataset_id, name="exp2")
+        run2 = create_run(runtime, exp2)
+        drive_run_succeeded(runtime, run2)
+        create_succeeded_candidate(runtime, run2, {"rmse": 0.3})
+
+        catalog = candidate_catalog(runtime, dataset_id)
+        fp1 = catalog["groups"][0]["candidates"][0]["configuration_fingerprint"]
+        fp2 = catalog["groups"][1]["candidates"][0]["configuration_fingerprint"]
+        # Same algorithm (IDW) and parameters -> same fingerprint
+        assert fp1 == fp2
+
+    def test_different_parameters_different_fingerprint(self, runtime):
+        """Different parameters -> different fingerprint."""
+        case_id = create_case(runtime)
+        dataset_id = create_dataset(runtime, case_id)
+        exp1 = create_experiment(runtime, case_id, dataset_id, name="exp1")
+        run1 = create_run(runtime, exp1)
+        drive_run_succeeded(runtime, run1)
+        create_succeeded_candidate(runtime, run1, {"rmse": 0.5})
+
+        # Create experiment with different parameters
+        with runtime.session() as session:
+            from geomodeling.platform.schemas import ExperimentCreateRequest
+            request = ExperimentCreateRequest(
+                case_id=case_id, name="exp2", algorithm=Algorithm.IDW,
+                dataset_version_id=dataset_id, parameters={"power": 3.0},
+            )
+            exp2_id = ExperimentRepository(session).create(case_id, request).id
+        run2 = create_run(runtime, exp2_id)
+        drive_run_succeeded(runtime, run2)
+        create_succeeded_candidate(runtime, run2, {"rmse": 0.3})
+
+        catalog = candidate_catalog(runtime, dataset_id)
+        fp1 = catalog["groups"][1]["candidates"][0]["configuration_fingerprint"]
+        fp2 = catalog["groups"][0]["candidates"][0]["configuration_fingerprint"]
+        assert fp1 != fp2  # power=2 vs power=3
         # Newest experiment first
-        assert catalog["groups"][0]["experiment_id"] == exp2
+        assert catalog["groups"][0]["experiment_id"] == exp2_id
 
     def test_failed_candidate_not_selectable(self, runtime):
         case_id = create_case(runtime)

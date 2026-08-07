@@ -29,6 +29,7 @@ from geomodeling.platform.tables import (
     FormalSelection,
     Run,
     RunStatus,
+    dumps_canonical,
     loads_canonical,
 )
 from pydantic import Field
@@ -44,6 +45,7 @@ class CandidateComparisonSummary(ContractModel):
     selectable: bool = False
     metrics: dict[str, Any] = Field(default_factory=dict)
     result_url: str = ""
+    configuration_fingerprint: str = ""
 
 
 class CandidateComparisonRequest(ContractModel):
@@ -58,6 +60,22 @@ class MultiCandidateComparison(ContractModel):
     candidates: list[CandidateComparisonSummary]
     ranking: list[str] | None = None
     comparison_fingerprint: str
+
+
+def _configuration_fingerprint(
+    dataset_version_id: str,
+    algorithm: str,
+    parameters: dict[str, Any],
+    validation: dict[str, Any],
+) -> str:
+    """Deterministic fingerprint of dataset/algorithm/parameters/validation."""
+    payload = {
+        "dataset_version_id": dataset_version_id,
+        "algorithm": algorithm,
+        "parameters": parameters,
+        "validation": validation,
+    }
+    return hashlib.sha256(dumps_canonical(payload).encode("utf-8")).hexdigest()
 
 
 def candidate_catalog(runtime: Any, dataset_id: str) -> dict[str, Any]:
@@ -116,6 +134,10 @@ def candidate_catalog(runtime: Any, dataset_id: str) -> dict[str, Any]:
                             "bias": metrics.get("bias"),
                         },
                         "result_url": f"/results/{cand.id}",
+                        "configuration_fingerprint": _configuration_fingerprint(
+                            dataset_id, algorithm, params.get("parameters", {}),
+                            params.get("validation", {}),
+                        ),
                     })
 
             if candidates_data:
@@ -235,6 +257,9 @@ def compare_candidates_multi(
                     "bias": cand_metrics.get("bias"),
                 },
                 result_url=f"/results/{cand.id}",
+                configuration_fingerprint=_configuration_fingerprint(
+                    dv_id, algorithm, params.get('parameters', {}), validation,
+                ),
             ))
 
         # Different dataset -> 409, not comparable

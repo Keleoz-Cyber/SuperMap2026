@@ -1332,6 +1332,7 @@ export interface ComparisonCandidateSummary {
   selectable: boolean
   metrics: { rmse: number | null; mae: number | null; r2: number | null; bias: number | null }
   result_url: string
+  configuration_fingerprint: string
 }
 
 export interface CandidateCatalogGroup {

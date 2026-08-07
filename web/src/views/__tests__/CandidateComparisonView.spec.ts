@@ -35,6 +35,7 @@ function makeCandidate(
     selectable,
     metrics: metrics ?? { rmse: 0.1, mae: 0.05, r2: 0.95, bias: 0.01 },
     result_url: `/results/${id}`,
+    configuration_fingerprint: `fp-${id}`,
   }
 }
 
