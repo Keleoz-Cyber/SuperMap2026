@@ -155,12 +155,12 @@ class TestMultiCandidateComparison:
         exp1 = create_experiment(runtime, case_id, dataset_id, name="exp1")
         run1 = create_run(runtime, exp1)
         drive_run_succeeded(runtime, run1)
-        cand1 = create_succeeded_candidate(runtime, run1, {"rmse": 0.5, "mae": 0.3, "r2": 0.8})
+        cand1 = create_succeeded_candidate(runtime, run1, {"rmse": 0.5, "mae": 0.3, "r2": 0.8, "bias": 0.01})
 
         exp2 = create_experiment(runtime, case_id, dataset_id, name="exp2")
         run2 = create_run(runtime, exp2)
         drive_run_succeeded(runtime, run2)
-        cand2 = create_succeeded_candidate(runtime, run2, {"rmse": 0.3, "mae": 0.2, "r2": 0.9})
+        cand2 = create_succeeded_candidate(runtime, run2, {"rmse": 0.3, "mae": 0.2, "r2": 0.9, "bias": 0.02})
 
         result = compare_candidates_multi(runtime, [cand1, cand2])
         assert result.comparable is True

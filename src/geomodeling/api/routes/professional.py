@@ -72,6 +72,7 @@ from geomodeling.platform.repositories import (
 )
 from geomodeling.platform.results import CANDIDATE_NOT_SUCCEEDED, _load_candidate, preview
 from geomodeling.platform.schemas import ContractModel, ProfessionalDiagnosisRequest
+from geomodeling.platform.candidate_comparisons import CandidateComparisonRequest
 from geomodeling.platform.tables import AnalysisJob, RunStatus
 
 router = APIRouter(tags=["v0.6-professional"])
@@ -852,18 +853,17 @@ def list_comparison_candidates(
 
 @router.post("/api/candidate-comparisons")
 def compare_candidates_route(
-    request_body: dict[str, Any],
+    request_body: CandidateComparisonRequest,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
-    """Compare 2-4 candidates deterministically without persistence."""
+    """Compare 2-4 candidates deterministically without persistence.
 
-    from geomodeling.platform.candidate_comparisons import (
-        CandidateComparisonRequest,
-        compare_candidates_multi,
-    )
+    Uses Pydantic body validation: invalid selections return 422, never 500.
+    """
 
-    req = CandidateComparisonRequest(**request_body)
-    for cid in req.candidate_result_ids:
+    from geomodeling.platform.candidate_comparisons import compare_candidates_multi
+
+    for cid in request_body.candidate_result_ids:
         require_active_candidate(runtime, cid)
-    result = compare_candidates_multi(runtime, req.candidate_result_ids)
+    result = compare_candidates_multi(runtime, request_body.candidate_result_ids)
     return result.model_dump(mode="json")

@@ -131,8 +131,21 @@ def candidate_catalog(runtime: Any, dataset_id: str) -> dict[str, Any]:
 def compare_candidates_multi(
     runtime: Any, candidate_result_ids: list[str],
 ) -> MultiCandidateComparison:
-    """Compare 2-4 candidates deterministically without persistence."""
+    """Compare 2-4 candidates deterministically without persistence.
 
+    Validation contract checks:
+    1. All Candidate -> Run -> Experiment chains complete and succeeded
+    2. dataset_version_id identical
+    3. Validation method/folds/seed/holdout and fold fingerprint consistent
+    4. Common valid set identity and metric denominator consistent
+    5. All metrics finite; R2 null semantics preserved (not coerced to 0)
+
+    Non-unique selections or wrong count -> 422 COMPARISON_SELECTION_INVALID.
+    Different dataset_version_id -> 409 COMPARISON_DATASET_MISMATCH.
+    Contract/effective-set/metric mismatch -> 200 comparable=false + mismatches.
+    """
+
+    # Dedup check first: non-unique IDs -> 422, never 500
     if len(candidate_result_ids) != len(set(candidate_result_ids)):
         raise PlatformError(
             COMPARISON_SELECTION_INVALID,
@@ -152,6 +165,10 @@ def compare_candidates_multi(
     with runtime.session() as session:
         summaries: list[CandidateComparisonSummary] = []
         dataset_version_ids: set[str] = set()
+        validation_contracts: list[dict[str, Any]] = []
+        fold_fingerprints: list[str] = []
+        population_fingerprints: list[str] = []
+        common_valid_counts: list[int | None] = []
 
         for cid in candidate_result_ids:
             cand = session.get(CandidateResult, cid)
@@ -183,9 +200,23 @@ def compare_candidates_multi(
             dv_id = params.get("dataset_version_id", "")
             dataset_version_ids.add(dv_id)
 
+            # Extract validation contract
+            validation = params.get("validation", {})
+            validation_contracts.append({
+                "method": validation.get("method"),
+                "folds": validation.get("folds"),
+                "seed": validation.get("seed"),
+                "holdout_fraction": validation.get("holdout_fraction"),
+            })
+
             cand_metrics = loads_canonical(cand.metrics_json)
             cand_params = loads_canonical(cand.params_json)
             algorithm = params.get("algorithm", "unknown")
+
+            # Extract fold/population fingerprints and common_valid_count
+            fold_fingerprints.append(str(cand_metrics.get("fold_fingerprint", "")))
+            population_fingerprints.append(str(cand_metrics.get("metric_population_fingerprint", "")))
+            common_valid_counts.append(cand_metrics.get("common_valid_count"))
 
             summaries.append(CandidateComparisonSummary(
                 candidate_result_id=cand.id,
@@ -206,6 +237,7 @@ def compare_candidates_multi(
                 result_url=f"/results/{cand.id}",
             ))
 
+        # Different dataset -> 409, not comparable
         if len(dataset_version_ids) > 1:
             raise PlatformError(
                 COMPARISON_DATASET_MISMATCH,
@@ -216,7 +248,13 @@ def compare_candidates_multi(
 
         dataset_version_id = dataset_version_ids.pop() if dataset_version_ids else ""
 
-        mismatches = _check_compatibility(summaries, candidate_result_ids)
+        # Full compatibility check: validation contract, fold fingerprint,
+        # common valid set, metric finiteness
+        mismatches = _check_compatibility(
+            summaries, validation_contracts,
+            fold_fingerprints, population_fingerprints,
+            common_valid_counts,
+        )
         comparable = len(mismatches) == 0
 
         ranking = None
@@ -240,22 +278,70 @@ def compare_candidates_multi(
 
 
 def _check_compatibility(
-    summaries: list[CandidateComparisonSummary], ids: list[str],
+    summaries: list[CandidateComparisonSummary],
+    validation_contracts: list[dict[str, Any]],
+    fold_fingerprints: list[str],
+    population_fingerprints: list[str],
+    common_valid_counts: list[int | None],
 ) -> list[str]:
-    """Check validation contract and metric consistency."""
+    """Check validation contract, fold fingerprint, common valid set, and metric finiteness.
+
+    Returns sorted list of mismatch keys. Empty list means comparable.
+    """
 
     mismatches: list[str] = []
 
+    # 1. All candidates must be succeeded
     for s in summaries:
         if not s.selectable:
             mismatches.append(f"candidate_not_succeeded:{s.candidate_result_id}")
 
+    # 2. Validation contract must be identical across all candidates
+    if len(validation_contracts) >= 2:
+        first = validation_contracts[0]
+        for i, vc in enumerate(validation_contracts[1:], 1):
+            for key in ("method", "folds", "seed", "holdout_fraction"):
+                if vc.get(key) != first.get(key):
+                    mismatches.append(f"validation_{key}_mismatch")
+                    break
+
+    # 3. Fold fingerprint must be identical
+    if len(fold_fingerprints) >= 2:
+        first_fp = fold_fingerprints[0]
+        if not all(fp == first_fp for fp in fold_fingerprints[1:]):
+            mismatches.append("fold_fingerprint_mismatch")
+
+    # 4. Common valid set (population fingerprint) must be identical
+    if len(population_fingerprints) >= 2:
+        first_pf = population_fingerprints[0]
+        if not all(pf == first_pf for pf in population_fingerprints[1:]):
+            mismatches.append("metric_population_fingerprint_mismatch")
+
+    # 5. Common valid count (metric denominator) must be identical
+    if len(common_valid_counts) >= 2:
+        first_cvc = common_valid_counts[0]
+        if not all(cvc == first_cvc for cvc in common_valid_counts[1:]):
+            mismatches.append("common_valid_count_mismatch")
+
+    # 6. All metrics must be finite (not None, not NaN, not Inf)
+    # R2 null semantics: None is allowed (preserved, not coerced to 0)
     for s in summaries:
-        rmse = s.metrics.get("rmse")
-        if rmse is not None and (isinstance(rmse, float) and math.isnan(rmse)):
-            mismatches.append(f"nan_rmse:{s.candidate_result_id}")
-        if rmse is not None and (isinstance(rmse, float) and math.isinf(rmse)):
-            mismatches.append(f"inf_rmse:{s.candidate_result_id}")
+        for metric_name in ("rmse", "mae", "bias"):
+            val = s.metrics.get(metric_name)
+            if val is None:
+                mismatches.append(f"missing_{metric_name}:{s.candidate_result_id}")
+            elif isinstance(val, float) and math.isnan(val):
+                mismatches.append(f"nan_{metric_name}:{s.candidate_result_id}")
+            elif isinstance(val, float) and math.isinf(val):
+                mismatches.append(f"inf_{metric_name}:{s.candidate_result_id}")
+
+        # R2 can be None (null semantics), but if present must be finite
+        r2 = s.metrics.get("r2")
+        if r2 is not None:
+            if isinstance(r2, float) and math.isnan(r2):
+                mismatches.append(f"nan_r2:{s.candidate_result_id}")
+            elif isinstance(r2, float) and math.isinf(r2):
+                mismatches.append(f"inf_r2:{s.candidate_result_id}")
 
     return sorted(set(mismatches))
 
