@@ -7,6 +7,7 @@ import type {
   CandidateCatalog,
   ComparisonCandidateSummary,
   MultiCandidateComparison,
+  ResultMetadata,
 } from '../../api/types'
 import CandidateComparisonView from '../CandidateComparisonView.vue'
 
@@ -16,6 +17,7 @@ vi.mock('../../api/client', async (importOriginal) => {
     ...actual,
     fetchComparisonCandidates: vi.fn(),
     compareCandidates: vi.fn(),
+    fetchResult: vi.fn(),
   }
 })
 
@@ -25,6 +27,7 @@ function makeCandidate(
   algorithm: string,
   selectable = true,
   metrics?: { rmse: number | null; mae: number | null; r2: number | null; bias: number | null },
+  fingerprint?: string,
 ): ComparisonCandidateSummary {
   return {
     candidate_result_id: id,
@@ -35,7 +38,7 @@ function makeCandidate(
     selectable,
     metrics: metrics ?? { rmse: 0.1, mae: 0.05, r2: 0.95, bias: 0.01 },
     result_url: `/results/${id}`,
-    configuration_fingerprint: `fp-${id}`,
+    configuration_fingerprint: fingerprint ?? `fp-${id}`,
   }
 }
 
@@ -56,8 +59,8 @@ const CATALOG: CandidateCatalog = {
       experiment_name: '实验 B',
       candidates: [
         makeCandidate('r-4', 'exp-2', 'dsi_like', true, { rmse: 0.15, mae: 0.10, r2: 0.90, bias: 0.03 }),
-        makeCandidate('r-5', 'exp-2', 'idw', true, { rmse: 0.14, mae: 0.09, r2: 0.91, bias: 0.02 }),
-        makeCandidate('r-6', 'exp-2', 'idw', true, { rmse: 0.16, mae: 0.11, r2: 0.89, bias: 0.04 }),
+        makeCandidate('r-5', 'exp-2', 'idw', true, { rmse: 0.14, mae: 0.09, r2: 0.91, bias: 0.02 }, 'fp-dup'),
+        makeCandidate('r-6', 'exp-2', 'idw', true, { rmse: 0.16, mae: 0.11, r2: 0.89, bias: 0.04 }, 'fp-dup'),
       ],
     },
   ],
@@ -88,6 +91,44 @@ const INCOMPARABLE: MultiCandidateComparison = {
   ],
   ranking: null,
   comparison_fingerprint: 'fp-incomparable',
+}
+
+const T = '2026-07-26T00:00:00Z'
+
+function makeResultMeta(id: string, enhanced: boolean): ResultMetadata {
+  return {
+    result_id: id,
+    run_id: `run-${id}`,
+    experiment_id: 'exp-1',
+    dataset_version_id: 'ds-1',
+    algorithm: 'idw',
+    parameters: { power: 2 },
+    dimension: '2d',
+    shape: [11, 11],
+    cell_count: 121,
+    bounds: [[0, 100], [0, 100]],
+    resolution: [10, 10],
+    value_range: [10, 60],
+    nodata_count: 0,
+    grid_sha256: 'ab'.repeat(32),
+    source_sha256: 'ab'.repeat(32),
+    standardized_sha256: 'ab'.repeat(32),
+    fingerprint: `fp-${id}`,
+    validation: { folds: 3 },
+    created_at: T,
+    evaluation_summary: {
+      common_valid_count: 96,
+      candidate_valid_count: 96,
+      candidate_nodata_count: 4,
+      total_count: 100,
+      coverage: 0.96,
+      rmse: 1.2,
+      mae: 0.9,
+      r2: 0.94,
+      bias: 0.05,
+      enhanced_evidence_available: enhanced,
+    },
+  }
 }
 
 async function mountView(): Promise<{ wrapper: ReturnType<typeof mount>; router: Router }> {
@@ -149,16 +190,25 @@ describe('CandidateComparisonView', () => {
     document.body.innerHTML = ''
     vi.mocked(client.fetchComparisonCandidates).mockResolvedValue(CATALOG)
     vi.mocked(client.compareCandidates).mockResolvedValue(COMPARABLE)
+    vi.mocked(client.fetchResult).mockImplementation(async (id: string) =>
+      makeResultMeta(id, true),
+    )
   })
 
-  it('candidates are grouped by experiment in the catalog table', async () => {
+  it('标题为「模型对比」且使用可读算法标签', async () => {
     const { wrapper } = await mountView()
-    expect(wrapper.find('[data-test="candidate-comparison-view"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('实验 A')
-    expect(wrapper.text()).toContain('实验 B')
-    expect(wrapper.text()).toContain('同一数据版本')
-    expect(wrapper.text()).not.toContain('跨案例排行榜')
+    expect(wrapper.find('h1').text()).toBe('模型对比')
+    expect(wrapper.text()).toContain('同一数据版本和验证方法下比较不同实验结果')
+    expect(wrapper.text()).toContain('IDW（反距离加权）')
+    expect(wrapper.text()).toContain('普通克里金')
     expect(wrapper.text()).toContain('dsi_like')
+    wrapper.unmount()
+  })
+
+  it('参数列使用可读标签而非原始键', async () => {
+    const { wrapper } = await mountView()
+    expect(wrapper.text()).toContain('幂参数')
+    expect(wrapper.text()).not.toContain('power=2')
     wrapper.unmount()
   })
 
@@ -242,29 +292,157 @@ describe('CandidateComparisonView', () => {
     wrapper.unmount()
   })
 
-  it('exactly two selected enables deep comparison; three/four disables it', async () => {
+  it('初始无 deep-compare-btn；可比排名且恰好 2 选时显示查看详细差异', async () => {
     const { wrapper, router } = await mountView()
 
-    expect(wrapper.find('[data-test="deep-compare-btn"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-test="deep-compare-btn"]').exists()).toBe(false)
 
     await check(wrapper, 0)
     await check(wrapper, 1)
-    expect(wrapper.find('[data-test="deep-compare-btn"]').attributes('disabled')).toBeUndefined()
 
-    await check(wrapper, 3)
-    expect(wrapper.find('[data-test="deep-compare-btn"]').attributes('disabled')).toBeDefined()
+    await wrapper.find('[data-test="compare-btn"]').trigger('click')
+    await flushPromises()
 
-    await check(wrapper, 4)
-    expect(wrapper.find('[data-test="deep-compare-btn"]').attributes('disabled')).toBeDefined()
-
-    await uncheck(wrapper, 3)
-    await uncheck(wrapper, 4)
-    expect(wrapper.find('[data-test="deep-compare-btn"]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.find('[data-test="deep-compare-btn"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="deep-compare-btn"]').text()).toContain('查看详细差异')
 
     await wrapper.find('[data-test="deep-compare-btn"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.name).toBe('model-evaluation')
     expect(router.currentRoute.value.params.resultId).toBe('r-1')
+    expect(router.currentRoute.value.query.compareWith).toBe('r-2')
+    wrapper.unmount()
+  })
+
+  it('3 个选中不显示查看详细差异', async () => {
+    const { wrapper } = await mountView()
+
+    await check(wrapper, 0)
+    await check(wrapper, 1)
+    await check(wrapper, 3)
+
+    await wrapper.find('[data-test="compare-btn"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="deep-compare-btn"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('enhanced_evidence_available=false 时不显示查看详细差异', async () => {
+    vi.mocked(client.fetchResult).mockImplementation(async (id: string) =>
+      makeResultMeta(id, false),
+    )
+    const { wrapper } = await mountView()
+
+    await check(wrapper, 0)
+    await check(wrapper, 1)
+
+    await wrapper.find('[data-test="compare-btn"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="deep-compare-btn"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+})
+
+describe('重复配置分组', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    document.body.innerHTML = ''
+    vi.mocked(client.fetchComparisonCandidates).mockResolvedValue(CATALOG)
+    vi.mocked(client.compareCandidates).mockResolvedValue(COMPARABLE)
+    vi.mocked(client.fetchResult).mockImplementation(async (id: string) =>
+      makeResultMeta(id, true),
+    )
+  })
+
+  it('相同 fingerprint 显示「相同配置，第 N 次运行」', async () => {
+    const { wrapper } = await mountView()
+    expect(wrapper.find('[data-test="dup-badge-r-5"]').text()).toContain('相同配置，第 1 次运行')
+    expect(wrapper.find('[data-test="dup-badge-r-6"]').text()).toContain('相同配置，第 2 次运行')
+    expect(wrapper.find('[data-test="dup-badge-r-1"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('选中同组一个后，另一个被禁用', async () => {
+    const { wrapper } = await mountView()
+
+    expect(isDisabled(wrapper, 4)).toBe(false)
+    expect(isDisabled(wrapper, 5)).toBe(false)
+
+    await check(wrapper, 4)
+    expect(isDisabled(wrapper, 5)).toBe(true)
+
+    await uncheck(wrapper, 4)
+    expect(isDisabled(wrapper, 5)).toBe(false)
+    wrapper.unmount()
+  })
+})
+
+describe('stale-response protection', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    document.body.innerHTML = ''
+  })
+
+  it('dataset A -> B：A 后解析不覆盖 B 的目录', async () => {
+    const catalogA: CandidateCatalog = {
+      dataset_id: 'ds-A',
+      groups: [
+        {
+          experiment_id: 'exp-A',
+          experiment_name: '实验 A',
+          candidates: [makeCandidate('r-A', 'exp-A', 'idw')],
+        },
+      ],
+    }
+    const catalogB: CandidateCatalog = {
+      dataset_id: 'ds-B',
+      groups: [
+        {
+          experiment_id: 'exp-B',
+          experiment_name: '实验 B',
+          candidates: [makeCandidate('r-B', 'exp-B', 'idw')],
+        },
+      ],
+    }
+
+    let resolveA: (v: CandidateCatalog) => void = () => {}
+    const promiseA = new Promise<CandidateCatalog>((resolve) => {
+      resolveA = resolve
+    })
+    vi.mocked(client.fetchComparisonCandidates).mockImplementation(async (id: string) => {
+      if (id === 'ds-A') return promiseA
+      return catalogB
+    })
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/', name: 'home', component: { template: '<div />' } },
+        {
+          path: '/datasets/:datasetId/candidate-comparison',
+          name: 'candidate-comparison',
+          component: CandidateComparisonView,
+        },
+      ],
+    })
+    await router.push('/datasets/ds-A/candidate-comparison')
+    await router.isReady()
+    const wrapper = mount(CandidateComparisonView, {
+      global: { plugins: [router, ElementPlus] },
+      attachTo: document.body,
+    })
+    await flushPromises()
+
+    await router.push('/datasets/ds-B/candidate-comparison')
+    await flushPromises()
+
+    resolveA(catalogA)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('实验 B')
+    expect(wrapper.text()).not.toContain('实验 A')
     wrapper.unmount()
   })
 })

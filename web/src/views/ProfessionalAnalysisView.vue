@@ -309,8 +309,14 @@ const capabilityEntries = computed(() => {
         <FoldInspector v-if="folds" :folds="folds" :residuals="residuals" />
         <UncertaintyPanel :result-id="selectedResultId" :capabilities="capabilities" />
         <AnomalyPanel :result-id="selectedResultId" :capabilities="capabilities" />
-        <CandidateComparison :candidates="candidateOptions" :first-result-id="selectedResultId" />
       </template>
+
+      <CandidateComparison
+        v-if="showEnhanced || compareWithQuery"
+        :candidates="candidateOptions"
+        :first-result-id="selectedResultId"
+        :initial-second-result-id="compareWithQuery || undefined"
+      />
     </main>
   </div>
 </template>

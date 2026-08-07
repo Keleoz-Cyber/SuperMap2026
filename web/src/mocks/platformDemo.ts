@@ -2018,7 +2018,7 @@ export async function installMockApi(page: Page): Promise<void> {
     }
     // ---------------------------------- v0.7.0 batch 3：候选目录与多候选比较
     if (path === '/datasets/ds-e2e/comparison-candidates' && method === 'GET') {
-      const candidateSummary = (id: string, expId: string, runId: string, algo: string, params: Record<string, unknown>, rmse: number, mae: number, r2: number, bias: number) => ({
+      const candidateSummary = (id: string, expId: string, runId: string, algo: string, params: Record<string, unknown>, rmse: number, mae: number, r2: number, bias: number, fp: string) => ({
         candidate_result_id: id,
         experiment_id: expId,
         run_id: runId,
@@ -2027,6 +2027,7 @@ export async function installMockApi(page: Page): Promise<void> {
         selectable: true,
         metrics: { rmse, mae, r2, bias },
         result_url: `/results/${id}`,
+        configuration_fingerprint: fp,
       })
       return json(route, {
         dataset_id: 'ds-e2e',
@@ -2035,16 +2036,16 @@ export async function installMockApi(page: Page): Promise<void> {
             experiment_id: 'exp-e2e',
             experiment_name: 'E2E 实验',
             candidates: [
-              candidateSummary('cand-1', 'exp-e2e', 'run-e2e', 'idw', { power: 1.5, neighbor_count: 8 }, 1.2, 0.9, 0.94, 0.05),
-              candidateSummary('cand-2', 'exp-e2e', 'run-e2e', 'idw', { power: 2, neighbor_count: 8 }, 2.4, 1.6, 0.88, -0.1),
+              candidateSummary('cand-1', 'exp-e2e', 'run-e2e', 'idw', { power: 1.5, neighbor_count: 8 }, 1.2, 0.9, 0.94, 0.05, 'fp-idw-p15-n8'),
+              candidateSummary('cand-2', 'exp-e2e', 'run-e2e', 'idw', { power: 2, neighbor_count: 8 }, 2.4, 1.6, 0.88, -0.1, 'fp-idw-p2-n8'),
             ],
           },
           {
             experiment_id: 'exp-pro',
             experiment_name: '专业 Kriging 实验',
             candidates: [
-              candidateSummary('cand-pro-1', 'exp-pro', 'run-pro', 'ordinary_kriging', { variogram_model: 'spherical', neighbor_count: 16 }, 1.21, 0.92, 0.93, 0.04),
-              candidateSummary('cand-pro-2', 'exp-pro', 'run-pro', 'ordinary_kriging', { variogram_model: 'spherical', neighbor_count: 24 }, 1.33, 1.0, 0.91, 0.05),
+              candidateSummary('cand-pro-1', 'exp-pro', 'run-pro', 'ordinary_kriging', { variogram_model: 'spherical', neighbor_count: 16 }, 1.21, 0.92, 0.93, 0.04, 'fp-krig-sph-n16'),
+              candidateSummary('cand-pro-2', 'exp-pro', 'run-pro', 'ordinary_kriging', { variogram_model: 'spherical', neighbor_count: 24 }, 1.33, 1.0, 0.91, 0.05, 'fp-krig-sph-n24'),
             ],
           },
         ],
@@ -2057,11 +2058,11 @@ export async function installMockApi(page: Page): Promise<void> {
         return json(route, { error: { code: 'COMPARISON_SELECTION_INVALID', message: '比较选择必须为 2-4 个唯一候选', details: { candidate_result_ids: ids } } }, 422)
       }
       state.comparisonCalls += 1
-      const catalog: Record<string, { exp: string; run: string; algo: string; params: Record<string, unknown>; rmse: number; mae: number; r2: number; bias: number }> = {
-        'cand-1': { exp: 'exp-e2e', run: 'run-e2e', algo: 'idw', params: { power: 1.5, neighbor_count: 8 }, rmse: 1.2, mae: 0.9, r2: 0.94, bias: 0.05 },
-        'cand-2': { exp: 'exp-e2e', run: 'run-e2e', algo: 'idw', params: { power: 2, neighbor_count: 8 }, rmse: 2.4, mae: 1.6, r2: 0.88, bias: -0.1 },
-        'cand-pro-1': { exp: 'exp-pro', run: 'run-pro', algo: 'ordinary_kriging', params: { variogram_model: 'spherical', neighbor_count: 16 }, rmse: 1.21, mae: 0.92, r2: 0.93, bias: 0.04 },
-        'cand-pro-2': { exp: 'exp-pro', run: 'run-pro', algo: 'ordinary_kriging', params: { variogram_model: 'spherical', neighbor_count: 24 }, rmse: 1.33, mae: 1.0, r2: 0.91, bias: 0.05 },
+      const catalog: Record<string, { exp: string; run: string; algo: string; params: Record<string, unknown>; rmse: number; mae: number; r2: number; bias: number; fp: string }> = {
+        'cand-1': { exp: 'exp-e2e', run: 'run-e2e', algo: 'idw', params: { power: 1.5, neighbor_count: 8 }, rmse: 1.2, mae: 0.9, r2: 0.94, bias: 0.05, fp: 'fp-idw-p15-n8' },
+        'cand-2': { exp: 'exp-e2e', run: 'run-e2e', algo: 'idw', params: { power: 2, neighbor_count: 8 }, rmse: 2.4, mae: 1.6, r2: 0.88, bias: -0.1, fp: 'fp-idw-p2-n8' },
+        'cand-pro-1': { exp: 'exp-pro', run: 'run-pro', algo: 'ordinary_kriging', params: { variogram_model: 'spherical', neighbor_count: 16 }, rmse: 1.21, mae: 0.92, r2: 0.93, bias: 0.04, fp: 'fp-krig-sph-n16' },
+        'cand-pro-2': { exp: 'exp-pro', run: 'run-pro', algo: 'ordinary_kriging', params: { variogram_model: 'spherical', neighbor_count: 24 }, rmse: 1.33, mae: 1.0, r2: 0.91, bias: 0.05, fp: 'fp-krig-sph-n24' },
       }
       const summaries = ids.map((id) => {
         const c = catalog[id]
@@ -2074,6 +2075,7 @@ export async function installMockApi(page: Page): Promise<void> {
           selectable: true,
           metrics: { rmse: c.rmse, mae: c.mae, r2: c.r2, bias: c.bias },
           result_url: `/results/${id}`,
+          configuration_fingerprint: c.fp,
         }
       })
       // 首次比较返回 comparable + ranking；后续返回 incompatible 演示不兼容字段

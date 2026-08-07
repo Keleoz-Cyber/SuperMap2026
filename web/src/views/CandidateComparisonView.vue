@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ApiError, compareCandidates, fetchComparisonCandidates } from '../api/client'
+import { ApiError, compareCandidates, fetchComparisonCandidates, fetchResult } from '../api/client'
 import type {
   CandidateCatalog,
   ComparisonCandidateSummary,
   MultiCandidateComparison,
 } from '../api/types'
+import { algorithmLabel, parameterSummary } from '../utils/modelingLabels'
 import PageNavigation from '../components/navigation/PageNavigation.vue'
 
 const route = useRoute()
@@ -23,6 +24,10 @@ const selectedIds = ref<Set<string>>(new Set())
 const comparison = ref<MultiCandidateComparison | null>(null)
 const comparing = ref(false)
 const compareError = ref<string | null>(null)
+
+const deepCompareReady = ref(false)
+const deepCompareChecking = ref(false)
+let deepCompareSequence = 0
 
 interface CandidateRow extends ComparisonCandidateSummary {
   experiment_name: string
@@ -46,21 +51,46 @@ const canCompare = computed(
     selectedIdList.value.length <= MAX_SELECTION,
 )
 
-const canDeepCompare = computed(() => selectedIdList.value.length === 2)
+const fingerprintGroups = computed(() => {
+  const groups = new Map<string, string[]>()
+  for (const row of rows.value) {
+    const fp = row.configuration_fingerprint
+    if (!groups.has(fp)) groups.set(fp, [])
+    groups.get(fp)!.push(row.candidate_result_id)
+  }
+  return groups
+})
+
+function runPosition(row: CandidateRow): number {
+  const ids = fingerprintGroups.value.get(row.configuration_fingerprint) ?? []
+  return ids.indexOf(row.candidate_result_id) + 1
+}
+
+function isDuplicateGroup(row: CandidateRow): boolean {
+  const ids = fingerprintGroups.value.get(row.configuration_fingerprint) ?? []
+  return ids.length > 1
+}
+
+function isSameGroupDisabled(row: CandidateRow): boolean {
+  if (!isDuplicateGroup(row)) return false
+  const ids = fingerprintGroups.value.get(row.configuration_fingerprint) ?? []
+  return ids.some((id) => id !== row.candidate_result_id && selectedIds.value.has(id))
+}
 
 function describeError(e: unknown): string {
   if (e instanceof ApiError) return `${e.code}：${e.message}`
   return e instanceof Error ? e.message : String(e)
 }
 
-function isCheckboxDisabled(candidate: ComparisonCandidateSummary): boolean {
-  if (!candidate.selectable) return true
+function isCheckboxDisabled(row: CandidateRow): boolean {
+  if (!row.selectable) return true
   if (
-    !selectedIds.value.has(candidate.candidate_result_id) &&
+    !selectedIds.value.has(row.candidate_result_id) &&
     selectedIds.value.size >= MAX_SELECTION
   ) {
     return true
   }
+  if (isSameGroupDisabled(row)) return true
   return false
 }
 
@@ -72,6 +102,8 @@ function toggleSelection(id: string, checked: boolean) {
   const next = new Set(selectedIds.value)
   if (checked) {
     if (next.size >= MAX_SELECTION) return
+    const row = rows.value.find((r) => r.candidate_result_id === id)
+    if (row && isSameGroupDisabled(row)) return
     next.add(id)
   } else {
     next.delete(id)
@@ -79,6 +111,7 @@ function toggleSelection(id: string, checked: boolean) {
   selectedIds.value = next
   comparison.value = null
   compareError.value = null
+  deepCompareReady.value = false
 }
 
 async function runComparison() {
@@ -86,8 +119,16 @@ async function runComparison() {
   comparing.value = true
   compareError.value = null
   comparison.value = null
+  deepCompareReady.value = false
   try {
     comparison.value = await compareCandidates(selectedIdList.value)
+    if (
+      comparison.value.comparable &&
+      comparison.value.ranking &&
+      selectedIdList.value.length === 2
+    ) {
+      void checkDeepCompareCapability()
+    }
   } catch (e) {
     compareError.value = describeError(e)
   } finally {
@@ -95,11 +136,43 @@ async function runComparison() {
   }
 }
 
+async function checkDeepCompareCapability() {
+  const ids = [...selectedIdList.value]
+  if (ids.length !== 2) {
+    deepCompareReady.value = false
+    return
+  }
+  const sequence = ++deepCompareSequence
+  deepCompareChecking.value = true
+  deepCompareReady.value = false
+  try {
+    const [meta1, meta2] = await Promise.all([fetchResult(ids[0]), fetchResult(ids[1])])
+    if (sequence !== deepCompareSequence) return
+    deepCompareReady.value =
+      meta1.evaluation_summary?.enhanced_evidence_available === true &&
+      meta2.evaluation_summary?.enhanced_evidence_available === true
+  } catch {
+    if (sequence !== deepCompareSequence) return
+    deepCompareReady.value = false
+  } finally {
+    if (sequence === deepCompareSequence) deepCompareChecking.value = false
+  }
+}
+
+const showDeepCompare = computed(
+  () =>
+    comparison.value?.comparable === true &&
+    comparison.value?.ranking !== null &&
+    selectedIdList.value.length === 2 &&
+    deepCompareReady.value,
+)
+
 function gotoDeepCompare() {
-  if (!canDeepCompare.value) return
+  if (!showDeepCompare.value) return
   void router.push({
     name: 'model-evaluation',
     params: { resultId: selectedIdList.value[0] },
+    query: { compareWith: selectedIdList.value[1] },
   })
 }
 
@@ -115,45 +188,37 @@ function fmt(value: number | null, digits = 4): string {
   return value === null ? '-' : value.toFixed(digits)
 }
 
-function formatParamNumber(value: number): string {
-  return Number.isFinite(value) ? String(Number(value.toPrecision(12))) : String(value)
+function algoLabel(row: ComparisonCandidateSummary): string {
+  return algorithmLabel(row.algorithm)
 }
 
-function formatParamValue(value: unknown): string {
-  if (value === null || value === undefined) return 'null'
-  if (typeof value === 'number') return formatParamNumber(value)
-  if (typeof value === 'boolean') return String(value)
-  if (typeof value === 'string') return value
-  if (Array.isArray(value)) return `[${value.map((item) => formatParamValue(item)).join(',')}]`
-  if (typeof value === 'object') {
-    const entries = Object.keys(value as Record<string, unknown>)
-      .sort()
-      .map((key) => `${key}:${formatParamValue((value as Record<string, unknown>)[key])}`)
-    return `{${entries.join(',')}}`
-  }
-  return String(value)
+function paramSummary(row: ComparisonCandidateSummary): string {
+  return parameterSummary(row.algorithm, row.parameters).join(' · ')
 }
 
-function paramsPreview(parameters: Record<string, unknown>): string {
-  return Object.keys(parameters)
-    .sort()
-    .map((key) => `${key}=${formatParamValue(parameters[key])}`)
-    .join(' ')
-}
+let catalogSequence = 0
 
 async function loadCatalog() {
+  const sequence = ++catalogSequence
+  const targetDatasetId = datasetId.value
   loading.value = true
   loadError.value = null
   catalog.value = null
   selectedIds.value = new Set()
   comparison.value = null
   compareError.value = null
+  deepCompareReady.value = false
   try {
-    catalog.value = await fetchComparisonCandidates(datasetId.value)
+    const result = await fetchComparisonCandidates(targetDatasetId)
+    if (sequence !== catalogSequence || targetDatasetId !== datasetId.value) return
+    catalog.value = result
   } catch (e) {
+    if (sequence !== catalogSequence || targetDatasetId !== datasetId.value) return
     loadError.value = describeError(e)
   } finally {
-    loading.value = false
+    if (sequence === catalogSequence && targetDatasetId === datasetId.value) {
+      loading.value = false
+    }
   }
 }
 
@@ -168,7 +233,8 @@ watch(datasetId, (next, prev) => {
   <div class="comparison-page" data-test="candidate-comparison-view">
     <PageNavigation home />
     <header class="page-header">
-      <h1>同一数据版本 / 同一验证合同候选比较</h1>
+      <h1>模型对比</h1>
+      <p class="page-sub">同一数据版本和验证方法下比较不同实验结果</p>
       <p class="page-sub">数据集 <span class="mono">{{ datasetId }}</span></p>
     </header>
 
@@ -199,14 +265,7 @@ watch(datasetId, (next, prev) => {
               :loading="comparing"
               @click="runComparison"
             >
-              比较候选
-            </el-button>
-            <el-button
-              data-test="deep-compare-btn"
-              :disabled="!canDeepCompare"
-              @click="gotoDeepCompare"
-            >
-              深度比较
+              开始对比
             </el-button>
           </div>
 
@@ -229,14 +288,21 @@ watch(datasetId, (next, prev) => {
               </template>
             </el-table-column>
             <el-table-column prop="experiment_name" label="实验" width="140" />
-            <el-table-column label="算法" width="140">
+            <el-table-column label="算法" width="160">
               <template #default="{ row }">
-                <span class="mono">{{ row.algorithm }}</span>
+                <span>{{ algoLabel(row) }}</span>
+                <div
+                  v-if="isDuplicateGroup(row)"
+                  class="dup-badge"
+                  :data-test="`dup-badge-${row.candidate_result_id}`"
+                >
+                  相同配置，第 {{ runPosition(row) }} 次运行
+                </div>
               </template>
             </el-table-column>
             <el-table-column label="参数" min-width="200">
               <template #default="{ row }">
-                <span class="mono">{{ paramsPreview(row.parameters) }}</span>
+                <span>{{ paramSummary(row) }}</span>
               </template>
             </el-table-column>
             <el-table-column label="RMSE" width="90" align="right">
@@ -268,7 +334,24 @@ watch(datasetId, (next, prev) => {
         <div v-if="compareError" class="action-error" data-test="compare-error">{{ compareError }}</div>
 
         <section v-if="comparison" class="result-section">
-          <h3>比较结果</h3>
+          <div class="result-header">
+            <h3>比较结果</h3>
+            <el-button
+              v-if="showDeepCompare"
+              size="small"
+              data-test="deep-compare-btn"
+              @click="gotoDeepCompare"
+            >
+              查看详细差异
+            </el-button>
+            <span
+              v-if="deepCompareChecking"
+              class="deep-status"
+              data-test="deep-compare-checking"
+            >
+              正在检查详细差异能力…
+            </span>
+          </div>
 
           <div
             v-if="comparison.comparable && comparison.ranking"
@@ -299,7 +382,7 @@ watch(datasetId, (next, prev) => {
                     <el-tag v-if="index === 0" type="danger" size="small" class="best-badge">最佳</el-tag>
                   </td>
                   <td class="mono">{{ resultId }}</td>
-                  <td class="mono">{{ getCandidateInfo(resultId)?.algorithm ?? '-' }}</td>
+                  <td>{{ getCandidateInfo(resultId) ? algorithmLabel(getCandidateInfo(resultId)!.algorithm) : '-' }}</td>
                   <td>{{ fmt(getCandidateInfo(resultId)?.metrics.rmse ?? null) }}</td>
                   <td>{{ fmt(getCandidateInfo(resultId)?.metrics.mae ?? null) }}</td>
                   <td>{{ fmt(getCandidateInfo(resultId)?.metrics.r2 ?? null) }}</td>
@@ -349,7 +432,7 @@ watch(datasetId, (next, prev) => {
 }
 
 .page-sub {
-  margin: 8px 0 0;
+  margin: 4px 0 0;
   font-size: 12px;
   color: var(--gmp-text-faint);
 }
@@ -399,6 +482,12 @@ watch(datasetId, (next, prev) => {
   color: var(--gmp-text-dim);
 }
 
+.dup-badge {
+  font-size: 11px;
+  color: var(--gmp-accent);
+  margin-top: 2px;
+}
+
 .action-error {
   border: 1px solid #a43d3d;
   background: rgba(164, 61, 61, 0.15);
@@ -418,9 +507,20 @@ watch(datasetId, (next, prev) => {
   gap: 12px;
 }
 
-.result-section h3 {
+.result-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.result-header h3 {
   margin: 0;
   font-size: 15px;
+}
+
+.deep-status {
+  font-size: 12px;
+  color: var(--gmp-text-faint);
 }
 
 .ranking-scroll {
