@@ -42,16 +42,27 @@ function handleConfirm() {
   <el-dialog
     :model-value="visible"
     title="永久删除确认"
-    width="440px"
+    width="90vw"
+    :style="{ maxWidth: '440px' }"
     :close-on-click-modal="false"
+    role="dialog"
+    aria-labelledby="purge-dialog-title"
     data-test="purge-dialog"
     @update:model-value="handleVisibleChange"
   >
+    <template #header>
+      <span id="purge-dialog-title">永久删除确认</span>
+    </template>
     <p class="purge-warning">
       此操作不可恢复。请输入案例名称 <b>{{ caseName }}</b> 以确认永久删除。
     </p>
+    <label class="purge-input-label" for="purge-name-input">案例名称</label>
     <el-input
+      id="purge-name-input"
       v-model="typedName"
+      name="confirmation_name"
+      autocomplete="off"
+      aria-label="输入案例名称以确认"
       data-test="purge-name-input"
       placeholder="输入案例名称以确认"
     />
@@ -79,5 +90,12 @@ function handleConfirm() {
 
 .purge-warning b {
   color: var(--gmp-accent);
+}
+
+.purge-input-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+  color: var(--gmp-text-dim);
 }
 </style>

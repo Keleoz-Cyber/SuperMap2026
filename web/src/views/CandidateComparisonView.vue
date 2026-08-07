@@ -221,6 +221,7 @@ watch(datasetId, (next, prev) => {
               <template #default="{ row }">
                 <el-checkbox
                   data-test="candidate-checkbox"
+                  :aria-label="`选择候选 ${row.candidate_result_id}`"
                   :model-value="selectedIds.has(row.candidate_result_id)"
                   :disabled="isCheckboxDisabled(row)"
                   @change="onCheckboxChange(row, $event)"
@@ -274,6 +275,7 @@ watch(datasetId, (next, prev) => {
             class="ranking-result"
             data-test="ranking-result"
           >
+            <div class="ranking-scroll" data-test="ranking-result">
             <table class="ranking-table">
               <thead>
                 <tr>
@@ -305,6 +307,7 @@ watch(datasetId, (next, prev) => {
                 </tr>
               </tbody>
             </table>
+            </div>
           </div>
 
           <div
@@ -420,6 +423,11 @@ watch(datasetId, (next, prev) => {
   font-size: 15px;
 }
 
+.ranking-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 .ranking-table {
   width: 100%;
   border-collapse: collapse;
@@ -464,5 +472,30 @@ watch(datasetId, (next, prev) => {
   padding-left: 20px;
   font-size: 12px;
   color: #e5c76b;
+}
+
+@media (max-width: 480px) {
+  .comparison-page {
+    padding: 16px 12px 32px;
+  }
+
+  .page-header h1 {
+    font-size: 16px;
+  }
+
+  .catalog-section,
+  .result-section {
+    padding: 12px 14px;
+  }
+
+  .ranking-table {
+    font-size: 11px;
+  }
+
+  .ranking-table th,
+  .ranking-table td {
+    padding: 4px 6px;
+    white-space: nowrap;
+  }
 }
 </style>

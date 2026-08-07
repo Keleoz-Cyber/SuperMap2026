@@ -4,6 +4,7 @@ import { ApiError, fetchTrashCases, purgeCase, restoreCase } from '../api/client
 import type { TrashCaseSummary } from '../api/types'
 import CasePurgeDialog from '../components/cases/CasePurgeDialog.vue'
 import PageNavigation from '../components/navigation/PageNavigation.vue'
+import { formatDateTime } from '../utils/datetime'
 
 const trashCases = ref<TrashCaseSummary[]>([])
 const loading = ref(true)
@@ -94,7 +95,7 @@ onMounted(load)
       <el-table-column prop="name" label="案例名称" min-width="160" />
       <el-table-column label="移入时间" width="180">
         <template #default="{ row }">
-          {{ (row.trashed_at || '').slice(0, 19).replace('T', ' ') }}
+          {{ formatDateTime(row.trashed_at || '') }}
         </template>
       </el-table-column>
       <el-table-column label="数据集" width="90" align="center">

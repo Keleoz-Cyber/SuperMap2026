@@ -157,8 +157,8 @@ function render() {
 
   chart.setOption(
     {
-      grid: { left: 70, right: 30, top: 40, bottom: 46 },
-      legend: { top: 4, textStyle: { color: '#8fa1b3', fontSize: 11 } },
+      grid: { left: 70, right: 20, top: 56, bottom: 52 },
+      legend: { top: 4, textStyle: { color: '#8fa1b3', fontSize: 11 }, type: 'scroll', width: 'auto' },
       xAxis: {
         type: 'value',
         name: '距离 h',
@@ -247,6 +247,7 @@ onBeforeUnmount(() => {
       </span>
     </div>
 
+    <div class="bins-table-wrap">
     <table class="bins-table">
       <thead>
         <tr>
@@ -277,6 +278,7 @@ onBeforeUnmount(() => {
         </tr>
       </tbody>
     </table>
+    </div>
   </section>
 </template>
 
@@ -349,6 +351,11 @@ onBeforeUnmount(() => {
   font-size: 11px;
 }
 
+.bins-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 .bins-table {
   width: 100%;
   border-collapse: collapse;
@@ -370,5 +377,39 @@ onBeforeUnmount(() => {
 .bins-table tr.excluded td {
   color: var(--gmp-text-faint);
   background: rgba(143, 161, 179, 0.08);
+}
+
+@media (max-width: 480px) {
+  .variogram-panel {
+    padding: 14px 12px;
+  }
+
+  .variogram-panel h3 {
+    font-size: 14px;
+  }
+
+  .sampling-line {
+    font-size: 11px;
+    gap: 6px 12px;
+  }
+
+  .chart {
+    height: 300px;
+  }
+
+  .direction-picker {
+    font-size: 11px;
+    gap: 6px 10px;
+  }
+
+  .bins-table {
+    font-size: 11px;
+  }
+
+  .bins-table th,
+  .bins-table td {
+    padding: 4px 6px;
+    white-space: nowrap;
+  }
 }
 </style>

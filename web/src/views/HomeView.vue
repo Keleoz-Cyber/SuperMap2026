@@ -23,6 +23,7 @@ import {
 } from '../api/client'
 import { WEB_VERSION } from '../version'
 import type { CaseSummary } from '../api/types'
+import { formatDateTime } from '../utils/datetime'
 
 interface CaseMeta {
   icon: Component
@@ -209,7 +210,7 @@ async function handleTrashCase(caseId: string) {
                 data-test="trash-case-btn"
                 @command="handleTrashCase(c.case_id)"
               >
-                <el-icon :size="18" class="overflow-trigger"><MoreFilled /></el-icon>
+                <el-icon :size="18" class="overflow-trigger" role="button" aria-label="案例操作菜单" tabindex="0"><MoreFilled /></el-icon>
                 <template #dropdown>
                   <el-dropdown-menu>
                     <el-dropdown-item command="trash">移入回收站</el-dropdown-item>
@@ -221,7 +222,7 @@ async function handleTrashCase(caseId: string) {
           <div class="case-body">
             <template v-if="kindOf(c) === 'user_upload'">
               <p><span>案例类型</span>{{ c.case_type ?? 'generic' }}</p>
-              <p><span>创建时间</span>{{ (c.created_at ?? '').slice(0, 19).replace('T', ' ') }}</p>
+              <p><span>创建时间</span>{{ formatDateTime(c.created_at ?? '') }}</p>
             </template>
             <template v-else-if="kindOf(c) === 'builtin_preset'">
               <p><span>数据形态</span>{{ c.provenance_summary?.data_form }}</p>
@@ -363,6 +364,7 @@ async function handleTrashCase(caseId: string) {
   min-height: 100%;
   display: flex;
   flex-direction: column;
+  overflow-x: hidden;
 }
 
 .home-header {
@@ -610,5 +612,67 @@ async function handleTrashCase(caseId: string) {
   border: 1px solid var(--gmp-border);
   border-radius: 999px;
   background: var(--gmp-card);
+}
+
+@media (max-width: 480px) {
+  .home-header-inner {
+    padding: 20px 16px 18px;
+  }
+
+  .brand {
+    flex-wrap: wrap;
+    gap: 8px 10px;
+  }
+
+  .brand h1 {
+    font-size: 18px;
+  }
+
+  .brand h1 span {
+    display: block;
+    margin-left: 0;
+    margin-top: 2px;
+    font-size: 13px;
+  }
+
+  .brand .el-tag {
+    font-size: 11px;
+  }
+
+  .trash-entry {
+    margin-left: 0;
+    padding: 4px 10px;
+    font-size: 12px;
+  }
+
+  .tagline {
+    font-size: 13px;
+  }
+
+  .home-main {
+    padding: 16px;
+  }
+
+  .case-cards {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .case-card {
+    padding: 16px;
+  }
+
+  .case-head h2 {
+    font-size: 15px;
+  }
+
+  .arch-chain {
+    padding: 16px;
+    gap: 10px;
+  }
+
+  .chain-node {
+    padding: 10px 12px;
+  }
 }
 </style>
