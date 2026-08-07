@@ -78,13 +78,15 @@ const dimension = computed<'2d' | '3d'>(() =>
 const preset = computed(() => resolveDatasetPreset(dataset.value?.profile ?? null))
 
 // ------------------------------------------------------- v0.6 professional
-// 专业模式（可选）：确认快照只来自诊断页导航（query.professional_confirmation），邻域与经验
-// 不确定性为契约原始载荷，严格校验在服务端。专业模式关闭时提交载荷与 v0.4 逐字一致。
-const professionalEnabled = ref(false)
+// 专业模式：确认快照只来自诊断页导航（query.professional_confirmation），邻域与经验
+// 不确定性为契约原始载荷，严格校验在服务端。v0.7.0 移除全局开关——确认快照存在即专业模式。
 const professionalConfirmationId = computed(() => {
   const q = route.query.professional_confirmation
   return typeof q === 'string' && q ? q : null
 })
+
+// v0.7.0: 专业模式由确认快照自动启用，不再有全局 toggle
+const professionalEnabled = computed(() => professionalConfirmationId.value !== null)
 
 const confirmationSummary = ref<ProfessionalConfirmationSummary | null>(null)
 const confirmationNote = computed(() => {
@@ -387,10 +389,6 @@ onBeforeUnmount(stopPolling)
             专业诊断
           </button>
           <span v-else-if="dataset.status !== 'validated'" class="pro-hint">数据集通过质量门禁后开放专业诊断入口</span>
-          <label class="radio">
-            <input v-model="professionalEnabled" type="checkbox" data-test="professional-toggle" />
-            启用专业模式（搜索邻域 / 经验不确定性）
-          </label>
         </div>
         <template v-if="professionalEnabled">
           <div v-if="editorAlgorithm === 'ordinary_kriging' && !professionalConfirmationId" class="pro-block">

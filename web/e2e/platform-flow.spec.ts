@@ -157,8 +157,6 @@ test.describe('v0.6 专业建模流程（mock API）', () => {
     )
 
     // 专业 Kriging 实验：网格搜索两组邻点数 → 两个成功候选
-    await page.getByTestId('professional-toggle').check()
-    await page.getByTestId('algo-kriging').check()
     await expect(page.getByTestId('professional-confirmation')).toContainText('conf-pro-1')
     await page.getByTestId('mode-grid').check()
     await page.getByTestId('exp-submit').click()
@@ -428,8 +426,6 @@ test.describe('v0.7 生命周期与比较流程（mock API）', () => {
     // 应用到 Kriging 实验
     await page.getByTestId('goto-experiment').click()
     await expect(page).toHaveURL(/professional_confirmation=conf-pro-1/)
-    await page.getByTestId('professional-toggle').check()
-    await page.getByTestId('algo-kriging').check()
     await expect(page.getByTestId('professional-confirmation')).toContainText('conf-pro-1')
     await page.getByTestId('exp-submit').click()
     await expect(page).toHaveURL(/#\/experiments\/exp-pro/)

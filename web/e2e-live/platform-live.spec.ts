@@ -321,11 +321,9 @@ test.describe('v0.6 专业建模流程（真实链路）', () => {
     await page.getByTestId('confirm-submit').click()
     await expect(page.getByTestId('confirmation-snapshot')).toBeVisible({ timeout: 30_000 })
     await page.getByTestId('goto-experiment').click()
-    await expect(page).toHaveURL(/experiments\/new\?dataset=[0-9a-f-]+&confirmation=[0-9a-f-]+/)
+    await expect(page).toHaveURL(/experiments\/new\?dataset=[0-9a-f-]+&professional_confirmation=[0-9a-f-]+/)
 
     // 7. 专业 Kriging 实验：网格搜索 spherical × 邻点 {16, 24} → 两个成功候选
-    await page.getByTestId('professional-toggle').check()
-    await page.getByTestId('algo-kriging').check()
     await expect(page.getByTestId('professional-confirmation')).toBeVisible()
     await page.getByTestId('mode-grid').check()
     await expect(page.getByTestId('count-preview')).toContainText('2 个候选组合')
