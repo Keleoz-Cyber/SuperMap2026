@@ -63,10 +63,7 @@ const rowCounts = computed(() => {
 })
 
 const abandonedDatasets = computed(() => {
-  const dp = workspace.value?.data_preparation
-  const allDs = workspace.value?.validated_datasets ?? []
-  if (!dp || !allDs.length) return []
-  return allDs.filter((d) => d.status === 'abandoned')
+  return workspace.value?.abandoned_datasets ?? []
 })
 
 function openOfficialResult() {

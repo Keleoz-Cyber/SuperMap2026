@@ -248,9 +248,15 @@ def create_app() -> FastAPI:
                             for d in datasets
                             if d.status == "validated"
                         ][::-1]
+                        card["abandoned_datasets"] = [
+                            public_dataset(d)
+                            for d in datasets
+                            if d.status == "abandoned"
+                        ][::-1]
                     else:
                         card["data_preparation"] = None
                         card["validated_datasets"] = []
+                        card["abandoned_datasets"] = []
                     return card
         if case_id == PRESET_CASE_ID:
             raise PlatformError(

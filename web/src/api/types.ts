@@ -72,6 +72,7 @@ export interface CaseWorkspaceSummary extends CaseSummary {
   data_preparation?: DataPreparationSummary | null
   // v0.7.0：已校验数据版本列表（user_upload 案例携带，其余为空）
   validated_datasets?: DatasetVersionRecord[]
+  abandoned_datasets?: DatasetVersionRecord[]
 }
 
 export interface CasesResponse {

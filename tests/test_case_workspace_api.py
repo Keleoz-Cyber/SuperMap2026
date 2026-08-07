@@ -352,3 +352,54 @@ def test_upload_workspace_without_dataset_has_no_experiment_capability(seeded_cl
     }
     assert body["primary_dataset"] is None
     assert body["official_result"] is None
+
+
+def test_workspace_includes_abandoned_datasets(seeded_client):
+    """Workspace DTO must include abandoned datasets for display."""
+    from geomodeling.platform import tables
+    from geomodeling.platform.schemas import DatasetStatus
+
+    runtime = seeded_client.app.state.platform_runtime
+    # Create a case with a validated v1 and abandoned v2
+    with runtime.session() as session:
+        session.add(
+            tables.Case(id="up-abandon", name="放弃历史测试", case_type="generic", config_json="{}")
+        )
+        session.commit()
+
+    # Upload v1
+    resp = seeded_client.post(
+        "/api/cases/up-abandon/datasets/uploads",
+        files={"file": ("test.csv", b"x,y,v\n1,2,3\n", "text/csv")},
+    )
+    v1_id = resp.json()["id"]
+
+    # Validate v1
+    with runtime.session() as session:
+        repo = tables  # use raw table for direct manipulation
+        row = session.get(tables.DatasetVersion, v1_id)
+        row.status = "validated"
+        session.commit()
+
+    # Upload v2
+    resp = seeded_client.post(
+        "/api/cases/up-abandon/datasets/uploads",
+        files={"file": ("test2.csv", b"x,y,v\n4,5,6\n", "text/csv")},
+    )
+    v2_id = resp.json()["id"]
+
+    # Abandon v2
+    resp = seeded_client.post(f"/api/datasets/{v2_id}/abandon")
+    assert resp.status_code == 200
+
+    # Check workspace includes abandoned_datasets
+    resp = seeded_client.get("/api/cases/up-abandon/workspace")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "abandoned_datasets" in body
+    assert len(body["abandoned_datasets"]) == 1
+    assert body["abandoned_datasets"][0]["id"] == v2_id
+    assert body["abandoned_datasets"][0]["status"] == "abandoned"
+    # v1 should be in validated_datasets
+    assert len(body["validated_datasets"]) == 1
+    assert body["validated_datasets"][0]["id"] == v1_id
