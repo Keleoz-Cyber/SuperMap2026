@@ -104,14 +104,14 @@ def recover_case_purges(runtime: Any) -> dict[str, Any]:
                     op.error_json = json.dumps(
                         {"code": CASE_PURGE_RECOVERY_REQUIRED,
                          "message": "prepared 状态中断，案例仍存在"},
-                        ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+                        ensure_ascii=False, sort_keys=True, separators=(",", ":"))
                     report["failed"].append(op.id)
                 else:
                     op.state = "failed"
                     op.error_json = json.dumps(
                         {"code": CASE_PURGE_RECOVERY_REQUIRED,
                          "message": "prepared 状态中断，案例已不存在"},
-                        ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+                        ensure_ascii=False, sort_keys=True, separators=(",", ":"))
                     report["failed"].append(op.id)
 
             elif op.state == "quarantined":
@@ -125,14 +125,14 @@ def recover_case_purges(runtime: Any) -> dict[str, Any]:
                         op.error_json = json.dumps(
                             {"code": CASE_PURGE_RECOVERY_REQUIRED,
                              "message": "manifest 验证失败或文件恢复失败，需人工介入"},
-                            ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+                            ensure_ascii=False, sort_keys=True, separators=(",", ":"))
                         report["failed"].append(op.id)
                 else:
                     op.state = "failed"
                     op.error_json = json.dumps(
                         {"code": CASE_PURGE_RECOVERY_REQUIRED,
                          "message": "quarantined 但案例已不存在，无法恢复"},
-                        ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+                        ensure_ascii=False, sort_keys=True, separators=(",", ":"))
                     report["failed"].append(op.id)
 
             elif op.state == "committed":
@@ -148,7 +148,7 @@ def recover_case_purges(runtime: Any) -> dict[str, Any]:
                     op.error_json = json.dumps(
                         {"code": CASE_PURGE_RECOVERY_REQUIRED,
                          "message": "committed 但案例仍存在"},
-                        ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+                        ensure_ascii=False, sort_keys=True, separators=(",", ":"))
                     report["failed"].append(op.id)
 
         session.commit()
@@ -160,7 +160,12 @@ def _restore_quarantined_files(runtime: Any, op: CasePurgeOperation) -> None:
     """Restore files from quarantine directory back to their controlled roots.
 
     Validates manifest paths (no absolute, no .., no symlinks) and verifies
-    file size and SHA-256 before restoring. Raises ValueError on any violation.
+    file size and SHA-256 before restoring. Raises ValueError or OSError on
+    any failure — partial recovery must never be silently swallowed.
+
+    When a quarantine source file is missing, the destination is checked:
+    if it already exists with the correct size and SHA-256, the file is
+    considered already restored; otherwise ValueError is raised.
     """
 
     settings = runtime.settings
@@ -175,7 +180,7 @@ def _restore_quarantined_files(runtime: Any, op: CasePurgeOperation) -> None:
     }
     quarantine_dir = settings.purge_quarantine_dir / op.id
     if not quarantine_dir.exists():
-        return
+        raise ValueError("quarantine directory does not exist")
 
     try:
         manifest_data = json.loads(op.manifest_json) if op.manifest_json else {}
@@ -204,37 +209,49 @@ def _restore_quarantined_files(runtime: Any, op: CasePurgeOperation) -> None:
             raise ValueError(f"unknown root in manifest: {root_name}")
 
         src = quarantine_dir / root_name / rel_path
+        dst = root_dir / rel_path
+
         if not src.exists():
-            continue  # file may have been partially restored already
+            # Source missing — check if destination already has the correct file
+            if dst.exists() and not dst.is_symlink():
+                if _verify_file(dst, expected_size, expected_sha):
+                    continue  # already restored correctly
+            raise ValueError(
+                f"quarantine source missing and destination not verified: {rel_path}"
+            )
 
         # Reject symlinks
         if src.is_symlink():
             raise ValueError(f"symlink in quarantine: {rel_path}")
 
-        # Verify size and SHA-256
-        actual_size = src.stat().st_size
-        if expected_size is not None and actual_size != expected_size:
-            raise ValueError(f"size mismatch for {rel_path}")
+        # Verify size and SHA-256 of quarantine source
+        if not _verify_file(src, expected_size, expected_sha):
+            raise ValueError(f"size or sha256 mismatch in quarantine: {rel_path}")
 
-        if expected_sha:
-            import hashlib as _hl
-            h = _hl.sha256()
-            with open(src, "rb") as f:
-                for chunk in iter(lambda: f.read(8192), b""):
-                    h.update(chunk)
-            if h.hexdigest() != expected_sha:
-                raise ValueError(f"sha256 mismatch for {rel_path}")
-
-        dst = root_dir / rel_path
         # Also reject if destination would be a symlink
         if dst.is_symlink():
             raise ValueError(f"destination is symlink: {rel_path}")
 
         dst.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            os.replace(src, dst)
-        except OSError:
-            pass
+        # Propagate OSError — do NOT swallow
+        os.replace(src, dst)
+
+
+def _verify_file(path: Path, expected_size: int | None, expected_sha: str | None) -> bool:
+    """Verify a file's size and SHA-256 match expected values."""
+    if not path.is_file():
+        return False
+    if expected_size is not None and path.stat().st_size != expected_size:
+        return False
+    if expected_sha:
+        import hashlib as _hl
+        h = _hl.sha256()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(8192), b""):
+                h.update(chunk)
+        if h.hexdigest() != expected_sha:
+            return False
+    return True
 
 
 @dataclass(frozen=True)
@@ -550,7 +567,7 @@ class CaseLifecycleService:
                 case_id=case_id,
                 state="prepared",
                 manifest_json=json.dumps(manifest.model_dump(), ensure_ascii=False,
-                                         sort_keys=True, separators=(",", ":")),
+                                         sort_keys=True, separators=(",", ":"))
             )
             session.add(op)
             session.commit()

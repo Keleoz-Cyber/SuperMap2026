@@ -75,6 +75,15 @@ def create_case(runtime, name="测试案例", config=None):
         ).id
 
 
+def create_dataset(runtime, case_id):
+    """Create a dataset version for a case."""
+    with runtime.session() as session:
+        dataset = DatasetRepository(session).create_version(
+            case_id, source_path="placeholder"
+        )
+    return dataset.id
+
+
 def write_file(path: Path, content: bytes = b"test") -> str:
     """Write a file and return its SHA-256 hash."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -466,3 +475,169 @@ class TestPurgeConcurrencySafety:
         with runtime.session() as session:
             case = session.get(CaseTbl, case_id)
             assert case.lifecycle_state == "trashed"
+
+
+class TestStartupRecoveryFailure:
+    """Tests for recover_case_purges() failure scenarios."""
+
+    def _setup_quarantined_op(self, runtime, tmp_path):
+        """Create a case with 2 files, a quarantined purge operation, and files in quarantine."""
+        from geomodeling.platform.case_lifecycle import recover_case_purges  # noqa: F401
+        from geomodeling.platform.tables import CasePurgeOperation
+
+        case_id = create_case(runtime, name="恢复测试")
+        dataset_id = create_dataset(runtime, case_id)
+
+        # Create two actual files under controlled roots
+        file1_path = runtime.settings.upload_source(case_id, dataset_id, "csv")
+        file1_content = b"file1-data"
+        file1_path.parent.mkdir(parents=True, exist_ok=True)
+        file1_path.write_bytes(file1_content)
+        file1_sha = hashlib.sha256(file1_content).hexdigest()
+
+        file2_path = runtime.settings.standardized_dataset(case_id, dataset_id)
+        file2_content = b"file2-data"
+        file2_path.parent.mkdir(parents=True, exist_ok=True)
+        file2_path.write_bytes(file2_content)
+        file2_sha = hashlib.sha256(file2_content).hexdigest()
+
+        # Update dataset paths
+        with runtime.session() as session:
+            row = session.get(DatasetVersion, dataset_id)
+            row.source_path = str(file1_path)
+            row.standardized_path = str(file2_path)
+            session.commit()
+
+        # Create a quarantined purge operation
+        op_id = "recovery-test-op"
+        quarantine_dir = runtime.settings.purge_quarantine_dir / op_id
+        quarantine_dir.mkdir(parents=True, exist_ok=True)
+
+        # Move files to quarantine (simulating the quarantine step)
+        q1 = quarantine_dir / "uploads" / file1_path.relative_to(runtime.settings.uploads_dir)
+        q1.parent.mkdir(parents=True, exist_ok=True)
+        os.replace(file1_path, q1)
+
+        q2 = quarantine_dir / "datasets" / file2_path.relative_to(runtime.settings.datasets_dir)
+        q2.parent.mkdir(parents=True, exist_ok=True)
+        os.replace(file2_path, q2)
+
+        manifest = {
+            "version": 1,
+            "case_id": case_id,
+            "row_ids": {},
+            "files": [
+                {
+                    "root": "uploads",
+                    "relative_path": str(file1_path.relative_to(runtime.settings.uploads_dir)),
+                    "sha256": file1_sha,
+                    "size_bytes": len(file1_content),
+                },
+                {
+                    "root": "datasets",
+                    "relative_path": str(file2_path.relative_to(runtime.settings.datasets_dir)),
+                    "sha256": file2_sha,
+                    "size_bytes": len(file2_content),
+                },
+            ],
+        }
+
+        with runtime.session() as session:
+            op = CasePurgeOperation(
+                id=op_id,
+                case_id=case_id,
+                state="quarantined",
+                manifest_json=json.dumps(manifest, ensure_ascii=False, sort_keys=True,
+                                         separators=(",", ":")),
+            )
+            session.add(op)
+            session.commit()
+
+        return case_id, op_id, quarantine_dir, file1_path, file2_path, q1, q2
+
+    def test_second_file_restore_fails(self, runtime, monkeypatch):
+        """Second file os.replace fails during startup recovery -> failed + RECOVERY_REQUIRED."""
+        from geomodeling.platform.case_lifecycle import recover_case_purges
+        import geomodeling.platform.case_lifecycle as cl_module
+
+        case_id, op_id, q_dir, f1_path, f2_path, q1, q2 = self._setup_quarantined_op(runtime, None)
+
+        # Patch os.replace to fail on the second call (during recovery restore)
+        original_replace = os.replace
+        call_count = {"n": 0}
+
+        def patched_replace(src, dst):
+            call_count["n"] += 1
+            if call_count["n"] == 2:
+                raise OSError("Simulated second file restore failure")
+            return original_replace(src, dst)
+
+        monkeypatch.setattr(cl_module.os, "replace", patched_replace)
+
+        report = recover_case_purges(runtime)
+
+        assert op_id in report["failed"]
+        with runtime.session() as session:
+            op = session.get(CasePurgeOperation, op_id)
+            assert op.state == "failed"
+            error = json.loads(op.error_json)
+            assert error["code"] == "CASE_PURGE_RECOVERY_REQUIRED"
+
+    def test_quarantine_file_missing(self, runtime):
+        """Quarantine source file missing and destination doesn't exist -> failed + RECOVERY_REQUIRED."""
+        from geomodeling.platform.case_lifecycle import recover_case_purges
+
+        case_id, op_id, q_dir, f1_path, f2_path, q1, q2 = self._setup_quarantined_op(runtime, None)
+
+        # Delete the second quarantine file (simulating partial disk failure)
+        q2.unlink()
+
+        # Ensure destination doesn't exist either
+        assert not f2_path.exists()
+
+        report = recover_case_purges(runtime)
+
+        assert op_id in report["failed"]
+        with runtime.session() as session:
+            op = session.get(CasePurgeOperation, op_id)
+            assert op.state == "failed"
+            error = json.loads(op.error_json)
+            assert error["code"] == "CASE_PURGE_RECOVERY_REQUIRED"
+
+    def test_quarantine_file_hash_mismatch(self, runtime):
+        """Quarantine file exists but hash doesn't match -> failed + RECOVERY_REQUIRED."""
+        from geomodeling.platform.case_lifecycle import recover_case_purges
+
+        case_id, op_id, q_dir, f1_path, f2_path, q1, q2 = self._setup_quarantined_op(runtime, None)
+
+        # Corrupt the second quarantine file (change content so hash doesn't match)
+        q2.write_bytes(b"corrupted-data")
+
+        report = recover_case_purges(runtime)
+
+        assert op_id in report["failed"]
+        with runtime.session() as session:
+            op = session.get(CasePurgeOperation, op_id)
+            assert op.state == "failed"
+            error = json.loads(op.error_json)
+            assert error["code"] == "CASE_PURGE_RECOVERY_REQUIRED"
+
+    def test_successful_recovery_when_destination_already_correct(self, runtime):
+        """If quarantine source is missing but destination already has correct file, recovery succeeds."""
+        from geomodeling.platform.case_lifecycle import recover_case_purges
+
+        case_id, op_id, q_dir, f1_path, f2_path, q1, q2 = self._setup_quarantined_op(runtime, None)
+
+        # Restore the first file manually (simulate it was already restored)
+        original_replace = os.replace
+        original_replace(q1, f1_path)
+        # Delete q1 so it's missing from quarantine
+        # q1 was already moved, so it doesn't exist
+
+        # Second file still in quarantine, should be restored normally
+        report = recover_case_purges(runtime)
+
+        assert op_id in report["rolled_back"]
+        with runtime.session() as session:
+            op = session.get(CasePurgeOperation, op_id)
+            assert op.state == "rolled_back"
