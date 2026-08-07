@@ -641,3 +641,195 @@ class TestStartupRecoveryFailure:
         with runtime.session() as session:
             op = session.get(CasePurgeOperation, op_id)
             assert op.state == "rolled_back"
+
+    def _setup_quarantined_op_with_manifest(self, runtime, manifest_dict):
+        """Create a case + quarantined purge op with a custom (possibly corrupt) manifest.
+
+        The quarantine directory is created but may be empty -- the manifest
+        validation runs before any file access.
+        """
+        case_id = create_case(runtime, name="manifest校验测试")
+
+        op_id = "manifest-test-op"
+        quarantine_dir = runtime.settings.purge_quarantine_dir / op_id
+        quarantine_dir.mkdir(parents=True, exist_ok=True)
+
+        with runtime.session() as session:
+            op = CasePurgeOperation(
+                id=op_id,
+                case_id=case_id,
+                state="quarantined",
+                manifest_json=json.dumps(manifest_dict, ensure_ascii=False,
+                                         sort_keys=True, separators=(",", ":")),
+            )
+            session.add(op)
+            session.commit()
+
+        return case_id, op_id
+
+    def _assert_failed_recovery_required(self, runtime, op_id):
+        """Assert the operation is failed with CASE_PURGE_RECOVERY_REQUIRED."""
+        with runtime.session() as session:
+            op = session.get(CasePurgeOperation, op_id)
+            assert op.state == "failed", f"expected failed, got {op.state}"
+            error = json.loads(op.error_json)
+            assert error["code"] == "CASE_PURGE_RECOVERY_REQUIRED", (
+                f"expected CASE_PURGE_RECOVERY_REQUIRED, got {error['code']}"
+            )
+
+    def test_manifest_file_missing_sha256(self, runtime):
+        """File entry missing sha256 -> failed + RECOVERY_REQUIRED."""
+        from geomodeling.platform.case_lifecycle import recover_case_purges
+
+        manifest = {
+            "version": 1,
+            "case_id": "x",
+            "row_ids": {},
+            "files": [
+                {
+                    "root": "uploads",
+                    "relative_path": "case/ds/source.csv",
+                    "size_bytes": 10,
+                    # sha256 missing
+                },
+            ],
+        }
+        case_id, op_id = self._setup_quarantined_op_with_manifest(runtime, manifest)
+
+        report = recover_case_purges(runtime)
+
+        assert op_id in report["failed"]
+        self._assert_failed_recovery_required(runtime, op_id)
+
+    def test_manifest_file_missing_size_bytes(self, runtime):
+        """File entry missing size_bytes -> failed + RECOVERY_REQUIRED."""
+        from geomodeling.platform.case_lifecycle import recover_case_purges
+
+        manifest = {
+            "version": 1,
+            "case_id": "x",
+            "row_ids": {},
+            "files": [
+                {
+                    "root": "uploads",
+                    "relative_path": "case/ds/source.csv",
+                    "sha256": "abc123",
+                    # size_bytes missing
+                },
+            ],
+        }
+        case_id, op_id = self._setup_quarantined_op_with_manifest(runtime, manifest)
+
+        report = recover_case_purges(runtime)
+
+        assert op_id in report["failed"]
+        self._assert_failed_recovery_required(runtime, op_id)
+
+    def test_manifest_files_not_array(self, runtime):
+        """files is a string instead of array -> failed + RECOVERY_REQUIRED."""
+        from geomodeling.platform.case_lifecycle import recover_case_purges
+
+        manifest = {
+            "version": 1,
+            "case_id": "x",
+            "row_ids": {},
+            "files": "not-an-array",
+        }
+        case_id, op_id = self._setup_quarantined_op_with_manifest(runtime, manifest)
+
+        report = recover_case_purges(runtime)
+
+        assert op_id in report["failed"]
+        self._assert_failed_recovery_required(runtime, op_id)
+
+    def test_manifest_files_contains_null(self, runtime):
+        """files contains null element -> failed + RECOVERY_REQUIRED."""
+        from geomodeling.platform.case_lifecycle import recover_case_purges
+
+        manifest = {
+            "version": 1,
+            "case_id": "x",
+            "row_ids": {},
+            "files": [
+                None,
+                {
+                    "root": "uploads",
+                    "relative_path": "case/ds/source.csv",
+                    "sha256": "abc123",
+                    "size_bytes": 10,
+                },
+            ],
+        }
+        case_id, op_id = self._setup_quarantined_op_with_manifest(runtime, manifest)
+
+        report = recover_case_purges(runtime)
+
+        assert op_id in report["failed"]
+        self._assert_failed_recovery_required(runtime, op_id)
+
+    def test_corrupt_manifest_does_not_block_other_recovery(self, runtime):
+        """A corrupt manifest marks only that operation failed; other ops still recover."""
+        from geomodeling.platform.case_lifecycle import recover_case_purges
+
+        # Op 1: corrupt manifest (files contains a string)
+        manifest_bad = {
+            "version": 1,
+            "case_id": "x",
+            "row_ids": {},
+            "files": ["not-an-object"],
+        }
+        case_id_1, op_id_1 = self._setup_quarantined_op_with_manifest(runtime, manifest_bad)
+
+        # Op 2: valid manifest with a file that's already in quarantine
+        case_id_2 = create_case(runtime, name="正常恢复")
+        dataset_id = create_dataset(runtime, case_id_2)
+
+        file_path = runtime.settings.upload_source(case_id_2, dataset_id, "csv")
+        content = b"good-data"
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        file_path.write_bytes(content)
+        sha = hashlib.sha256(content).hexdigest()
+
+        op_id_2 = "good-recovery-op"
+        q_dir_2 = runtime.settings.purge_quarantine_dir / op_id_2
+        q_dir_2.mkdir(parents=True, exist_ok=True)
+        rel = str(file_path.relative_to(runtime.settings.uploads_dir))
+        q_file = q_dir_2 / "uploads" / rel
+        q_file.parent.mkdir(parents=True, exist_ok=True)
+        os.replace(file_path, q_file)
+
+        manifest_good = {
+            "version": 1,
+            "case_id": case_id_2,
+            "row_ids": {},
+            "files": [
+                {
+                    "root": "uploads",
+                    "relative_path": rel,
+                    "sha256": sha,
+                    "size_bytes": len(content),
+                },
+            ],
+        }
+        with runtime.session() as session:
+            session.add(CasePurgeOperation(
+                id=op_id_2,
+                case_id=case_id_2,
+                state="quarantined",
+                manifest_json=json.dumps(manifest_good, ensure_ascii=False,
+                                         sort_keys=True, separators=(",", ":")),
+            ))
+            session.commit()
+
+        report = recover_case_purges(runtime)
+
+        # Op 1 should be failed
+        assert op_id_1 in report["failed"]
+        self._assert_failed_recovery_required(runtime, op_id_1)
+
+        # Op 2 should be rolled_back (service startup not blocked)
+        assert op_id_2 in report["rolled_back"]
+        with runtime.session() as session:
+            op2 = session.get(CasePurgeOperation, op_id_2)
+            assert op2.state == "rolled_back"
+        assert file_path.exists()

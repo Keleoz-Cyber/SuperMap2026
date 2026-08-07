@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -159,9 +160,10 @@ def recover_case_purges(runtime: Any) -> dict[str, Any]:
 def _restore_quarantined_files(runtime: Any, op: CasePurgeOperation) -> None:
     """Restore files from quarantine directory back to their controlled roots.
 
-    Validates manifest paths (no absolute, no .., no symlinks) and verifies
-    file size and SHA-256 before restoring. Raises ValueError or OSError on
-    any failure — partial recovery must never be silently swallowed.
+    Validates the manifest via ``CasePurgeManifest.model_validate`` (full
+    Pydantic schema check), then verifies file size and SHA-256 before
+    restoring.  Raises ValueError or OSError on any failure -- partial
+    recovery must never be silently swallowed.
 
     When a quarantine source file is missing, the destination is checked:
     if it already exists with the correct size and SHA-256, the file is
@@ -182,19 +184,20 @@ def _restore_quarantined_files(runtime: Any, op: CasePurgeOperation) -> None:
     if not quarantine_dir.exists():
         raise ValueError("quarantine directory does not exist")
 
+    # Full Pydantic validation of the manifest
     try:
-        manifest_data = json.loads(op.manifest_json) if op.manifest_json else {}
+        raw = json.loads(op.manifest_json) if op.manifest_json else {}
+        manifest = CasePurgeManifest.model_validate(raw)
     except json.JSONDecodeError:
         raise ValueError("manifest JSON is corrupt")
+    except ValidationError:
+        raise ValueError("manifest schema validation failed")
 
-    for fm in manifest_data.get("files", []):
-        root_name = fm.get("root")
-        rel_path = fm.get("relative_path")
-        expected_sha = fm.get("sha256")
-        expected_size = fm.get("size_bytes")
-
-        if not root_name or not rel_path:
-            raise ValueError("manifest entry missing root or relative_path")
+    for fm in manifest.files:
+        root_name = fm.root
+        rel_path = fm.relative_path
+        expected_sha = fm.sha256
+        expected_size = fm.size_bytes
 
         # Reject absolute paths
         if rel_path.startswith("/") or rel_path.startswith("\\"):
@@ -212,7 +215,7 @@ def _restore_quarantined_files(runtime: Any, op: CasePurgeOperation) -> None:
         dst = root_dir / rel_path
 
         if not src.exists():
-            # Source missing — check if destination already has the correct file
+            # Source missing - check if destination already has the correct file
             if dst.exists() and not dst.is_symlink():
                 if _verify_file(dst, expected_size, expected_sha):
                     continue  # already restored correctly
@@ -233,7 +236,7 @@ def _restore_quarantined_files(runtime: Any, op: CasePurgeOperation) -> None:
             raise ValueError(f"destination is symlink: {rel_path}")
 
         dst.parent.mkdir(parents=True, exist_ok=True)
-        # Propagate OSError — do NOT swallow
+        # Propagate OSError - do NOT swallow
         os.replace(src, dst)
 
 
