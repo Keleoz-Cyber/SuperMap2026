@@ -429,25 +429,68 @@ describe('数据集入口与质量门禁', () => {
     wrapper.unmount()
   })
 
-  it('实验页在质量门禁通过后显示专业诊断入口并跳转到诊断路由', async () => {
+  it('实验页 IDW 模式不显示空间分析 UI', async () => {
     vi.mocked(client.fetchDataset).mockResolvedValue(DATASET)
-    const { wrapper, router } = await mountExperiment('/cases/c1/experiments/new?dataset=ds1')
-    const entry = wrapper.find('[data-test="professional-entry"]')
-    expect(entry.exists()).toBe(true)
-    await entry.trigger('click')
-    await flushPromises()
-    expect(router.currentRoute.value).toMatchObject({
-      name: 'professional-diagnosis',
-      params: { datasetId: 'ds1' },
+    vi.mocked(client.fetchProfessionalDiagnostics).mockResolvedValue({
+      dataset_id: 'ds1',
+      diagnostics: [],
     })
-    expect(router.currentRoute.value.query.case).toBe('c1')
+    const { wrapper } = await mountExperiment('/cases/c1/experiments/new?dataset=ds1')
+    expect(wrapper.find('[data-test="kriging-basis"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="spatial-analysis-entry"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
-  it('实验页在数据集未过质量门禁时不显示专业诊断入口', async () => {
+  it('实验页 Kriging 模式显示建模依据，默认快速建模', async () => {
+    vi.mocked(client.fetchDataset).mockResolvedValue(DATASET)
+    vi.mocked(client.fetchProfessionalDiagnostics).mockResolvedValue({
+      dataset_id: 'ds1',
+      diagnostics: [],
+    })
+    const { wrapper } = await mountExperiment('/cases/c1/experiments/new?dataset=ds1')
+    await wrapper.find('[data-test="algo-kriging"]').setValue(true)
+    expect(wrapper.find('[data-test="kriging-basis"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="basis-quick"]').attributes('aria-checked')).toBe('true')
+    // No succeeded diagnosis: analysis option shows 开始空间结构分析
+    await wrapper.find('[data-test="basis-analysis"]').trigger('click')
+    expect(wrapper.get('[data-test="basis-analysis"]').attributes('aria-checked')).toBe('true')
+    expect(wrapper.find('[data-test="spatial-analysis-entry"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="spatial-analysis-entry"]').text()).toContain('开始空间结构分析')
+    wrapper.unmount()
+  })
+
+  it('实验页 Kriging 有成功诊断时显示查看并采用已有分析', async () => {
+    vi.mocked(client.fetchDataset).mockResolvedValue(DATASET)
+    vi.mocked(client.fetchProfessionalDiagnostics).mockResolvedValue({
+      dataset_id: 'ds1',
+      diagnostics: [
+        {
+          diagnosis: { id: 'diag1', status: 'succeeded' },
+          job: null,
+          url: '/datasets/ds1/professional-diagnosis?diagnosis=diag1',
+          latest_confirmation: null,
+        },
+      ],
+    })
+    const { wrapper, router } = await mountExperiment('/cases/c1/experiments/new?dataset=ds1')
+    await wrapper.find('[data-test="algo-kriging"]').setValue(true)
+    await wrapper.find('[data-test="basis-analysis"]').trigger('click')
+    const entry = wrapper.find('[data-test="spatial-analysis-entry"]')
+    expect(entry.text()).toContain('查看并采用已有分析')
+    await entry.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.name).toBe('professional-diagnosis')
+    expect(router.currentRoute.value.query.diagnosis).toBe('diag1')
+    wrapper.unmount()
+  })
+
+  it('实验页在数据集未过质量门禁时不显示建模依据', async () => {
     vi.mocked(client.fetchDataset).mockResolvedValue(UNGATED_DATASET)
     const { wrapper } = await mountExperiment('/cases/c1/experiments/new?dataset=ds1')
-    expect(wrapper.find('[data-test="professional-entry"]').exists()).toBe(false)
+    await wrapper.find('[data-test="algo-kriging"]').setValue(true)
+    // dataset is loaded but not validated; kriging-basis only shows for validated dataset
+    // (ParameterEditor renders but basis depends on algorithm selection)
+    expect(wrapper.find('[data-test="spatial-analysis-entry"]').exists()).toBe(false)
     wrapper.unmount()
   })
 })

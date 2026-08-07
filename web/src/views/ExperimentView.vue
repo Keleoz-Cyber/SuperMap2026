@@ -10,6 +10,7 @@ import {
   fetchDataset,
   fetchExperiment,
   fetchProfessionalConfirmation,
+  fetchProfessionalDiagnostics,
   retryRun,
   startRun,
   fetchRun,
@@ -21,6 +22,7 @@ import type {
   ExperimentRecord,
   NeighborhoodPayload,
   ProfessionalConfirmationSummary,
+  ProfessionalDiagnosticListItem,
   RunRecord,
 } from '../api/types'
 import ParameterEditor, { type ParameterSubmit } from '../components/experiments/ParameterEditor.vue'
@@ -41,12 +43,10 @@ const isCreate = computed(() => route.name === 'experiment-create')
 const caseId = computed(() => String(route.params.caseId ?? ''))
 const experimentId = computed(() => String(route.params.experimentId ?? ''))
 
-// ---------------------------------------------------------- create state
 const dataset = ref<DatasetVersionRecord | null>(null)
 const name = ref('插值实验')
 const submitting = ref(false)
 
-// ----------------------------------------------------------- view state
 const experiment = ref<ExperimentRecord | null>(null)
 const candidates = ref<CandidateRecord[]>([])
 const publicMetrics = ref<Record<string, number>>({})
@@ -74,18 +74,13 @@ const dimension = computed<'2d' | '3d'>(() =>
   dataset.value?.profile?.dimension === '3d' ? '3d' : '2d',
 )
 
-// 领域适配器数据集（微震第二案例）提供调参预设；通用数据集为 null，保持现有默认
 const preset = computed(() => resolveDatasetPreset(dataset.value?.profile ?? null))
 
-// ------------------------------------------------------- v0.6 professional
-// 专业模式：确认快照只来自诊断页导航（query.professional_confirmation），邻域与经验
-// 不确定性为契约原始载荷，严格校验在服务端。v0.7.0 移除全局开关——确认快照存在即专业模式。
 const professionalConfirmationId = computed(() => {
   const q = route.query.professional_confirmation
   return typeof q === 'string' && q ? q : null
 })
 
-// v0.7.0: 专业模式由确认快照自动启用，不再有全局 toggle
 const professionalEnabled = computed(() => professionalConfirmationId.value !== null)
 
 const confirmationSummary = ref<ProfessionalConfirmationSummary | null>(null)
@@ -94,14 +89,20 @@ const confirmationNote = computed(() => {
   return raw?.note ?? null
 })
 
-// ParameterEditor 是既有 legacy 组件（不改其源码）：算法选择经 change 事件冒泡同步，
-// 仅用于决定专业区块是否显示确认快照（IDW 永不出现变异函数确认）。
 const editorAlgorithm = ref<'idw' | 'ordinary_kriging'>('idw')
 function onEditorChange(event: Event) {
   const target = event.target as HTMLInputElement | null
   if (!target || target.name !== 'algo') return
   editorAlgorithm.value = target.dataset.test === 'algo-kriging' ? 'ordinary_kriging' : 'idw'
 }
+
+type KrigingBasis = 'quick' | 'analysis'
+const krigingBasis = ref<KrigingBasis>('quick')
+const latestSucceededDiagnosis = ref<ProfessionalDiagnosticListItem | null>(null)
+
+const showKrigingBasis = computed(
+  () => editorAlgorithm.value === 'ordinary_kriging' && !professionalConfirmationId.value,
+)
 
 const nbRadii = ref('')
 const nbAzimuth = ref(0)
@@ -114,7 +115,6 @@ const uncMax = ref(24)
 const uncPower = ref(2)
 
 function effectiveRadii(): number[] | null {
-  // 留空使用维度默认（3D 80,40,20 / 2D 80,40）；parseNumberList 对空串返回 [] 需先排除
   const parsed = nbRadii.value.trim() === '' ? null : parseNumberList(nbRadii.value)
   if (nbRadii.value.trim() !== '' && parsed === null) return null
   const radii = parsed ?? (dimension.value === '3d' ? [80, 40, 20] : [80, 40])
@@ -125,9 +125,6 @@ function effectiveRadii(): number[] | null {
 
 const professionalInvalid = computed<string | null>(() => {
   if (!professionalEnabled.value) return null
-  if (editorAlgorithm.value === 'ordinary_kriging' && !professionalConfirmationId.value) {
-    return '专业 Kriging 实验需要诊断确认快照：请先在专业诊断工作台完成人工确认并携带确认 ID 进入'
-  }
   if (effectiveRadii() === null) {
     return `邻域半径需为逗号分隔的正数（${dimension.value === '3d' ? '主, 次, 垂 三个' : '主, 次 两个'}）`
   }
@@ -154,7 +151,7 @@ function buildNeighborhood(): NeighborhoodPayload | null {
   }
 }
 
-function goDiagnosis() {
+function gotoAnalysisNew() {
   if (!dataset.value) return
   void router.push({
     name: 'professional-diagnosis',
@@ -163,9 +160,33 @@ function goDiagnosis() {
   })
 }
 
-// ----------------------------------------------------------- create flow
+function gotoAnalysisDetail() {
+  if (!latestSucceededDiagnosis.value) return
+  const url = latestSucceededDiagnosis.value.url
+  const stripped = url.startsWith('/#/') ? url.slice(2) : url
+  void router.push(stripped)
+}
+
+let diagnosisHistorySeq = 0
+
+async function loadDiagnosisHistory() {
+  if (!dataset.value) return
+  const targetDatasetId = dataset.value.id
+  const seq = ++diagnosisHistorySeq
+  try {
+    const list = await fetchProfessionalDiagnostics(targetDatasetId)
+    if (seq !== diagnosisHistorySeq || dataset.value?.id !== targetDatasetId) return
+    const succeeded = list.diagnostics.find(
+      (d) => (d.diagnosis as { status?: string }).status === 'succeeded',
+    )
+    latestSucceededDiagnosis.value = succeeded ?? null
+  } catch {
+    if (seq !== diagnosisHistorySeq) return
+    latestSucceededDiagnosis.value = null
+  }
+}
+
 async function resolveDataset() {
-  // 专业确认模式：确认快照决定案例与数据集归属（不由 URL query.dataset 决定）
   if (professionalConfirmationId.value) {
     const summary = await fetchProfessionalConfirmation(professionalConfirmationId.value)
     confirmationSummary.value = summary
@@ -174,23 +195,26 @@ async function resolveDataset() {
     return
   }
   confirmationSummary.value = null
+  latestSucceededDiagnosis.value = null
   const fromQuery = route.query.dataset
   if (typeof fromQuery === 'string' && fromQuery) {
     dataset.value = await fetchDataset(fromQuery)
-    return
+  } else {
+    const list = await fetchCaseDatasets(caseId.value)
+    const ready = list.datasets.filter((d) => d.status === 'validated')
+    const picked = ready.at(-1) ?? null
+    if (!picked) {
+      throw new ApiError(
+        'NO_READY_DATASET',
+        '本案例还没有通过质量校验的数据集，请先完成数据准备向导',
+        409,
+      )
+    }
+    dataset.value = await fetchDataset(picked.id)
   }
-  // 案例工作台入口：自动选择本案例最新一个已过质量门禁的数据集
-  const list = await fetchCaseDatasets(caseId.value)
-  const ready = list.datasets.filter((d) => d.status === 'validated')
-  const picked = ready.at(-1) ?? null
-  if (!picked) {
-    throw new ApiError(
-      'NO_READY_DATASET',
-      '本案例还没有通过质量校验的数据集，请先完成数据准备向导',
-      409,
-    )
+  if (dataset.value?.status === 'validated') {
+    void loadDiagnosisHistory()
   }
-  dataset.value = await fetchDataset(picked.id)
 }
 
 async function submit(payload: ParameterSubmit) {
@@ -211,7 +235,6 @@ async function submit(payload: ParameterSubmit) {
     body.professional_confirmation_id = professionalConfirmationId.value
   }
   if (professionalEnabled.value) {
-    // 前置校验与后端错误码对齐（缺确认 409 / 配置非法 409），不合法绝不提交
     const invalid = professionalInvalid.value
     const neighborhood = buildNeighborhood()
     if (invalid !== null || neighborhood === null) {
@@ -230,7 +253,6 @@ async function submit(payload: ParameterSubmit) {
     const created = await createExperiment(body)
     const run = await startRun(created.id)
     latestRun.value = run
-    // 立即切到详情路由：刷新页面后按路由 ID 从服务端恢复进度
     await router.replace({ name: 'experiment-detail', params: { experimentId: created.id } })
   } catch (e) {
     actionError.value = describeError(e)
@@ -239,7 +261,6 @@ async function submit(payload: ParameterSubmit) {
   }
 }
 
-// ----------------------------------------------------------- view flow
 async function refreshCandidates() {
   if (!experimentId.value) return
   const body = await fetchCandidates(experimentId.value)
@@ -313,7 +334,6 @@ async function onRetry() {
   }
 }
 
-// ------------------------------------------------------------- lifecycle
 watch(
   () => route.fullPath,
   async () => {
@@ -379,75 +399,108 @@ onBeforeUnmount(stopPolling)
             </template>
           </p>
         </div>
-        <div class="pro-row">
-          <button
-            v-if="dataset.status === 'validated' && !professionalConfirmationId"
-            class="gmp-btn"
-            data-test="professional-entry"
-            @click="goDiagnosis"
-          >
-            专业诊断
-          </button>
-          <span v-else-if="dataset.status !== 'validated'" class="pro-hint">数据集通过质量门禁后开放专业诊断入口</span>
+        <div v-if="showKrigingBasis" class="kriging-basis" data-test="kriging-basis" role="radiogroup">
+          <span class="block-title">建模依据</span>
+          <div class="basis-options">
+            <div
+              class="basis-option"
+              role="radio"
+              :aria-checked="krigingBasis === 'quick'"
+              data-test="basis-quick"
+              tabindex="0"
+              @click="krigingBasis = 'quick'"
+              @keydown.enter="krigingBasis = 'quick'"
+            >
+              快速建模
+            </div>
+            <div
+              class="basis-option"
+              role="radio"
+              :aria-checked="krigingBasis === 'analysis'"
+              data-test="basis-analysis"
+              tabindex="0"
+              @click="krigingBasis = 'analysis'"
+              @keydown.enter="krigingBasis = 'analysis'"
+            >
+              采用空间结构分析建议
+            </div>
+          </div>
+          <div v-if="krigingBasis === 'analysis'" class="analysis-entry">
+            <button
+              v-if="latestSucceededDiagnosis"
+              class="gmp-btn"
+              data-test="spatial-analysis-entry"
+              @click="gotoAnalysisDetail"
+            >
+              查看并采用已有分析
+            </button>
+            <button
+              v-else
+              class="gmp-btn"
+              data-test="spatial-analysis-entry"
+              @click="gotoAnalysisNew"
+            >
+              开始空间结构分析
+            </button>
+          </div>
         </div>
         <template v-if="professionalEnabled">
-          <div v-if="editorAlgorithm === 'ordinary_kriging' && !professionalConfirmationId" class="pro-block">
-            <p class="pro-warn" data-test="professional-confirmation-missing">
-              专业 Kriging 需要诊断确认快照：请先在「专业诊断」完成人工确认，并从确认快照进入本页。
-            </p>
-          </div>
-          <div class="pro-block" data-test="professional-neighborhood">
-            <span class="block-title">搜索邻域（旋转椭圆/椭球）</span>
-            <div class="pro-grid">
-              <label class="field">
-                <span>半径 radii（{{ dimension === '3d' ? '主, 次, 垂' : '主, 次' }}）</span>
-                <input
-                  v-model="nbRadii"
-                  class="gmp-input"
-                  data-test="nb-radii"
-                  :placeholder="dimension === '3d' ? '默认 80, 40, 20' : '默认 80, 40'"
-                />
-              </label>
-              <label class="field small">
-                <span>方位角（度）</span>
-                <input v-model.number="nbAzimuth" type="number" min="0" max="180" class="gmp-input" data-test="nb-azimuth" />
-              </label>
-              <label class="field small">
-                <span>最少邻点</span>
-                <input v-model.number="nbMin" type="number" min="1" max="64" class="gmp-input" data-test="nb-min" />
-              </label>
-              <label class="field small">
-                <span>最多邻点</span>
-                <input v-model.number="nbMax" type="number" min="1" max="128" class="gmp-input" data-test="nb-max" />
-              </label>
-              <label class="field small">
-                <span>扇区数</span>
-                <input v-model.number="nbSectors" type="number" min="1" max="16" class="gmp-input" data-test="nb-sectors" />
-              </label>
-              <label class="field small">
-                <span>每扇区上限</span>
-                <input v-model.number="nbPerSector" type="number" min="1" max="128" class="gmp-input" data-test="nb-per-sector" />
-              </label>
-            </div>
-          </div>
-          <div class="pro-block" data-test="professional-uncertainty">
-            <span class="block-title">经验不确定性（折外残差距离加权局部 RMSE）</span>
-            <div class="pro-grid">
-              <label class="field small">
-                <span>最少邻点</span>
-                <input v-model.number="uncMin" type="number" min="1" max="64" class="gmp-input" data-test="unc-min" />
-              </label>
-              <label class="field small">
-                <span>最多邻点</span>
-                <input v-model.number="uncMax" type="number" min="1" max="128" class="gmp-input" data-test="unc-max" />
-              </label>
-              <label class="field small">
-                <span>幂次 power</span>
-                <input v-model.number="uncPower" type="number" step="0.5" min="0.5" max="8" class="gmp-input" data-test="unc-power" />
-              </label>
-            </div>
-          </div>
-          <p v-if="professionalInvalid" class="pro-error" data-test="professional-invalid">{{ professionalInvalid }}</p>
+          <el-collapse :model-value="['advanced']">
+            <el-collapse-item title="高级参数" name="advanced">
+              <div class="pro-block" data-test="professional-neighborhood">
+                <span class="block-title">搜索邻域（旋转椭圆/椭球）</span>
+                <div class="pro-grid">
+                  <label class="field">
+                    <span>半径 radii（{{ dimension === '3d' ? '主, 次, 垂' : '主, 次' }}）</span>
+                    <input
+                      v-model="nbRadii"
+                      class="gmp-input"
+                      data-test="nb-radii"
+                      :placeholder="dimension === '3d' ? '默认 80, 40, 20' : '默认 80, 40'"
+                    />
+                  </label>
+                  <label class="field small">
+                    <span>方位角（度）</span>
+                    <input v-model.number="nbAzimuth" type="number" min="0" max="180" class="gmp-input" data-test="nb-azimuth" />
+                  </label>
+                  <label class="field small">
+                    <span>最少邻点</span>
+                    <input v-model.number="nbMin" type="number" min="1" max="64" class="gmp-input" data-test="nb-min" />
+                  </label>
+                  <label class="field small">
+                    <span>最多邻点</span>
+                    <input v-model.number="nbMax" type="number" min="1" max="128" class="gmp-input" data-test="nb-max" />
+                  </label>
+                  <label class="field small">
+                    <span>扇区数</span>
+                    <input v-model.number="nbSectors" type="number" min="1" max="16" class="gmp-input" data-test="nb-sectors" />
+                  </label>
+                  <label class="field small">
+                    <span>每扇区上限</span>
+                    <input v-model.number="nbPerSector" type="number" min="1" max="128" class="gmp-input" data-test="nb-per-sector" />
+                  </label>
+                </div>
+              </div>
+              <div class="pro-block" data-test="professional-uncertainty">
+                <span class="block-title">经验不确定性（折外残差距离加权局部 RMSE）</span>
+                <div class="pro-grid">
+                  <label class="field small">
+                    <span>最少邻点</span>
+                    <input v-model.number="uncMin" type="number" min="1" max="64" class="gmp-input" data-test="unc-min" />
+                  </label>
+                  <label class="field small">
+                    <span>最多邻点</span>
+                    <input v-model.number="uncMax" type="number" min="1" max="128" class="gmp-input" data-test="unc-max" />
+                  </label>
+                  <label class="field small">
+                    <span>幂次 power</span>
+                    <input v-model.number="uncPower" type="number" step="0.5" min="0.5" max="8" class="gmp-input" data-test="unc-power" />
+                  </label>
+                </div>
+              </div>
+              <p v-if="professionalInvalid" class="pro-error" data-test="professional-invalid">{{ professionalInvalid }}</p>
+            </el-collapse-item>
+          </el-collapse>
         </template>
       </section>
     </template>
@@ -494,12 +547,6 @@ onBeforeUnmount(stopPolling)
   font-family: ui-monospace, monospace;
 }
 
-.back-link {
-  margin-left: 12px;
-  color: var(--gmp-accent);
-  text-decoration: none;
-}
-
 .name-field {
   display: flex;
   align-items: center;
@@ -530,18 +577,6 @@ onBeforeUnmount(stopPolling)
   display: flex;
   flex-direction: column;
   gap: 12px;
-}
-
-.pro-row {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-
-.pro-hint {
-  font-size: 12px;
-  color: var(--gmp-text-faint);
 }
 
 .pro-block {
@@ -581,24 +616,51 @@ onBeforeUnmount(stopPolling)
   color: var(--gmp-text);
 }
 
-.pro-warn {
-  margin: 0;
-  font-size: 12px;
-  color: #e5c76b;
-}
-
 .pro-error {
   margin: 0;
   font-size: 12px;
   color: #ef9a9a;
 }
 
-.radio {
+.kriging-basis {
   display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.basis-options {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.basis-option {
+  display: inline-flex;
   align-items: center;
   gap: 6px;
   font-size: 13px;
   cursor: pointer;
+  padding: 6px 14px;
+  border: 1px solid var(--gmp-border);
+  border-radius: 8px;
+  background: var(--gmp-bg-soft);
+  color: var(--gmp-text);
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.basis-option[aria-checked="true"] {
+  border-color: var(--gmp-accent);
+  background: rgba(56, 178, 172, 0.12);
+  font-weight: 600;
+}
+
+.basis-option:focus-visible {
+  outline: 2px solid var(--gmp-accent);
+  outline-offset: 2px;
+}
+
+.analysis-entry {
+  padding-top: 4px;
 }
 
 .action-error {
@@ -608,5 +670,21 @@ onBeforeUnmount(stopPolling)
   border-radius: 8px;
   padding: 10px 14px;
   font-size: 13px;
+}
+
+.gmp-btn {
+  border: 1px solid var(--gmp-border);
+  background: var(--gmp-bg-soft);
+  color: var(--gmp-text);
+  border-radius: 8px;
+  padding: 8px 18px;
+  font-size: 13px;
+  cursor: pointer;
+  align-self: flex-start;
+}
+
+.gmp-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 </style>
