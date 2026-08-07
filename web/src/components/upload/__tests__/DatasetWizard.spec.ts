@@ -19,6 +19,7 @@ vi.mock('../../../api/client', async (importOriginal) => {
     validateDataset: vi.fn(),
     fetchQuality: vi.fn(),
     confirmWarnings: vi.fn(),
+    abandonDataset: vi.fn(),
   }
 })
 
@@ -168,6 +169,7 @@ describe('DatasetWizardView', () => {
     vi.mocked(client.validateDataset).mockResolvedValue(quality)
 
     const { wrapper } = await mountWizard(makeDataset('uploaded'), null)
+    vi.mocked(client.fetchDataset).mockResolvedValue(mapped)
     await wrapper.find('[data-test="mapping-value-name"]').setValue('电阻率')
     await wrapper.find('[data-test="mapping-submit"]').trigger('click')
     await flushPromises()
@@ -192,7 +194,7 @@ describe('DatasetWizardView', () => {
   })
 
   it('keeps start disabled while quality is blocked', async () => {
-    const { wrapper } = await mountWizard(makeDataset('blocked'), makeQuality('blocked'))
+    const { wrapper } = await mountWizard(makeDataset('mapped'), makeQuality('blocked'))
     const text = wrapper.text()
     expect(text).toContain('MISSING_NUMERIC')
     const start = wrapper.find('[data-test="enter-workspace"]')
@@ -202,7 +204,7 @@ describe('DatasetWizardView', () => {
 
   it('requires exact warning confirmation before start is enabled', async () => {
     const warnings = makeQuality('warnings')
-    const { wrapper } = await mountWizard(makeDataset('validated'), warnings)
+    const { wrapper } = await mountWizard(makeDataset('mapped'), warnings)
     const start = wrapper.find('[data-test="enter-workspace"]')
     expect((start.element as HTMLButtonElement).disabled).toBe(true)
 
@@ -219,7 +221,7 @@ describe('DatasetWizardView', () => {
   })
 
   it('restores ready state from the server after reload', async () => {
-    const { wrapper } = await mountWizard(makeDataset('validated'), makeQuality('passed'))
+    const { wrapper } = await mountWizard(makeDataset('mapped'), makeQuality('passed'))
     expect(client.fetchQuality).toHaveBeenCalledWith('ds1')
     expect(wrapper.find('[data-test="step-quality"]').exists()).toBe(true)
     const start = wrapper.find('[data-test="enter-workspace"]')
@@ -227,7 +229,7 @@ describe('DatasetWizardView', () => {
   })
 
   it('navigates to the unified case workspace when quality is ready', async () => {
-    const { wrapper, router } = await mountWizard(makeDataset('validated'), makeQuality('passed'))
+    const { wrapper, router } = await mountWizard(makeDataset('mapped'), makeQuality('passed'))
     await wrapper.find('[data-test="enter-workspace"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.path).toBe('/cases/c1')

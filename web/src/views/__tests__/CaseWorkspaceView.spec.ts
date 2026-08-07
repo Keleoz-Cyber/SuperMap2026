@@ -10,7 +10,7 @@ import CaseWorkspaceView from '../CaseWorkspaceView.vue'
 
 vi.mock('../../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../api/client')>()
-  return { ...actual, fetchCaseWorkspace: vi.fn() }
+  return { ...actual, fetchCaseWorkspace: vi.fn(), fetchProfessionalDiagnostics: vi.fn() }
 })
 
 const PRESET_ID = 'builtin-microseismic-vx-1911'
@@ -291,6 +291,10 @@ describe('CaseWorkspaceView', () => {
     ]
     ws.validated_datasets = validated
     vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(ws)
+    vi.mocked(client.fetchProfessionalDiagnostics).mockResolvedValue({
+      dataset_id: '',
+      diagnostics: [],
+    })
     const { wrapper, router } = await mountWorkspace('/cases/up-1')
 
     const rows = wrapper.findAll('[data-test^="validated-dataset-"]')

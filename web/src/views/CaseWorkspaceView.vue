@@ -2,14 +2,11 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft } from '@element-plus/icons-vue'
-import { ApiError, fetchCaseWorkspace } from '../api/client'
+import { ApiError, fetchCaseWorkspace, fetchProfessionalDiagnostics } from '../api/client'
 import type { CaseWorkspaceSummary } from '../api/types'
 import DataPreparationPanel from '../components/cases/DataPreparationPanel.vue'
 import RhoCaseView from './RhoCaseView.vue'
 
-// v0.7.0：统一案例工作台壳——三种来源（builtin_legacy / builtin_preset /
-// user_upload）共用同一页头、概览/数据/实验/成果四区与命令位置；
-// 案例专有内容以只读子块注入（电阻率 → 内嵌 RhoCaseView）。
 const route = useRoute()
 const router = useRouter()
 const caseId = computed(() => String(route.params.caseId))
@@ -18,6 +15,8 @@ const workspace = ref<CaseWorkspaceSummary | null>(null)
 const loadError = ref<string | null>(null)
 const notInitialized = ref(false)
 const loading = ref(true)
+
+const diagnosisStatusMap = ref<Map<string, string>>(new Map())
 
 const KIND_LABELS: Record<CaseWorkspaceSummary['workspace_kind'], string> = {
   builtin_legacy: '内置案例',
@@ -63,6 +62,13 @@ const rowCounts = computed(() => {
   return profile ?? null
 })
 
+const abandonedDatasets = computed(() => {
+  const dp = workspace.value?.data_preparation
+  const allDs = workspace.value?.validated_datasets ?? []
+  if (!dp || !allDs.length) return []
+  return allDs.filter((d) => d.status === 'abandoned')
+})
+
 function openOfficialResult() {
   const url = workspace.value?.official_result?.url
   if (url) router.push(url)
@@ -91,6 +97,36 @@ function gotoComparisonForDataset(datasetId: string) {
   void router.push(`/datasets/${datasetId}/candidate-comparison`)
 }
 
+function diagnosisStatusLabel(datasetId: string): string {
+  const status = diagnosisStatusMap.value.get(datasetId)
+  if (!status) return ''
+  const labels: Record<string, string> = {
+    succeeded: '成功',
+    running: '运行中',
+    failed: '失败',
+    queued: '排队中',
+    interrupted: '已中断',
+    canceled: '已取消',
+  }
+  return labels[status] ?? status
+}
+
+async function loadDiagnosisStatuses() {
+  const datasets = workspace.value?.validated_datasets ?? []
+  for (const ds of datasets) {
+    try {
+      const list = await fetchProfessionalDiagnostics(ds.id)
+      const first = list.diagnostics[0]
+      if (first) {
+        const status = (first.diagnosis as { status?: string }).status ?? ''
+        diagnosisStatusMap.value.set(ds.id, status)
+      }
+    } catch {
+      // diagnosis status is optional context; failures are silently ignored
+    }
+  }
+}
+
 // 单调递增请求序号：只有最新一次 loadWorkspace 可以写状态；
 // 快速连切时旧请求无论成功、失败还是 finally 都不得覆盖新请求
 let workspaceRequestSeq = 0
@@ -103,10 +139,12 @@ async function loadWorkspace() {
   workspace.value = null
   loadError.value = null
   notInitialized.value = false
+  diagnosisStatusMap.value.clear()
   try {
     const result = await fetchCaseWorkspace(targetId)
     if (!isCurrent()) return
     workspace.value = result
+    void loadDiagnosisStatuses()
   } catch (exc) {
     if (!isCurrent()) return
     if (exc instanceof ApiError && exc.code === 'PRESET_NOT_INITIALIZED') {
@@ -213,7 +251,7 @@ watch(caseId, (next, prev) => {
               </template>
             </p>
             <p v-if="mapping">
-              字段：{{ mapping.x }}/{{ mapping.y }}/{{ mapping.z }} → {{ mapping.value }}（
+              字段：{{ mapping.x }}/{{ mapping.y }}/{{ mapping.z }} -> {{ mapping.value }}（
               {{ mapping.value_name }}<template v-if="mapping.value_unit">
                 ，{{ mapping.value_unit }}</template
               >）
@@ -229,6 +267,20 @@ watch(caseId, (next, prev) => {
             :case-id="caseId"
           />
           <div
+            v-if="abandonedDatasets.length"
+            class="abandoned-history"
+            data-test="abandoned-datasets"
+          >
+            <p class="abandoned-label">已放弃的数据版本：</p>
+            <span
+              v-for="ds in abandonedDatasets"
+              :key="ds.id"
+              class="abandoned-item"
+            >
+              v{{ ds.version }} · {{ ds.id }}
+            </span>
+          </div>
+          <div
             v-if="workspace.validated_datasets?.length"
             class="validated-datasets"
             data-test="validated-datasets"
@@ -241,6 +293,20 @@ watch(caseId, (next, prev) => {
             >
               <span class="dataset-label">
                 数据版本 v{{ ds.version }} · {{ ds.id }}
+              </span>
+              <span
+                v-if="diagnosisStatusLabel(ds.id)"
+                class="diagnosis-status"
+                :data-test="`diagnosis-status-${ds.id}`"
+              >
+                最近诊断：{{ diagnosisStatusLabel(ds.id) }}
+                <el-link
+                  type="primary"
+                  :underline="false"
+                  @click="gotoDiagnosisForDataset(ds.id)"
+                >
+                  查看详情
+                </el-link>
               </span>
               <div class="command-row">
                 <el-button data-test="new-experiment-btn" @click="newExperimentForDataset(ds.id)">
@@ -357,5 +423,31 @@ watch(caseId, (next, prev) => {
 .dataset-label {
   font-size: 12px;
   color: #93a1b3;
+}
+.diagnosis-status {
+  font-size: 12px;
+  color: #7f8ca0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.abandoned-history {
+  margin-top: 8px;
+  padding: 6px 0;
+  border-top: 1px dashed #263142;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.abandoned-label {
+  margin: 0;
+  font-size: 12px;
+  color: #7f8ca0;
+}
+.abandoned-item {
+  font-size: 12px;
+  color: #6b7785;
+  text-decoration: line-through;
 }
 </style>
