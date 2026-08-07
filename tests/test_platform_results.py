@@ -52,6 +52,20 @@ MAPPING_3D = {
     "coordinate_kind": "local_linear",
 }
 
+CSV_2D = "x,y,v\n" + "\n".join(
+    f"{(i % 4) * 30 - 150},{(j % 5) * 80 + 260},{10 + i + j}"
+    for i in range(4) for j in range(5)
+) + "\n"
+
+MAPPING_2D = {
+    "dimension": "2d",
+    "x": "x",
+    "y": "y",
+    "value": "v",
+    "value_name": "属性",
+    "coordinate_kind": "local_linear",
+}
+
 
 def prepare_completed_run(client: TestClient, algorithm: str = "idw") -> tuple[str, str, str, str]:
     resp = client.post("/api/cases", json={"name": "成果案例"})
@@ -93,6 +107,7 @@ def test_materialize_result_writes_grid_and_metadata(tmp_path):
     resp = client.post(f"/api/results/{candidate_id}/materialize")
     assert resp.status_code in (200, 201), resp.text
     result = resp.json()
+    assert result["professional_analysis_supported"] is False
     assert result["dimension"] == "3d"
     assert result["shape"] == [11, 11, 11]
     assert result["bounds"] == [[-150.0, -60.0], [260.0, 580.0], [-800.0, -200.0]]
@@ -116,6 +131,7 @@ def test_materialize_result_writes_grid_and_metadata(tmp_path):
     again = client.post(f"/api/results/{candidate_id}/materialize")
     assert again.status_code == 200
     assert again.json()["grid_sha256"] == result["grid_sha256"]
+    assert again.json()["professional_analysis_supported"] is False
 
 
 def test_result_metadata_and_preview(tmp_path):
@@ -129,6 +145,7 @@ def test_result_metadata_and_preview(tmp_path):
     assert meta["dimension"] == "3d"
     assert meta["cell_count"] == 11 ** 3
     assert meta["dataset_version_id"] == dataset_id
+    assert meta["professional_analysis_supported"] is False
 
     resp = client.get(f"/api/results/{candidate_id}/preview")
     assert resp.status_code == 200
@@ -138,6 +155,41 @@ def test_result_metadata_and_preview(tmp_path):
     assert preview["served_cell_count"] == 11 ** 3
     assert len(preview["x"]) == preview["served_cell_count"]
     assert len(preview["values"]) == preview["served_cell_count"]
+
+
+def test_materialize_and_get_share_succeeded_professional_evidence_capability(tmp_path):
+    client, runtime = make_client(tmp_path)
+    _, _, _, candidate_id = prepare_completed_run(client)
+
+    first = client.post(f"/api/results/{candidate_id}/materialize")
+    assert first.status_code == 200
+    assert first.json()["professional_analysis_supported"] is False
+
+    with runtime.session() as session:
+        session.add(tables.ProfessionalResultArtifacts(
+            id="professional-capability",
+            candidate_result_id=candidate_id,
+            confirmation_id=None,
+            status="pending",
+            capabilities_json="{}",
+            manifest_json="{}",
+        ))
+        session.commit()
+
+    pending_post = client.post(f"/api/results/{candidate_id}/materialize")
+    pending_get = client.get(f"/api/results/{candidate_id}")
+    assert pending_post.json()["professional_analysis_supported"] is False
+    assert pending_get.json()["professional_analysis_supported"] is False
+
+    with runtime.session() as session:
+        artifacts = session.get(tables.ProfessionalResultArtifacts, "professional-capability")
+        artifacts.status = "succeeded"
+        session.commit()
+
+    succeeded_post = client.post(f"/api/results/{candidate_id}/materialize")
+    succeeded_get = client.get(f"/api/results/{candidate_id}")
+    assert succeeded_post.json()["professional_analysis_supported"] is True
+    assert succeeded_get.json()["professional_analysis_supported"] is True
 
 
 def test_result_slices_xyz_with_real_coordinates(tmp_path):
@@ -171,6 +223,52 @@ def test_result_slices_xyz_with_real_coordinates(tmp_path):
     resp = client.get(f"/api/results/{candidate_id}/slices?axis=z&index=99")
     assert resp.status_code == 400
     assert resp.json()["error"]["code"] == "SLICE_INDEX_OUT_OF_RANGE"
+
+
+def test_result_slice_returns_2d_full_field_for_z_zero(tmp_path):
+    """二维成果的 z=0 完整场不得经三维切片路径崩溃。"""
+
+    client, _ = make_client(tmp_path)
+    case_id = client.post("/api/cases", json={"name": "二维成果案例"}).json()["id"]
+    uploaded = client.post(
+        f"/api/cases/{case_id}/datasets/uploads",
+        files={"file": ("data2d.csv", io.BytesIO(CSV_2D.encode()), "text/csv")},
+    )
+    dataset_id = uploaded.json()["id"]
+    assert client.post(f"/api/datasets/{dataset_id}/mapping", json=MAPPING_2D).status_code == 200
+    assert client.post(f"/api/datasets/{dataset_id}/validate").status_code == 200
+    created = client.post("/api/experiments", json={
+        "case_id": case_id,
+        "name": "二维成果实验",
+        "algorithm": "idw",
+        "dataset_version_id": dataset_id,
+        "search_mode": "manual",
+        "parameters": {"power": 2.0, "neighbor_count": 8},
+        "validation": {"method": "spatial_kfold", "folds": 3, "seed": 1, "holdout_fraction": 0.2},
+    })
+    run_id = client.post(f"/api/experiments/{created.json()['id']}/runs").json()["id"]
+    deadline = time.time() + 30
+    while time.time() < deadline:
+        run = client.get(f"/api/runs/{run_id}").json()
+        if run["status"] in ("succeeded", "failed"):
+            break
+        time.sleep(0.1)
+    assert run["status"] == "succeeded", run
+    candidate_id = next(
+        candidate["id"]
+        for candidate in client.get(f"/api/experiments/{created.json()['id']}/candidates").json()["candidates"]
+        if candidate["status"] == "succeeded"
+    )
+    assert client.post(f"/api/results/{candidate_id}/materialize").status_code == 200
+
+    response = client.get(f"/api/results/{candidate_id}/slices?axis=z&index=0")
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["fixed_axis"] == "z"
+    assert payload["axes_names"] == ["x", "y"]
+    assert len(payload["matrix"]) == 11
+    assert len(payload["matrix"][0]) == 11
 
 
 def test_formal_selection_requires_reason_and_succeeded_run(tmp_path):
@@ -322,7 +420,7 @@ def test_export_zip_contains_full_lineage(tmp_path):
 
 
 def test_legacy_materialize_has_no_professional_artifacts(tmp_path):
-    """legacy 候选物化逐字节兼容：无 professional 文件、metadata 无 professional 键。"""
+    """legacy 候选物化无 professional 文件，但返回能力字段为 false。"""
 
     client, runtime = make_client(tmp_path)
     _, _, _, candidate_id = prepare_completed_run(client)
@@ -337,11 +435,12 @@ def test_legacy_materialize_has_no_professional_artifacts(tmp_path):
         "value_range", "nodata_count", "grid_sha256", "source_sha256",
         "standardized_sha256", "fingerprint", "validation", "created_at",
         # v0.6.1（Task 4）：新物化成果追加 property 语义三键（取自 profile.mapping）
-        "property_name", "units", "coordinate_kind",
+        "property_name", "units", "coordinate_kind", "professional_analysis_supported",
     }
     assert metadata["property_name"] == "属性"
     assert metadata["units"] == "unknown"
     assert metadata["coordinate_kind"] == "local_linear"
+    assert metadata["professional_analysis_supported"] is False
 
     professional_dir = runtime.settings.professional_result_dir(candidate_id)
     # Task 9 的 run 级折证据照常落盘，但绝不自动创建任何专业物化文件
@@ -453,15 +552,15 @@ def test_result_slices_use_common_extraction_with_compatible_response(tmp_path, 
     calls = []
     real = slice_analysis.extract_grid_plane
 
-    def spy(axes, values, is_nodata, axis, index):
-        calls.append((axis, index))
-        return real(axes, values, is_nodata, axis, index)
+    def spy(axes, values, is_nodata, axis, index, *, dimension="3d"):
+        calls.append((axis, index, dimension))
+        return real(axes, values, is_nodata, axis, index, dimension=dimension)
 
     monkeypatch.setattr(platform_results, "extract_grid_plane", spy)
 
     resp = client.get(f"/api/results/{candidate_id}/slices?axis=z&index=5")
     assert resp.status_code == 200, resp.text
-    assert calls == [("z", 5)]
+    assert calls == [("z", 5, "3d")]
     zslice = resp.json()
     assert zslice["fixed_axis"] == "z"
     assert zslice["fixed_coordinate"] == pytest.approx(-500.0)

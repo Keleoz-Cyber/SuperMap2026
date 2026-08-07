@@ -91,8 +91,10 @@ def extract_grid_plane(
     is_nodata: np.ndarray,
     axis: str,
     index: int,
+    *,
+    dimension: str = "3d",
 ) -> SliceResult:
-    """公共抽取：三维网格 → 一个真实坐标剖面（旧矩阵方向）。
+    """公共抽取：规则网格 → 一个真实坐标剖面（旧矩阵方向）。
 
     复用 ``modeling.slices.extract_slice`` 的轴向/越界/坐标合同；新剖面服务
     与旧结果切片 API 共用同一入口，避免两套抽取口径。旧调用方（结果切片
@@ -101,7 +103,7 @@ def extract_grid_plane(
     """
 
     grid = GridResult(
-        dimension="3d",
+        dimension=dimension,
         axes=tuple(np.asarray(a, dtype="float64") for a in axes),
         values=np.asarray(values, dtype="float64"),
         is_nodata=np.asarray(is_nodata, dtype=bool),

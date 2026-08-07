@@ -135,7 +135,7 @@ onMounted(async () => {
           专业分析
         </button>
         <span v-else class="professional-disabled" data-test="professional-disabled">
-          仅完成专业 Kriging 诊断的成果支持专业分析
+          仅生成专业证据的成果支持专业分析
         </span>
       </header>
 

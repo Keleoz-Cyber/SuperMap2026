@@ -412,7 +412,7 @@ describe('专业分析入口', () => {
     const { wrapper } = await mountWorkbench(makeMetadata('3d'))
     expect(wrapper.find('[data-test="professional-entry"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="professional-disabled"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('仅完成专业 Kriging 诊断的成果支持专业分析')
+    expect(wrapper.text()).toContain('仅生成专业证据的成果支持专业分析')
   })
 
   it('Kriging 成果有专业证据时显示可点击入口', async () => {

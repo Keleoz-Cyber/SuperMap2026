@@ -34,13 +34,33 @@ from geomodeling.platform.schemas import FormalSelectionBody, FormalSelectionReq
 router = APIRouter(tags=["v0.4-results"])
 
 
+def _with_professional_analysis_capability(
+    runtime: PlatformRuntime, result_id: str, metadata: dict[str, Any]
+) -> dict[str, Any]:
+    """Attach the same evidence-backed professional capability to every result DTO."""
+    from geomodeling.platform.tables import ProfessionalResultArtifacts
+
+    with runtime.session() as session:
+        supported = (
+            session.query(ProfessionalResultArtifacts)
+            .filter(
+                ProfessionalResultArtifacts.candidate_result_id == result_id,
+                ProfessionalResultArtifacts.status == "succeeded",
+            )
+            .first()
+            is not None
+        )
+    metadata["professional_analysis_supported"] = supported
+    return metadata
+
+
 @router.post("/api/results/{result_id}/materialize")
 def materialize_result(
     result_id: str,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
     require_active_candidate(runtime, result_id)
-    return materialize(runtime, result_id)
+    return _with_professional_analysis_capability(runtime, result_id, materialize(runtime, result_id))
 
 
 @router.get("/api/results/{result_id}")
@@ -51,14 +71,7 @@ def get_result(
     require_active_candidate(runtime, result_id)
     # 纯查询：只读已物化 metadata；未物化 404，绝不隐式物化
     metadata = read_materialized_metadata(runtime, result_id)
-    # v0.7.0: 标记专业分析能力——只有存在 ProfessionalResultArtifacts 行的成果才支持
-    with runtime.session() as session:
-        from geomodeling.platform.tables import ProfessionalResultArtifacts
-        artifacts = session.query(ProfessionalResultArtifacts).filter(
-            ProfessionalResultArtifacts.candidate_result_id == result_id
-        ).one_or_none()
-    metadata["professional_analysis_supported"] = artifacts is not None
-    return metadata
+    return _with_professional_analysis_capability(runtime, result_id, metadata)
 
 
 @router.get("/api/results/{result_id}/preview")
