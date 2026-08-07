@@ -27,6 +27,7 @@ SYNTHETIC_TESTS = Path("tests/test_professional_synthetic_structures.py")
 EXPECTED_JOBS = {"portable-tests", "browser-smoke", "browser-live"}
 
 # Mock E2E 专业链路必须出现的控件/页面锚点（与 platform-flow.spec.ts 一致）
+# v0.7.0: professional-toggle removed; confirmation auto-enables professional mode
 MOCK_PROFESSIONAL_MARKERS = (
     "professional-entry",
     "start-diagnosis",
@@ -35,7 +36,6 @@ MOCK_PROFESSIONAL_MARKERS = (
     "confirm-submit",
     "confirmation-snapshot",
     "goto-experiment",
-    "professional-toggle",
     "professional-confirmation",
     "fold-inspector",
     "layer-tab-empirical",
@@ -47,12 +47,12 @@ MOCK_PROFESSIONAL_MARKERS = (
 )
 
 # Live E2E 专业链路锚点（真实 FastAPI + 隔离 SQLite + 导出 professional/ 证据）
+# v0.7.0: professional-toggle removed; confirmation auto-enables professional mode
 LIVE_PROFESSIONAL_MARKERS = (
     "professional-entry",
     "start-diagnosis",
     "confirm-submit",
     "goto-experiment",
-    "professional-toggle",
     "fold-inspector",
     "layer-tab-empirical",
     "anomaly-save",
