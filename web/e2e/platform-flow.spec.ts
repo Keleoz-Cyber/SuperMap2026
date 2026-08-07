@@ -442,6 +442,7 @@ test.describe('v0.7 生命周期与比较流程（mock API）', () => {
     const checkboxes = page.getByTestId('candidate-checkbox')
     await checkboxes.nth(0).click()
     await checkboxes.nth(2).click()
+    await expect(page.getByTestId('selection-info')).toContainText('已选 2')
 
     // 比较 -> 可排名
     await page.getByTestId('compare-btn').click()

@@ -48,10 +48,16 @@ const showMapping = computed(
     (dataset.value.status === 'uploaded' || dataset.value.status === 'blocked'),
 )
 const showQuality = computed(
-  () => dataset.value !== null && dataset.value.status === 'mapped',
+  () =>
+    dataset.value !== null &&
+    (dataset.value.status === 'mapped' ||
+     (report.value !== null && dataset.value.status === 'validated')),
 )
 const showValidated = computed(
-  () => dataset.value !== null && dataset.value.status === 'validated',
+  () =>
+    dataset.value !== null &&
+    dataset.value.status === 'validated' &&
+    report.value === null,
 )
 const showAbandoned = computed(
   () => dataset.value !== null && dataset.value.status === 'abandoned',

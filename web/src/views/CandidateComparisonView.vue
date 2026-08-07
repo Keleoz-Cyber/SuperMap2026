@@ -275,7 +275,7 @@ watch(datasetId, (next, prev) => {
             class="ranking-result"
             data-test="ranking-result"
           >
-            <div class="ranking-scroll" data-test="ranking-result">
+            <div class="ranking-scroll">
             <table class="ranking-table">
               <thead>
                 <tr>
