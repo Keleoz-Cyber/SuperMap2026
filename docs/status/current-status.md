@@ -29,6 +29,7 @@
   - **案例回收站**：只有 `user_upload` 案例可移入回收站（`DELETE /api/cases/{id}`）；内置电阻率、微震预置和瓦斯卡不可删除。回收站不自动过期，用户可恢复（`POST /api/cases/{id}/restore`）或输入完整案例名称永久删除（`POST /api/cases/{id}/purge`）。永久删除通过隔离区（quarantine）原子执行：文件先移到 `purge-quarantine/{operation_id}`，数据库行在单一事务中按外键拓扑删除，提交后清理隔离区；崩溃恢复覆盖 prepared/quarantined/committed 三态。
   - **数据准备恢复**：工作台 DTO 增加 `data_preparation` 五状态（needs_upload/needs_mapping/needs_quality_review/ready/blocked），服务端从持久化数据版本和文件哈希解析权威恢复步骤。上传中断后从已有数据版本的实际状态继续，不要求重新上传。可放弃未完成数据版本（`POST /api/datasets/{id}/abandon`），validated 不可放弃。
   - **专业诊断解耦**：诊断直接从已验证数据版本进入（`GET /api/datasets/{id}/professional-diagnostics`），不再要求先创建实验。确认快照可一键带入新的普通 Kriging 实验草稿（`professional_confirmation` 查询参数），算法和 z_scale=1 锁定，数据版本从确认快照所有权解析。确认快照读取（`GET /api/professional-confirmations/{id}`）返回有界摘要。
+  - **用户流程整改**：将"专业诊断"重命名为"空间结构分析"（仅服务普通 Kriging，IDW 不显示）；移除全局"专业模式"开关，改为快速建模/采用分析建议的单选控件；案例工作台只保留一个"新建实验"主入口；三维确认的 dip/roll/vertical_ratio 允许 null 并规范化为默认值；每个成功成果都有基础"模型评估"（RMSE/MAE/R2/Bias），增强证据按能力展开；模型对比使用中文可读标签、重复配置分组和单一"开始对比"命令；面包屑导航保留案例/实验/成果上下文。
   - **跨实验候选比较**：候选目录（`GET /api/datasets/{id}/comparison-candidates`）按实验分组列出同一数据版本的候选；2-4 候选统一比较（`POST /api/candidate-comparisons`）按 RMSE 升序确定性排序，验证合同/有效集不一致返回不可比较。选择两个候选时复用既有专业深度比较。不新增比较持久化表。
   - SQLite 迁移至 v7（lifecycle_state/trashed_at 列 + case_purge_operations 表），v6 迁移幂等可重复启动。
   - **明确不做**：DSI、瓦斯正式数据接入、系统统计分析中心、全站 UI 重做、AI 预测、iServer 自动发布仍为后续里程碑。
