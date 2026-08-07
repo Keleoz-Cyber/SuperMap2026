@@ -50,7 +50,15 @@ def get_result(
 ) -> dict[str, Any]:
     require_active_candidate(runtime, result_id)
     # 纯查询：只读已物化 metadata；未物化 404，绝不隐式物化
-    return read_materialized_metadata(runtime, result_id)
+    metadata = read_materialized_metadata(runtime, result_id)
+    # v0.7.0: 标记专业分析能力——只有存在 ProfessionalResultArtifacts 行的成果才支持
+    with runtime.session() as session:
+        from geomodeling.platform.tables import ProfessionalResultArtifacts
+        artifacts = session.query(ProfessionalResultArtifacts).filter(
+            ProfessionalResultArtifacts.candidate_result_id == result_id
+        ).one_or_none()
+    metadata["professional_analysis_supported"] = artifacts is not None
+    return metadata
 
 
 @router.get("/api/results/{result_id}/preview")

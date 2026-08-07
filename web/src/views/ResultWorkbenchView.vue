@@ -127,12 +127,16 @@ onMounted(async () => {
           值域 {{ metadata.value_range[0] }} ~ {{ metadata.value_range[1] }}
         </p>
         <button
+          v-if="metadata.professional_analysis_supported"
           class="professional-entry"
           data-test="professional-entry"
           @click="gotoProfessionalAnalysis"
         >
           专业分析
         </button>
+        <span v-else class="professional-disabled" data-test="professional-disabled">
+          仅完成专业 Kriging 诊断的成果支持专业分析
+        </span>
       </header>
 
       <section class="panel">
@@ -223,6 +227,13 @@ onMounted(async () => {
 
 .professional-entry:hover {
   background: rgba(79, 209, 197, 0.1);
+}
+
+.professional-disabled {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--gmp-text-faint);
+  align-self: flex-start;
 }
 
 .panel {

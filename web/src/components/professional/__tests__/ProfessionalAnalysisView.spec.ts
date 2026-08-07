@@ -71,6 +71,7 @@ const META_R1: ResultMetadata = {
   fingerprint: 'fp-r1',
   validation: { method: 'spatial_kfold', folds: 2 },
   created_at: T,
+  professional_analysis_supported: true,
 }
 
 const META_R2: ResultMetadata = { ...META_R1, result_id: 'r2', algorithm: 'idw', fingerprint: 'fp-r2' }

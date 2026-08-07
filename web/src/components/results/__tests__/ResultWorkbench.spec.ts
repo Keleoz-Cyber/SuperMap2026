@@ -324,7 +324,10 @@ describe('ResultWorkbenchView', () => {
   })
 
   it('专业分析入口保留并跳转专业分析台', async () => {
-    const { wrapper, router } = await mountWorkbench(makeMetadata('3d'))
+    const krigingMeta = makeMetadata('3d')
+    krigingMeta.algorithm = 'ordinary_kriging'
+    krigingMeta.professional_analysis_supported = true
+    const { wrapper, router } = await mountWorkbench(krigingMeta)
     await wrapper.get('[data-test="professional-entry"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value).toMatchObject({
@@ -401,5 +404,23 @@ describe('导出下载', () => {
     const link = wrapper.get('[data-test="export-download"]')
     expect(link.attributes('href')).toBe(`/api/exports/${EXPORT.id}/download`)
     expect(link.attributes('href')).not.toContain('/r1/')
+  })
+})
+
+describe('专业分析入口', () => {
+  it('IDW 成果不显示专业分析入口，显示禁用原因', async () => {
+    const { wrapper } = await mountWorkbench(makeMetadata('3d'))
+    expect(wrapper.find('[data-test="professional-entry"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="professional-disabled"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('仅完成专业 Kriging 诊断的成果支持专业分析')
+  })
+
+  it('Kriging 成果有专业证据时显示可点击入口', async () => {
+    const krigingMeta = makeMetadata('3d')
+    krigingMeta.algorithm = 'ordinary_kriging'
+    krigingMeta.professional_analysis_supported = true
+    const { wrapper } = await mountWorkbench(krigingMeta)
+    expect(wrapper.find('[data-test="professional-entry"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="professional-disabled"]').exists()).toBe(false)
   })
 })

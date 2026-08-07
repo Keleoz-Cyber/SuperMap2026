@@ -374,6 +374,7 @@ export async function installMockApi(page: Page): Promise<void> {
     metrics: { current_candidate: 1, completed, total: 2, failed: 0 },
     retry_of_run_id: null,
     created_at: T,
+        professional_analysis_supported: true,
     updated_at: T,
     started_at: T,
     finished_at: status === 'succeeded' ? T : null,
@@ -1092,6 +1093,7 @@ export async function installMockApi(page: Page): Promise<void> {
         fingerprint: 'fp-1',
         validation: { folds: 5 },
         created_at: T,
+        professional_analysis_supported: false,
       })
     }
     if (path === '/results/cand-1/preview') {
@@ -1672,6 +1674,7 @@ export async function installMockApi(page: Page): Promise<void> {
         fingerprint: 'fp-pro-1',
         validation: { folds: 5 },
         created_at: T,
+        professional_analysis_supported: true,
       })
     }
     if (path === '/results/cand-pro-1/materialize' && method === 'POST') {
@@ -1695,6 +1698,7 @@ export async function installMockApi(page: Page): Promise<void> {
         fingerprint: 'fp-pro-1',
         validation: { folds: 5 },
         created_at: T,
+        professional_analysis_supported: true,
       })
     }
     if (path === '/results/cand-pro-1/render-capability' && method === 'GET') {
@@ -1757,6 +1761,7 @@ export async function installMockApi(page: Page): Promise<void> {
             prediction_diagnostics: { file: 'prediction_diagnostics.json', sha256: PRO_SHA, bytes: 1024 },
           },
           created_at: T,
+        professional_analysis_supported: true,
         },
       })
     }
@@ -1820,6 +1825,7 @@ export async function installMockApi(page: Page): Promise<void> {
         progress: {},
         error: null,
         created_at: T,
+        professional_analysis_supported: true,
         updated_at: T,
         started_at: T,
         finished_at: done ? T : null,
@@ -1841,6 +1847,7 @@ export async function installMockApi(page: Page): Promise<void> {
             mask: { file: 'mask.npz', sha256: PRO_SHA, bytes: 1024 },
           },
           created_at: T,
+        professional_analysis_supported: true,
         },
         error: null,
         components: {

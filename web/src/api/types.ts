@@ -549,6 +549,7 @@ export interface ResultMetadata {
   fingerprint: string
   validation: Record<string, unknown> | null
   created_at: string
+  professional_analysis_supported?: boolean
 }
 
 export interface ResultPreview {
