@@ -253,10 +253,26 @@ def create_app() -> FastAPI:
                             for d in datasets
                             if d.status == "abandoned"
                         ][::-1]
+                        # v0.7.0 remediation: bounded recent activity
+                        from geomodeling.platform.repositories import (
+                            recent_experiments_for_case,
+                            recent_results_for_case,
+                        )
+                        card["recent_experiments"] = recent_experiments_for_case(
+                            session, record.id, limit=5,
+                        )
+                        card["recent_results"] = recent_results_for_case(
+                            getattr(request.app.state, "platform_runtime"),
+                            record.id,
+                            featured.result_id if featured is not None else None,
+                            limit=5,
+                        )
                     else:
                         card["data_preparation"] = None
                         card["validated_datasets"] = []
                         card["abandoned_datasets"] = []
+                        card["recent_experiments"] = []
+                        card["recent_results"] = []
                     return card
         if case_id == PRESET_CASE_ID:
             raise PlatformError(

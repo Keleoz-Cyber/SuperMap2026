@@ -1968,3 +1968,97 @@ def require_active_export(runtime: Any, export_id: str) -> str:
             )
         CaseRepository(session).get_active(exp.case_id)
         return exp.case_id
+
+
+# ---------------------------------------------------------------------------
+# v0.7.0 workflow remediation: bounded recent activity for workspace
+# ---------------------------------------------------------------------------
+
+
+def recent_experiments_for_case(
+    session: Session, case_id: str, limit: int = 5,
+) -> list[dict[str, Any]]:
+    """Return bounded recent experiment summaries for a case, newest-first."""
+    from geomodeling.platform.schemas import WorkspaceExperimentSummary
+
+    rows = (
+        session.query(Experiment)
+        .filter(Experiment.case_id == case_id)
+        .order_by(Experiment.created_at.desc(), Experiment.id.desc())
+        .limit(limit)
+        .all()
+    )
+    result: list[dict[str, Any]] = []
+    for exp in rows:
+        params = tables.loads_canonical(exp.params_json)
+        algorithm = params.get("algorithm", "unknown")
+        dv_id = params.get("dataset_version_id", "")
+
+        latest_run = (
+            session.query(Run)
+            .filter(Run.experiment_id == exp.id)
+            .order_by(Run.created_at.desc(), Run.id.desc())
+            .first()
+        )
+        latest_run_status = latest_run.status if latest_run else None
+
+        succeeded_count = (
+            session.query(CandidateResult)
+            .join(Run, CandidateResult.run_id == Run.id)
+            .filter(Run.experiment_id == exp.id, CandidateResult.status == "succeeded")
+            .count()
+        )
+
+        summary = WorkspaceExperimentSummary(
+            id=exp.id,
+            name=exp.name,
+            algorithm=algorithm,
+            dataset_version_id=dv_id,
+            latest_run_status=latest_run_status,
+            succeeded_candidate_count=succeeded_count,
+            created_at=exp.created_at,
+            url=f"/experiments/{exp.id}",
+        )
+        result.append(summary.model_dump(mode="json"))
+    return result
+
+
+def recent_results_for_case(
+    runtime: Any, case_id: str, featured_result_id: str | None, limit: int = 5,
+) -> list[dict[str, Any]]:
+    """Return bounded recent succeeded candidate summaries for a case, newest-first."""
+    from geomodeling.platform.schemas import WorkspaceResultSummary
+
+    with runtime.session() as session:
+        rows = (
+            session.query(CandidateResult)
+            .join(Run, CandidateResult.run_id == Run.id)
+            .join(Experiment, Run.experiment_id == Experiment.id)
+            .filter(
+                Experiment.case_id == case_id,
+                CandidateResult.status == RunStatus.SUCCEEDED.value,
+            )
+            .order_by(CandidateResult.created_at.desc(), CandidateResult.id.desc())
+            .limit(limit)
+            .all()
+        )
+        result: list[dict[str, Any]] = []
+        for cand in rows:
+            run = session.get(Run, cand.run_id)
+            exp = session.get(Experiment, run.experiment_id) if run else None
+            if exp is None:
+                continue
+            params = tables.loads_canonical(exp.params_json)
+            algorithm = params.get("algorithm", "unknown")
+
+            summary = WorkspaceResultSummary(
+                result_id=cand.id,
+                experiment_id=exp.id,
+                algorithm=algorithm,
+                materialized=cand.grid_path is not None,
+                featured=(featured_result_id == cand.id),
+                created_at=cand.created_at,
+                url=f"/results/{cand.id}",
+            )
+            result.append(summary.model_dump(mode="json"))
+        return result

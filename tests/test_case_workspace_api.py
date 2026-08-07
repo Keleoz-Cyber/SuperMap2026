@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -403,3 +404,62 @@ def test_workspace_includes_abandoned_datasets(seeded_client):
     # v1 should be in validated_datasets
     assert len(body["validated_datasets"]) == 1
     assert body["validated_datasets"][0]["id"] == v1_id
+
+
+def test_workspace_includes_recent_experiments_and_results(seeded_client):
+    """Workspace DTO includes bounded recent_experiments and recent_results."""
+    from geomodeling.platform import tables
+
+    runtime = seeded_client.app.state.platform_runtime
+    with runtime.session() as session:
+        session.add(
+            tables.Case(id="up-recent", name="近期活动测试", case_type="generic", config_json="{}")
+        )
+        session.commit()
+
+    # Create a dataset
+    resp = seeded_client.post(
+        "/api/cases/up-recent/datasets/uploads",
+        files={"file": ("test.csv", b"x,y,v\n1,2,3\n", "text/csv")},
+    )
+    dataset_id = resp.json()["id"]
+    with runtime.session() as session:
+        row = session.get(tables.DatasetVersion, dataset_id)
+        row.status = "validated"
+        session.commit()
+
+    # Create an experiment + succeeded run + candidate
+    with runtime.session() as session:
+        session.add(tables.Experiment(
+            id="exp-recent-1", case_id="up-recent", name="实验一",
+            params_json='{"algorithm": "idw", "dataset_version_id": "' + dataset_id + '", "search_mode": "manual", "parameters": {"power": 2}, "validation": {"method": "spatial_kfold", "folds": 5, "seed": 1, "holdout_fraction": 0.2}, "grid": null}',
+        ))
+        session.flush()
+        session.add(tables.Run(
+            id="run-recent-1", experiment_id="exp-recent-1", status="succeeded",
+            metrics_json='{"rmse": 0.5}',
+        ))
+        session.flush()
+        session.add(tables.CandidateResult(
+            id="cand-recent-1", run_id="run-recent-1", category="preview",
+            fingerprint="fp", status="succeeded",
+            params_json="{}", metrics_json='{"rmse": 0.5}',
+            grid_path="/some/path",
+        ))
+        session.commit()
+
+    resp = seeded_client.get("/api/cases/up-recent/workspace")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "recent_experiments" in body
+    assert len(body["recent_experiments"]) == 1
+    assert body["recent_experiments"][0]["id"] == "exp-recent-1"
+    assert body["recent_experiments"][0]["algorithm"] == "idw"
+    assert "params_json" not in json.dumps(body)
+
+    assert "recent_results" in body
+    assert len(body["recent_results"]) == 1
+    assert body["recent_results"][0]["result_id"] == "cand-recent-1"
+    assert body["recent_results"][0]["materialized"] is True
+    assert "metrics_json" not in json.dumps(body)
+    assert "source_path" not in json.dumps(body)

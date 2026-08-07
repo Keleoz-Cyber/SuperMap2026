@@ -44,6 +44,8 @@ __all__ = [
     "FormalSelectionRecord",
     "FormalSelectionRequest",
     "GridSpec",
+    "WorkspaceExperimentSummary",
+    "WorkspaceResultSummary",
     "PurgeFileMove",
     "PurgeOperationState",
     "ProfessionalConfirmationRecord",
@@ -467,6 +469,31 @@ class CasePurgeOperationRecord(ContractModel):
     error: dict[str, Any] | None = None
     created_at: str
     updated_at: str
+
+
+class WorkspaceExperimentSummary(ContractModel):
+    """Bounded experiment summary for case workspace recent activity."""
+
+    id: str
+    name: str
+    algorithm: str
+    dataset_version_id: str
+    latest_run_status: str | None = None
+    succeeded_candidate_count: int = 0
+    created_at: str
+    url: str
+
+
+class WorkspaceResultSummary(ContractModel):
+    """Bounded result summary for case workspace recent activity."""
+
+    result_id: str
+    experiment_id: str
+    algorithm: str
+    materialized: bool
+    featured: bool
+    created_at: str
+    url: str
 
 
 class PurgeFileMove(ContractModel):

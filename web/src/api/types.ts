@@ -73,6 +73,8 @@ export interface CaseWorkspaceSummary extends CaseSummary {
   // v0.7.0：已校验数据版本列表（user_upload 案例携带，其余为空）
   validated_datasets?: DatasetVersionRecord[]
   abandoned_datasets?: DatasetVersionRecord[]
+  recent_experiments?: WorkspaceExperimentSummary[]
+  recent_results?: WorkspaceResultSummary[]
 }
 
 export interface CasesResponse {
@@ -1261,6 +1263,27 @@ export interface ProfessionalConfirmationListSummary {
   fingerprint: string
   created_at: string
   applicable: boolean
+}
+
+export interface WorkspaceExperimentSummary {
+  id: string
+  name: string
+  algorithm: string
+  dataset_version_id: string
+  latest_run_status: string | null
+  succeeded_candidate_count: number
+  created_at: string
+  url: string
+}
+
+export interface WorkspaceResultSummary {
+  result_id: string
+  experiment_id: string
+  algorithm: string
+  materialized: boolean
+  featured: boolean
+  created_at: string
+  url: string
 }
 
 export interface ProfessionalDiagnosticListItem {
