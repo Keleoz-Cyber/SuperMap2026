@@ -252,7 +252,7 @@ test('3D 成果工作台：物化 + 原生体渲染 + 工具栏完整状态 + �
   expect(sliceExportPosts[0].contentType).toContain('multipart/form-data')
 
   // 正式选择/导出控件保留；专业分析对 IDW 成果禁用
-  await expect(page.getByTestId('professional-disabled')).toBeVisible()
+  await expect(page.getByTestId('model-evaluation-entry')).toBeVisible()
   await expect(page.getByTestId('selection-submit')).toBeVisible()
   await expect(page.getByTestId('export-button')).toBeVisible()
 

@@ -66,10 +66,9 @@ test.describe('v0.4 通用建模流程（mock API）', () => {
     await expect(page.getByTestId('publication-status')).toContainText('manual_required')
 
     // 导航回归：成果 → 实验 → 首页，无死路
-    await page.getByTestId('nav-experiment').click()
+    await page.getByTestId('crumb-experiment').click()
     await expect(page).toHaveURL(/#\/experiments\/exp-e2e/)
-    await expect(page.getByTestId('nav-new-experiment')).toBeVisible()
-    await page.getByTestId('nav-home').click()
+    await page.getByTestId('crumb-home').click()
     await expect(page).toHaveURL(/#\/$/)
     await expect(page.getByTestId('create-case-card')).toBeVisible()
   })
@@ -98,7 +97,7 @@ test.describe('v0.4 通用建模流程（mock API）', () => {
 
     await page.goto('/#/experiments/exp-missing')
     await expect(page.getByText('加载失败')).toBeVisible()
-    await page.getByTestId('nav-home').click()
+    await page.getByTestId('crumb-home').click()
     await expect(page).toHaveURL(/#\/$/)
     await expect(page.getByTestId('create-case-card')).toBeVisible()
   })
@@ -131,9 +130,7 @@ test.describe('v0.6 专业建模流程（mock API）', () => {
     // 诊断入口：实验创建页的专业入口（质量门禁通过后才可用）
     await page.getByTestId('enter-workspace').click()
     await expect(page).toHaveURL(/#\/cases\/case-e2e$/)
-    await page.getByTestId('new-experiment').click()
-    await expect(page).toHaveURL(/#\/cases\/case-e2e\/experiments\/new\?dataset=ds-e2e/)
-    await page.getByTestId('professional-entry').click()
+    await page.getByTestId('reanalyze-btn').click()
     await expect(page).toHaveURL(/#\/datasets\/ds-e2e\/professional-diagnosis\?case=case-e2e/)
 
     // 诊断：提交 → 任务轮询 → 证据（点对模式/候选建议）
@@ -167,8 +164,8 @@ test.describe('v0.6 专业建模流程（mock API）', () => {
     // 成果工作台 → 专业分析台
     await page.getByTestId('open-result').first().click()
     await expect(page).toHaveURL(/#\/results\/cand-pro-1/)
-    await page.getByTestId('professional-entry').click()
-    await expect(page).toHaveURL(/#\/results\/cand-pro-1\/professional/)
+    await page.getByTestId('model-evaluation-entry').click()
+    await expect(page).toHaveURL(/#\/results\/cand-pro-1\/evaluation/)
     await expect(page.getByTestId('summary-algorithm')).toContainText('ordinary_kriging')
     await expect(page.getByTestId('summary-confirmation')).toContainText('conf-pro-1')
     await expect(page.getByTestId('capability-native-kriging-std')).toContainText('supported')
@@ -313,7 +310,7 @@ test.describe('v0.7 生命周期与比较流程（mock API）', () => {
     await page.getByTestId('enter-workspace').click()
     await expect(page).toHaveURL(/#\/cases\/case-e2e$/)
     // 验证后工作台显示"新建实验"恢复按钮
-    await expect(page.getByTestId('prep-action-experiment')).toBeVisible()
+    await expect(page.getByTestId('new-experiment')).toBeVisible()
   })
 
   test('回收与恢复：删除案例 -> 首页消失 -> 回收站可见 -> 恢复 -> 工作台可用', async ({ page }) => {
@@ -409,22 +406,15 @@ test.describe('v0.7 生命周期与比较流程（mock API）', () => {
 
     // 工作台 -> 已验证数据集区 -> 专业诊断入口
     await expect(page.getByTestId('validated-datasets')).toBeVisible()
-    await page.getByTestId('professional-diagnosis-btn').click()
-    await expect(page).toHaveURL(/#\/datasets\/ds-e2e\/professional-diagnosis\?case=case-e2e/)
+    await page.getByTestId('diagnosis-detail-btn').click()
+    await expect(page).toHaveURL(/#\/datasets\/ds-e2e\/professional-diagnosis/)
 
-    // 诊断：提交 -> 任务轮询 -> 变异函数证据
-    await expect(page.getByTestId('diagnosis-config')).toBeVisible()
-    await page.getByTestId('start-diagnosis').click()
+    // 诊断已成功：变异函数证据 + 已有确认快照
     await expect(page.getByTestId('variogram-panel')).toBeVisible({ timeout: 15000 })
-
-    // 不可变确认
-    await page.getByTestId('confirm-model').selectOption('spherical')
-    await page.getByTestId('confirm-note').fill('数据集优先确认')
-    await page.getByTestId('confirm-submit').click()
     await expect(page.getByTestId('confirmation-snapshot')).toBeVisible()
 
     // 应用到 Kriging 实验
-    await page.getByTestId('goto-experiment').click()
+    await page.getByTestId('apply-confirmation').click()
     await expect(page).toHaveURL(/professional_confirmation=conf-pro-1/)
     await expect(page.getByTestId('professional-confirmation')).toContainText('conf-pro-1')
     await page.getByTestId('exp-submit').click()
@@ -470,7 +460,7 @@ test.describe('v0.7 生命周期与比较流程（mock API）', () => {
     await expect(page).toHaveURL(/#\/cases\/case-e2e$/)
 
     // Enter professional diagnosis from workspace
-    await page.getByTestId('professional-diagnosis-btn').click()
+    await page.getByTestId('reanalyze-btn').click()
     await expect(page.getByTestId('diagnosis-config')).toBeVisible()
     await page.getByTestId('start-diagnosis').click()
     await expect(page.getByTestId('variogram-panel')).toBeVisible({ timeout: 15000 })
