@@ -724,6 +724,7 @@ export interface ProfessionalDiagnosisRecord {
   created_at: string
   updated_at: string
   finished_at: string | null
+  latest_confirmation?: ProfessionalConfirmationListSummary | null
 }
 
 // 分析任务公开 DTO（与插值 run 同一生命周期合同；retry 产生新身份）

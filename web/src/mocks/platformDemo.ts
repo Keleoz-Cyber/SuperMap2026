@@ -605,6 +605,19 @@ export async function installMockApi(page: Page): Promise<void> {
           error: null,
         },
         validated_datasets: validatedDatasets,
+        recent_experiments: state.datasetStatus === 'validated'
+          ? [{
+              id: 'exp-e2e',
+              name: 'E2E 实验',
+              algorithm: 'idw',
+              dataset_version_id: 'ds-e2e',
+              latest_run_status: 'succeeded',
+              succeeded_candidate_count: 2,
+              created_at: T,
+              url: '/experiments/exp-e2e',
+            }]
+          : [],
+        recent_results: [],
         links: { detail: '/api/cases/case-e2e', publish_status: null },
       })
     }
@@ -1477,6 +1490,13 @@ export async function installMockApi(page: Page): Promise<void> {
               finished_at: T,
             },
             url: '/datasets/ds-e2e/professional-diagnosis?diagnosis=diag-pro-1',
+            latest_confirmation: {
+              id: 'conf-pro-1',
+              diagnostic_id: 'diag-pro-1',
+              fingerprint: 'fp-conf-pro-1',
+              created_at: T,
+              applicable: true,
+            },
           },
         ],
       })
@@ -1541,6 +1561,13 @@ export async function installMockApi(page: Page): Promise<void> {
         created_at: T,
         updated_at: T,
         finished_at: T,
+        latest_confirmation: {
+          id: 'conf-pro-1',
+          diagnostic_id: 'diag-pro-1',
+          fingerprint: 'fp-conf-pro-1',
+          created_at: T,
+          applicable: true,
+        },
       })
     }
     if (path === '/professional-diagnostics/diag-pro-1/variogram' && method === 'GET') {

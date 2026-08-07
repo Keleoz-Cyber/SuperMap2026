@@ -3,7 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import { ApiError, fetchCaseWorkspace, fetchProfessionalDiagnostics } from '../api/client'
-import type { CaseWorkspaceSummary } from '../api/types'
+import type { CaseWorkspaceSummary, ProfessionalDiagnosticListItem } from '../api/types'
 import DataPreparationPanel from '../components/cases/DataPreparationPanel.vue'
 import RhoCaseView from './RhoCaseView.vue'
 
@@ -16,7 +16,12 @@ const loadError = ref<string | null>(null)
 const notInitialized = ref(false)
 const loading = ref(true)
 
-const diagnosisStatusMap = ref<Map<string, string>>(new Map())
+type DiagnosisLookupState =
+  | { kind: 'loading' }
+  | { kind: 'ready'; item: ProfessionalDiagnosticListItem | null }
+  | { kind: 'error' }
+
+const diagnosisByDataset = ref(new Map<string, DiagnosisLookupState>())
 
 const KIND_LABELS: Record<CaseWorkspaceSummary['workspace_kind'], string> = {
   builtin_legacy: '内置案例',
@@ -66,6 +71,9 @@ const abandonedDatasets = computed(() => {
   return workspace.value?.abandoned_datasets ?? []
 })
 
+const recentExperiments = computed(() => workspace.value?.recent_experiments ?? [])
+const recentResults = computed(() => workspace.value?.recent_results ?? [])
+
 function openOfficialResult() {
   const url = workspace.value?.official_result?.url
   if (url) router.push(url)
@@ -77,13 +85,15 @@ function createExperiment() {
     query: datasetId ? { dataset: datasetId } : {},
   })
 }
-function newExperimentForDataset(datasetId: string) {
-  void router.push({
-    path: `/cases/${caseId.value}/experiments/new`,
-    query: { dataset: datasetId },
-  })
+function gotoDiagnosisDetail(datasetId: string) {
+  const state = diagnosisByDataset.value.get(datasetId)
+  if (state?.kind === 'ready' && state.item) {
+    const url = state.item.url
+    const stripped = url.startsWith('/#/') ? url.slice(2) : url
+    void router.push(stripped)
+  }
 }
-function gotoDiagnosisForDataset(datasetId: string) {
+function reanalyzeDataset(datasetId: string) {
   void router.push({
     name: 'professional-diagnosis',
     params: { datasetId },
@@ -94,9 +104,12 @@ function gotoComparisonForDataset(datasetId: string) {
   void router.push(`/datasets/${datasetId}/candidate-comparison`)
 }
 
-function diagnosisStatusLabel(datasetId: string): string {
-  const status = diagnosisStatusMap.value.get(datasetId)
-  if (!status) return ''
+function diagnosisStatusText(datasetId: string): string {
+  const state = diagnosisByDataset.value.get(datasetId)
+  if (!state || state.kind === 'loading') return ''
+  if (state.kind === 'error') return '分析状态暂不可用'
+  if (!state.item) return ''
+  const status = (state.item.diagnosis as { status?: string }).status ?? ''
   const labels: Record<string, string> = {
     succeeded: '成功',
     running: '运行中',
@@ -108,24 +121,37 @@ function diagnosisStatusLabel(datasetId: string): string {
   return labels[status] ?? status
 }
 
+function diagnosisHasDetail(datasetId: string): boolean {
+  const state = diagnosisByDataset.value.get(datasetId)
+  return state?.kind === 'ready' && state.item !== null
+}
+
+const ALGORITHM_LABELS: Record<string, string> = {
+  idw: 'IDW',
+  ordinary_kriging: '普通克里金',
+}
+
+function algorithmLabel(id: string): string {
+  return ALGORITHM_LABELS[id] ?? id
+}
+
 async function loadDiagnosisStatuses() {
   const datasets = workspace.value?.validated_datasets ?? []
+  const targetCaseId = caseId.value
+  const seq = workspaceRequestSeq
   for (const ds of datasets) {
     try {
       const list = await fetchProfessionalDiagnostics(ds.id)
-      const first = list.diagnostics[0]
-      if (first) {
-        const status = (first.diagnosis as { status?: string }).status ?? ''
-        diagnosisStatusMap.value.set(ds.id, status)
-      }
+      if (seq !== workspaceRequestSeq || targetCaseId !== caseId.value) return
+      const first = list.diagnostics[0] ?? null
+      diagnosisByDataset.value.set(ds.id, { kind: 'ready', item: first })
     } catch {
-      // diagnosis status is optional context; failures are silently ignored
+      if (seq !== workspaceRequestSeq || targetCaseId !== caseId.value) return
+      diagnosisByDataset.value.set(ds.id, { kind: 'error' })
     }
   }
 }
 
-// 单调递增请求序号：只有最新一次 loadWorkspace 可以写状态；
-// 快速连切时旧请求无论成功、失败还是 finally 都不得覆盖新请求
 let workspaceRequestSeq = 0
 
 async function loadWorkspace() {
@@ -136,7 +162,7 @@ async function loadWorkspace() {
   workspace.value = null
   loadError.value = null
   notInitialized.value = false
-  diagnosisStatusMap.value.clear()
+  diagnosisByDataset.value.clear()
   try {
     const result = await fetchCaseWorkspace(targetId)
     if (!isCurrent()) return
@@ -156,8 +182,6 @@ async function loadWorkspace() {
 
 onMounted(loadWorkspace)
 
-// 同一组件实例在 /cases/:caseId 之间复用：参数变化必须重新加载，
-// 绝不显示上一个案例的 stale 内容
 watch(caseId, (next, prev) => {
   if (next !== prev) void loadWorkspace()
 })
@@ -224,13 +248,6 @@ watch(caseId, (next, prev) => {
             >
               {{ workspace.workspace_kind === 'builtin_preset' ? '查看官方成果' : '查看成果' }}
             </el-button>
-            <el-button
-              v-if="canCreateExperiment"
-              data-test="new-experiment"
-              @click="createExperiment"
-            >
-              新建实验
-            </el-button>
           </div>
         </section>
 
@@ -292,28 +309,28 @@ watch(caseId, (next, prev) => {
                 数据版本 v{{ ds.version }} · {{ ds.id }}
               </span>
               <span
-                v-if="diagnosisStatusLabel(ds.id)"
+                v-if="diagnosisStatusText(ds.id)"
                 class="diagnosis-status"
                 :data-test="`diagnosis-status-${ds.id}`"
               >
-                最近诊断：{{ diagnosisStatusLabel(ds.id) }}
-                <el-link
-                  type="primary"
-                  :underline="false"
-                  @click="gotoDiagnosisForDataset(ds.id)"
-                >
-                  查看详情
-                </el-link>
+                最近分析：{{ diagnosisStatusText(ds.id) }}
               </span>
               <div class="command-row">
-                <el-button data-test="new-experiment-btn" @click="newExperimentForDataset(ds.id)">
-                  新建实验
+                <el-button
+                  v-if="diagnosisHasDetail(ds.id)"
+                  size="small"
+                  data-test="diagnosis-detail-btn"
+                  @click="gotoDiagnosisDetail(ds.id)"
+                >
+                  查看分析详情
                 </el-button>
-                <el-button data-test="professional-diagnosis-btn" @click="gotoDiagnosisForDataset(ds.id)">
-                  专业诊断
-                </el-button>
-                <el-button data-test="candidate-comparison-btn" @click="gotoComparisonForDataset(ds.id)">
-                  比较候选
+                <el-button
+                  v-if="ds.status === 'validated'"
+                  size="small"
+                  data-test="reanalyze-btn"
+                  @click="reanalyzeDataset(ds.id)"
+                >
+                  重新分析
                 </el-button>
               </div>
             </div>
@@ -322,8 +339,36 @@ watch(caseId, (next, prev) => {
 
         <section class="workspace-section" data-test="workspace-experiments">
           <h2 class="section-title">实验</h2>
-          <p v-if="canCreateExperiment">可基于当前数据版本创建通用建模实验。</p>
+          <div v-if="canCreateExperiment" class="command-row">
+            <el-button type="primary" data-test="new-experiment" @click="createExperiment">
+              新建实验
+            </el-button>
+            <el-button
+              v-if="workspace.primary_dataset"
+              data-test="model-comparison"
+              @click="gotoComparisonForDataset(workspace.primary_dataset.id)"
+            >
+              模型比较
+            </el-button>
+          </div>
           <p v-else>当前案例不开放新建实验。</p>
+          <div v-if="recentExperiments.length" class="recent-list" data-test="recent-experiments">
+            <div
+              v-for="exp in recentExperiments"
+              :key="exp.id"
+              class="recent-row"
+              :data-test="`recent-experiment-${exp.id}`"
+            >
+              <el-link type="primary" :underline="false" @click="router.push(exp.url)">
+                {{ exp.name }}
+              </el-link>
+              <span class="recent-meta">
+                {{ algorithmLabel(exp.algorithm) }}
+                <template v-if="exp.latest_run_status"> · {{ exp.latest_run_status }}</template>
+                <template v-if="exp.succeeded_candidate_count"> · 成功 {{ exp.succeeded_candidate_count }} 候选</template>
+              </span>
+            </div>
+          </div>
         </section>
 
         <section class="workspace-section" data-test="workspace-results">
@@ -338,6 +383,22 @@ watch(caseId, (next, prev) => {
           <p v-else-if="workspace.workspace_kind !== 'builtin_legacy'" data-test="results-empty">
             暂无成果。
           </p>
+          <div v-if="recentResults.length" class="recent-list" data-test="recent-results">
+            <div
+              v-for="res in recentResults"
+              :key="res.result_id"
+              class="recent-row"
+              :data-test="`recent-result-${res.result_id}`"
+            >
+              <el-link type="primary" :underline="false" @click="router.push(res.url)">
+                {{ algorithmLabel(res.algorithm) }} 成果
+              </el-link>
+              <span class="recent-meta">
+                {{ res.materialized ? '已物化' : '未物化' }}
+                <template v-if="res.featured"> · 主打</template>
+              </span>
+            </div>
+          </div>
           <div v-if="isResistivity" class="rho-block" data-test="workspace-rho-block">
             <RhoCaseView embedded />
           </div>
@@ -427,6 +488,24 @@ watch(caseId, (next, prev) => {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+.recent-list {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.recent-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 4px 0;
+  border-top: 1px dashed #263142;
+}
+.recent-meta {
+  font-size: 12px;
+  color: #7f8ca0;
 }
 .abandoned-history {
   margin-top: 8px;

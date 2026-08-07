@@ -44,8 +44,6 @@ function fallbackUrl(): string | null {
   switch (props.preparation.next_action.step) {
     case 'upload':
       return `/cases/${props.caseId}/datasets/new`
-    case 'experiment':
-      return `/cases/${props.caseId}/experiments/new`
     default:
       return null
   }
@@ -77,14 +75,6 @@ function fallbackUrl(): string | null {
           @click="navigate"
         >
           继续
-        </el-button>
-        <el-button
-          v-else-if="step === 'experiment'"
-          type="primary"
-          data-test="prep-action-experiment"
-          @click="navigate"
-        >
-          新建实验
         </el-button>
       </div>
     </template>
