@@ -89,6 +89,61 @@ def _make_pipeline(app, client):
     return case_id, dataset_id, experiment_id, run_id, candidate_id
 
 
+def _make_professional_pipeline(app, client):
+    """Create case -> dataset -> validated -> diagnosis -> confirmation -> analysis job."""
+    runtime = app.state.platform_runtime
+    case_id, dataset_id, experiment_id, run_id, candidate_id = _make_pipeline(app, client)
+
+    # Validate dataset
+    with runtime.session() as session:
+        from geomodeling.platform.schemas import DatasetStatus
+        from geomodeling.platform.repositories import DatasetRepository
+        repo = DatasetRepository(session)
+        repo.transition_status(dataset_id, DatasetStatus.MAPPED)
+        repo.transition_status(dataset_id, DatasetStatus.VALIDATED)
+
+    # Create professional diagnostic
+    with runtime.session() as session:
+        diag = tbl.ProfessionalDiagnostic(
+            id="diag-test-1",
+            dataset_version_id=dataset_id,
+            status="succeeded",
+            config_json="{}",
+            fingerprint="fp-diag",
+            manifest_json="{}",
+        )
+        session.add(diag)
+        session.commit()
+
+    # Create confirmation
+    with runtime.session() as session:
+        conf = tbl.ProfessionalConfirmation(
+            id="conf-test-1",
+            diagnostic_id="diag-test-1",
+            config_json="{}",
+            fingerprint="fp-conf",
+            note="test",
+        )
+        session.add(conf)
+        session.commit()
+
+    # Create analysis job
+    with runtime.session() as session:
+        job = tbl.AnalysisJob(
+            id="job-test-1",
+            job_kind="professional_diagnosis",
+            subject_type="professional_diagnostic",
+            subject_id="diag-test-1",
+            request_fingerprint="fp",
+            status="succeeded",
+            progress_json="{}",
+        )
+        session.add(job)
+        session.commit()
+
+    return case_id, dataset_id, experiment_id, run_id, candidate_id, "diag-test-1", "conf-test-1", "job-test-1"
+
+
 class TestActiveCaseGuards:
     def test_trashed_case_omitted_from_home(self, client):
         case_id = create_case(client, name="案例A")
@@ -204,3 +259,79 @@ class TestActiveCaseGuards:
             assert resp.status_code != 410, (
                 f"{method} {path} -> 410 after restore"
             )
+
+    def test_trashed_case_datasets_list_returns_410(self, client, app):
+        """GET /api/cases/{case_id}/datasets returns 410 when trashed."""
+        case_id, *_ = _make_pipeline(app, client)
+        client.delete(f"/api/cases/{case_id}")
+        resp = client.get(f"/api/cases/{case_id}/datasets")
+        assert resp.status_code == 410
+        assert resp.json()["error"]["code"] == "CASE_TRASHED"
+
+    def test_trashed_case_upload_blocked_before_db(self, client, app):
+        """POST /api/cases/{case_id}/datasets/uploads returns 410 when trashed; no DB row created."""
+        case_id, *_ = _make_pipeline(app, client)
+        client.delete(f"/api/cases/{case_id}")
+
+        csv_bytes = b"x,y,value\n1,2,3\n"
+        resp = client.post(
+            f"/api/cases/{case_id}/datasets/uploads",
+            files={"file": ("test.csv", csv_bytes, "text/csv")},
+        )
+        assert resp.status_code == 410
+        assert resp.json()["error"]["code"] == "CASE_TRASHED"
+
+        # Verify no new dataset was created
+        runtime = app.state.platform_runtime
+        with runtime.session() as session:
+            from geomodeling.platform.tables import DatasetVersion
+            count = session.query(DatasetVersion).filter(DatasetVersion.case_id == case_id).count()
+            assert count == 1  # only the original dataset
+
+    def test_trashed_analysis_job_endpoints_return_410(self, client, app):
+        """Analysis job endpoints return 410 when case is trashed."""
+        result = _make_professional_pipeline(app, client)
+        case_id = result[0]
+        job_id = result[7]
+
+        client.delete(f"/api/cases/{case_id}")
+
+        # GET job
+        resp = client.get(f"/api/analysis-jobs/{job_id}")
+        assert resp.status_code == 410
+        assert resp.json()["error"]["code"] == "CASE_TRASHED"
+
+        # POST cancel
+        resp = client.post(f"/api/analysis-jobs/{job_id}/cancel")
+        assert resp.status_code == 410
+        assert resp.json()["error"]["code"] == "CASE_TRASHED"
+
+        # POST retry
+        resp = client.post(f"/api/analysis-jobs/{job_id}/retry")
+        assert resp.status_code == 410
+        assert resp.json()["error"]["code"] == "CASE_TRASHED"
+
+    def test_trashed_confirmation_returns_410(self, client, app):
+        """GET /api/professional-confirmations/{id} returns 410 when trashed."""
+        result = _make_professional_pipeline(app, client)
+        case_id = result[0]
+        conf_id = result[6]
+
+        client.delete(f"/api/cases/{case_id}")
+
+        resp = client.get(f"/api/professional-confirmations/{conf_id}")
+        assert resp.status_code == 410
+        assert resp.json()["error"]["code"] == "CASE_TRASHED"
+
+    def test_trashed_artifact_download_returns_410(self, client, app):
+        """GET /api/professional-artifacts/{id}/download returns 410 when trashed."""
+        result = _make_professional_pipeline(app, client)
+        case_id = result[0]
+        diag_id = result[5]
+
+        client.delete(f"/api/cases/{case_id}")
+
+        # Diagnosis-scoped artifact
+        resp = client.get(f"/api/professional-artifacts/diagnosis:{diag_id}:variogram/download")
+        assert resp.status_code == 410
+        assert resp.json()["error"]["code"] == "CASE_TRASHED"

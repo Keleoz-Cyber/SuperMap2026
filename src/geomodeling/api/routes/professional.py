@@ -69,6 +69,7 @@ from geomodeling.platform.repositories import (
     DatasetRepository,
     require_active_dataset,
     require_active_candidate,
+    require_active_analysis_job,
 )
 from geomodeling.platform.results import CANDIDATE_NOT_SUCCEEDED, _load_candidate, preview
 from geomodeling.platform.schemas import ContractModel, ProfessionalDiagnosisRequest
@@ -199,11 +200,16 @@ def get_professional_confirmation(
     from geomodeling.platform.repositories import (
         ProfessionalConfirmationRepository,
         ProfessionalDiagnosticRepository,
-        DatasetRepository,
-        CaseRepository,
     )
-    from geomodeling.platform.public_dto import public_confirmation, public_professional_diagnosis
-    from geomodeling.platform.errors import PROFESSIONAL_DIAGNOSIS_NOT_SUCCEEDED
+
+    with runtime.session() as session:
+        conf_repo = ProfessionalConfirmationRepository(session)
+        confirmation = conf_repo.get(confirmation_id)
+        diag_repo = ProfessionalDiagnosticRepository(session)
+        diagnosis = diag_repo.get(confirmation.diagnostic_id)
+
+    # Guard: trashed case must not expose confirmation
+    require_active_dataset(runtime, diagnosis.dataset_version_id)
 
     with runtime.session() as session:
         conf_repo = ProfessionalConfirmationRepository(session)
@@ -359,6 +365,7 @@ def get_analysis_job_dto(
     job_id: str,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
+    require_active_analysis_job(runtime, job_id)
     return public_analysis_job(get_analysis_job(runtime, job_id))
 
 
@@ -370,9 +377,10 @@ def cancel_analysis_job(
 ) -> dict[str, Any]:
     """取消分析任务：queued 原子转 canceled；running 写取消旗标协作退出。
 
-    取消只影响当前任务——终态行完全不可变，subject 行与既有成功工件不改写。
+    取消只影响当前任务--终态行完全不可变，subject 行与既有成功工件不改写。
     """
 
+    require_active_analysis_job(runtime, job_id)
     with runtime.session() as session:
         repo = AnalysisJobRepository(session)
         record = repo.get(job_id)
@@ -401,6 +409,7 @@ def retry_analysis_job_route(
 ) -> dict[str, Any]:
     """从 failed/canceled/interrupted 重试：新身份 + ``retry_of_job_id``，原记录不改写。"""
 
+    require_active_analysis_job(runtime, job_id)
     record = retry_analysis_job(runtime, job_id)
     worker = _worker(request)
     if worker is not None:
@@ -808,6 +817,20 @@ def download_professional_artifact(
     if len(parts) != 3:
         raise _artifact_not_found("工件身份须为「类别:subject:逻辑名」", artifact_id=artifact_id)
     kind, subject_id, logical_name = parts
+
+    # Guard: trashed case must not expose professional artifacts
+    if kind == "diagnosis":
+        # subject_id is a diagnosis ID; resolve to dataset
+        with runtime.session() as session:
+            diag = session.get(AnalysisJob, subject_id)  # wrong table
+        # Actually resolve via ProfessionalDiagnostic
+        from geomodeling.platform.tables import ProfessionalDiagnostic
+        with runtime.session() as session:
+            diag_row = session.get(ProfessionalDiagnostic, subject_id)
+            if diag_row is not None:
+                require_active_dataset(runtime, diag_row.dataset_version_id)
+    elif kind in ("result", "extraction"):
+        require_active_candidate(runtime, subject_id)
     manifest = _subject_manifest(runtime, kind, subject_id)
     entry = (manifest.get("artifacts") or {}).get(logical_name)
     if not isinstance(entry, dict):

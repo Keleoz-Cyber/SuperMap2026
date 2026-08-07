@@ -1886,8 +1886,12 @@ def require_active_candidate(runtime: Any, candidate_id: str) -> str:
         return exp.case_id
 
 
-def require_active_render_asset(runtime: Any, asset_id: str) -> str:
-    """Walk render_asset -> candidate -> run -> experiment -> case, return case_id if active."""
+def require_active_render_asset(runtime: Any, asset_id: str) -> str | None:
+    """Walk render_asset -> candidate -> run -> experiment -> case, return case_id if active.
+
+    Returns None for builtin_legacy assets (no candidate_result_id) -- these
+    have no deletable Case and are always accessible.
+    """
     with runtime.session() as session:
         ra = session.get(RenderAsset, asset_id)
         if ra is None:
@@ -1896,11 +1900,44 @@ def require_active_render_asset(runtime: Any, asset_id: str) -> str:
                 {"asset_id": asset_id}, http_status=404,
             )
         if ra.candidate_result_id is None:
-            raise PlatformError(
-                CASE_NOT_FOUND, "渲染资产不属于任何案例",
-                {"asset_id": asset_id}, http_status=404,
-            )
+            return None  # builtin_legacy -- no case to guard
         return require_active_candidate(runtime, ra.candidate_result_id)
+
+
+def require_active_analysis_job(runtime: Any, job_id: str) -> str:
+    """Resolve analysis job -> subject -> case, return case_id if active.
+
+    For professional_diagnosis: job.subject_id -> ProfessionalDiagnostic -> DatasetVersion -> case
+    For anomaly_extraction: job.subject_id -> AnomalyExtraction -> CandidateResult -> case
+    """
+    with runtime.session() as session:
+        job = session.get(AnalysisJob, job_id)
+        if job is None:
+            raise PlatformError(
+                ANALYSIS_JOB_NOT_FOUND, "分析任务不存在",
+                {"job_id": job_id}, http_status=404,
+            )
+        if job.job_kind == "professional_diagnosis":
+            diag = session.get(ProfessionalDiagnostic, job.subject_id)
+            if diag is None:
+                raise PlatformError(
+                    PROFESSIONAL_DIAGNOSIS_NOT_FOUND, "专业诊断不存在",
+                    {"diagnosis_id": job.subject_id}, http_status=404,
+                )
+            return require_active_dataset(runtime, diag.dataset_version_id)
+        elif job.job_kind == "anomaly_extraction":
+            ext = session.get(AnomalyExtraction, job.subject_id)
+            if ext is None:
+                raise PlatformError(
+                    ANOMALY_EXTRACTION_NOT_FOUND, "异常提取不存在",
+                    {"extraction_id": job.subject_id}, http_status=404,
+                )
+            return require_active_candidate(runtime, ext.candidate_result_id)
+        else:
+            raise PlatformError(
+                ANALYSIS_JOB_NOT_FOUND, "未知分析任务类型",
+                {"job_id": job_id, "job_kind": job.job_kind}, http_status=404,
+            )
 
 
 def require_active_export(runtime: Any, export_id: str) -> str:

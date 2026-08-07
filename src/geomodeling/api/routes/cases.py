@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from geomodeling.api.deps import get_platform_runtime
 from geomodeling.platform import PlatformRuntime, tables
 from geomodeling.platform.case_lifecycle import CaseLifecycleService
+from geomodeling.platform.repositories import CaseRepository, DatasetRepository, require_active_case
 
 logger = logging.getLogger("geomodeling.api")
 from geomodeling.platform.public_dto import public_case, public_dataset
@@ -55,8 +56,8 @@ def list_case_datasets(
     case_id: str,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
+    require_active_case(runtime, case_id)
     with runtime.session() as session:
-        CaseRepository(session).get(case_id)
         records = DatasetRepository(session).list_for_case(case_id)
     return {"datasets": [public_dataset(record) for record in records]}
 
@@ -67,6 +68,7 @@ async def upload_dataset(
     file: UploadFile,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
+    require_active_case(runtime, case_id)
     settings = runtime.settings
     receipt = store_upload_stream(settings, file.file, file.filename or "")
     created_dataset_id: str | None = None

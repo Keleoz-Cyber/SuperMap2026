@@ -60,7 +60,7 @@ from geomodeling.platform.slice_exports import (
     MAX_SLICE_IMAGE_BYTES,
     SLICE_EXPORT_UPLOAD_TOO_LARGE,
 )
-from geomodeling.platform.repositories import RenderAssetRepository, require_active_candidate
+from geomodeling.platform.repositories import RenderAssetRepository, require_active_candidate, require_active_render_asset
 from geomodeling.platform.schemas import (
     STATUS_READY,
     ContractModel,
@@ -494,6 +494,7 @@ async def create_slice_export(
     矩阵、统计或 manifest。失败不留 Export 行、半成品 ZIP 或临时文件。
     """
 
+    require_active_render_asset(runtime, asset_id)
     chunks: list[bytes] = []
     total = 0
     try:
@@ -527,6 +528,7 @@ def get_render_asset_slice_analysis(
     网格口径；轴/索引错误 422，资产缺失 404，非 ready 409。
     """
 
+    require_active_render_asset(runtime, asset_id)
     return slice_analysis.analyze_render_asset_slice(runtime, asset_id, axis, index)
 
 
@@ -535,6 +537,7 @@ def get_render_asset_manifest(
     asset_id: str,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
+    require_active_render_asset(runtime, asset_id)
     _, package_dir = _verified_ready_package(runtime, asset_id)
     return json.loads((package_dir / "manifest.json").read_text(encoding="utf-8"))
 
@@ -544,6 +547,7 @@ def get_render_asset_volume(
     asset_id: str,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> FileResponse:
+    require_active_render_asset(runtime, asset_id)
     record, package_dir = _verified_ready_package(runtime, asset_id)
     return FileResponse(
         package_dir / "volume.nc",
