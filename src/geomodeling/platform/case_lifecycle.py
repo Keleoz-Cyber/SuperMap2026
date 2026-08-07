@@ -116,9 +116,17 @@ def recover_case_purges(runtime: Any) -> dict[str, Any]:
 
             elif op.state == "quarantined":
                 if case_exists:
-                    _restore_quarantined_files(runtime, op)
-                    op.state = "rolled_back"
-                    report["rolled_back"].append(op.id)
+                    try:
+                        _restore_quarantined_files(runtime, op)
+                        op.state = "rolled_back"
+                        report["rolled_back"].append(op.id)
+                    except (ValueError, OSError):
+                        op.state = "failed"
+                        op.error_json = json.dumps(
+                            {"code": CASE_PURGE_RECOVERY_REQUIRED,
+                             "message": "manifest 验证失败或文件恢复失败，需人工介入"},
+                            ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+                        report["failed"].append(op.id)
                 else:
                     op.state = "failed"
                     op.error_json = json.dumps(
@@ -149,9 +157,11 @@ def recover_case_purges(runtime: Any) -> dict[str, Any]:
 
 
 def _restore_quarantined_files(runtime: Any, op: CasePurgeOperation) -> None:
-    """Restore files from quarantine directory back to their controlled roots."""
+    """Restore files from quarantine directory back to their controlled roots.
 
-    import shutil
+    Validates manifest paths (no absolute, no .., no symlinks) and verifies
+    file size and SHA-256 before restoring. Raises ValueError on any violation.
+    """
 
     settings = runtime.settings
     roots = {
@@ -170,20 +180,56 @@ def _restore_quarantined_files(runtime: Any, op: CasePurgeOperation) -> None:
     try:
         manifest_data = json.loads(op.manifest_json) if op.manifest_json else {}
     except json.JSONDecodeError:
-        return
+        raise ValueError("manifest JSON is corrupt")
 
     for fm in manifest_data.get("files", []):
         root_name = fm.get("root")
         rel_path = fm.get("relative_path")
+        expected_sha = fm.get("sha256")
+        expected_size = fm.get("size_bytes")
+
         if not root_name or not rel_path:
-            continue
+            raise ValueError("manifest entry missing root or relative_path")
+
+        # Reject absolute paths
+        if rel_path.startswith("/") or rel_path.startswith("\\"):
+            raise ValueError(f"absolute path in manifest: {rel_path}")
+
+        # Reject .. traversal
+        if ".." in Path(rel_path).parts:
+            raise ValueError(f"path traversal in manifest: {rel_path}")
+
         root_dir = roots.get(root_name)
         if root_dir is None:
-            continue
+            raise ValueError(f"unknown root in manifest: {root_name}")
+
         src = quarantine_dir / root_name / rel_path
         if not src.exists():
-            continue
+            continue  # file may have been partially restored already
+
+        # Reject symlinks
+        if src.is_symlink():
+            raise ValueError(f"symlink in quarantine: {rel_path}")
+
+        # Verify size and SHA-256
+        actual_size = src.stat().st_size
+        if expected_size is not None and actual_size != expected_size:
+            raise ValueError(f"size mismatch for {rel_path}")
+
+        if expected_sha:
+            import hashlib as _hl
+            h = _hl.sha256()
+            with open(src, "rb") as f:
+                for chunk in iter(lambda: f.read(8192), b""):
+                    h.update(chunk)
+            if h.hexdigest() != expected_sha:
+                raise ValueError(f"sha256 mismatch for {rel_path}")
+
         dst = root_dir / rel_path
+        # Also reject if destination would be a symlink
+        if dst.is_symlink():
+            raise ValueError(f"destination is symlink: {rel_path}")
+
         dst.parent.mkdir(parents=True, exist_ok=True)
         try:
             os.replace(src, dst)
@@ -465,6 +511,14 @@ class CaseLifecycleService:
             row = self._get_case_row(session, case_id)
             self._assert_deletable(row)
 
+            if row.lifecycle_state == CaseLifecycleState.PURGING.value:
+                raise PlatformError(
+                    CASE_PURGE_BLOCKED,
+                    "案例正在清理中，不能重复永久删除",
+                    {"case_id": case_id, "lifecycle_state": row.lifecycle_state},
+                    http_status=409,
+                )
+
             if row.lifecycle_state != CaseLifecycleState.TRASHED.value:
                 raise PlatformError(
                     CASE_PURGE_BLOCKED,
@@ -485,6 +539,10 @@ class CaseLifecycleService:
             self.assert_no_inflight(ownership)
 
             manifest = self._build_manifest(session, case_id, ownership)
+
+            # Atomically enter purging state: blocks concurrent restore and duplicate purge
+            row.lifecycle_state = CaseLifecycleState.PURGING.value
+            session.flush()
 
             operation_id = str(uuid.uuid4())
             op = CasePurgeOperation(
@@ -527,14 +585,18 @@ class CaseLifecycleService:
             if quarantine_dir.exists():
                 self._restore_files_from_quarantine_v2(manifest, quarantine_dir)
             with self._runtime.session() as session:
+                # Revert case from purging back to trashed so user can retry
+                case_row = session.get(Case, case_id)
+                if case_row is not None and case_row.lifecycle_state == CaseLifecycleState.PURGING.value:
+                    case_row.lifecycle_state = CaseLifecycleState.TRASHED.value
                 op_row = session.get(CasePurgeOperation, operation_id)
                 if op_row is not None and op_row.state not in ("committed", "cleaned"):
                     op_row.state = "rolled_back"
                     op_row.error_json = json.dumps(
-                        {"code": "PURGE_ROLLBACK", "message": "文件已恢复"},
+                        {"code": "PURGE_ROLLBACK", "message": "文件已恢复，案例回到回收站"},
                         ensure_ascii=False, sort_keys=True, separators=(",", ":"),
                     )
-                    session.commit()
+                session.commit()
             raise
 
         if failpoint:

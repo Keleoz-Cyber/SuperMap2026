@@ -373,3 +373,45 @@ class TestPurgeRollback:
             ops = session.query(CasePurgeOperation).filter_by(case_id=case_id).all()
             assert len(ops) == 1
             assert ops[0].state == "rolled_back"
+
+        # Case should be back in trashed state (not purging)
+        with runtime.session() as session:
+            case = session.get(Case, case_id)
+            assert case.lifecycle_state == "trashed"
+
+
+class TestPurgeConcurrencySafety:
+    def test_purge_blocks_concurrent_restore(self, runtime):
+        """Restore must be blocked while purge is in purging state."""
+        from geomodeling.platform.tables import Case as CaseTbl
+
+        ids = build_complete_case(runtime, name="并发测试")
+        case_id = ids["case_id"]
+        CaseLifecycleService(runtime).trash(case_id)
+
+        # Manually set to purging to simulate in-progress purge
+        with runtime.session() as session:
+            row = session.get(CaseTbl, case_id)
+            row.lifecycle_state = "purging"
+            session.commit()
+
+        with pytest.raises(PlatformError) as excinfo:
+            CaseLifecycleService(runtime).restore(case_id)
+        assert excinfo.value.code == "CASE_PURGE_BLOCKED"
+
+    def test_duplicate_purge_blocks(self, runtime):
+        """Duplicate purge must be blocked while already purging."""
+        from geomodeling.platform.tables import Case as CaseTbl
+
+        ids = build_complete_case(runtime, name="重复清理")
+        case_id = ids["case_id"]
+        CaseLifecycleService(runtime).trash(case_id)
+
+        with runtime.session() as session:
+            row = session.get(CaseTbl, case_id)
+            row.lifecycle_state = "purging"
+            session.commit()
+
+        with pytest.raises(PlatformError) as excinfo:
+            CaseLifecycleService(runtime).purge(case_id, confirmation_name="重复清理")
+        assert excinfo.value.code == "CASE_PURGE_BLOCKED"
