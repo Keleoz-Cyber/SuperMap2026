@@ -530,11 +530,24 @@ export interface CaseDatasetsResponse {
 
 // ---------------- v0.4 成果 / 切片 / 选择 / 导出 / 发布契约 ----------------
 
+export interface ResultEvaluationSummary {
+  common_valid_count: number | null
+  candidate_valid_count: number | null
+  candidate_nodata_count: number | null
+  total_count: number | null
+  coverage: number | null
+  rmse: number | null
+  mae: number | null
+  r2: number | null
+  bias: number | null
+  enhanced_evidence_available: boolean
+}
+
 export interface ResultMetadata {
   result_id: string
   run_id: string
   experiment_id: string
-  // 成果归属链：result → run → experiment → dataset（Task 10 起服务端下发）
+  // 成果归属链：result -> run -> experiment -> dataset（Task 10 起服务端下发）
   dataset_version_id: string
   algorithm: string
   parameters: Record<string, unknown>
@@ -552,6 +565,8 @@ export interface ResultMetadata {
   validation: Record<string, unknown> | null
   created_at: string
   professional_analysis_supported?: boolean
+  // v0.7.0：基线模型评估摘要（每个已物化成果均携带）
+  evaluation_summary?: ResultEvaluationSummary
 }
 
 export interface ResultPreview {

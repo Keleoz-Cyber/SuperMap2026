@@ -57,6 +57,7 @@ __all__ = [
     "RENDER_ASSET_STATUSES",
     "RenderAssetError",
     "RenderAssetRecord",
+    "ResultEvaluationSummary",
     "RunRecord",
     "RunStatus",
     "STATUS_CREATING",
@@ -494,6 +495,26 @@ class WorkspaceResultSummary(ContractModel):
     featured: bool
     created_at: str
     url: str
+
+
+class ResultEvaluationSummary(ContractModel):
+    """Baseline model evaluation attached to every result DTO (v0.7.0 Task 4).
+
+    Missing or non-finite metrics are null; they are never coerced to zero.
+    ``enhanced_evidence_available`` is true only when succeeded
+    ``ProfessionalResultArtifacts`` exists for the result.
+    """
+
+    common_valid_count: int | None = None
+    candidate_valid_count: int | None = None
+    candidate_nodata_count: int | None = None
+    total_count: int | None = None
+    coverage: float | None = None
+    rmse: float | None = None
+    mae: float | None = None
+    r2: float | None = None
+    bias: float | None = None
+    enhanced_evidence_available: bool = False
 
 
 class PurgeFileMove(ContractModel):

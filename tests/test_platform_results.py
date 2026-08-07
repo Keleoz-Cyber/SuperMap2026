@@ -192,6 +192,140 @@ def test_materialize_and_get_share_succeeded_professional_evidence_capability(tm
     assert succeeded_get.json()["professional_analysis_supported"] is True
 
 
+def _get_candidate_metrics(client: TestClient, experiment_id: str, candidate_id: str) -> dict:
+    candidates = client.get(f"/api/experiments/{experiment_id}/candidates").json()["candidates"]
+    return next(c["metrics"] for c in candidates if c["id"] == candidate_id)
+
+
+def test_evaluation_summary_idw_result_has_baseline_metrics_without_enhanced_evidence(tmp_path):
+    """IDW 结果：evaluation_summary 携带基线指标，enhanced_evidence_available=False。"""
+
+    client, _ = make_client(tmp_path)
+    _, _, experiment_id, candidate_id = prepare_completed_run(client, algorithm="idw")
+    client.post(f"/api/results/{candidate_id}/materialize")
+
+    candidate_metrics = _get_candidate_metrics(client, experiment_id, candidate_id)
+    body = client.get(f"/api/results/{candidate_id}").json()
+    evaluation = body["evaluation_summary"]
+    assert evaluation["rmse"] == candidate_metrics["rmse"]
+    assert evaluation["mae"] == candidate_metrics["mae"]
+    assert evaluation["r2"] == candidate_metrics["r2"]
+    assert evaluation["bias"] == candidate_metrics["bias"]
+    assert evaluation["coverage"] == candidate_metrics["coverage"]
+    assert evaluation["common_valid_count"] == candidate_metrics["common_valid_count"]
+    assert evaluation["candidate_valid_count"] == candidate_metrics["candidate_valid_count"]
+    assert evaluation["candidate_nodata_count"] == candidate_metrics["candidate_nodata_count"]
+    assert evaluation["total_count"] == candidate_metrics["total_count"]
+    assert evaluation["enhanced_evidence_available"] is False
+    assert body["professional_analysis_supported"] is False
+    # evaluation_summary must not duplicate top-level metadata fields
+    assert "algorithm" not in evaluation
+    assert "parameters" not in evaluation
+    assert "validation" not in evaluation
+    assert "nodata_count" not in evaluation
+
+
+def test_evaluation_summary_kriging_without_artifacts(tmp_path):
+    """普通克里金结果无专业工件：evaluation_summary 有指标，enhanced=false。"""
+
+    client, _ = make_client(tmp_path)
+    _, _, experiment_id, candidate_id = prepare_completed_run(client, algorithm="ordinary_kriging")
+    client.post(f"/api/results/{candidate_id}/materialize")
+
+    candidate_metrics = _get_candidate_metrics(client, experiment_id, candidate_id)
+    body = client.get(f"/api/results/{candidate_id}").json()
+    evaluation = body["evaluation_summary"]
+    assert evaluation["rmse"] == candidate_metrics["rmse"]
+    assert evaluation["r2"] is not None
+    assert evaluation["enhanced_evidence_available"] is False
+    assert body["professional_analysis_supported"] is False
+
+
+def test_evaluation_summary_kriging_with_succeeded_artifacts(tmp_path):
+    """有 succeeded ProfessionalResultArtifacts：enhanced_evidence_available=True。"""
+
+    client, runtime = make_client(tmp_path)
+    _, _, _, candidate_id = prepare_completed_run(client, algorithm="ordinary_kriging")
+    client.post(f"/api/results/{candidate_id}/materialize")
+
+    with runtime.session() as session:
+        session.add(tables.ProfessionalResultArtifacts(
+            id="artifacts-eval",
+            candidate_result_id=candidate_id,
+            confirmation_id=None,
+            status="succeeded",
+            capabilities_json="{}",
+            manifest_json="{}",
+        ))
+        session.commit()
+
+    body = client.get(f"/api/results/{candidate_id}").json()
+    evaluation = body["evaluation_summary"]
+    assert evaluation["enhanced_evidence_available"] is True
+    assert body["professional_analysis_supported"] is True
+    assert evaluation["rmse"] is not None
+
+
+def test_evaluation_summary_r2_none_stays_null_not_zero(tmp_path):
+    """r2=None 必须保持 null，绝不强制为 0。"""
+
+    client, runtime = make_client(tmp_path)
+    _, _, experiment_id, candidate_id = prepare_completed_run(client, algorithm="idw")
+    client.post(f"/api/results/{candidate_id}/materialize")
+
+    with runtime.session() as session:
+        candidate = session.get(tables.CandidateResult, candidate_id)
+        metrics = tables.loads_canonical(candidate.metrics_json)
+        metrics["r2"] = None
+        candidate.metrics_json = tables.dumps_canonical(metrics)
+        session.commit()
+
+    body = client.get(f"/api/results/{candidate_id}").json()
+    evaluation = body["evaluation_summary"]
+    assert evaluation["r2"] is None
+    # other metrics still present
+    assert evaluation["rmse"] is not None
+    assert evaluation["enhanced_evidence_available"] is False
+
+
+def test_evaluation_summary_post_and_get_are_identical(tmp_path):
+    """POST /materialize 和 GET /api/results/{id} 返回相同的 evaluation_summary。"""
+
+    client, _ = make_client(tmp_path)
+    _, _, _, candidate_id = prepare_completed_run(client, algorithm="idw")
+
+    post_resp = client.post(f"/api/results/{candidate_id}/materialize")
+    assert post_resp.status_code == 200
+    get_resp = client.get(f"/api/results/{candidate_id}")
+    assert get_resp.status_code == 200
+    assert post_resp.json()["evaluation_summary"] == get_resp.json()["evaluation_summary"]
+
+
+def test_evaluation_summary_missing_counts_become_null(tmp_path):
+    """legacy metrics 缺少可选计数字段时，对应值为 null 而非 0。"""
+
+    client, runtime = make_client(tmp_path)
+    _, _, _, candidate_id = prepare_completed_run(client, algorithm="idw")
+    client.post(f"/api/results/{candidate_id}/materialize")
+
+    with runtime.session() as session:
+        candidate = session.get(tables.CandidateResult, candidate_id)
+        metrics = tables.loads_canonical(candidate.metrics_json)
+        for key in ("common_valid_count", "candidate_valid_count", "candidate_nodata_count", "total_count"):
+            metrics.pop(key, None)
+        candidate.metrics_json = tables.dumps_canonical(metrics)
+        session.commit()
+
+    body = client.get(f"/api/results/{candidate_id}").json()
+    evaluation = body["evaluation_summary"]
+    assert evaluation["common_valid_count"] is None
+    assert evaluation["candidate_valid_count"] is None
+    assert evaluation["candidate_nodata_count"] is None
+    assert evaluation["total_count"] is None
+    # numeric metrics still present
+    assert evaluation["rmse"] is not None
+
+
 def test_result_slices_xyz_with_real_coordinates(tmp_path):
     client, _ = make_client(tmp_path)
     _, _, _, candidate_id = prepare_completed_run(client)
@@ -436,6 +570,8 @@ def test_legacy_materialize_has_no_professional_artifacts(tmp_path):
         "standardized_sha256", "fingerprint", "validation", "created_at",
         # v0.6.1（Task 4）：新物化成果追加 property 语义三键（取自 profile.mapping）
         "property_name", "units", "coordinate_kind", "professional_analysis_supported",
+        # v0.7.0（Task 4）：基线模型评估摘要（enhanced_evidence_available=false）
+        "evaluation_summary",
     }
     assert metadata["property_name"] == "属性"
     assert metadata["units"] == "unknown"

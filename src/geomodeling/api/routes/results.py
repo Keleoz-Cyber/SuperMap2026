@@ -7,6 +7,7 @@ v0.6.1（Task 7）：``GET /api/results/{id}``、``/preview``、``/slices`` 是�
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
@@ -29,18 +30,59 @@ from geomodeling.platform.results import (
     read_materialized_metadata,
     serve_slice,
 )
-from geomodeling.platform.schemas import FormalSelectionBody, FormalSelectionRequest
+from geomodeling.platform.schemas import FormalSelectionBody, FormalSelectionRequest, ResultEvaluationSummary
 
 router = APIRouter(tags=["v0.4-results"])
 
 
-def _with_professional_analysis_capability(
+def _non_negative_int(value: Any) -> int | None:
+    """Sanitize a count metric: non-negative int or None, never coerced to zero."""
+
+    if value is None:
+        return None
+    try:
+        result = int(value)
+    except (TypeError, ValueError):
+        return None
+    if result < 0:
+        return None
+    return result
+
+
+def _finite_float(value: Any) -> float | None:
+    """Sanitize a numeric metric: finite float or None, never coerced to zero."""
+
+    if value is None:
+        return None
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(result):
+        return None
+    return result
+
+
+def _with_evaluation_summary(
     runtime: PlatformRuntime, result_id: str, metadata: dict[str, Any]
 ) -> dict[str, Any]:
-    """Attach the same evidence-backed professional capability to every result DTO."""
-    from geomodeling.platform.tables import ProfessionalResultArtifacts
+    """Attach baseline evaluation summary and professional capability to every result DTO.
+
+    Loads CandidateResult through the already guarded ownership chain
+    (candidate -> run -> experiment), parses ``metrics_json``, and sanitizes
+    public metrics: non-negative counts become ``int | None``, finite numeric
+    metrics become ``float | None``, and missing/non-finite values become null.
+    The route must not fail merely because an optional evaluation number is
+    unavailable.
+    """
+
+    from geomodeling.platform.tables import CandidateResult, ProfessionalResultArtifacts
 
     with runtime.session() as session:
+        candidate = session.get(CandidateResult, result_id)
+        metrics: dict[str, Any] = (
+            tables.loads_canonical(candidate.metrics_json) if candidate is not None else {}
+        )
         supported = (
             session.query(ProfessionalResultArtifacts)
             .filter(
@@ -50,6 +92,20 @@ def _with_professional_analysis_capability(
             .first()
             is not None
         )
+
+    summary = ResultEvaluationSummary(
+        common_valid_count=_non_negative_int(metrics.get("common_valid_count")),
+        candidate_valid_count=_non_negative_int(metrics.get("candidate_valid_count")),
+        candidate_nodata_count=_non_negative_int(metrics.get("candidate_nodata_count")),
+        total_count=_non_negative_int(metrics.get("total_count")),
+        coverage=_finite_float(metrics.get("coverage")),
+        rmse=_finite_float(metrics.get("rmse")),
+        mae=_finite_float(metrics.get("mae")),
+        r2=_finite_float(metrics.get("r2")),
+        bias=_finite_float(metrics.get("bias")),
+        enhanced_evidence_available=supported,
+    )
+    metadata["evaluation_summary"] = summary.model_dump(mode="json")
     metadata["professional_analysis_supported"] = supported
     return metadata
 
@@ -60,7 +116,7 @@ def materialize_result(
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
     require_active_candidate(runtime, result_id)
-    return _with_professional_analysis_capability(runtime, result_id, materialize(runtime, result_id))
+    return _with_evaluation_summary(runtime, result_id, materialize(runtime, result_id))
 
 
 @router.get("/api/results/{result_id}")
@@ -71,7 +127,7 @@ def get_result(
     require_active_candidate(runtime, result_id)
     # 纯查询：只读已物化 metadata；未物化 404，绝不隐式物化
     metadata = read_materialized_metadata(runtime, result_id)
-    return _with_professional_analysis_capability(runtime, result_id, metadata)
+    return _with_evaluation_summary(runtime, result_id, metadata)
 
 
 @router.get("/api/results/{result_id}/preview")
