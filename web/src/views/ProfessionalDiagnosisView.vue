@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ApiError,
@@ -7,6 +7,7 @@ import {
   fetchAnalysisJob,
   fetchDataset,
   fetchDiagnosisVariogram,
+  fetchProfessionalConfirmation,
   fetchProfessionalDiagnosis,
   fetchProfessionalDiagnostics,
   requestProfessionalDiagnosis,
@@ -53,10 +54,8 @@ const caseId = computed(() => queryCaseId.value || dataset.value?.case_id || '')
 const dimension = computed<'2d' | '3d'>(() =>
   dataset.value?.profile?.dimension === '3d' ? '3d' : '2d',
 )
-// 质量门禁：只有 validated 数据集才能发起专业诊断（入口与配置表单同闸）
 const gated = computed(() => dataset.value !== null && dataset.value.status !== 'validated')
 
-// 诊断页状态机（判别联合）：配置 → 轮询 → 成功证据 / 结构化失败
 type DiagnosisPhase =
   | { kind: 'config' }
   | {
@@ -82,12 +81,12 @@ const failed = computed(() => (phase.value.kind === 'failed' ? phase.value : nul
 const diagnosis = ref<ProfessionalDiagnosisRecord | null>(null)
 const evidence = ref<VariogramEvidence | null>(null)
 const confirmation = ref<ProfessionalConfirmationRecord | null>(null)
+const confirmationFromExisting = ref(false)
 
 const starting = ref(false)
 const retrying = ref(false)
 const confirming = ref(false)
 
-// 诊断配置表单（严格校验在服务端契约层；前端只收集原始载荷）
 const lagCount = ref(12)
 const minPairs = ref(30)
 const maxPairs = ref(50000)
@@ -109,61 +108,95 @@ function describeError(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
 }
 
-async function loadForDataset() {
+const routeIdentity = computed(
+  () => `${datasetId.value}\u0000${queryDiagnosisId.value ?? ''}`,
+)
+let loadSequence = 0
+
+async function loadForRoute() {
+  const sequence = ++loadSequence
+  const targetDatasetId = datasetId.value
+  const targetDiagnosisId = queryDiagnosisId.value
+  const current = () =>
+    sequence === loadSequence &&
+    targetDatasetId === datasetId.value &&
+    targetDiagnosisId === queryDiagnosisId.value
   loading.value = true
   loadError.value = null
+  stopPolling()
   dataset.value = null
   diagnosis.value = null
   evidence.value = null
   confirmation.value = null
+  confirmationFromExisting.value = false
   phase.value = { kind: 'config' }
-  stopPolling()
   try {
-    dataset.value = await fetchDataset(datasetId.value)
-    if (queryDiagnosisId.value) {
-      await resumeDiagnosis(queryDiagnosisId.value)
-    }
-  } catch (e) {
-    loadError.value = describeError(e)
+    const loadedDataset = await fetchDataset(targetDatasetId)
+    if (!current()) return
+    dataset.value = loadedDataset
+    if (targetDiagnosisId) await resumeDiagnosis(targetDiagnosisId, current)
+  } catch (error) {
+    if (current()) loadError.value = describeError(error)
   } finally {
-    loading.value = false
+    if (current()) loading.value = false
   }
 }
 
-onMounted(loadForDataset)
+watch(routeIdentity, () => void loadForRoute(), { immediate: true })
 
-watch(datasetId, (next, prev) => {
-  if (next !== prev) void loadForDataset()
-})
+async function resumeDiagnosis(diagnosisId: string, current: () => boolean) {
+  const record = await fetchProfessionalDiagnosis(diagnosisId)
+  if (!current()) return
+  if (record.dataset_version_id !== datasetId.value) {
+    throw new ApiError('DIAGNOSIS_DATASET_MISMATCH', '诊断不属于当前数据集', 409)
+  }
 
-// 从 query.diagnosis 恢复已有诊断：获取诊断与任务，校验数据集归属，按状态恢复轮询/证据
-async function resumeDiagnosis(diagnosisId: string) {
+  if (record.status === 'succeeded') {
+    const variogram = await fetchDiagnosisVariogram(diagnosisId)
+    if (!current()) return
+    diagnosis.value = record
+    evidence.value = variogram
+    phase.value = { kind: 'succeeded', diagnosisId }
+    if (record.latest_confirmation?.applicable) {
+      try {
+        const summary = await fetchProfessionalConfirmation(record.latest_confirmation.id)
+        if (!current()) return
+        const conf = summary.confirmation as Record<string, unknown>
+        confirmation.value = {
+          id: record.latest_confirmation.id,
+          diagnostic_id: record.latest_confirmation.diagnostic_id,
+          fingerprint: record.latest_confirmation.fingerprint,
+          note: (conf.note as string) ?? '',
+          config: (conf.config as Record<string, unknown>) ?? {},
+          created_at: record.latest_confirmation.created_at,
+        }
+        confirmationFromExisting.value = true
+      } catch {
+        // non-blocking: diagnosis is still usable without confirmation snapshot
+      }
+    }
+    return
+  }
+
   const list = await fetchProfessionalDiagnostics(datasetId.value)
+  if (!current()) return
   const item = list.diagnostics.find(
     (d) => (d.diagnosis as { id?: string }).id === diagnosisId,
   )
   if (!item) {
     throw new ApiError('DIAGNOSIS_NOT_FOUND', '未找到指定的诊断记录', 404)
   }
-  const diagRecord = item.diagnosis as unknown as ProfessionalDiagnosisRecord
-  if (diagRecord.dataset_version_id !== datasetId.value) {
-    throw new ApiError('DIAGNOSIS_DATASET_MISMATCH', '诊断不属于当前数据集', 409)
-  }
   const job = item.job as unknown as AnalysisJobRecord | null
 
-  if (diagRecord.status === 'succeeded') {
-    await loadSuccess(diagnosisId)
-    return
-  }
-  if ((diagRecord.status === 'failed' || diagRecord.status === 'interrupted') && job) {
+  if ((record.status === 'failed' || record.status === 'interrupted') && job) {
     phase.value = {
       kind: 'failed',
       diagnosisId,
       jobId: job.id,
       status: job.status,
-      error: job.error ?? diagRecord.error ?? {
+      error: job.error ?? record.error ?? {
         code: 'ANALYSIS_JOB_NOT_SUCCEEDED',
-        message: `任务未成功（${diagRecord.status}）`,
+        message: `任务未成功（${record.status}）`,
       },
     }
     return
@@ -233,10 +266,10 @@ async function start() {
   try {
     const accepted = await requestProfessionalDiagnosis(datasetId.value, buildPayload())
     confirmation.value = null
+    confirmationFromExisting.value = false
     diagnosis.value = null
     evidence.value = null
     if (accepted.job_id === null) {
-      // 幂等复用：同指纹成功诊断直接读证据，不产生新任务
       await loadSuccess(accepted.diagnosis_id)
       return
     }
@@ -291,7 +324,6 @@ function maybePoll() {
   }
 }
 
-// 重试创建新任务身份（retry_of_job_id 回指原任务），原任务记录不改写
 async function onRetry() {
   const current = failed.value
   if (!current) return
@@ -327,7 +359,6 @@ const anisotropyCandidatesSha256 = computed(
   () => diagnosis.value?.manifest?.artifacts.anisotropy_candidates?.sha256 ?? null,
 )
 
-// 确认只新建（POST confirm 201）：成功后快照只读展示，表单不再出现
 async function onConfirm(payload: ProfessionalConfirmationPayload) {
   const current = phase.value
   if (current.kind !== 'succeeded') return
@@ -335,6 +366,7 @@ async function onConfirm(payload: ProfessionalConfirmationPayload) {
   actionError.value = null
   try {
     confirmation.value = await confirmProfessionalDiagnosis(current.diagnosisId, payload)
+    confirmationFromExisting.value = false
   } catch (e) {
     actionError.value = describeError(e)
   } finally {
@@ -358,10 +390,13 @@ onBeforeUnmount(stopPolling)
   <div class="diagnosis-page">
     <PageNavigation home :case-id="caseId || undefined" new-experiment />
     <header class="page-header">
-      <h1>专业诊断工作台</h1>
+      <h1>空间结构分析</h1>
       <p class="page-sub">
         数据集 <span class="mono">{{ datasetId }}</span>
         <template v-if="dataset"> · {{ dimension === '3d' ? '三维' : '二维' }}</template>
+      </p>
+      <p class="intro-text">
+        空间结构分析为普通克里金插值提供各向异性证据；IDW 不需要此分析。分析仅读取数据，不修改任何已有成果。
       </p>
     </header>
 
@@ -370,50 +405,54 @@ onBeforeUnmount(stopPolling)
 
     <div v-else-if="gated" class="gate-blocked" data-test="quality-gate-blocked">
       数据集尚未通过质量门禁（当前状态 {{ dataset?.status }}）：请先完成数据准备与质量校验，
-      专业诊断入口只在质量门禁通过后开放。
+      空间结构分析入口只在质量门禁通过后开放。
     </div>
 
     <main v-else class="diagnosis-main">
       <div v-if="actionError" class="action-error" data-test="action-error">{{ actionError }}</div>
 
       <section v-if="phase.kind === 'config'" class="config-section" data-test="diagnosis-config">
-        <h3>诊断配置</h3>
+        <h2 class="section-heading">分析配置</h2>
         <p class="section-hint">
           经验半变异函数诊断在服务端异步执行；提交后轮询任务状态，证据全部来自登记工件。
         </p>
-        <div class="cfg-grid">
-          <label class="field">
-            <span>滞后 bin 数 lag_count</span>
-            <input v-model.number="lagCount" type="number" min="4" max="48" class="gmp-input" data-test="cfg-lag-count" />
-          </label>
-          <label class="field">
-            <span>每 bin 最小点对</span>
-            <input v-model.number="minPairs" type="number" min="2" max="10000" class="gmp-input" data-test="cfg-min-pairs" />
-          </label>
-          <label class="field">
-            <span>点对上限 max_pairs</span>
-            <input v-model.number="maxPairs" type="number" min="100" max="500000" class="gmp-input" data-test="cfg-max-pairs" />
-          </label>
-        </div>
-        <div class="cfg-directions">
-          <span class="row-label">方向诊断</span>
-          <label v-for="azimuth in AZIMUTH_CHOICES" :key="azimuth" class="radio inline">
-            <input
-              type="checkbox"
-              :data-test="`cfg-dir-${azimuth}`"
-              :checked="selectedAzimuths.includes(azimuth)"
-              @change="toggleAzimuth(azimuth)"
-            />
-            方位 {{ azimuth }}°
-          </label>
-          <label v-if="dimension === '3d'" class="radio inline">
-            <input v-model="includeVertical" type="checkbox" data-test="cfg-dir-vertical" />
-            垂向（倾角 90°）
-          </label>
-        </div>
+        <el-collapse>
+          <el-collapse-item title="高级设置" name="advanced">
+            <div class="cfg-grid">
+              <label class="field">
+                <span>滞后 bin 数 lag_count</span>
+                <input v-model.number="lagCount" type="number" min="4" max="48" class="gmp-input" data-test="cfg-lag-count" />
+              </label>
+              <label class="field">
+                <span>每 bin 最小点对</span>
+                <input v-model.number="minPairs" type="number" min="2" max="10000" class="gmp-input" data-test="cfg-min-pairs" />
+              </label>
+              <label class="field">
+                <span>点对上限 max_pairs</span>
+                <input v-model.number="maxPairs" type="number" min="100" max="500000" class="gmp-input" data-test="cfg-max-pairs" />
+              </label>
+            </div>
+            <div class="cfg-directions">
+              <span class="row-label">方向诊断</span>
+              <label v-for="azimuth in AZIMUTH_CHOICES" :key="azimuth" class="radio inline">
+                <input
+                  type="checkbox"
+                  :data-test="`cfg-dir-${azimuth}`"
+                  :checked="selectedAzimuths.includes(azimuth)"
+                  @change="toggleAzimuth(azimuth)"
+                />
+                方位 {{ azimuth }}°
+              </label>
+              <label v-if="dimension === '3d'" class="radio inline">
+                <input v-model="includeVertical" type="checkbox" data-test="cfg-dir-vertical" />
+                垂向（倾角 90°）
+              </label>
+            </div>
+          </el-collapse-item>
+        </el-collapse>
         <div class="cfg-actions">
           <button class="gmp-btn primary" data-test="start-diagnosis" :disabled="starting" @click="start">
-            {{ starting ? '提交中…' : '开始专业诊断' }}
+            {{ starting ? '提交中…' : '开始空间结构分析' }}
           </button>
         </div>
       </section>
@@ -455,14 +494,17 @@ onBeforeUnmount(stopPolling)
         <VariogramPanel :evidence="evidence" />
 
         <section v-if="confirmation" class="confirmation-snapshot" data-test="confirmation-snapshot">
-          <h3>不可变确认快照</h3>
+          <h2 class="section-heading">不可变确认快照</h2>
           <p data-test="confirmation-id">确认 ID：<span class="mono">{{ confirmation.id }}</span></p>
           <p data-test="confirmation-fingerprint">
             指纹：<span class="mono">{{ confirmation.fingerprint }}</span>
           </p>
-          <p>说明：{{ confirmation.note }}</p>
+          <p v-if="confirmation.note">说明：{{ confirmation.note }}</p>
           <p class="snapshot-hint">快照已创建且永不修改；如需调整，请创建新的确认。</p>
-          <button class="gmp-btn primary" data-test="goto-experiment" @click="gotoExperiment">
+          <button v-if="confirmationFromExisting" class="gmp-btn primary" data-test="apply-confirmation" @click="gotoExperiment">
+            采用建议并创建克里金实验
+          </button>
+          <button v-else class="gmp-btn primary" data-test="goto-experiment" @click="gotoExperiment">
             用于新建 Kriging 实验
           </button>
         </section>
@@ -504,6 +546,13 @@ onBeforeUnmount(stopPolling)
   margin: 8px 0 0;
   font-size: 12px;
   color: var(--gmp-text-faint);
+}
+
+.intro-text {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--gmp-text-dim);
+  line-height: 1.6;
 }
 
 .mono {
@@ -552,8 +601,7 @@ onBeforeUnmount(stopPolling)
   gap: 12px;
 }
 
-.config-section h3,
-.confirmation-snapshot h3 {
+.section-heading {
   margin: 0;
   font-size: 15px;
 }
