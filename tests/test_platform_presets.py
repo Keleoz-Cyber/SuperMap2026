@@ -55,6 +55,47 @@ def test_resistivity_preset_declares_builtin_preset_scattered_identity():
     assert "不提交 Git" in boundary_text
 
 
+def test_resistivity_preset_default_grid_is_20m_xyz_within_cell_cap():
+    """v0.8.0 Task 5：官方 20 m 三轴网格，边界为已核验真实源范围。"""
+
+    preset = load_preset("resistivity")
+    grid = preset["default_grid"]
+    assert grid["bounds"] == [[-160, -40], [220, 660], [-833.0047143, -19.5999]]
+    assert grid["resolution"] == [20, 20, 20]
+    # 与后端 _axis_nodes 同一口径：round(span/step)+1 个节点/轴
+    cells = 1
+    for (lo, hi), step in zip(grid["bounds"], grid["resolution"]):
+        cells *= round((hi - lo) / step) + 1
+    assert cells == grid["estimated_cells"] == 7 * 23 * 42 == 6762
+    assert cells < grid["max_cells"] == 1_000_000
+
+
+def test_resistivity_preset_search_grids_cover_three_algorithms_under_cap():
+    """v0.8.0 Task 5：IDW/普通克里金/DSI-like 三算法搜索合同，组合数 ≤50。"""
+
+    preset = load_preset("resistivity")
+    grids = preset["search_grids"]
+    assert set(grids) == {"idw", "ordinary_kriging", "dsi_like"}
+    counts = {}
+    for algorithm, parameters in grids.items():
+        count = 1
+        for value in parameters.values():
+            count *= len(value)
+        counts[algorithm] = count
+        assert 1 <= count <= 50
+    assert counts == {"idw": 9, "ordinary_kriging": 4, "dsi_like": 18}
+    # DSI-like 搜索键严格落在 DSIParameters 允许域内
+    dsi = grids["dsi_like"]
+    assert set(dsi["neighbor_connectivity"]) <= {6, 18, 26}
+    assert all(0 < strength <= 1 for strength in dsi["smoothing_strength"])
+    assert set(dsi["max_iterations"]) <= {25, 50}
+    assert "hard_constraints" not in dsi, "硬约束恒开，不进入搜索空间"
+    # 默认推荐与 search_grids 保持单一事实源（官方基线重建 Kriging 合同）
+    assert preset["recommended_search"]["algorithm"] == "ordinary_kriging"
+    assert preset["recommended_search"]["search_mode"] == "grid"
+    assert preset["recommended_search"]["parameters"] == grids["ordinary_kriging"]
+
+
 def test_microseismic_preset_uses_domain_adapter_and_matches_aggregated_columns():
     preset = load_preset("microseismic")
     assert preset["source"] == "domain_adapter"

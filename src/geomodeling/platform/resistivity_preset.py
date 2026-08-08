@@ -16,6 +16,16 @@ CandidateResult→materialize→FormalSelection），结构与纪律同微震预
 （确定性 uuid5 主键、线程锁 + 唯一约束幂等、失败补偿删行删目录）。
 官方基线 JSON 由 Task 5 冻结真实数值；本模块只定义合同并 fail-closed
 验证，缺失/不符一律 ``PRESET_BASELINE_INVALID``，绝不覆盖既有成果。
+
+Task 5：最小官方候选矩阵（1 IDW + 4 普通克里金 + 2 DSI-like，共 7 候选）
+在与微震官方基线同一生产合同（spatial_kfold folds=5 seed=20260723）下做
+空间折分评估；逐折仅训练拟合，公共有效掩膜交集复算指标，候选失败结构化
+记录。**官方 winner 限定在 ordinary_kriging 候选中按 SELECTION_RULE 选
+最优**（设计定调"重建官方 Kriging 基线"）；IDW/DSI-like 候选全量保留在
+报告中供追溯，绝不参与官方选择。遗留训练/验证分区文件（外部私有，绝不
+入库）只用于把分区溯源事实冻结进基线：逐行精确匹配受控源后只登记计数
+与验证柱身份指纹（规范化 (X,Y) 键 canonical JSON 的 SHA-256），绝不登记
+坐标清单；任何一行对不上即 fail-closed。
 """
 
 from __future__ import annotations
@@ -111,41 +121,381 @@ def load_resistivity_preset(path: Path) -> ResistivityPresetSource:
 
 
 # ---------------------------------------------------------------------------
-# Task 2：官方基线合同（真实数值由 Task 5 评审冻结，本模块只验证不生成）
+# Task 5：最小官方候选矩阵、候选分析、遗留分区事实与基线验证
 # ---------------------------------------------------------------------------
 
 import json  # noqa: E402
 from typing import Any  # noqa: E402
 
+from geomodeling.modeling.dsi_like import DSILikeInterpolator  # noqa: E402
+from geomodeling.modeling.idw import IDWInterpolator  # noqa: E402
+from geomodeling.modeling.kriging import OrdinaryKrigingInterpolator  # noqa: E402
+from geomodeling.modeling.metrics import common_valid_mask, compute_metrics  # noqa: E402
+from geomodeling.modeling.splits import build_spatial_splits  # noqa: E402
 from geomodeling.platform.errors import PRESET_BASELINE_INVALID  # noqa: E402
+from geomodeling.platform.schemas import SpatialValidationSpec  # noqa: E402
+from geomodeling.platform.tables import dumps_canonical  # noqa: E402
 
 PRESET_VERSION = "resistivity-rho-17549/v1"
 
-#: 官方 winner 参数的允许矩阵（与微震同一固定纪律；Task 5 候选分析不得越界）
-VARIOGRAM_MODELS = ("spherical", "exponential", "gaussian")
-NEIGHBOR_COUNTS = (12, 24, 36)
-Z_SCALES = (0.5, 1.0, 2.0)
+#: 最小官方候选矩阵（Task 5 审定；确定性顺序，共 1+4+2=7 候选，不得扩展）
+IDW_CANDIDATE_PARAMETERS = ({"power": 2.0, "neighbor_count": 24},)
+KRIGING_VARIOGRAM_MODELS = ("spherical", "exponential")
+KRIGING_NEIGHBOR_COUNTS = (16, 24)
+DSI_NEIGHBOR_CONNECTIVITIES = (6, 26)
 
-#: 固定空间 5 折交叉验证合同（种子钉死，基线/报告均记录）
+#: 冻结的遗留分区溯源事实（2026-08-08 与真实源逐行匹配核验；只存计数）
+TRAINING_ROWS = 15_827
+VALIDATION_ROWS = 1_722
+TRAINING_COLUMNS = 264
+VALIDATION_COLUMNS = 29
+SPATIAL_COLUMN_OVERLAP = 0
+
+#: 遗留分区文件的标准文件名（仅本地运行从源同目录解析；绝不入库）
+LEGACY_TRAINING_FILENAME = "地下电阻率节点_训练集90.csv"
+LEGACY_VALIDATION_FILENAME = "地下电阻率节点_验证集10.csv"
+
+#: 固定空间 5 折交叉验证合同（与微震官方基线同一生产合同；种子钉死）
 VALIDATION_CONTRACT = {"method": "spatial_kfold", "folds": 5, "seed": 20260723}
 
 GRID_MAX_CELLS = 1_000_000
 
 BASELINE_SCHEMA = "v0.8.0-resistivity-official-baseline/v1"
+REPORT_SCHEMA = "v0.8.0-resistivity-candidate-report/v1"
 DEFAULT_BASELINE_PATH = Path("config/presets/resistivity-official-baseline.json")
 
 SELECTION_RULE = ("rmse_asc", "mae_asc", "r2_desc", "canonical_params_asc")
 
 
-def preset_candidate_matrix() -> list[dict[str, Any]]:
-    """固定 27 成员普通克里金允许矩阵（确定性顺序；不得扩展为插件式搜索空间）。"""
+def kriging_candidate_matrix() -> list[dict[str, Any]]:
+    """官方 winner 的允许集合：4 成员普通克里金子矩阵（确定性顺序）。"""
 
     return [
-        {"variogram_model": model, "neighbor_count": neighbors, "z_scale": z_scale}
-        for model in VARIOGRAM_MODELS
-        for neighbors in NEIGHBOR_COUNTS
-        for z_scale in Z_SCALES
+        {"variogram_model": model, "neighbor_count": neighbors}
+        for model in KRIGING_VARIOGRAM_MODELS
+        for neighbors in KRIGING_NEIGHBOR_COUNTS
     ]
+
+
+def official_candidate_matrix() -> list[dict[str, Any]]:
+    """最小官方候选矩阵：1 IDW + 4 普通克里金 + 2 DSI-like（确定性顺序）。"""
+
+    return (
+        [
+            {"algorithm": "idw", "parameters": dict(params)}
+            for params in IDW_CANDIDATE_PARAMETERS
+        ]
+        + [
+            {"algorithm": "ordinary_kriging", "parameters": params}
+            for params in kriging_candidate_matrix()
+        ]
+        + [
+            {"algorithm": "dsi_like", "parameters": {"neighbor_connectivity": connectivity}}
+            for connectivity in DSI_NEIGHBOR_CONNECTIVITIES
+        ]
+    )
+
+
+@dataclass(frozen=True)
+class PartitionFacts:
+    """遗留分区溯源事实（只含计数与验证柱身份指纹，绝无坐标清单）。"""
+
+    training_rows: int
+    validation_rows: int
+    training_columns: int
+    validation_columns: int
+    spatial_column_overlap: int
+    validation_column_fingerprint: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "training_rows": self.training_rows,
+            "validation_rows": self.validation_rows,
+            "training_columns": self.training_columns,
+            "validation_columns": self.validation_columns,
+            "spatial_column_overlap": self.spatial_column_overlap,
+            "validation_column_fingerprint": self.validation_column_fingerprint,
+        }
+
+
+def _reject_partition(reason: str, extra: dict[str, Any] | None = None) -> None:
+    raise PlatformError(
+        PRESET_BASELINE_INVALID,
+        "遗留分区文件与受控源不一致",
+        {"reason": reason, **(extra or {})},
+        http_status=409,
+    )
+
+
+def _load_legacy_partition_csv(path: Path, role: str) -> pd.DataFrame:
+    """读取遗留分区 CSV 并做结构校验；details 只含逻辑计数，绝无路径。"""
+
+    if not path.is_file():
+        _reject_partition(f"{role}_missing")
+    try:
+        raw = pd.read_csv(path, encoding="utf-8-sig")
+    except Exception as exc:  # noqa: BLE001 - 统一翻译为稳定合同错误
+        _reject_partition(f"{role}_parse", {"error": type(exc).__name__})
+    if tuple(raw.columns) != REQUIRED_COLUMNS:
+        _reject_partition(f"{role}_header")
+    numeric = raw.apply(pd.to_numeric, errors="coerce")
+    if not np.isfinite(numeric.to_numpy(dtype="float64")).all():
+        _reject_partition(f"{role}_nonfinite")
+    if numeric.iloc[:, :3].duplicated().any():
+        _reject_partition(f"{role}_duplicate")
+    return numeric.astype("float64")
+
+
+def _xyz_keys(frame: pd.DataFrame) -> set[tuple[float, float, float]]:
+    return set(map(tuple, frame[["X", "Y", "Z"]].to_numpy(dtype="float64").tolist()))
+
+
+def _xy_keys(frame: pd.DataFrame) -> set[tuple[float, float]]:
+    xy = frame[["X", "Y"]].drop_duplicates().to_numpy(dtype="float64")
+    return set(map(tuple, xy.tolist()))
+
+
+def match_legacy_partition(
+    source: ResistivityPresetSource, training_path: Path, validation_path: Path
+) -> PartitionFacts:
+    """把遗留训练/验证分区与受控源逐行精确匹配（X,Y,Z），返回溯源事实。
+
+    校验：两集每行都属于受控源、行级无交叉、柱级零重叠、并集恰为源全集。
+    任何一行对不上即 fail-closed（``PRESET_BASELINE_INVALID``），绝不硬凑。
+    指纹 = 验证柱规范化 (X,Y) 键排序后 canonical JSON 的 SHA-256。
+    """
+
+    training = _load_legacy_partition_csv(training_path, "legacy_training")
+    validation = _load_legacy_partition_csv(validation_path, "legacy_validation")
+    source_keys = _xyz_keys(source.frame)
+    training_keys = _xyz_keys(training)
+    validation_keys = _xyz_keys(validation)
+    if not training_keys <= source_keys:
+        _reject_partition(
+            "legacy_training_row_not_in_source",
+            {"rows_not_in_source": len(training_keys - source_keys)},
+        )
+    if not validation_keys <= source_keys:
+        _reject_partition(
+            "legacy_validation_row_not_in_source",
+            {"rows_not_in_source": len(validation_keys - source_keys)},
+        )
+    row_overlap = training_keys & validation_keys
+    if row_overlap:
+        _reject_partition("row_overlap", {"rows": len(row_overlap)})
+    union = training_keys | validation_keys
+    if union != source_keys:
+        _reject_partition(
+            "union_mismatch", {"union_rows": len(union), "source_rows": len(source_keys)}
+        )
+    training_columns = _xy_keys(training)
+    validation_columns = _xy_keys(validation)
+    column_overlap = training_columns & validation_columns
+    if column_overlap:
+        _reject_partition("column_overlap", {"columns": len(column_overlap)})
+    normalized = sorted([[x + 0.0, y + 0.0] for x, y in validation_columns])
+    fingerprint = hashlib.sha256(dumps_canonical(normalized).encode("utf-8")).hexdigest()
+    return PartitionFacts(
+        training_rows=len(training_keys),
+        validation_rows=len(validation_keys),
+        training_columns=len(training_columns),
+        validation_columns=len(validation_columns),
+        spatial_column_overlap=len(column_overlap),
+        validation_column_fingerprint=fingerprint,
+    )
+
+
+def verify_partition_facts(facts: PartitionFacts) -> None:
+    """分区事实必须等于冻结合同常量；任何不符 fail-closed。"""
+
+    expected = {
+        "training_rows": TRAINING_ROWS,
+        "validation_rows": VALIDATION_ROWS,
+        "training_columns": TRAINING_COLUMNS,
+        "validation_columns": VALIDATION_COLUMNS,
+        "spatial_column_overlap": SPATIAL_COLUMN_OVERLAP,
+    }
+    actual = facts.to_dict()
+    for key, want in expected.items():
+        if actual[key] != want:
+            _reject_partition(f"partition_{key}", {"expected": want, "actual": actual[key]})
+    fingerprint = facts.validation_column_fingerprint
+    if (
+        not isinstance(fingerprint, str)
+        or len(fingerprint) != 64
+        or any(c not in "0123456789abcdef" for c in fingerprint)
+    ):
+        _reject_partition("partition_fingerprint")
+
+
+@dataclass(frozen=True)
+class ResistivityCandidateReport:
+    """最小官方候选矩阵的空间折分评估报告（纯计算产物，不落库）。"""
+
+    candidates: tuple[dict[str, Any], ...]
+    source_sha256: str
+    validation: dict[str, Any]
+    common_valid_count: int
+    partition: dict[str, Any] | None
+    sha256: str
+
+
+def analyze_resistivity_candidates(
+    source: ResistivityPresetSource, *, partition: PartitionFacts | None = None
+) -> ResistivityCandidateReport:
+    """在已验证源上执行 7 候选矩阵的空间折分评估（纯计算，不落库）。
+
+    复用生产 IDW/普通克里金/DSI-like 插值器与公共有效集指标合同：逐折仅
+    训练集拟合、验证集预测；全部成功候选的公共有效掩膜上交并集后复算指标。
+    候选失败记录结构化 error 并继续（排名时自动排除），绝不静默通过。
+    DSI-like 因「折训练包围盒外验证点 NoData」覆盖率降低属预期语义。
+    """
+
+    frame = source.frame.rename(columns={"X": "x", "Y": "y", "Z": "z", "RHO": "value"})
+    points = frame[["x", "y", "z"]].to_numpy(dtype="float64")
+    values = frame["value"].to_numpy(dtype="float64")
+    folds = build_spatial_splits(
+        points, "3d", SpatialValidationSpec.model_validate(VALIDATION_CONTRACT)
+    )
+
+    interpolators = {
+        "idw": IDWInterpolator(),
+        "ordinary_kriging": OrdinaryKrigingInterpolator(),
+        "dsi_like": DSILikeInterpolator(),
+    }
+    matrix = official_candidate_matrix()
+    predictions_by_candidate: dict[str, dict[int, tuple[float, bool]]] = {}
+    errors: dict[str, str] = {}
+    for entry in matrix:
+        key = dumps_canonical(entry)
+        try:
+            interpolator = interpolators[entry["algorithm"]]
+            validated = interpolator.validate_parameters(entry["parameters"], "3d")
+            per_row: dict[int, tuple[float, bool]] = {}
+            for fold in folds:
+                fitted = interpolator.fit(
+                    points[fold.training_indices], values[fold.training_indices], validated
+                )
+                batch = fitted.predict(points[fold.validation_indices], cancel=lambda: False)
+                for pos, row_index in enumerate(fold.validation_indices):
+                    per_row[int(row_index)] = (float(batch.values[pos]), bool(batch.is_nodata[pos]))
+            predictions_by_candidate[key] = per_row
+        except Exception as exc:  # noqa: BLE001 - 候选失败结构化记录，不中断矩阵
+            errors[key] = type(exc).__name__
+
+    # 公共有效掩膜：全部成功候选的验证预测逐点求交
+    n_rows = len(frame)
+    succeeded = [k for k in predictions_by_candidate if k not in errors]
+    mask_input: dict[str, tuple[np.ndarray, np.ndarray]] = {}
+    for key in succeeded:
+        per_row = predictions_by_candidate[key]
+        preds = np.array([per_row[i][0] for i in range(n_rows)], dtype="float64")
+        nodata = np.array([per_row[i][1] for i in range(n_rows)], dtype="bool")
+        mask_input[key] = (preds, nodata)
+    shared_mask = common_valid_mask(mask_input)
+
+    candidates: list[dict[str, Any]] = []
+    for entry in matrix:
+        key = dumps_canonical(entry)
+        if key in errors:
+            candidates.append(
+                {
+                    "algorithm": entry["algorithm"],
+                    "params": entry["parameters"],
+                    "metrics": None,
+                    "error": errors[key],
+                }
+            )
+            continue
+        preds, nodata = mask_input[key]
+        summary = compute_metrics(values, preds, shared_mask, is_nodata=nodata)
+        metrics = {
+            "rmse": summary.rmse,
+            "mae": summary.mae,
+            "r2": summary.r2,
+            "bias": summary.bias,
+            "coverage": summary.coverage,
+            "common_valid_count": summary.common_valid_count,
+        }
+        candidates.append(
+            {
+                "algorithm": entry["algorithm"],
+                "params": entry["parameters"],
+                "metrics": metrics,
+                "error": None,
+            }
+        )
+
+    partition_dict = partition.to_dict() if partition is not None else None
+    payload = {
+        "schema": REPORT_SCHEMA,
+        "preset_version": PRESET_VERSION,
+        "source_sha256": source.sha256,
+        "validation": VALIDATION_CONTRACT,
+        "selection_rule": list(SELECTION_RULE),
+        "common_valid_count": int(shared_mask.sum()),
+        "partition": partition_dict,
+        "candidates": candidates,
+    }
+    return ResistivityCandidateReport(
+        candidates=tuple(candidates),
+        source_sha256=source.sha256,
+        validation=dict(VALIDATION_CONTRACT),
+        common_valid_count=int(shared_mask.sum()),
+        partition=partition_dict,
+        sha256=hashlib.sha256(dumps_canonical(payload).encode("utf-8")).hexdigest(),
+    )
+
+
+def report_to_json(report: ResistivityCandidateReport) -> dict[str, Any]:
+    """报告落盘形态（canonical JSON 的字典源；sha 与该形态一致）。"""
+
+    return {
+        "schema": REPORT_SCHEMA,
+        "preset_version": PRESET_VERSION,
+        "source_sha256": report.source_sha256,
+        "validation": report.validation,
+        "selection_rule": list(SELECTION_RULE),
+        "common_valid_count": report.common_valid_count,
+        "partition": report.partition,
+        "candidates": list(report.candidates),
+        "sha256": report.sha256,
+    }
+
+
+def rank_resistivity_candidates(
+    candidates: list[dict[str, Any]] | tuple[dict[str, Any], ...],
+    *,
+    algorithm: str | None = None,
+):
+    """排名：仅有限公共指标候选参与；rmse→mae→r2→规范化参数字节序。
+
+    ``algorithm="ordinary_kriging"`` 时只在克里金子集内排名——官方 winner
+    限定在 kriging 候选中选出（设计定调"重建官方 Kriging 基线"）。
+    """
+
+    eligible = []
+    for entry in candidates:
+        if algorithm is not None and entry.get("algorithm") != algorithm:
+            continue
+        metrics = entry.get("metrics")
+        if not metrics:
+            continue
+        rmse = float(metrics.get("rmse", "nan"))
+        mae = float(metrics.get("mae", "nan"))
+        r2 = float(metrics.get("r2", "nan"))
+        if not (np.isfinite(rmse) and np.isfinite(mae) and np.isfinite(r2)):
+            continue
+        eligible.append(entry)
+    return sorted(
+        eligible,
+        key=lambda entry: (
+            float(entry["metrics"]["rmse"]),
+            float(entry["metrics"]["mae"]),
+            -float(entry["metrics"]["r2"]),
+            dumps_canonical(entry["params"]),
+        ),
+    )
 
 
 @dataclass(frozen=True)
@@ -154,13 +504,23 @@ class OfficialBaseline:
 
     schema: str
     source_sha256: str
+    standardized_rows: int
     candidate_report_sha256: str
     validation: dict[str, Any]
     selection_rule: tuple[str, ...]
     winner: dict[str, Any]
     grid: dict[str, Any]
+    partition: dict[str, Any]
     selection_reason: str
     sha256: str
+
+    @property
+    def training_rows(self) -> int:
+        return int(self.partition["training_rows"])
+
+    @property
+    def validation_rows(self) -> int:
+        return int(self.partition["validation_rows"])
 
 
 def load_official_baseline(path: Path = DEFAULT_BASELINE_PATH) -> OfficialBaseline:
@@ -176,11 +536,13 @@ def load_official_baseline(path: Path = DEFAULT_BASELINE_PATH) -> OfficialBaseli
         return OfficialBaseline(
             schema=doc["schema"],
             source_sha256=doc["source_sha256"],
+            standardized_rows=int(doc["standardized_rows"]),
             candidate_report_sha256=doc["candidate_report_sha256"],
             validation=doc["validation"],
             selection_rule=tuple(doc["selection_rule"]),
             winner=doc["winner"],
             grid=doc["grid"],
+            partition=doc["partition"],
             selection_reason=doc["selection_reason"],
             sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
         )
@@ -204,8 +566,13 @@ def _grid_cells(bounds: list[list[float]], resolution: list[float]) -> int:
     return cells
 
 
-def verify_official_baseline(source: ResistivityPresetSource, baseline: OfficialBaseline) -> None:
-    """验证基线与受控源的身份链；任何不匹配 fail-closed。"""
+def verify_official_baseline(
+    source: ResistivityPresetSource,
+    baseline: OfficialBaseline,
+    *,
+    report: ResistivityCandidateReport | None = None,
+) -> None:
+    """验证基线与受控源/候选报告/分区事实的身份链；任何不匹配 fail-closed。"""
 
     def reject(reason: str) -> None:
         raise PlatformError(
@@ -219,6 +586,11 @@ def verify_official_baseline(source: ResistivityPresetSource, baseline: Official
         reject("schema")
     if baseline.source_sha256 != source.sha256:
         reject("source_sha256")
+    if (
+        baseline.standardized_rows != EXPECTED_ROW_COUNT
+        or baseline.standardized_rows != source.row_count
+    ):
+        reject("standardized_rows")
     if tuple(baseline.selection_rule) != SELECTION_RULE:
         reject("selection_rule")
     if baseline.validation != VALIDATION_CONTRACT:
@@ -232,7 +604,7 @@ def verify_official_baseline(source: ResistivityPresetSource, baseline: Official
         reject("candidate_report_sha256")
     winner_params = baseline.winner.get("parameters") if baseline.winner else None
     if baseline.winner.get("algorithm") != "ordinary_kriging" or winner_params not in (
-        preset_candidate_matrix()
+        kriging_candidate_matrix()
     ):
         reject("winner_parameters")
     metrics = baseline.winner.get("metrics") or {}
@@ -259,6 +631,42 @@ def verify_official_baseline(source: ResistivityPresetSource, baseline: Official
         lo, hi = float(bounds[idx][0]), float(bounds[idx][1])
         if lo > float(source.frame[col].min()) or hi < float(source.frame[col].max()):
             reject("grid_bounds_coverage")
+
+    # 分区溯源事实：等于冻结合同常量，且与受控源行数/柱数一致
+    partition = baseline.partition if isinstance(baseline.partition, dict) else {}
+    expected_partition = {
+        "training_rows": TRAINING_ROWS,
+        "validation_rows": VALIDATION_ROWS,
+        "training_columns": TRAINING_COLUMNS,
+        "validation_columns": VALIDATION_COLUMNS,
+        "spatial_column_overlap": SPATIAL_COLUMN_OVERLAP,
+    }
+    for key, want in expected_partition.items():
+        if partition.get(key) != want:
+            reject(f"partition_{key}")
+    fingerprint = partition.get("validation_column_fingerprint")
+    if (
+        not isinstance(fingerprint, str)
+        or len(fingerprint) != 64
+        or any(c not in "0123456789abcdef" for c in fingerprint)
+    ):
+        reject("partition_fingerprint")
+    if TRAINING_ROWS + VALIDATION_ROWS != source.row_count:
+        reject("partition_rows")
+    column_count = int(source.frame.groupby(["X", "Y"], sort=False).ngroups)
+    if TRAINING_COLUMNS + VALIDATION_COLUMNS != column_count:
+        reject("partition_columns")
+
+    if report is not None:
+        if report.source_sha256 != source.sha256:
+            reject("report_source_sha256")
+        if report.sha256 != baseline.candidate_report_sha256:
+            reject("candidate_report_sha256")
+        if report.partition is not None and report.partition != baseline.partition:
+            reject("partition_mismatch")
+        ranked = rank_resistivity_candidates(report.candidates, algorithm="ordinary_kriging")
+        if not ranked or ranked[0]["params"] != winner_params:
+            reject("winner_not_report_top")
 
 
 # ---------------------------------------------------------------------------
@@ -497,6 +905,9 @@ def _create_preset_chain(
             "source_sha256": source.sha256,
             "standardized_sha256": summary["standardized_sha256"],
             "standardized_path": summary["standardized_path"],
+            # 设计 §2：遗留分区溯源事实（计数 + 验证柱指纹 + 零重叠）写入数据
+            # 版本 profile，参与数据版本指纹；坐标清单绝不落库
+            "partition": dict(baseline.partition),
             "quality": {"status": "passed", "confirmed": True},
         }
         experiment_params = {

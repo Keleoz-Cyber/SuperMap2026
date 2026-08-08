@@ -14,7 +14,25 @@
   "recommended_search": {
     "algorithm": "ordinary_kriging",
     "search_mode": "grid",
-    "parameters": { "variogram_model": ["spherical"], "neighbor_count": [16, 24] }
+    "parameters": { "variogram_model": ["spherical", "exponential"], "neighbor_count": [16, 24] }
+  },
+  "search_grids": {
+    "idw": { "power": [1.5, 2.0, 3.0], "neighbor_count": [16, 24, 32] },
+    "ordinary_kriging": {
+      "variogram_model": ["spherical", "exponential"],
+      "neighbor_count": [16, 24]
+    },
+    "dsi_like": {
+      "neighbor_connectivity": [6, 18, 26],
+      "smoothing_strength": [0.25, 0.5, 0.75],
+      "max_iterations": [25, 50]
+    }
+  },
+  "default_grid": {
+    "bounds": [[-160, -40], [220, 660], [-833.0047143, -19.5999]],
+    "resolution": [20, 20, 20],
+    "estimated_cells": 6762,
+    "max_cells": 1000000
   },
   "demo_copy": "内置只读预置案例：17,549 个标准化散点（X/Y/Z/RHO）经源合同校验后 seed 为只读数据版本，直接进入统一案例工作台，不经上传向导。",
   "boundaries": [

@@ -3,9 +3,10 @@
 夹具策略：源 CSV 用 ``test_resistivity_preset.write_resistivity_fixture``
 （确定性合成 17,549 行硬合同）；官方基线是测试内构造的夹具基线对象
 （满足 ``verify_official_baseline`` 全部合同：schema、source_sha256 绑定、
-空间 5 折验证合同、winner 参数在允许矩阵内、有限指标、粗网格覆盖源坐标
-范围）。夹具网格刻意取粗分辨率（约 168 节点），把物化耗时控制在秒级；
-真实数值基线由 Task 5 冻结进 ``config/presets/resistivity-official-baseline.json``，
+空间 5 折验证合同、winner 参数在 kriging 允许矩阵内、有限指标、分区溯源
+计数与指纹格式、粗网格覆盖源坐标范围）。夹具网格刻意取粗分辨率（约 168
+节点），把物化耗时控制在秒级；真实数值基线由 Task 5 冻结进
+``config/presets/resistivity-official-baseline.json``，
 本文件绝不创建该受控文件。
 """
 
@@ -40,11 +41,20 @@ from geomodeling.platform.resistivity_preset import (
 )
 from test_resistivity_preset import write_resistivity_fixture
 
-#: 夹具基线 winner：允许矩阵成员（真实 winner 由 Task 5 候选分析决出）
+#: 夹具基线 winner：kriging 允许矩阵成员（真实 winner 由 Task 5 候选分析决出）
 FIXTURE_WINNER_PARAMETERS = {
     "variogram_model": "spherical",
-    "neighbor_count": 12,
-    "z_scale": 1.0,
+    "neighbor_count": 16,
+}
+
+#: 夹具分区事实：计数与冻结合同一致（夹具源同为 17,549 行/293 柱），指纹仅占位格式
+FIXTURE_PARTITION = {
+    "training_rows": 15_827,
+    "validation_rows": 1_722,
+    "training_columns": 264,
+    "validation_columns": 29,
+    "spatial_column_overlap": 0,
+    "validation_column_fingerprint": "d" * 64,
 }
 
 #: 夹具粗网格分辨率：X/Y/Z 三轴节点约 7×4×6=168，控制物化耗时
@@ -72,6 +82,7 @@ def _fixture_baseline_dict(source) -> dict:
         "schema": BASELINE_SCHEMA,
         "preset_version": PRESET_VERSION,
         "source_sha256": source.sha256,
+        "standardized_rows": 17_549,
         "candidate_report_sha256": "e" * 64,
         "validation": dict(VALIDATION_CONTRACT),
         "selection_rule": list(SELECTION_RULE),
@@ -96,6 +107,7 @@ def _fixture_baseline_dict(source) -> dict:
             "resolution": list(FIXTURE_GRID_RESOLUTION),
             "max_cells": 100_000,
         },
+        "partition": dict(FIXTURE_PARTITION),
         "selection_reason": "测试夹具基线：winner 取允许矩阵成员，粗网格控制物化耗时",
     }
 
@@ -105,11 +117,13 @@ def _fixture_baseline(source) -> OfficialBaseline:
     return OfficialBaseline(
         schema=doc["schema"],
         source_sha256=doc["source_sha256"],
+        standardized_rows=doc["standardized_rows"],
         candidate_report_sha256=doc["candidate_report_sha256"],
         validation=doc["validation"],
         selection_rule=tuple(doc["selection_rule"]),
         winner=doc["winner"],
         grid=doc["grid"],
+        partition=doc["partition"],
         selection_reason=doc["selection_reason"],
         sha256="f" * 64,
     )
@@ -143,13 +157,13 @@ def _selections(runtime, case_id: str = PRESET_CASE_ID) -> list:
 # ---------------------------------------------------------------------------
 
 
-def test_default_baseline_path_is_repo_relative_and_missing_until_task5():
-    """Task 5 才冻结真实基线；默认路径缺失时 load 必须 fail-closed。"""
+def test_default_baseline_path_is_repo_relative_and_frozen_since_task5(tmp_path: Path):
+    """Task 5 已冻结真实基线；缺失路径的 load 必须 fail-closed。"""
 
     assert DEFAULT_BASELINE_PATH == Path("config/presets/resistivity-official-baseline.json")
-    assert not DEFAULT_BASELINE_PATH.is_file(), "Task 2 绝不创建真实基线文件"
+    assert DEFAULT_BASELINE_PATH.is_file(), "Task 5 起真实基线文件已提交入库"
     with pytest.raises(PlatformError) as excinfo:
-        load_official_baseline(DEFAULT_BASELINE_PATH)
+        load_official_baseline(tmp_path / "missing-baseline.json")
     assert excinfo.value.code == PRESET_BASELINE_INVALID
     assert excinfo.value.details["reason"] == "missing_baseline"
     assert excinfo.value.http_status == 409
@@ -215,11 +229,13 @@ def test_verify_baseline_rejects_contract_violations(
     baseline = OfficialBaseline(
         schema=doc["schema"],
         source_sha256=doc["source_sha256"],
+        standardized_rows=doc["standardized_rows"],
         candidate_report_sha256=doc["candidate_report_sha256"],
         validation=doc["validation"],
         selection_rule=tuple(doc["selection_rule"]),
         winner=doc["winner"],
         grid=doc["grid"],
+        partition=doc["partition"],
         selection_reason=doc["selection_reason"],
         sha256="f" * 64,
     )
@@ -236,11 +252,13 @@ def test_verify_baseline_rejects_grid_not_covering_source(source_path: Path):
     baseline = OfficialBaseline(
         schema=doc["schema"],
         source_sha256=doc["source_sha256"],
+        standardized_rows=doc["standardized_rows"],
         candidate_report_sha256=doc["candidate_report_sha256"],
         validation=doc["validation"],
         selection_rule=tuple(doc["selection_rule"]),
         winner=doc["winner"],
         grid=doc["grid"],
+        partition=doc["partition"],
         selection_reason=doc["selection_reason"],
         sha256="f" * 64,
     )
@@ -284,6 +302,14 @@ def test_seed_resistivity_creates_read_only_preset_chain(runtime, source_path: P
         assert mapping["coordinate_kind"] == "local_linear"
         # RHO 单位待来源确认：诚实表述，绝不写未确认单位
         assert mapping["value_unit"] == "RHO 单位待来源确认"
+        # 设计 §2：分区溯源事实（计数 + 指纹）写入数据版本 profile
+        partition = profile["partition"]
+        assert partition["training_rows"] == 15_827
+        assert partition["validation_rows"] == 1_722
+        assert partition["training_columns"] == 264
+        assert partition["validation_columns"] == 29
+        assert partition["spatial_column_overlap"] == 0
+        assert len(partition["validation_column_fingerprint"]) == 64
 
         candidate = session.get(tables.CandidateResult, seeded.official_result.result_id)
         assert candidate.status == "succeeded"
@@ -407,11 +433,15 @@ def test_seed_failure_leaves_no_partial_state(runtime, source_path: Path, monkey
     assert not (runtime.settings.uploads_dir / PRESET_CASE_ID).exists()
 
 
-def test_seed_without_baseline_fails_closed_when_default_missing(runtime, source_path: Path):
-    """默认基线文件缺失（Task 5 前）：seed 必须 fail-closed 且不留残留。"""
+def test_seed_without_baseline_fails_closed_when_missing(
+    runtime, source_path: Path, tmp_path: Path
+):
+    """显式基线路径缺失：seed 必须 fail-closed 且不留残留。"""
 
     with pytest.raises(PlatformError) as excinfo:
-        seed_resistivity_preset(runtime, source_path=source_path)
+        seed_resistivity_preset(
+            runtime, source_path=source_path, baseline_path=tmp_path / "missing-baseline.json"
+        )
     assert excinfo.value.code == PRESET_BASELINE_INVALID
     assert excinfo.value.details["reason"] == "missing_baseline"
     with runtime.session() as session:
@@ -425,11 +455,13 @@ def test_seed_rejects_baseline_bound_to_other_source(runtime, source_path: Path)
     baseline = OfficialBaseline(
         schema=doc["schema"],
         source_sha256=doc["source_sha256"],
+        standardized_rows=doc["standardized_rows"],
         candidate_report_sha256=doc["candidate_report_sha256"],
         validation=doc["validation"],
         selection_rule=tuple(doc["selection_rule"]),
         winner=doc["winner"],
         grid=doc["grid"],
+        partition=doc["partition"],
         selection_reason=doc["selection_reason"],
         sha256="f" * 64,
     )
@@ -627,11 +659,13 @@ def test_public_payloads_never_leak_absolute_paths(seeded_client, source_path: P
     baseline = OfficialBaseline(
         schema=doc["schema"],
         source_sha256=doc["source_sha256"],
+        standardized_rows=doc["standardized_rows"],
         candidate_report_sha256=doc["candidate_report_sha256"],
         validation=doc["validation"],
         selection_rule=tuple(doc["selection_rule"]),
         winner=doc["winner"],
         grid=doc["grid"],
+        partition=doc["partition"],
         selection_reason=doc["selection_reason"],
         sha256="f" * 64,
     )
@@ -713,6 +747,8 @@ def test_cli_seed_resistivity_missing_baseline_fails_closed(tmp_path: Path):
             "seed-resistivity",
             "--source",
             str(source_path),
+            "--baseline",
+            str(tmp_path / "missing-baseline.json"),
             "--data-dir",
             str(tmp_path / "cli-runtime"),
         ],
