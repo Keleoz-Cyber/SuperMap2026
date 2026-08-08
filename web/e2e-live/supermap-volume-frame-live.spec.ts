@@ -1,21 +1,24 @@
 import { expect, test } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { syntheticLegacyGridCsv } from './fixtures/legacyGrid'
 
 /**
  * v0.6.1 Task 9 live 验收 + v0.7.0 第二批 Task 8：隔离 SuperMap3D iframe 运行时 +
  * gmp-supermap-volume/v2 协议（完整状态 + revision + 回执）。
+ * v0.8.0 Task 10：旧 legacy 电阻率渲染端点类型化退役（410），本规格的渲染源
+ * 切换为统一 candidate_result 链（与 supermap-native-volume-live 同一基准种子）。
  *
- * 真实链路：便携合成规则网格 CSV → Task 5 CLI 原子登记（隔离 GEOMODELING_DATA_DIR）
- * → 真实 FastAPI capability/POST/manifest（Task 6/7）→ 轻量 parent harness 打开
- * /supermap-volume-frame/index.html 并收发协议消息。断言：
+ * 真实链路：seed_volume_benchmarks.py 在隔离 GEOMODELING_DATA_DIR 落库
+ * case/dataset/experiment/succeeded run/succeeded candidate + grid.npz（绝不
+ * 重跑插值）→ 真实 FastAPI capability/POST/manifest（/api/results/<候选> 统一
+ * 路由）→ 轻量 parent harness 打开 /supermap-volume-frame/index.html 并收发
+ * 协议消息。断言：
  *
  *   FRAME_READY（contextType=2）、RENDER_STATE.phase==rendered、identity 与
- *   source/grid/NetCDF 哈希一致、layerType==VoxelGridLayer3D、mode==volume、
+ *   candidate/grid/NetCDF 哈希一致、layerType==VoxelGridLayer3D、mode==volume、
  *   无 pageerror/unhandledrejection/资源 4xx/5xx、画布有非背景像素，
  *   filter/opacity/slice/contour 各产生超过静帧噪声的像素变化。
  *
@@ -39,8 +42,8 @@ function assertIsolatedDataDir(): string {
   return dir
 }
 
-// 便携合成规则网格改自共享夹具（fixtures/legacyGrid.ts）：与 legacy-volume-live
-// 产品页门共用同一 CSV 字节，保证共享隔离库下登记幂等。
+// 渲染源种子：与 supermap-native-volume-live 共用 fixtures/seed_volume_benchmarks.py
+// （确定性 32³/64³ 基准网格的完整候选链，同一隔离库下幂等）；本规格消费 32³ 条目。
 
 // 轻量 parent harness：同一路由满足（route.fulfill）的同源空页，内嵌 iframe 并执行
 // §2.4 父侧协议校验（origin/source/protocol/requestId），收到的不合规消息记入 errors。
@@ -166,45 +169,51 @@ async function waitFrames(target: any, frames: number): Promise<void> {
   )
 }
 
-let registration: { grid_sha256: string; shape: number[] } | null = null
+interface BenchmarkSeed {
+  candidate_id: string
+  case_id: string
+  dataset_version_id: string
+  experiment_id: string
+  run_id: string
+  grid_sha256: string
+  shape: number[]
+  value_range: [number, number]
+  nodata_count: number
+  property_name: string
+  units: string
+  variable_name: string
+}
+
+let seed: BenchmarkSeed | null = null
 
 test.beforeAll(() => {
   const dataDir = assertIsolatedDataDir()
-  const fixtureDir = path.join(dataDir, 'live-fixtures')
-  mkdirSync(fixtureDir, { recursive: true })
-  const csvPath = path.join(fixtureDir, 'legacy-resistivity-grid.csv')
-  writeFileSync(csvPath, syntheticLegacyGridCsv(), 'utf8')
-  // Task 5 真实登记链路：便携 CSV → 原子登记 render-sources/builtin_legacy/resistivity
-  const stdout = execFileSync(
+  // 确定性基准候选链（幂等）：case → dataset → experiment → succeeded run →
+  // succeeded candidate + grid.npz，候选 POST 渲染资产走真实链路而绝不重跑插值
+  execFileSync(
     process.env.PYTHON ?? 'python',
-    [
-      '-m',
-      'geomodeling.render_cli',
-      'import-csv',
-      '--source-id',
-      'resistivity',
-      '--csv',
-      csvPath,
-      '--x',
-      'x',
-      '--y',
-      'y',
-      '--z',
-      'z',
-      '--value',
-      'value',
-      '--property-name',
-      'RHO',
-      '--units',
-      'ohm-m',
-      '--data-dir',
-      dataDir,
-    ],
-    { cwd: REPO_ROOT, encoding: 'utf8', timeout: 120_000 },
+    [path.join(REPO_ROOT, 'web', 'e2e-live', 'fixtures', 'seed_volume_benchmarks.py')],
+    {
+      cwd: REPO_ROOT,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        GEOMODELING_DATA_DIR: dataDir,
+        PYTHONPATH: path.join(REPO_ROOT, 'src'),
+      },
+      timeout: 120_000,
+    },
   )
-  registration = JSON.parse(stdout)
-  expect(registration!.grid_sha256).toMatch(/^[0-9a-f]{64}$/)
-  expect(registration!.shape).toEqual([6, 7, 8])
+  const seedDoc = JSON.parse(
+    readFileSync(path.join(dataDir, 'live-fixtures', 'volume-benchmarks.json'), 'utf8'),
+  )
+  expect(seedDoc.schema).toBe('v0.6.1-volume-benchmarks/v1')
+  const entry = seedDoc.sizes?.['32']
+  expect(entry, '种子缺少 32³ 条目').toBeTruthy()
+  expect(entry.grid_sha256).toMatch(/^[0-9a-f]{64}$/)
+  expect(entry.shape).toEqual([32, 32, 32])
+  expect(entry.candidate_id).toBeTruthy()
+  seed = entry
 })
 
 interface RenderStateWire {
@@ -220,18 +229,26 @@ interface RenderStateWire {
   contourValue?: number
 }
 
-function makeState(revision: number, overrides: Partial<RenderStateWire> = {}): RenderStateWire {
+// 初始渲染状态：过滤范围与色带逐字取自真实资产 manifest 值域（候选链网格
+// 值域与旧 legacy 网格不同，绝不硬编码旧 RHO 区间）
+function makeState(
+  range: [number, number],
+  revision: number,
+  overrides: Partial<RenderStateWire> = {},
+): RenderStateWire {
+  const [vmin, vmax] = range
+  const at = (f: number) => vmin + (vmax - vmin) * f
   return {
     revision,
     mode: 'volume',
-    filter: { min: 10, max: 610 },
+    filter: { min: vmin, max: vmax },
     opacity: 1,
     colorTransferFunction: [
-      { value: 10, color: '#1a40d9' },
-      { value: 160, color: '#1acccc' },
-      { value: 310, color: '#f2d926' },
-      { value: 460, color: '#f2591a' },
-      { value: 610, color: '#a60d1a' },
+      { value: at(0.0), color: '#1a40d9' },
+      { value: at(0.25), color: '#1acccc' },
+      { value: at(0.5), color: '#f2d926' },
+      { value: at(0.75), color: '#f2591a' },
+      { value: at(1.0), color: '#a60d1a' },
     ],
     lighting: true,
     gradientOpacity: true,
@@ -243,31 +260,34 @@ function makeState(revision: number, overrides: Partial<RenderStateWire> = {}): 
 test('隔离 SuperMap 帧：真实 NetCDF 体渲染 + 协议控制像素响应', async ({ page, request }) => {
   test.setTimeout(300_000)
   const t0 = Date.now()
+  const candidateId = seed!.candidate_id
 
-  // --- 真实 FastAPI：capability → POST（Task 6/7）→ manifest -----------------
+  // --- 真实 FastAPI：capability → POST → manifest（统一 candidate_result 链） ---
   const health = await request.get('/api/health')
   expect(health.ok()).toBe(true)
 
-  const capResp = await request.get('/api/cases/resistivity/render-capability')
+  const capResp = await request.get(`/api/results/${candidateId}/render-capability`)
   expect(capResp.ok()).toBe(true)
   const capability = await capResp.json()
   expect(capability.supported).toBe(true)
-  expect(capability.source_kind).toBe('builtin_legacy')
-  expect(capability.source_id).toBe('resistivity')
+  expect(capability.source_kind).toBe('candidate_result')
+  expect(capability.source_id).toBe(candidateId)
   expect(capability.dimension).toBe('3d')
-  expect(capability.property_name).toBe('RHO')
+  expect(capability.property_name).toBe(seed!.property_name)
   expect(capability.display_transform?.contract).toBe('wgs84_display_anchor_v1')
 
-  // legacy 资产是套件共享单例（legacy-volume-live 产品页门也会确保该资产）：
+  // 候选资产是套件共享单例（supermap-native-volume-live 产品页门也会确保该资产）：
   // 首个创建返回 201，幂等返回 200，并发创建返回 409（creating）后轮询 ready。
   // 「首成 201/幂等 200/creating 409」的严格时序由后端 API 测试确定性覆盖，
   // live 门只断言最终 ready 与身份一致。
   let asset: any = null
-  const postResp = await request.post('/api/cases/resistivity/render-assets/netcdf', { data: {} })
+  const postResp = await request.post(`/api/results/${candidateId}/render-assets/netcdf`, {
+    data: {},
+  })
   if (postResp.status() === 409) {
     const pollStart = Date.now()
     while (Date.now() - pollStart < 60_000) {
-      const st = await request.get('/api/cases/resistivity/render-assets/netcdf')
+      const st = await request.get(`/api/results/${candidateId}/render-assets/netcdf`)
       if (st.ok()) {
         const body = await st.json()
         if (body.status === 'ready') {
@@ -282,11 +302,11 @@ test('隔离 SuperMap 帧：真实 NetCDF 体渲染 + 协议控制像素响应',
     expect([200, 201]).toContain(postResp.status())
     asset = await postResp.json()
   }
-  expect(asset, 'legacy 资产必须达到 ready').toBeTruthy()
+  expect(asset, '候选资产必须达到 ready').toBeTruthy()
   expect(asset.id).toMatch(/^nc-[0-9a-f]{32}$/)
   expect(asset.status).toBe('ready')
   expect(asset.renderer).toBe('supermap_voxelgrid_netcdf')
-  expect(asset.grid_sha256).toBe(registration!.grid_sha256)
+  expect(asset.grid_sha256).toBe(seed!.grid_sha256)
   expect(asset.netcdf_sha256).toMatch(/^[0-9a-f]{64}$/)
   expect(asset.manifest_url).toBe(`/api/render-assets/${asset.id}/manifest`)
   expect(asset.netcdf_url).toBe(`/api/render-assets/${asset.id}/volume.nc`)
@@ -294,14 +314,15 @@ test('隔离 SuperMap 帧：真实 NetCDF 体渲染 + 协议控制像素响应',
   const manifestResp = await request.get(asset.manifest_url)
   expect(manifestResp.ok()).toBe(true)
   const manifest = await manifestResp.json()
-  expect(manifest.source_kind).toBe('builtin_legacy')
-  expect(manifest.source_id).toBe('resistivity')
+  expect(manifest.source_kind).toBe('candidate_result')
+  expect(manifest.source_id).toBe(candidateId)
   expect(manifest.grid_sha256).toBe(asset.grid_sha256)
   expect(manifest.netcdf_sha256).toBe(asset.netcdf_sha256)
-  expect(manifest.variable_name).toBe('RHO')
+  expect(manifest.variable_name).toBe(seed!.variable_name)
   expect(manifest.dimension_names).toEqual(['x', 'y', 'z'])
   expect(manifest.display_transform).toEqual(capability.display_transform)
-  const [vmin, vmax] = manifest.encoded_value_range ?? manifest.value_range
+  const valueRange: [number, number] = manifest.encoded_value_range ?? manifest.value_range
+  const [vmin, vmax] = valueRange
   expect(vmax).toBeGreaterThan(vmin)
 
   // --- parent harness + 协议监听 -------------------------------------------
@@ -354,7 +375,7 @@ test('隔离 SuperMap 帧：真实 NetCDF 体渲染 + 协议控制像素响应',
   // INIT：真实资产 + capability displayTransform + 完整初始渲染状态（v2）
   await page.evaluate(
     ([a, t, st]) => (window as any).__send({ type: 'INIT', asset: a, displayTransform: t, state: st }),
-    [asset, capability.display_transform, makeState(1)],
+    [asset, capability.display_transform, makeState(valueRange, 1)],
   )
   await page.waitForFunction(
     () =>
@@ -371,9 +392,9 @@ test('隔离 SuperMap 帧：真实 NetCDF 体渲染 + 协议控制像素响应',
   const rendered = states.find((m: any) => m.phase === 'rendered')
   expect(rendered).toBeTruthy()
   const expectedIdentity = {
-    sourceKind: 'builtin_legacy',
-    sourceId: 'resistivity',
-    gridSha256: registration!.grid_sha256,
+    sourceKind: 'candidate_result',
+    sourceId: candidateId,
+    gridSha256: seed!.grid_sha256,
     netcdfSha256: asset.netcdf_sha256,
   }
   expect(rendered.identity).toEqual(expectedIdentity)
@@ -412,7 +433,7 @@ test('隔离 SuperMap 帧：真实 NetCDF 体渲染 + 协议控制像素响应',
     const before: number = await page.evaluate(() => (window as any).__harness.received.length)
     await page.evaluate(
       ([m, c]) => (window as any).__send({ ...m, commandId: c }),
-      [{ type: 'APPLY_RENDER_STATE', state: makeState(revision, overrides) }, commandId] as const,
+      [{ type: 'APPLY_RENDER_STATE', state: makeState(valueRange, revision, overrides) }, commandId] as const,
     )
     await page.waitForFunction(
       ([n, cmd, rev]) =>
@@ -492,7 +513,7 @@ test('隔离 SuperMap 帧：真实 NetCDF 体渲染 + 协议控制像素响应',
     const before: number = await page.evaluate(() => (window as any).__harness.received.length)
     await page.evaluate(
       (m) => (window as any).__send(m),
-      { type: 'APPLY_RENDER_STATE', commandId: 'live-cmd-stale', state: makeState(1, { opacity: 0.01 }) },
+      { type: 'APPLY_RENDER_STATE', commandId: 'live-cmd-stale', state: makeState(valueRange, 1, { opacity: 0.01 }) },
     )
     await waitFrames(frame, 20)
     const staleApplied = await receivedOf(
@@ -739,25 +760,29 @@ interface AxisMeasurement {
 
 test('真实 SDK 单轴切片硬门：X/Y/Z 均能只显示一个切面', async ({ page, request }) => {
   test.setTimeout(600_000)
-  // --- 真实 FastAPI：capability + 资产 + manifest（与产品同一资产链） ---------
+  // --- 真实 FastAPI：capability + 资产 + manifest（统一 candidate_result 资产链） -
+  const candidateId = seed!.candidate_id
   const health = await request.get('/api/health')
   expect(health.ok()).toBe(true)
-  const capResp = await request.get('/api/cases/resistivity/render-capability')
+  const capResp = await request.get(`/api/results/${candidateId}/render-capability`)
   expect(capResp.ok()).toBe(true)
   const capability = await capResp.json()
   expect(capability.supported).toBe(true)
+  expect(capability.source_kind).toBe('candidate_result')
 
   let asset: any = null
-  const statusResp = await request.get('/api/cases/resistivity/render-assets/netcdf')
+  const statusResp = await request.get(`/api/results/${candidateId}/render-assets/netcdf`)
   if (statusResp.ok()) {
     asset = await statusResp.json()
   } else {
-    const postResp = await request.post('/api/cases/resistivity/render-assets/netcdf', { data: {} })
+    const postResp = await request.post(`/api/results/${candidateId}/render-assets/netcdf`, {
+      data: {},
+    })
     expect([200, 201]).toContain(postResp.status())
     asset = await postResp.json()
   }
   expect(asset.status).toBe('ready')
-  expect(asset.grid_sha256).toBe(registration!.grid_sha256)
+  expect(asset.grid_sha256).toBe(seed!.grid_sha256)
   const manifestResp = await request.get(asset.manifest_url)
   expect(manifestResp.ok()).toBe(true)
   const manifest = await manifestResp.json()

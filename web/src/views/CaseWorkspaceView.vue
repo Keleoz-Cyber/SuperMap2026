@@ -6,7 +6,6 @@ import { ApiError, fetchCaseWorkspace, fetchProfessionalDiagnostics } from '../a
 import type { CaseWorkspaceSummary, ProfessionalDiagnosticListItem } from '../api/types'
 import DataPreparationPanel from '../components/cases/DataPreparationPanel.vue'
 import PageNavigation from '../components/navigation/PageNavigation.vue'
-import RhoCaseView from './RhoCaseView.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -53,9 +52,6 @@ const officialAbnormal = computed(
     !!workspace.value &&
     workspace.value.capabilities.official_result &&
     workspace.value.official_result === null,
-)
-const isResistivity = computed(
-  () => workspace.value?.workspace_kind === 'builtin_legacy' && caseId.value === 'resistivity',
 )
 const mapping = computed(() => {
   const profile = workspace.value?.primary_dataset?.profile as
@@ -415,9 +411,6 @@ watch(caseId, (next, prev) => {
               </span>
             </div>
           </div>
-          <div v-if="isResistivity" class="rho-block" data-test="workspace-rho-block">
-            <RhoCaseView embedded />
-          </div>
         </section>
       </template>
     </div>
@@ -476,9 +469,6 @@ watch(caseId, (next, prev) => {
 .provenance-line {
   color: #7f8ca0;
   font-size: 12px;
-}
-.rho-block {
-  margin-top: 10px;
 }
 .validated-datasets {
   margin-top: 10px;

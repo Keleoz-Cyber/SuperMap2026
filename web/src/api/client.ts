@@ -29,8 +29,6 @@ import type {
   ExportRecord,
   FormalSelectionRecord,
   FormalSelectionsResponse,
-  LegacyRenderSourceImportParams,
-  LegacyRenderSourceRegistration,
   PlatformCaseRecord,
   ProfessionalConfirmationPayload,
   ProfessionalConfirmationRecord,
@@ -46,12 +44,9 @@ import type {
   SliceAxis,
   ResultMetadata,
   ResultPreview,
-  RhoCaseDetail,
-  RhoPoints,
   RunRecord,
   SliceResponse,
   VariogramEvidence,
-  VoxelCells,
 } from './types'
 
 const BASE = '/api'
@@ -121,20 +116,8 @@ export function fetchCases(): Promise<CasesResponse> {
   return getJson<CasesResponse>('/cases')
 }
 
-export function fetchRhoCase(): Promise<RhoCaseDetail> {
-  return getJson<RhoCaseDetail>('/cases/resistivity')
-}
-
 export function fetchRhoPublishStatus(): Promise<PublishStatus> {
   return getJson<PublishStatus>('/cases/resistivity/publish-status')
-}
-
-export function fetchRhoPoints(decimate = 4): Promise<RhoPoints> {
-  return getJson<RhoPoints>(`/cases/resistivity/points?decimate=${decimate}`)
-}
-
-export function fetchVoxelCells(): Promise<VoxelCells> {
-  return getJson<VoxelCells>('/cases/resistivity/voxel-cells')
 }
 
 // ---------------------------------------------------------- v0.4 platform
@@ -409,40 +392,6 @@ export function createRenderAssetSliceExport(
   form.append('image', png, 'slice.png')
   // 不手动设置 Content-Type，由浏览器生成 multipart 边界
   return requestJson<ExportRecord>(`/render-assets/${assetId}/slice-exports`, {
-    method: 'POST',
-    body: form,
-  })
-}
-
-export function fetchLegacyRhoRenderCapability(): Promise<RenderCapability> {
-  return getJson<RenderCapability>('/cases/resistivity/render-capability')
-}
-
-export function createLegacyRhoRenderAsset(retryFailed = false): Promise<RenderAssetRecord> {
-  return postJson<RenderAssetRecord>('/cases/resistivity/render-assets/netcdf', {
-    retry_failed: retryFailed,
-  })
-}
-
-export function fetchLegacyRhoRenderAsset(): Promise<RenderAssetRecord> {
-  return getJson<RenderAssetRecord>('/cases/resistivity/render-assets/netcdf')
-}
-
-// 产品内显式导入入口：multipart CSV + 显式列名/属性名/单位；
-// 不设置 Content-Type，由浏览器生成 multipart 边界（与 uploadDataset 同一约定）
-export function importLegacyRhoRenderSource(
-  file: File,
-  params: LegacyRenderSourceImportParams,
-): Promise<LegacyRenderSourceRegistration> {
-  const form = new FormData()
-  form.append('file', file)
-  form.append('x_column', params.xColumn)
-  form.append('y_column', params.yColumn)
-  form.append('z_column', params.zColumn)
-  form.append('value_column', params.valueColumn)
-  form.append('property_name', params.propertyName)
-  form.append('units', params.units)
-  return requestJson<LegacyRenderSourceRegistration>('/cases/resistivity/render-sources/import', {
     method: 'POST',
     body: form,
   })

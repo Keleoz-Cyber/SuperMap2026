@@ -33,12 +33,8 @@ interface CaseMeta {
 }
 
 const CASE_META: Record<string, CaseMeta> = {
-  resistivity: {
-    icon: Odometer,
-    enterable: true,
-    badgeType: 'success',
-    badgeText: '内置 v0.3.1 稳定案例',
-  },
+  // v0.8.0：旧 legacy 电阻率卡类型化退役（后端绝不再产出），电阻率走
+  // builtin_preset 分支；此处只保留仍在产的 legacy 卡元数据
   gas: {
     icon: Lock,
     enterable: false,

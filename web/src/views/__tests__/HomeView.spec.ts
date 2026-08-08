@@ -68,24 +68,6 @@ const PRESET_CASE: CaseSummary = {
   links: { detail: null, publish_status: null },
 }
 
-const RESISTIVITY_CARD: CaseSummary = {
-  case_id: 'resistivity',
-  title: '地下电阻率',
-  data_form: '三维 X/Y/Z/RHO（局部工程坐标）',
-  status: 'active',
-  coordinate: '局部工程坐标，EPSG 未确认',
-  unit_note: 'RHO 单位待来源确认',
-  source_kind: 'builtin_legacy',
-  workspace_kind: 'builtin_legacy',
-  capabilities: {
-    data_summary: true,
-    experiments: false,
-    official_result: false,
-    native_volume: true,
-  },
-  links: { detail: '/api/cases/resistivity', publish_status: null },
-}
-
 async function mountHome(cases: CaseSummary[]) {
   vi.mocked(client.fetchCases).mockResolvedValue({ cases })
   vi.mocked(client.fetchRhoPublishStatus).mockRejectedValue(new Error('iServer offline'))
@@ -180,7 +162,8 @@ describe('HomeView featured_result 入口', () => {
 
 describe('HomeView v0.7.0 工作台入口', () => {
   it('routes every enterable card to its workspace and gives a preset an official-result shortcut', async () => {
-    const { wrapper, router } = await mountHome([PRESET_CASE, RESISTIVITY_CARD])
+    // v0.8.0：旧 legacy 电阻率卡退役，第二张可进入卡由电阻率预置卡承担
+    const { wrapper, router } = await mountHome([PRESET_CASE, RESISTIVITY_PRESET_CARD])
 
     // 无 DAT 文案；预置徽标为 CSV 预置说明
     expect(wrapper.text()).not.toContain('导入微震 DAT')

@@ -83,113 +83,6 @@ export interface CasesResponse {
   cases: CaseSummary[]
 }
 
-export interface ModelMetrics {
-  model?: string
-  n_total: number
-  n_valid: number
-  n_nodata: number
-  coverage_rate: number
-  mae: number
-  rmse: number
-  r2: number
-  median_abs_error: number
-  mean_abs_relative_error: number
-  median_abs_relative_error: number
-  log10_rmse: number
-  bias: number
-  p90_abs_error: number
-}
-
-export type ModelRole = 'default' | 'comparison' | 'candidate' | 'not_formal_candidate' | string
-
-export interface ModelEntry {
-  model_id: string
-  display_name: string
-  method: string
-  resolution_xy_m: number
-  neighbor_count: number
-  role: ModelRole
-  parameters: Record<string, string | number>
-  metrics: ModelMetrics | null
-}
-
-export interface SupermapResult {
-  dataset: string
-  model_id?: string
-  dataset_type: string
-  method?: string
-  resolution_xy_m?: number
-  neighbor_count?: number
-  rows?: number
-  columns?: number
-  bands?: number
-  value_min?: number
-  value_max?: number
-  status: string
-  result_category: string
-  openable?: boolean
-  threshold_demo?: {
-    min_visible_rho: number
-    note: string
-  }
-  manual_evidence?: string[]
-  error_evidence?: string
-}
-
-export interface IssueEntry {
-  issue_id?: string
-  severity: string
-  code?: string
-  message?: string
-  description?: string
-  scope?: string
-  evidence?: string
-  blocking?: boolean
-  current_handling?: string
-}
-
-export interface DatasetSummary {
-  name: string
-  rows: number
-  fields?: string
-  spatial_columns?: number
-}
-
-export interface RhoCaseDetail {
-  case_id: string
-  title: string
-  coordinate: {
-    type: string
-    epsg: number | null
-    note: string
-  }
-  datasets: DatasetSummary[]
-  validation_split: {
-    spatial_column_overlap: number
-    seed: string
-  }
-  metric_expectations: {
-    common_valid: number
-    common_nodata: number
-    coverage_rate: number
-  }
-  models: ModelEntry[]
-  baseline_comparison: {
-    passed: boolean
-    differences: unknown[]
-    models_checked: number
-  } | null
-  metric_source: string
-  supermap: {
-    version: string
-    datasource_alias: string
-    dataset_api: string
-    results: SupermapResult[]
-  }
-  views: Array<Record<string, unknown>>
-  issues: IssueEntry[]
-}
-
 export interface ServiceInfo {
   name: string
   service_type: string
@@ -288,54 +181,6 @@ export interface VolumeServicePlan {
   available: boolean
   layers: Array<{ name: string | null; layer3DType: string | null; visible: boolean | null }>
   note: string
-}
-
-export interface VoxelCells {
-  case_id: string
-  result_id: string
-  source: string
-  local_cache_label: string
-  local_cache_present: boolean
-  local_cache_note: string
-  service_url: string
-  tile_files: number
-  fetched_bytes: number
-  count: number
-  value_field: string
-  unit_note: string
-  x: number[]
-  y: number[]
-  z: number[]
-  values: number[]
-  x_range: [number, number]
-  y_range: [number, number]
-  z_range: [number, number]
-  value_range: [number, number]
-  registry_facts: {
-    rows_columns_bands: Array<number | null>
-    cell_exact_value_range: Array<number | null>
-    note: string
-  }
-}
-
-export interface RhoPoints {
-  case_id: string
-  source: string
-  source_label: string
-  sha256: string
-  decimate: number
-  count: number
-  served: number
-  value_field: string
-  unit_note: string
-  x: number[]
-  y: number[]
-  z: number[]
-  values: number[]
-  value_range: [number, number]
-  x_range: [number, number]
-  y_range: [number, number]
-  z_range: [number, number]
 }
 
 // ---------------- v0.4 通用建模平台契约（与后端 schemas 一一对应） ----------------
@@ -1194,28 +1039,6 @@ export interface RenderAssetRecord {
   manifest_url: string | null
   netcdf_url: string | null
   error: RenderAssetError | null
-}
-
-// legacy 渲染源导入响应的登记身份：artifact_dir 为相对工件目录身份，绝无绝对路径
-export interface LegacyRenderSourceRegistration {
-  source_kind: 'builtin_legacy'
-  source_id: string
-  grid_sha256: string
-  property_name: string
-  units: string
-  shape: number[]
-  artifact_dir: string
-  import_source_sha256: string
-}
-
-// 导入请求参数：列名/属性名/单位显式传入（multipart 表单同名字段）
-export interface LegacyRenderSourceImportParams {
-  xColumn: string
-  yColumn: string
-  zColumn: string
-  valueColumn: string
-  propertyName: string
-  units: string
 }
 
 // 子帧 RENDER_STATE 携带的渲染身份（camelCase，§2.4 协议字段名逐字一致）

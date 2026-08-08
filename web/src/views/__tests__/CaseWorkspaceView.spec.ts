@@ -47,8 +47,6 @@ function workspaceOf(kind: CaseWorkspaceSummary['workspace_kind']): CaseWorkspac
   return base
 }
 
-const RHO_STUB = { name: 'RhoCaseView', template: '<div data-test="rho-embedded" />', props: ['embedded'] }
-
 async function mountWorkspace(path: string) {
   const router = createRouter({
     history: createMemoryHistory(),
@@ -78,7 +76,6 @@ async function mountWorkspace(path: string) {
   const wrapper = mount(CaseWorkspaceView, {
     global: {
       plugins: [router, ElementPlus],
-      stubs: { RhoCaseView: RHO_STUB },
     },
   })
   await flushPromises()
@@ -123,11 +120,13 @@ describe('CaseWorkspaceView', () => {
   })
 
   it('legacy: no new-experiment command (experiments capability false)', async () => {
+    // v0.8.0 Task 10：旧 legacy 电阻率页（含内嵌 RhoCaseView 块）已从工作台
+    // 摘除；剩余 legacy 工作台（gas）只读展示，绝不出现旧页面嵌入块
     vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(workspaceOf('builtin_legacy'))
-    const { wrapper } = await mountWorkspace('/cases/resistivity')
+    const { wrapper } = await mountWorkspace('/cases/gas')
     expect(wrapper.find('[data-test="new-experiment"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="workspace-rho-block"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="rho-embedded"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="workspace-rho-block"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="rho-embedded"]').exists()).toBe(false)
   })
 
   it('PRESET_NOT_INITIALIZED renders typed error with home action, never upload', async () => {
