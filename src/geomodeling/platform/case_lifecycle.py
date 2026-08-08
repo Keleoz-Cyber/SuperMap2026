@@ -690,7 +690,7 @@ class CaseLifecycleService:
             if cand and cand.grid_path:
                 raw_files.append(("results", Path(cand.grid_path)))
             if cand and cand.predictions_path:
-                raw_files.append(("results", Path(cand.predictions_path)))
+                raw_files.append(("experiments", Path(cand.predictions_path)))
 
             prof_dir = settings.professional_result_dir(cid)
             if prof_dir.exists():
@@ -719,6 +719,10 @@ class CaseLifecycleService:
         ).all():
             if ra.asset_dir:
                 ad = Path(ra.asset_dir)
+                if not ad.is_absolute():
+                    # RenderAsset persists a data-dir-relative path for public
+                    # portability; resolve it before collecting owned files.
+                    ad = settings.data_dir / ad
                 if ad.exists():
                     for f in ad.rglob("*"):
                         if f.is_file() and not f.is_symlink():

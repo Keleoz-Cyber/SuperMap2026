@@ -264,6 +264,42 @@ def build_complete_case(runtime, name="完整测试案例") -> dict:
 
 
 class TestSuccessfulPurge:
+    def test_purge_collects_candidate_predictions_from_experiment_root(self, runtime):
+        ids = build_complete_case(runtime, name="候选预测删除")
+        predictions_path = (
+            runtime.settings.experiment_dir(ids["experiment_id"])
+            / "candidates" / "candidate.parquet"
+        )
+        write_file(predictions_path, b"predictions")
+        with runtime.session() as session:
+            candidate = session.get(CandidateResult, ids["candidate_id"])
+            candidate.predictions_path = str(predictions_path)
+            session.commit()
+
+        service = CaseLifecycleService(runtime)
+        service.trash(ids["case_id"])
+        receipt = service.purge(ids["case_id"], confirmation_name="候选预测删除")
+
+        assert receipt["state"] == "cleaned"
+        assert not predictions_path.exists()
+
+    def test_purge_resolves_relative_render_asset_directory_under_runtime_root(self, runtime):
+        ids = build_complete_case(runtime, name="相对资产删除")
+
+        # Production render assets persist a root-relative directory such as
+        # ``render-assets/<asset-id>``; purge must resolve it under data_dir.
+        with runtime.session() as session:
+            asset = session.get(RenderAsset, "ra-1")
+            asset.asset_dir = "render-assets/ra-1"
+            session.commit()
+
+        service = CaseLifecycleService(runtime)
+        service.trash(ids["case_id"])
+        receipt = service.purge(ids["case_id"], confirmation_name="相对资产删除")
+
+        assert receipt["state"] == "cleaned"
+        assert not (runtime.settings.render_assets_dir / "ra-1" / "volume.nc").exists()
+
     def test_purge_removes_all_rows_and_files(self, runtime):
         ids = build_complete_case(runtime, name="删除测试")
         case_id = ids["case_id"]

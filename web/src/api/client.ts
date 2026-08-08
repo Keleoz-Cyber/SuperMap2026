@@ -462,10 +462,7 @@ export const restoreCase = (id: string) =>
   requestJson<Record<string, unknown>>(`/cases/${id}/restore`, { method: 'POST' })
 
 export const purgeCase = (id: string, name: string) =>
-  requestJson<Record<string, unknown>>(`/cases/${id}/purge`, {
-    method: 'POST',
-    body: JSON.stringify({ confirmation_name: name }),
-  })
+  postJson<Record<string, unknown>>(`/cases/${id}/purge`, { confirmation_name: name })
 
 export const abandonDataset = (id: string) =>
   requestJson<Record<string, unknown>>(`/datasets/${id}/abandon`, { method: 'POST' })
