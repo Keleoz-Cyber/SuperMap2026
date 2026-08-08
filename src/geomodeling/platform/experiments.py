@@ -74,6 +74,28 @@ PROFESSIONAL_CONFIRMATION_DATASET_MISMATCH = "PROFESSIONAL_CONFIRMATION_DATASET_
 PROFESSIONAL_CONFIRMATION_REQUIRED = "PROFESSIONAL_CONFIRMATION_REQUIRED"
 PROFESSIONAL_Z_SCALE_CONFLICT = "PROFESSIONAL_Z_SCALE_CONFLICT"
 
+# v0.8.0：创建期算法-维度校验（设计 §4.4），DSI-like 仅接受三维散点数据
+ALGORITHM_DIMENSION_MISMATCH = "ALGORITHM_DIMENSION_MISMATCH"
+
+
+def assert_algorithm_dimension(algorithm: str, profile: dict[str, Any]) -> None:
+    """创建期算法-维度门：DSI-like 对非 3D 数据版本以 422 类型化错误拒绝。
+
+    IDW/普通 Kriging 两个既有算法 2D/3D 均支持，本函数对它们逐位无行为；
+    运行期维度拒绝仍由 ``DSILikeInterpolator.validate_parameters`` 兜底。
+    """
+
+    if Algorithm(algorithm) is not Algorithm.DSI_LIKE:
+        return
+    dimension = ((profile or {}).get("mapping") or {}).get("dimension")
+    if dimension != "3d":
+        raise PlatformError(
+            ALGORITHM_DIMENSION_MISMATCH,
+            "DSI-like 离散平滑插值仅支持三维（3d）散点数据，2D 数据版本不可用",
+            {"algorithm": Algorithm.DSI_LIKE.value, "dimension": dimension},
+            http_status=422,
+        )
+
 
 @dataclass(frozen=True)
 class CandidateDefinition:

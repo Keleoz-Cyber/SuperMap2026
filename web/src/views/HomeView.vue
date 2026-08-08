@@ -33,12 +33,8 @@ interface CaseMeta {
 }
 
 const CASE_META: Record<string, CaseMeta> = {
-  resistivity: {
-    icon: Odometer,
-    enterable: true,
-    badgeType: 'success',
-    badgeText: '内置 v0.3.1 稳定案例',
-  },
+  // v0.8.0：旧 legacy 电阻率卡类型化退役（后端绝不再产出），电阻率走
+  // builtin_preset 分支；此处只保留仍在产的 legacy 卡元数据
   gas: {
     icon: Lock,
     enterable: false,
@@ -91,6 +87,15 @@ function meta(c: CaseSummary): CaseMeta {
     }
   }
   return CASE_META[c.case_id] ?? { ...FALLBACK_META, badgeText: c.status }
+}
+
+// v0.8.0：预置卡字段行逐字读 DTO provenance_summary.fields（如电阻率 X/Y/Z/RHO）；
+// 不携带 fields 键的预置卡（微震）不渲染该行，显示保持不变
+function presetFields(c: CaseSummary): string | null {
+  const fields = c.provenance_summary?.fields
+  if (!Array.isArray(fields) || fields.length === 0) return null
+  if (fields.some((f) => typeof f !== 'string')) return null
+  return fields.join('/')
 }
 
 function enter(c: CaseSummary) {
@@ -184,7 +189,7 @@ function openCaseMenu(event: KeyboardEvent) {
           </router-link>
         </div>
         <p class="tagline">
-          上传点数据即可完成二维/三维插值建模、空间验证与成果导出；内置电阻率案例保留 SuperMap iServer 发布证据链闭环。
+          上传点数据即可完成二维/三维插值建模、空间验证与成果导出；内置电阻率与微震预置案例可直接查看官方成果并新建实验。
         </p>
       </div>
     </header>
@@ -234,6 +239,7 @@ function openCaseMenu(event: KeyboardEvent) {
             </template>
             <template v-else-if="kindOf(c) === 'builtin_preset'">
               <p><span>数据形态</span>{{ c.provenance_summary?.data_form }}</p>
+              <p v-if="presetFields(c)"><span>字段</span>{{ presetFields(c) }}</p>
               <p><span>坐标</span>{{ c.provenance_summary?.coordinate_kind }}</p>
               <p><span>单位</span>{{ c.provenance_summary?.value_unit }}</p>
             </template>

@@ -1,6 +1,6 @@
 # 数据契约
 
-> 当前版本适用于：电阻率 v0.1.0 已发布基线 + 已合并的微震 v0.2a 数据审计底座 + v0.5 微震局部三维派生与聚合（已随 v0.5.0 发布）+ v0.6 专业建模分析层（本分支）。
+> 当前版本适用于：电阻率 v0.1.0 已发布基线 + 已合并的微震 v0.2a 数据审计底座 + v0.5 微震局部三维派生与聚合（已随 v0.5.0 发布）+ v0.6 专业建模分析层（本分支）+ v0.8.0 电阻率散点预置与 DSI-like（本分支）。
 > 字段含义、单位、坐标或 Z 方向没有直接来源证据时必须标记为未确认，禁止猜测。
 
 ## 1. 总原则
@@ -99,6 +99,17 @@ x,y,z,value,i,j,k,is_observed,is_valid,source_point_id,method,model_id
 ```
 
 `method` 枚举为 `IDW/KRIGING_ORDINARY/GOCAD_DSI/PYTHON_DSI_LIKE`；同一 `i,j,k` 组合唯一，坐标与原点、间距计算结果在浮点容差内一致。普通克里金和 IDW 不得改名为 DSI；DSI 结果进入 SuperMap 时不得再次使用 IDW 或克里金改变其数值场。
+
+### 4.6 v0.8.0 散点预置与 DSI-like 合同
+
+v0.8.0 起电阻率迁移为 `builtin_preset` 散点预置案例（案例 ID `resistivity` 不变），旧 S3M/legacy 产品路径退役：
+
+1. **源登记**：外部标准化 CSV 绝不入库、不提交 Git；运行时只登记 SHA-256 指纹（预置版本 `resistivity-rho-17549/v1`）。seed 是唯一生产入口，合同校验（字段 `X,Y,Z,RHO`、17,549 行、全有限、坐标唯一、空间柱结构）fail-closed。
+2. **分区溯源**：遗留训练/验证分区计数（15,827/1,722 行、264/29 柱、零重叠）与验证柱指纹写入数据版本 profile 并参与数据版本指纹，坐标清单不落库；官方候选验证合同为生产 `spatial_kfold` 5 折、seed=20260723，两者不得混报。
+3. **官方基线**：`config/presets/resistivity-official-baseline.json` 冻结 winner（`ordinary_kriging` exponential/neighbor=24，RMSE=6.454476）、指标、网格（7×23×42 @20 m）与候选报告指纹；官方 winner 限定 ordinary_kriging，IDW 与 DSI-like 候选只追溯不参与选择；指纹不符或选择不可复算即 `PRESET_BASELINE_INVALID`。
+4. **DSI-like 命名纪律**：产品名“DSI-like 离散平滑插值”，是基于 IDW 初始场与离散邻域平滑的工程近似，**不等同 GOCAD DSI**；页面、文档与导出不得称其为官方 DSI 或 GOCAD 结果；观测点硬约束不可关闭。
+5. **NetCDF 身份链**：候选统一 `CandidateResult → materialize → NetCDF → RenderAsset`；manifest 携带源 SHA、数据版本指纹、算法、参数、网格规格与 provenance；显示锚点合同 `wgs84_display_anchor_v1`（`display_anchor_only`，非真实地理配准）。
+6. **退役边界**：旧 legacy 渲染端点（render-capability / render-assets / render-sources/import / voxel-cells）一律 410 `LEGACY_RESISTIVITY_RETIRED`，绝不返回旧 S3M 数值；旧资产只读保留，清理由单独任务执行。
 
 ## 5. 微震三张标准表
 

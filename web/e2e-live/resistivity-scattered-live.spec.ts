@@ -1,0 +1,594 @@
+import { expect, test } from '@playwright/test'
+import { execFileSync } from 'node:child_process'
+import { createHash, randomUUID } from 'node:crypto'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import {
+  analyzeVolumePixels,
+  expectVolumeContent,
+  installLiveProbe,
+  probeMessages,
+  runV070RenderGates,
+  type V070GateReport,
+} from './v070RenderGates'
+
+/**
+ * v0.8.0 Task 9：电阻率标准化散点预置 + DSI-like 的真实 SDK live 门（协议 v2）。
+ *
+ * 真实链路：全新隔离 GEOMODELING_DATA_DIR → preset_cli seed-resistivity
+ * --source $GEOMODELING_RHO_SOURCE（外部私有 17,549 行标准化 CSV，绝不入库，
+ * 官方基线默认读受控路径 config/presets/resistivity-official-baseline.json）→
+ * API 身份链（workspace/能力/官方成果）→ 旧 legacy/S3M 入口 410 退役确认 →
+ * 产品页统一工作台 → 页内新建 DSI-like 用户实验（免责声明可见）→ 真实运行
+ * 到成功候选 → 成果页显式 POST 资产 → SuperMap3D iframe rendered →
+ * Volume/X/Y/Z Slice/Contour 五模式（v070RenderGates 同一可观测检查序列：
+ * 中央区域像素判据，黑屏/旧 app.js/仅 Logo/背景单色/协议超时一律判失败）→
+ * 普通刷新场景 → 协议/网络/控制台错误门。
+ *
+ * 跳过门（与 CI browser-live 对齐）：GEOMODELING_RHO_SOURCE 未设置时整个文件
+ * test.skip —— CI 无该私有数据，必须干净跳过并输出原因；本机发布门需显式
+ * 提供该变量指向真实外部 CSV。GEOMODELING_DATA_DIR 缺失（且未跳过）时
+ * beforeAll 直接失败，不静默跳过。
+ *
+ * 证据写入 docs/evidence/v0.8.0-resistivity-dsi-like/<run-id>/（仅真实运行
+ * 时创建；提交前按目录 README 扫描绝对路径/凭据/私有源内容）。
+ */
+
+const RHO_SOURCE = process.env.GEOMODELING_RHO_SOURCE ?? ''
+test.skip(
+  !RHO_SOURCE,
+  'GEOMODELING_RHO_SOURCE 未设置：电阻率标准化散点 CSV 是外部私有源，' +
+    'CI browser-live 无此数据，本规格干净跳过；本机发布门请显式设置后运行',
+)
+
+const HERE = path.dirname(fileURLToPath(import.meta.url))
+const REPO_ROOT = path.resolve(HERE, '../..')
+const SDK_DIST_PATH = path.join(REPO_ROOT, 'web', 'dist', 'SuperMap3D-2026', 'SuperMap3D.js')
+const EVIDENCE_ROOT = path.join(REPO_ROOT, 'docs', 'evidence', 'v0.8.0-resistivity-dsi-like')
+const VIEWPORT = { width: 1280, height: 800 }
+const RENDERED_GATE_MS = 60_000
+const RUN_GATE_MS = 600_000
+const PRESET_CASE_ID = 'resistivity'
+// 官方基线网格合同（config/presets/resistivity-official-baseline.json，入库公开事实）：
+// 7×23×42=6,762 单元，X[-160,-40] Y[220,660] Z[-833.0047143,-19.5999] @20m
+const EXPECTED_SHAPE = [7, 23, 42]
+const EXPECTED_VARIABLE = 'RHO'
+
+function assertIsolatedDataDir(): string {
+  const dir = process.env.GEOMODELING_DATA_DIR
+  if (!dir) {
+    throw new Error('Live E2E 要求调用环境提供唯一的 GEOMODELING_DATA_DIR')
+  }
+  const normalized = dir.replace(/\\/g, '/')
+  if (normalized.endsWith('var/geomodeling') || normalized.endsWith('var/demo_v041')) {
+    throw new Error(`Live E2E 不得使用默认/演示数据目录：${dir}`)
+  }
+  return dir
+}
+
+function sha256File(file: string): string {
+  return createHash('sha256').update(readFileSync(file)).digest('hex')
+}
+
+function isoRunId(): string {
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, 'Z')
+  return `run-${stamp}-${randomUUID().slice(0, 8)}`
+}
+
+// ---------------------------------------------------------------------------
+// 证据聚合
+// ---------------------------------------------------------------------------
+
+const runId = isoRunId()
+const evidenceDir = path.join(EVIDENCE_ROOT, runId)
+let gitCommit = ''
+let sdkSha256 = ''
+let browserVersion = ''
+
+interface ResistivityRecord {
+  seed: Record<string, unknown>
+  identity: Record<string, unknown>
+  retirement: Record<string, unknown>
+  pixelStats: Record<string, unknown>
+  timings: Record<string, unknown>
+  network: { method: string; path: string; status: number }[]
+  networkFailures: string[]
+  console: { type: string; text: string; location: string }[]
+  sdkVersion: string | null
+  gpuRenderer: string | null
+  dpr: number | null
+  gates: V070GateReport | null
+}
+
+const record: ResistivityRecord = {
+  seed: {},
+  identity: {},
+  retirement: {},
+  pixelStats: {},
+  timings: {},
+  network: [],
+  networkFailures: [],
+  console: [],
+  sdkVersion: null,
+  gpuRenderer: null,
+  dpr: null,
+  gates: null,
+}
+
+function evidencePath(name: string): string {
+  return path.join(evidenceDir, name)
+}
+
+function commonEnvelope() {
+  return {
+    run_id: runId,
+    git_commit: gitCommit,
+    sdk_sha256: sdkSha256,
+    sdk_version: record.sdkVersion,
+    browser: { name: 'chromium', version: browserVersion },
+    gpu_renderer: record.gpuRenderer,
+    viewport: VIEWPORT,
+    device_pixel_ratio: record.dpr,
+    results: {
+      resistivity: {
+        case_id: PRESET_CASE_ID,
+        official_result_id: record.seed['official_result_id'] ?? null,
+        dsi_result_id: record.identity['dsi_result_id'] ?? null,
+        grid_sha256: record.identity['grid_sha256'] ?? null,
+        netcdf_sha256: record.identity['netcdf_sha256'] ?? null,
+        asset_id: record.identity['asset_id'] ?? null,
+      },
+    },
+  }
+}
+
+function writeEvidenceJson(name: string, body: Record<string, unknown>) {
+  // 失败运行同样落证据：写入前确保目录存在（beforeAll 失败时目录可能尚未建）
+  mkdirSync(evidenceDir, { recursive: true })
+  writeFileSync(
+    evidencePath(name),
+    `${JSON.stringify({ ...commonEnvelope(), ...body }, null, 2)}\n`,
+    'utf8',
+  )
+}
+
+// ---------------------------------------------------------------------------
+// 测试
+// ---------------------------------------------------------------------------
+
+// 与 v0.6.1/v0.7.0 各 live 门一致：真实 GPU（--use-angle=gl），SwiftShader 下时序不可靠。
+test.use({ launchOptions: { args: ['--use-angle=gl'] } })
+
+test.describe('v0.8.0：电阻率散点预置 + DSI-like 真实 SDK live 门', () => {
+  test.describe.configure({ mode: 'serial' })
+
+  test.beforeAll(() => {
+    const dataDir = assertIsolatedDataDir()
+    // 预置 seed（唯一生产入口；幂等；外部私有源经 --source 显式传入，绝不入库）
+    const stdout = execFileSync(
+      process.env.PYTHON ?? 'python',
+      [
+        '-m',
+        'geomodeling.preset_cli',
+        'seed-resistivity',
+        '--source',
+        RHO_SOURCE,
+        '--data-dir',
+        dataDir,
+      ],
+      { cwd: REPO_ROOT, encoding: 'utf8', timeout: 600_000 },
+    )
+    const seeded = JSON.parse(stdout.trim().split('\n').pop()!)
+    record.seed = {
+      case_id: seeded.case_id,
+      workspace_kind: seeded.workspace_kind,
+      dataset_version_id: seeded.dataset_version_id,
+      experiment_id: seeded.experiment_id,
+      run_id: seeded.run_id,
+      official_result_id: seeded.official_result.result_id,
+      official_url: seeded.official_result.url,
+      materialized: seeded.official_result.materialized,
+      source_sha256: seeded.source_sha256,
+      baseline_sha256: seeded.baseline_sha256,
+    }
+    gitCommit = execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: REPO_ROOT,
+      encoding: 'utf8',
+    }).trim()
+    sdkSha256 = sha256File(SDK_DIST_PATH)
+    mkdirSync(evidenceDir, { recursive: true })
+  })
+
+  test('电阻率散点链：身份 → 退役 410 → DSI-like 实验 → rendered → 五模式像素门 → 普通刷新', async ({
+    page,
+    request,
+    browser,
+  }) => {
+    test.setTimeout(900_000)
+    const t0 = Date.now()
+    browserVersion = browser.version()
+    const officialResultId = String(record.seed['official_result_id'])
+
+    // --- 真实 FastAPI 身份链：workspace → 能力 → 官方成果 --------------------
+    const health = await request.get('/api/health')
+    expect(health.ok()).toBe(true)
+
+    const wsResp = await request.get(`/api/cases/${PRESET_CASE_ID}/workspace`)
+    expect(wsResp.ok()).toBe(true)
+    const workspace = await wsResp.json()
+    expect(workspace.workspace_kind).toBe('builtin_preset')
+    expect(workspace.capabilities).toEqual({
+      data_summary: true,
+      experiments: true,
+      official_result: true,
+      native_volume: true,
+    })
+    expect(workspace.primary_dataset.status).toBe('validated')
+    expect(workspace.primary_dataset.profile.mapping.x).toBe('X')
+    expect(workspace.primary_dataset.profile.mapping.y).toBe('Y')
+    expect(workspace.primary_dataset.profile.mapping.z).toBe('Z')
+    expect(workspace.primary_dataset.profile.mapping.value).toBe('RHO')
+    expect(workspace.primary_dataset.profile.row_count).toBe(17_549)
+    expect(workspace.official_result.result_id).toBe(officialResultId)
+    expect(workspace.official_result.materialized).toBe(true)
+    expect(workspace.provenance_summary.source_sha256).toBe(record.seed['source_sha256'])
+    // 预置 provenance 绝无旧术语与本机路径
+    const wsSerialized = JSON.stringify(workspace)
+    expect(wsSerialized).not.toContain('S3M')
+    expect(wsSerialized).not.toMatch(/[A-Za-z]:[\\/]/)
+
+    // --- 旧 legacy/S3M 入口类型化退役：任何方法/载荷一律 410 ------------------
+    const retiredChecks: Record<string, number> = {}
+    for (const [method, p] of [
+      ['GET', '/api/cases/resistivity/render-capability'],
+      ['GET', '/api/cases/resistivity/render-assets/netcdf'],
+      ['POST', '/api/cases/resistivity/render-assets/netcdf'],
+      ['POST', '/api/cases/resistivity/render-sources/import'],
+      ['GET', '/api/cases/resistivity/voxel-cells'],
+    ] as const) {
+      const resp = await request.fetch(p, { method })
+      expect(resp.status(), `${method} ${p} 必须 410`).toBe(410)
+      const body = await resp.json()
+      expect(body.error?.code).toBe('LEGACY_RESISTIVITY_RETIRED')
+      retiredChecks[`${method} ${p}`] = resp.status()
+    }
+    record.retirement = { code: 'LEGACY_RESISTIVITY_RETIRED', checks: retiredChecks }
+
+    // 官方成果能力：候选成果渲染链（candidate_result，绝非 builtin_legacy）
+    const capResp = await request.get(`/api/results/${officialResultId}/render-capability`)
+    expect(capResp.ok()).toBe(true)
+    const capability = await capResp.json()
+    expect(capability.supported).toBe(true)
+    expect(capability.source_kind).toBe('candidate_result')
+    expect(capability.source_id).toBe(officialResultId)
+    expect(capability.dimension).toBe('3d')
+    expect(capability.grid_kind).toBe('regular')
+    expect(capability.property_name).toBe('RHO')
+    expect(capability.geolocation_status).toBe('display_anchor_only')
+    expect(capability.render_profile?.log_available).toBe(true)
+
+    // 官方成果身份：普通克里金基线 + 冻结网格形状（入库公开合同）
+    const officialMetaResp = await request.get(`/api/results/${officialResultId}`)
+    expect(officialMetaResp.ok()).toBe(true)
+    const officialMeta = await officialMetaResp.json()
+    expect(officialMeta.algorithm).toBe('ordinary_kriging')
+    expect(officialMeta.shape).toEqual(EXPECTED_SHAPE)
+
+    // --- 产品页：统一工作台 → 页内新建 DSI-like 实验 --------------------------
+    await installLiveProbe(page)
+
+    const pathOf = (url: string) => {
+      try {
+        return new URL(url).pathname
+      } catch {
+        return url
+      }
+    }
+    page.on('console', (m) =>
+      record.console.push({
+        type: m.type(),
+        text: m.text().slice(0, 400),
+        location: pathOf(m.location()?.url ?? ''),
+      }),
+    )
+    page.on('pageerror', (e) =>
+      record.console.push({ type: 'pageerror', text: String(e).slice(0, 400), location: '' }),
+    )
+    page.on('requestfailed', (r) => {
+      // 导航式下载（location.assign → attachment）被浏览器以 ERR_ABORTED 中止属正常下载语义
+      const p = pathOf(r.url())
+      if (p.startsWith('/api/exports/') && r.failure()?.errorText === 'net::ERR_ABORTED') return
+      record.networkFailures.push(`${r.method()} ${p} ${r.failure()?.errorText}`)
+    })
+    // 良性 4xx 白名单：成果未物化/资产未创建前的状态 404（产品页既有语义）
+    const benign4xxPatterns = [
+      /^\/api\/results\/[^/]+$/,
+      /^\/api\/results\/[^/]+\/render-assets\/netcdf$/,
+    ]
+    page.on('response', (r) => {
+      const p = pathOf(r.url())
+      record.network.push({ method: r.request().method(), path: p, status: r.status() })
+      if (r.status() >= 400 && !benign4xxPatterns.some((re) => re.test(p))) {
+        record.networkFailures.push(`${r.status()} ${r.request().method()} ${p}`)
+      }
+    })
+
+    await page.setViewportSize(VIEWPORT)
+    await page.goto(`/#/cases/${PRESET_CASE_ID}`, { waitUntil: 'load', timeout: 60_000 })
+    await expect(page.getByTestId('case-workspace-header')).toContainText('地下电阻率', {
+      timeout: 60_000,
+    })
+    await expect(page.getByTestId('workspace-overview')).toBeVisible()
+    await expect(page.getByTestId('workspace-data')).toBeVisible()
+    await expect(page.getByTestId('workspace-data')).toContainText('行数 17549')
+    await expect(page.getByTestId('workspace-experiments')).toBeVisible()
+    await expect(page.getByTestId('workspace-rho-block')).toHaveCount(0)
+    await expect(page.getByTestId('legacy-import')).toHaveCount(0)
+
+    // 新建实验：DSI-like 选项与免责声明可见；固定合同（硬约束/收敛容差）只读
+    await page.getByTestId('new-experiment').click()
+    await expect(page).toHaveURL(/#\/cases\/resistivity\/experiments\/new\?dataset=/)
+    await expect(page.getByTestId('param-editor')).toBeVisible({ timeout: 60_000 })
+    await page.getByTestId('algo-dsi-like').check()
+    await expect(page.getByTestId('param-editor')).toContainText('DSI-like 离散平滑插值')
+    await expect(page.getByTestId('dsi-like-note')).toContainText('不等同于 GOCAD DSI')
+    await expect(page.getByTestId('dsi-hard-constraints')).toBeVisible()
+    await expect(page.getByTestId('dsi-convergence-tolerance')).toBeVisible()
+
+    const createStart = Date.now()
+    await page.getByTestId('exp-submit').click()
+    await expect(page).toHaveURL(/#\/experiments\//, { timeout: 60_000 })
+    // 真实运行 17,549 散点 × 5 折：有界等待终态
+    await expect(page.getByTestId('run-progress')).toContainText('succeeded', {
+      timeout: RUN_GATE_MS,
+    })
+    const runMs = Date.now() - createStart
+    await expect(page.getByTestId('candidate-row')).toHaveCount(1)
+    await expect(page.getByTestId('candidate-row')).toContainText('成功')
+
+    // --- 成果页：显式 POST 资产 → rendered → 协议身份 -------------------------
+    await page.getByTestId('open-result').click()
+    await expect(page).toHaveURL(/#\/results\//, { timeout: 60_000 })
+    const dsiResultId = page.url().split('/results/')[1]
+    expect(dsiResultId).toBeTruthy()
+    await expect(page.locator('.page-sub')).toContainText('dsi_like')
+    await expect(page.getByTestId('native-volume-panel')).toBeVisible({ timeout: 60_000 })
+
+    const createButton = page.getByTestId('create-asset')
+    await expect(createButton).toBeVisible({ timeout: 60_000 })
+    const postStart = Date.now()
+    const [postResp] = await Promise.all([
+      page.waitForResponse(
+        (r) =>
+          r.request().method() === 'POST' &&
+          pathOf(r.url()) === `/api/results/${dsiResultId}/render-assets/netcdf`,
+        { timeout: 300_000 },
+      ),
+      createButton.click(),
+    ])
+    const postMs = Date.now() - postStart
+    expect([200, 201]).toContain(postResp.status())
+    const asset = await postResp.json()
+    expect(asset.id).toMatch(/^nc-[0-9a-f]{32}$/)
+    expect(asset.status).toBe('ready')
+    expect(asset.renderer).toBe('supermap_voxelgrid_netcdf')
+    expect(asset.source_kind).toBe('candidate_result')
+    expect(asset.source_id).toBe(dsiResultId)
+    expect(asset.grid_sha256).toMatch(/^[0-9a-f]{64}$/)
+    expect(asset.netcdf_sha256).toMatch(/^[0-9a-f]{64}$/)
+
+    // manifest：DSI-like 候选经通用 NetCDF v2 链（算法身份由成果 DTO 承载；
+    // 包 manifest 是算法无关格式合同，见 render_assets/netcdf_volume）
+    const resultResp = await request.get(`/api/results/${dsiResultId}`)
+    expect(resultResp.ok()).toBe(true)
+    expect((await resultResp.json()).algorithm).toBe('dsi_like')
+    const manifestResp = await request.get(asset.manifest_url)
+    expect(manifestResp.ok()).toBe(true)
+    const manifest = await manifestResp.json()
+    expect(manifest.format).toBe('supermap-voxel-netcdf')
+    expect(manifest.source_kind).toBe('candidate_result')
+    expect(manifest.source_id).toBe(dsiResultId)
+    expect(manifest.property_name).toBe('RHO')
+    expect(manifest.variable_name).toBe(EXPECTED_VARIABLE)
+    expect(manifest.dimension_names).toEqual(['x', 'y', 'z'])
+    expect(manifest.grid_sha256).toBe(asset.grid_sha256)
+    expect(manifest.netcdf_sha256).toBe(asset.netcdf_sha256)
+    const [vmin, vmax] = manifest.encoded_value_range ?? manifest.value_range
+    expect(vmax).toBeGreaterThan(vmin)
+    expect(vmin).toBeGreaterThan(0) // RHO 恒为正（log 可用），绝不静默换算
+
+    // iframe rendered（真实 SDK，实测耗时记录；协议超时即失败）
+    const phaseLocator = page.getByTestId('volume-phase')
+    await expect(phaseLocator).toHaveText('已渲染', { timeout: RENDERED_GATE_MS })
+    const renderedMs = Date.now() - postStart
+
+    // 协议身份：RENDER_STATE.rendered 与源/网格/NetCDF 哈希一致
+    const messages = await probeMessages(page)
+    const renderedMsg = messages.find((m) => m.type === 'RENDER_STATE' && m.phase === 'rendered')
+    expect(renderedMsg).toBeTruthy()
+    const expectedIdentity = {
+      sourceKind: 'candidate_result',
+      sourceId: dsiResultId,
+      gridSha256: asset.grid_sha256,
+      netcdfSha256: asset.netcdf_sha256,
+    }
+    expect(renderedMsg.identity).toEqual(expectedIdentity)
+    expect(messages.filter((m) => m.type === 'ERROR')).toEqual([])
+    const readyMsg = messages.find((m) => m.type === 'FRAME_READY')
+    record.sdkVersion = readyMsg?.sdkVersion ?? null
+    expect(String(record.sdkVersion)).toMatch(/\d+/)
+
+    // 只读诊断快照
+    const frame = page.frames().find((f) => f.url().includes('/supermap-volume-frame/'))
+    expect(frame).toBeTruthy()
+    const diag = await frame!.evaluate(() => (window as any).__GMP_VOLUME_FRAME__)
+    expect(diag.phase).toBe('rendered')
+    expect(diag.layerType).toBe('VoxelGridLayer3D')
+    expect(diag.mode).toBe('volume')
+    expect(diag.identity).toEqual(expectedIdentity)
+    expect(diag.errors).toEqual([])
+
+    record.gpuRenderer = await page.evaluate(() => {
+      const canvas = document.createElement('canvas')
+      const gl = canvas.getContext('webgl2')
+      if (!gl) return 'webgl2-unavailable'
+      const ext = gl.getExtension('WEBGL_debug_renderer_info')
+      const raw = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)
+      gl.getExtension('WEBGL_lose_context')?.loseContext()
+      return String(raw)
+    })
+    record.dpr = await page.evaluate(() => window.devicePixelRatio)
+
+    record.identity = {
+      official_result_id: officialResultId,
+      dsi_result_id: dsiResultId,
+      asset_id: asset.id,
+      renderer: asset.renderer,
+      algorithm: 'dsi_like',
+      grid_sha256: asset.grid_sha256,
+      netcdf_sha256: asset.netcdf_sha256,
+      manifest_shape: manifest.shape,
+      variable_name: manifest.variable_name,
+      rendered_identity: renderedMsg.identity,
+      diag_layer_type: diag.layerType,
+      sdk_version: record.sdkVersion,
+    }
+
+    // --- 五模式渲染门（与 32³/64³/微震预置同一可观测检查序列） ----------------
+    const frameLocator = page.getByTestId('volume-frame')
+    await frameLocator.scrollIntoViewIfNeeded()
+    const shot = () => page.getByTestId('volume-frame').screenshot()
+    const saveShot = (name: string, buf: Buffer) =>
+      writeFileSync(evidencePath(`rho-${name}.png`), buf)
+
+    // 用户实验自动网格：体盒三轴物理跨度按权威剖面轴坐标实测（切片分析 API
+    // 的 axes 即渲染网格轴；门内几何不变量据此验收体盒不得切成方盒）
+    const axesResp = await request.get(
+      `/api/render-assets/${asset.id}/slice-analysis?axis=z&index=0`,
+    )
+    expect(axesResp.ok()).toBe(true)
+    const axesMeta = (await axesResp.json()).axes as Record<
+      'x' | 'y' | 'z',
+      { length: number; coordinates: number[] }
+    >
+    const spans: [number, number, number] = (['x', 'y', 'z'] as const).map((axis) => {
+      const coords = axesMeta[axis].coordinates
+      return Math.abs(coords[coords.length - 1] - coords[0])
+    }) as [number, number, number]
+    for (const span of spans) expect(span).toBeGreaterThan(0)
+    const gates = await runV070RenderGates({
+      page,
+      request,
+      frame: frame!,
+      shot,
+      saveShot,
+      assetId: asset.id,
+      identity: {
+        assetId: asset.id,
+        gridSha256: asset.grid_sha256,
+        netcdfSha256: asset.netcdf_sha256,
+      },
+      valueRange: [vmin, vmax],
+      logAvailable: true,
+      expectedSpansMetres: spans,
+    })
+    record.gates = gates
+
+    // --- 普通刷新场景：资产已 ready → 面板自动 rendered，像素判据同前 ----------
+    const refreshStart = Date.now()
+    await page.reload({ waitUntil: 'load' })
+    await expect(page.getByTestId('native-volume-panel')).toBeVisible({ timeout: 60_000 })
+    await expect(page.getByTestId('create-asset')).toHaveCount(0)
+    await expect(phaseLocator).toHaveText('已渲染', { timeout: RENDERED_GATE_MS })
+    const refreshRenderedMs = Date.now() - refreshStart
+    const refreshMessages = await probeMessages(page)
+    const refreshRendered = refreshMessages.find(
+      (m) => m.type === 'RENDER_STATE' && m.phase === 'rendered',
+    )
+    expect(refreshRendered).toBeTruthy()
+    expect(refreshRendered.identity).toEqual(expectedIdentity)
+    expect(refreshMessages.filter((m) => m.type === 'ERROR')).toEqual([])
+    await expect(page.locator('.el-loading-mask:visible')).toHaveCount(0, { timeout: 30_000 })
+    const refreshMetrics = await analyzeVolumePixels(page, await shot())
+    expectVolumeContent(refreshMetrics, '普通刷新后体积', { minNonBg: 2000, minCoverage: 0.15 })
+
+    // --- 全局健康门：无协议错误/页面错误/资源失败 ------------------------------
+    const finalMessages = await probeMessages(page)
+    expect(finalMessages.filter((m) => m.type === 'ERROR')).toEqual([])
+    expect(record.networkFailures).toEqual([])
+    const consoleErrors = record.console.filter(
+      (c) =>
+        ['pageerror', 'error'].includes(c.type) &&
+        !(
+          c.text.includes('Failed to load resource') &&
+          (benign4xxPatterns.some((re) => re.test(c.location)) ||
+            c.location.includes('/api/exports/'))
+        ),
+    )
+    expect(consoleErrors).toEqual([])
+
+    record.pixelStats = {
+      noise_diff: gates.noiseDiff,
+      pixel_threshold: gates.pixelThreshold,
+      base_metrics: gates.baseMetrics,
+      refresh_metrics: refreshMetrics,
+      geometry: gates.geometry,
+      slice_mode_metrics: gates.sliceModeMetrics,
+      contour_metrics: gates.contourMetrics,
+      control_diffs: gates.controlDiffs,
+      slice_gates: gates.sliceGates,
+      stats_invariant: gates.statsInvariant,
+      unsettled_commands: gates.unsettledCommands,
+      gates: {
+        base_non_bg_min: 2000,
+        mode_non_bg_min: 500,
+        coverage_min: 'volume 0.15 / modes 0.03（中央区域，去 Logo/罗盘）',
+        color_std_min: 5,
+        component_ratio_min: 0.9,
+        response_over_noise: 'max(200, noise*3+50)',
+        control_over_noise: 'max(80, noise*2+20)',
+      },
+    }
+    record.timings = {
+      run_ms: runMs,
+      post_ms: postMs,
+      rendered_ms: renderedMs,
+      refresh_rendered_ms: refreshRenderedMs,
+      rendered_gate_ms: RENDERED_GATE_MS,
+      commands: gates.timings,
+      total_ms: Date.now() - t0,
+    }
+
+    console.log(
+      `[rho-dsi-live] sdk=${record.sdkVersion} gpu=${record.gpuRenderer} ` +
+        `run=${runMs}ms POST=${postMs}ms rendered=${renderedMs}ms 刷新=${refreshRenderedMs}ms ` +
+        `体积=${JSON.stringify(gates.baseMetrics)} 噪声=${gates.noiseDiff} ` +
+        `剖面=${Object.entries(gates.sliceGates)
+          .map(([a, g]) => `${a}(q${g.quarterIndex}/q${g.threeQuarterIndex},Δ${g.diff})`)
+          .join(' ')} 总耗时=${((Date.now() - t0) / 1000).toFixed(1)}s`,
+    )
+  })
+
+  test.afterAll(() => {
+    writeEvidenceJson('environment.json', {
+      created_at: new Date().toISOString(),
+      platform: `${process.platform}/${process.arch}`,
+      node: process.version,
+      seed_command:
+        'python -m geomodeling.preset_cli seed-resistivity --source <GEOMODELING_RHO_SOURCE> --data-dir <isolated>',
+    })
+    writeEvidenceJson('identity.json', {
+      resistivity: record.identity,
+      seed: record.seed,
+      retirement: record.retirement,
+    })
+    writeEvidenceJson('network.json', {
+      resistivity: { requests: record.network, failures: record.networkFailures },
+    })
+    writeEvidenceJson('console.json', { resistivity: record.console })
+    writeEvidenceJson('pixel-stats.json', { resistivity: record.pixelStats })
+    writeEvidenceJson('timings.json', { resistivity: record.timings })
+    writeEvidenceJson('slice-exports.json', { resistivity: record.gates?.exportManifest ?? null })
+  })
+})

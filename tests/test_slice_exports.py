@@ -61,6 +61,23 @@ def _create_candidate_asset(client) -> dict:
     return resp.json()
 
 
+def _create_legacy_asset(runtime) -> dict:
+    """历史 builtin_legacy 资产：v0.8.0 Task 6 起产品入口退役，经服务层创建。
+
+    与旧 POST 同一 ``create_render_asset`` 链；只读保留的历史资产读取合同
+    （导出/剖面/文件路由）不受产品入口退役影响。
+    """
+
+    from geomodeling.platform import render_assets
+    from geomodeling.platform.legacy_render_sources import resolve_legacy_render_source
+
+    register_legacy_grid(runtime)
+    source = resolve_legacy_render_source(runtime, "resistivity")
+    record, created = render_assets.create_render_asset(runtime, source, retry_failed=False)
+    assert created is True
+    return {"id": record.id, "source_kind": record.source_kind, "source_id": record.source_id}
+
+
 def test_candidate_slice_export_zip_contract(tmp_path, monkeypatch):
     app = make_app(tmp_path, monkeypatch)
     with TestClient(app) as client:
@@ -180,8 +197,7 @@ def test_legacy_slice_export_has_no_candidate(tmp_path, monkeypatch):
     app = make_app(tmp_path, monkeypatch)
     with TestClient(app) as client:
         runtime = app.state.platform_runtime
-        register_legacy_grid(runtime)
-        asset = client.post("/api/cases/resistivity/render-assets/netcdf").json()
+        asset = _create_legacy_asset(runtime)
 
         resp = _post_export(client, asset["id"], axis="z", index=0)
         assert resp.status_code == 201, resp.text
@@ -197,13 +213,16 @@ def test_legacy_slice_export_has_no_candidate(tmp_path, monkeypatch):
 
 
 def test_legacy_slice_export_does_not_duplicate_home_card(tmp_path, monkeypatch):
-    """导出的 FK 支撑行不得让首页出现第二张 resistivity 卡（builtin 卡唯一）。"""
+    """导出的 FK 支撑行不得让首页出现第二张 resistivity 卡（预置卡唯一）。
+
+    v0.8.0 Task 6：legacy 卡退役后，唯一的卡是 builtin_preset 预置描述卡；
+    非预置的同 id FK 支撑行绝不翻转为 user_upload 卡。
+    """
 
     app = make_app(tmp_path, monkeypatch)
     with TestClient(app) as client:
         runtime = app.state.platform_runtime
-        register_legacy_grid(runtime)
-        asset = client.post("/api/cases/resistivity/render-assets/netcdf").json()
+        asset = _create_legacy_asset(runtime)
         before = client.get("/api/cases").json()["cases"]
         before_ids = [c["case_id"] for c in before]
         assert before_ids.count("resistivity") == 1
@@ -214,10 +233,11 @@ def test_legacy_slice_export_does_not_duplicate_home_card(tmp_path, monkeypatch)
         after = client.get("/api/cases").json()["cases"]
         after_ids = [c["case_id"] for c in after]
         assert after_ids.count("resistivity") == 1, after_ids
-        # 唯一的卡仍是 builtin_legacy 身份，不得翻转为 user_upload
+        # 唯一的卡仍是 builtin_preset 预置描述卡，不得翻转为 user_upload
         card = next(c for c in after if c["case_id"] == "resistivity")
-        assert card.get("source_kind") == "builtin_legacy"
-        assert card.get("workspace_kind") == "builtin_legacy"
+        assert card.get("source_kind") == "builtin_preset"
+        assert card.get("workspace_kind") == "builtin_preset"
+        assert card.get("status") == "initialization_required"
 
 
 def test_result_package_download_name_unchanged(tmp_path, monkeypatch):

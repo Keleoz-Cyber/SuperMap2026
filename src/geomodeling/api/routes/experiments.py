@@ -10,7 +10,10 @@ from sqlalchemy import func, select
 from geomodeling.api.deps import get_platform_runtime
 from geomodeling.platform import PlatformRuntime, tables
 from geomodeling.platform.errors import PlatformError, RUN_ALREADY_ACTIVE
-from geomodeling.platform.experiments import resolve_professional_context
+from geomodeling.platform.experiments import (
+    assert_algorithm_dimension,
+    resolve_professional_context,
+)
 from geomodeling.platform.jobs import assert_quality_gate
 from geomodeling.platform.repositories import (
     DatasetRepository,
@@ -33,6 +36,8 @@ def create_experiment(
     with runtime.session() as session:
         dataset = DatasetRepository(session).get_for_case(request.case_id, request.dataset_version_id)
         assert_quality_gate(dataset.profile)
+        # v0.8.0：算法-维度创建期门（DSI-like 仅 3D，422 类型化拒绝）
+        assert_algorithm_dimension(request.algorithm, dataset.profile)
         # v0.6：专业输入（确认快照/搜索邻域/经验不确定性）前置校验与解析；
         # legacy 请求（三字段全缺）返回 None，行为逐位不变。
         professional = resolve_professional_context(session, request, dataset)

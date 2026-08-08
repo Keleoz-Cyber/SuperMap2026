@@ -4,11 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ElementPlus from 'element-plus'
 import { ApiError } from '../../../api/client'
 import {
-  createLegacyRhoRenderAsset,
   createRenderAssetSliceExport,
   createResultRenderAsset,
-  fetchLegacyRhoRenderAsset,
-  fetchLegacyRhoRenderCapability,
   fetchRenderAssetSliceAnalysis,
   fetchResultRenderAsset,
   fetchResultRenderCapability,
@@ -767,25 +764,16 @@ describe('渲染资产 API 客户端（POST/GET 纪律）', () => {
     }
     expect(JSON.parse(calls[0].init?.body as string)).toEqual({ retry_failed: false })
     expect(JSON.parse(calls[1].init?.body as string)).toEqual({ retry_failed: true })
-
-    calls.length = 0
-    await createLegacyRhoRenderAsset(true)
-    expect(calls[0].url).toBe('/api/cases/resistivity/render-assets/netcdf')
-    expect(calls[0].init?.method).toBe('POST')
   })
 
   it('状态/能力/剖面分析刷新一律 GET：绝不隐式 POST、绝不带请求体', async () => {
     const calls = stubFetchOk(ASSET)
     await fetchResultRenderAsset('r1')
     await fetchResultRenderCapability('r1')
-    await fetchLegacyRhoRenderAsset()
-    await fetchLegacyRhoRenderCapability()
     await fetchRenderAssetSliceAnalysis('nc-1', 'x', 3)
     expect(calls.map((c) => c.url)).toEqual([
       '/api/results/r1/render-assets/netcdf',
       '/api/results/r1/render-capability',
-      '/api/cases/resistivity/render-assets/netcdf',
-      '/api/cases/resistivity/render-capability',
       '/api/render-assets/nc-1/slice-analysis?axis=x&index=3',
     ])
     for (const call of calls) {

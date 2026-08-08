@@ -5,6 +5,7 @@ import ElementPlus from 'element-plus'
 import * as client from '../../api/client'
 import type { CaseWorkspaceSummary, DatasetVersionRecord } from '../../api/types'
 import CaseWorkspaceView from '../CaseWorkspaceView.vue'
+import workspaceViewSource from '../CaseWorkspaceView.vue?raw'
 
 vi.mock('../../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../api/client')>()
@@ -46,8 +47,6 @@ function workspaceOf(kind: CaseWorkspaceSummary['workspace_kind']): CaseWorkspac
   return base
 }
 
-const RHO_STUB = { name: 'RhoCaseView', template: '<div data-test="rho-embedded" />', props: ['embedded'] }
-
 async function mountWorkspace(path: string) {
   const router = createRouter({
     history: createMemoryHistory(),
@@ -77,7 +76,6 @@ async function mountWorkspace(path: string) {
   const wrapper = mount(CaseWorkspaceView, {
     global: {
       plugins: [router, ElementPlus],
-      stubs: { RhoCaseView: RHO_STUB },
     },
   })
   await flushPromises()
@@ -122,11 +120,13 @@ describe('CaseWorkspaceView', () => {
   })
 
   it('legacy: no new-experiment command (experiments capability false)', async () => {
+    // v0.8.0 Task 10：旧 legacy 电阻率页（含内嵌 RhoCaseView 块）已从工作台
+    // 摘除；剩余 legacy 工作台（gas）只读展示，绝不出现旧页面嵌入块
     vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(workspaceOf('builtin_legacy'))
-    const { wrapper } = await mountWorkspace('/cases/resistivity')
+    const { wrapper } = await mountWorkspace('/cases/gas')
     expect(wrapper.find('[data-test="new-experiment"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="workspace-rho-block"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="rho-embedded"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="workspace-rho-block"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="rho-embedded"]').exists()).toBe(false)
   })
 
   it('PRESET_NOT_INITIALIZED renders typed error with home action, never upload', async () => {
@@ -383,5 +383,199 @@ describe('CaseWorkspaceView', () => {
     await flushPromises()
     expect(router.currentRoute.value.path).toBe('/datasets/ds-1/candidate-comparison')
     wrapper.unmount()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// v0.8.0：电阻率迁移为 builtin_preset 散点预置后的统一工作台语义。
+// 文案全部来自后端 DTO（provenance_summary / data_preparation），前端不按
+// case_id 硬编码微震/电阻率分支；旧 legacy/S3M/DAT 语样不得出现在可见操作中。
+// ---------------------------------------------------------------------------
+
+const RESISTIVITY_PRESET_WS: CaseWorkspaceSummary = {
+  case_id: 'resistivity',
+  title: '地下电阻率',
+  status: 'active',
+  workspace_kind: 'builtin_preset',
+  capabilities: {
+    data_summary: true,
+    experiments: true,
+    official_result: true,
+    native_volume: true,
+  },
+  primary_dataset: {
+    id: 'ds-rho-1',
+    case_id: 'resistivity',
+    version: 1,
+    status: 'validated',
+    created_at: '2026-08-08T00:00:00+00:00',
+    profile: {
+      mapping: {
+        dimension: '3d',
+        x: 'X',
+        y: 'Y',
+        z: 'Z',
+        value: 'RHO',
+        value_name: 'RHO',
+        value_unit: 'RHO 单位待来源确认',
+        coordinate_kind: 'local_linear',
+      },
+      row_count: 17549,
+      valid_row_count: 17549,
+    },
+  } as unknown as CaseWorkspaceSummary['primary_dataset'],
+  official_result: { result_id: 'rho-official-1', url: '/results/rho-official-1', materialized: true },
+  provenance_summary: {
+    badge: '散点预置 · 官方普通克里金成果',
+    data_form: '标准化散点 · 17,549 个节点',
+    value_unit: 'RHO 单位待来源确认',
+    coordinate_kind: 'local_linear',
+  },
+  // v0.8.0：预置工作台 DTO 携带 data_preparation（state=validated 摘要）
+  data_preparation: {
+    state: 'validated',
+    dataset_id: null,
+    latest_validated_dataset_id: 'ds-rho-1',
+    next_action: {
+      step: 'experiment',
+      label: '新建实验',
+      url: '/#/cases/resistivity/experiments/new',
+    },
+    error: null,
+  },
+  validated_datasets: [],
+  abandoned_datasets: [],
+  recent_experiments: [],
+  recent_results: [],
+  links: { detail: '/api/cases/resistivity', publish_status: null },
+}
+
+describe('CaseWorkspaceView 电阻率散点预置（v0.8.0）', () => {
+  it('电阻率 builtin_preset 工作台：统一文案与操作，无 legacy/S3M/DAT 可见语样', async () => {
+    vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(RESISTIVITY_PRESET_WS)
+    const { wrapper, router } = await mountWorkspace('/cases/resistivity')
+
+    // 统一预置文案（逐字来自 DTO provenance_summary / primary_dataset）
+    const text = wrapper.text()
+    expect(text).toContain('标准化散点 · 17,549 个节点')
+    expect(text).toContain('散点预置 · 官方普通克里金成果')
+    expect(text).toContain('RHO 单位待来源确认')
+    expect(text).toContain('X/Y/Z -> RHO')
+
+    // 操作一：查看官方成果直达
+    await wrapper.find('[data-test="open-official-result"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/results/rho-official-1')
+
+    // 操作二：新建实验进入统一实验创建页
+    await router.push('/cases/resistivity')
+    await flushPromises()
+    await wrapper.find('[data-test="new-experiment"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/cases/resistivity/experiments/new')
+    expect(router.currentRoute.value.query.dataset).toBe('ds-rho-1')
+
+    // 旧 legacy/S3M/DAT 语样与旧页面嵌入块均不可见
+    expect(text).not.toContain('S3M')
+    expect(text).not.toContain('DAT')
+    expect(text).not.toContain('legacy')
+    expect(text).not.toContain('Legacy')
+    expect(wrapper.find('[data-test="workspace-rho-block"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="rho-embedded"]').exists()).toBe(false)
+
+    // 预置案例无上传恢复状态机：不渲染数据准备面板与上传入口
+    expect(wrapper.find('[data-test="data-preparation-panel"]').exists()).toBe(false)
+    expect(text).not.toContain('上传数据')
+
+    // 渲染文本不得携带本机绝对路径
+    expect(text).not.toMatch(/[A-Za-z]:\\/)
+    expect(text).not.toContain('/home/')
+    expect(text).not.toContain('/Users/')
+    wrapper.unmount()
+  })
+
+  it('预置有官方成果：成果区展示官方成果链接与物化状态', async () => {
+    vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(RESISTIVITY_PRESET_WS)
+    const { wrapper } = await mountWorkspace('/cases/resistivity')
+
+    const results = wrapper.find('[data-test="workspace-results"]')
+    expect(results.text()).toContain('官方成果')
+    expect(results.text()).toContain('已物化')
+    expect(wrapper.find('[data-test="open-official-result"]').text()).toContain('查看官方成果')
+    wrapper.unmount()
+  })
+
+  it('预置无官方成果：收起成果直达但保留新建实验', async () => {
+    const ws: CaseWorkspaceSummary = {
+      ...RESISTIVITY_PRESET_WS,
+      capabilities: { ...RESISTIVITY_PRESET_WS.capabilities, official_result: false },
+      official_result: null,
+    }
+    vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(ws)
+    const { wrapper, router } = await mountWorkspace('/cases/resistivity')
+
+    expect(wrapper.find('[data-test="open-official-result"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="results-empty"]').text()).toContain('暂无成果')
+    await wrapper.find('[data-test="new-experiment"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/cases/resistivity/experiments/new')
+    wrapper.unmount()
+  })
+
+  it('最近实验列表中 dsi_like 使用 DSI-like 产品名', async () => {
+    const ws: CaseWorkspaceSummary = {
+      ...RESISTIVITY_PRESET_WS,
+      recent_experiments: [
+        {
+          id: 'exp-dsi-1',
+          name: '电阻率 DSI 实验',
+          algorithm: 'dsi_like',
+          dataset_version_id: 'ds-rho-1',
+          latest_run_status: 'succeeded',
+          succeeded_candidate_count: 1,
+          created_at: '2026-08-08T00:00:00+00:00',
+          url: '/experiments/exp-dsi-1',
+        },
+      ],
+    }
+    vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(ws)
+    const { wrapper } = await mountWorkspace('/cases/resistivity')
+
+    expect(wrapper.find('[data-test="recent-experiments"]').text()).toContain('DSI-like')
+    expect(wrapper.find('[data-test="recent-experiments"]').text()).not.toContain('dsi_like')
+    wrapper.unmount()
+  })
+
+  it('电阻率 PRESET_NOT_INITIALIZED：展示后端消息，不出现微震硬编码文案', async () => {
+    const { ApiError } = await import('../../api/client')
+    vi.mocked(client.fetchCaseWorkspace).mockRejectedValue(
+      new ApiError('PRESET_NOT_INITIALIZED', '电阻率预置案例尚未初始化：需由维护者执行文档化 seed 命令', 409),
+    )
+    const { wrapper } = await mountWorkspace('/cases/resistivity')
+
+    expect(wrapper.find('[data-test="workspace-not-initialized"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('电阻率预置案例尚未初始化')
+    expect(wrapper.text()).not.toContain('微震')
+    expect(wrapper.text()).not.toContain('上传')
+    wrapper.unmount()
+  })
+
+  it('工作台按钮与状态均有可访问名称', async () => {
+    vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(RESISTIVITY_PRESET_WS)
+    const { wrapper } = await mountWorkspace('/cases/resistivity')
+
+    const buttons = wrapper.findAll('button')
+    expect(buttons.length).toBeGreaterThan(0)
+    for (const btn of buttons) {
+      const name = btn.text().trim() || btn.attributes('aria-label') || btn.attributes('title')
+      expect(name).toBeTruthy()
+    }
+    wrapper.unmount()
+  })
+
+  it('390x844 移动端：工作台携带窄屏响应式规则（像素级门在 e2e-live）', () => {
+    // 单元层锁定响应式规则存在；真实 390x844 无横向溢出断言沿用
+    // web/e2e 的 Playwright 模式（setViewportSize + scrollWidth ≤ 390）。
+    expect(workspaceViewSource).toContain('@media (max-width: 480px)')
   })
 })

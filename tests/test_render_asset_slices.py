@@ -23,11 +23,22 @@ def _create_candidate_asset(client) -> tuple[str, dict]:
     return candidate_id, asset
 
 
-def _create_legacy_asset(client, runtime) -> dict:
+def _create_legacy_asset(runtime) -> dict:
+    """历史 builtin_legacy 资产：v0.8.0 Task 6 起产品入口退役，经服务层创建。"""
+
+    from geomodeling.platform import render_assets
+    from geomodeling.platform.legacy_render_sources import resolve_legacy_render_source
+
     register_legacy_grid(runtime)
-    resp = client.post("/api/cases/resistivity/render-assets/netcdf")
-    assert resp.status_code in (200, 201), resp.text
-    return resp.json()
+    source = resolve_legacy_render_source(runtime, "resistivity")
+    record, created = render_assets.create_render_asset(runtime, source, retry_failed=False)
+    assert created is True
+    return {
+        "id": record.id,
+        "manifest_url": f"/api/render-assets/{record.id}/manifest",
+        "grid_sha256": record.grid_sha256,
+        "netcdf_sha256": record.netcdf_sha256,
+    }
 
 
 def test_candidate_asset_slice_analysis_orientation_and_identity(tmp_path, monkeypatch):
@@ -61,10 +72,12 @@ def test_candidate_asset_slice_analysis_orientation_and_identity(tmp_path, monke
 
 
 def test_legacy_asset_slice_analysis(tmp_path, monkeypatch):
+    """历史 builtin_legacy 资产的剖面分析只读保留（产品入口退役不影响）。"""
+
     app = make_app(tmp_path, monkeypatch)
     with TestClient(app) as client:
         runtime = app.state.platform_runtime
-        asset = _create_legacy_asset(client, runtime)
+        asset = _create_legacy_asset(runtime)
 
         resp = client.get(f"/api/render-assets/{asset['id']}/slice-analysis?axis=x&index=0")
         assert resp.status_code == 200, resp.text

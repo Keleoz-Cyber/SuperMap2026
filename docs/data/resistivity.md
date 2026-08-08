@@ -1,101 +1,105 @@
 # 地下电阻率数据与成果
 
-> 数据契约通用规则见 [contracts.md](contracts.md)。本文件记录电阻率 v0.1 的已验证事实、模型选型和 SuperMap 证据边界。
+> 数据契约通用规则见 [contracts.md](contracts.md)。本文件记录电阻率案例的当前产品事实（v0.8.0 散点预置 + DSI-like），以及旧 S3M/legacy 链的历史事实（§8，已退役）。
 
-## 1. 当前结论
+## 1. 当前结论（v0.8.0）
 
-电阻率三维属性模拟闭环已在 v0.1.0 发布基线中验证：标准化数据登记、契约校验、训练/验证隔离、五模型预测导入、公共有效点指标复算、SuperMap 成果登记和报告导出全部可复现。`RHO_KRIG_FINAL_20M_40` 是唯一正式 SuperMap 成果；`dataset_verified=False` 保持显式声明；垂直切片未验证；原生等值面失败并留下空数据集。
+- 电阻率案例已从只读 `builtin_legacy` 入口迁移为统一的 `builtin_preset` 散点预置案例，案例 ID 保持 `resistivity`（既有深链可解析）；不提供 CSV 上传步骤，数据版本只读。
+- 官方成果为普通克里金基线（winner `exponential / neighbor=24`，RMSE=6.454476），经 `Experiment → Run → CandidateResult → materialize → FormalSelection` 链登记，用户实验不得改写官方正式选择。
+- 算法选项为 IDW、普通 Kriging 与 **DSI-like 离散平滑插值**；DSI-like 是工程近似方法，**不等同于 GOCAD DSI**（免责声明见 §5）。
+- 体渲染走统一候选 NetCDF 链（§6）；旧 S3M/legacy 渲染入口已类型化退役（§7）。
+- 官方验证合同为生产 `spatial_kfold` 5 折、seed=20260723；遗留训练/验证分区（15,827/1,722）只作源溯源事实记录（§3）。
 
-## 2. 数据基线
+## 2. 散点源合同
 
-权威文件与已验证记录数：
+电阻率源为项目外部的标准化 CSV（逻辑身份 `地下电阻率节点_标准化.csv`）。**源文件不入库、不提交 Git**；运行时只登记其 SHA-256 指纹，CI 使用脱敏夹具，不依赖本机数据。
 
-| 数据集 | 记录数 | 说明 |
-|---|---:|---|
-| 标准化源数据 | 17,549 | 字段 `X,Y,Z,RHO` |
-| 训练集 | 15,827 | 264 根空间柱 |
-| 验证集 | 1,722 | 29 根空间柱 |
+| 项目 | 合同 |
+|---|---|
+| 字段 | `X,Y,Z,RHO` |
+| 行数 | 17,549 |
+| 源 SHA-256 | `04c5914d…c167`（完整值见 `config/presets/resistivity-official-baseline.json`） |
+| 坐标 | 局部工程坐标，未声明 EPSG；Z 向下为负 |
+| 坐标唯一性 | `(X,Y,Z)` 无重复 |
+| 数值 | 坐标和值全部有限 |
+| RHO 范围 | 约 1.032113 至 149.984（单位待来源确认，界面如实标注） |
+| 空间结构 | 293 个 `(X,Y)` 空间柱，每柱 42 至 60 个节点 |
 
-坐标为局部平面坐标（`crs.type=local_engineering`，EPSG 未确认），Z 使用负高程/向下为负。RHO 物理单位仍未确认，界面显示“单位待来源确认”。
+预置 seed（唯一生产入口 `python -m geomodeling.preset_cli seed-resistivity`）校验源身份、字段、行数、有限性、坐标唯一性与空间柱结构后，建立只读预置数据版本；预置源不能被用户上传、覆盖或正式选择改写。数据版本 profile 写入字段映射（X/Y/Z/RHO、值名 RHO、`local_linear` 坐标、单位待确认）、行数与分区溯源（§3），并参与数据版本指纹。
 
-该数据只作为独立电阻率案例使用。没有共同控制点和可信坐标变换时，不得与微震或瓦斯案例空间叠加。
+## 3. 训练/验证分区溯源事实
 
-> **v0.4 预设已登记**（`config/presets/resistivity.json`）：电阻率作为 `builtin_legacy` 只读案例保留本节全部已验证事实（17,549/15,827/1,722、正式成果、S3M 缓存与六级证据等级），不进入通用上传流程、不在 SQLite 中建行。
-
-## 3. 训练与验证隔离
-
-- 训练集与验证集按完整 `(X,Y)` 空间柱划分，空间柱交叉数为 **0**。
-- 划分种子：`supermap-rho-block-cv-v1`。
-- 契约校验在本地真实数据回归中持续执行。
-
-## 4. 五种模型验证
-
-五种候选模型使用相同的 1,722 条验证记录，每个模型均为：1,722 行、**1,481 valid**、**241 NoData**、**XY mismatch 0**。
-
-| 模型 | 有效点 | NoData | 覆盖率 | MAE | RMSE |
-|---|---:|---:|---:|---:|---:|
-| IDW 20m/25点 | 1,481 | 241 | 86.0046% | 3.475606 | 5.787635 |
-| Kriging 20m/25点 | 1,481 | 241 | 86.0046% | 3.260683 | 5.818866 |
-| Kriging 20m/15点 | 1,481 | 241 | 86.0046% | 3.273115 | 5.803305 |
-| Kriging 20m/40点 | 1,481 | 241 | 86.0046% | 3.222594 | 5.841043 |
-| Kriging 10m/40点 | 1,481 | 241 | 86.0046% | 3.520460 | 6.430798 |
-
-- `-9999` 是 NoData，不是实测值；导入时转换为 null + `is_nodata=true`，不进入误差统计、着色或再次插值。
-- 241 个 NoData 中 240 个集中在四根完全无覆盖空间柱，另有 1 个分布在单柱；五个模型 NoData 掩膜完全相同，说明无值主要与输出覆盖范围有关，不是单一插值方法造成。
-- 复算指标与 `插值精度对比_总体指标.csv` 在配置容差内一致（`baseline_passed=True`）。
-
-## 5. 正式模型选择
-
-- 默认展示模型：`Kriging 20m/40点`（MAE、中位绝对误差和平均相对误差最优）。
-- 正式对照模型：`IDW 20m/25点`（RMSE、R² 和 log10 RMSE 最优）。
-- Bias 说明：五模型 Bias 均为正值；`IDW 20m/25点` 的 Bias（0.171140）只相对默认 `Kriging 20m/40点`（0.299065）更接近 0，并非五模型中最小（`Kriging 10m/40点` 为 0.127693）。
-- `Kriging 10m/40点` 未提高验证精度，不作为正式候选。
-- 不得描述普通克里金在所有指标上都优于 IDW；不能仅凭整体着色更平滑判断模型更可靠。
-
-## 6. SuperMap 成果证据
-
-唯一正式成果（配置登记 + 文件级验证 + 人工证据）：
+标准化源的遗留训练/验证分区作为**源溯源事实**写入数据版本 profile：
 
 | 项目 | 数值 |
+|---|---:|
+| 训练行数 | 15,827 |
+| 验证行数 | 1,722 |
+| 训练空间柱 | 264 |
+| 验证空间柱 | 29 |
+| 空间柱重叠 | 0 |
+
+profile 只登记计数与验证柱身份指纹（64 位 SHA-256），坐标清单绝不落库。注意区分：**官方候选验证合同**为生产 `spatial_kfold` 5 折、seed=20260723（逐折只用训练点重建场，验证点绝不进入硬约束集合）；上表遗留分区仅作来源溯源，不是官方指标的计算口径。
+
+## 4. 官方基线身份
+
+官方基线冻结于 `config/presets/resistivity-official-baseline.json`（schema `v0.8.0-resistivity-official-baseline/v1`，预置版本 `resistivity-rho-17549/v1`），选择不可复算或指纹不符即 fail-closed（`PRESET_BASELINE_INVALID`），绝不覆盖既有成果。
+
+| 项目 | 值 |
 |---|---|
-| SuperMap 数据集 | `RHO_KRIG_FINAL_20M_40` |
-| 方法 | 普通克里金 |
-| 水平分辨率 / 邻点数 | 20 m / 40 |
-| 行 × 列 × 波段 | 7 × 23 × 42 |
-| 显示值范围 | 1.418283 — 133.146194（界面显示值） |
-| 演示异常阈值 | `RHO >= 77`（工程演示配置，不是已论证的地质危险阈值） |
+| winner 算法 | `ordinary_kriging` |
+| winner 参数 | `variogram_model=exponential`、`neighbor_count=24` |
+| RMSE | 6.454476 |
+| MAE | 3.251899 |
+| R² | 0.923093 |
+| Bias | -0.095026 |
+| 覆盖率 | 1.0 |
+| 公共有效集 | 17,547 |
+| 网格 | 7×23×42 = 6,762 单元，20 m 分辨率 |
+| 网格边界 | X [-160, -40]，Y [220, 660]，Z [-833.0047143, -19.5999]（局部工程坐标） |
+| 候选报告指纹 | `00aebfd7…ab71`（完整值见基线文件） |
 
-证据边界：
+选择规则：`rmse → mae → r2 → 规范化参数序`，官方 winner 限定在 ordinary_kriging 候选中选出（次优 `spherical/neighbor=24`，RMSE=6.483775）。最小官方候选矩阵（1 IDW + 4 普通克里金 + 2 DSI-like）全量保留于候选报告供追溯；IDW（RMSE=6.360991）与 DSI-like（6 邻接 RMSE=6.467770，26 邻接 RMSE=6.506906）候选**不参与官方选择**。
 
-- `dataset_verified=False`：当前 `dataset_api=none`，只有 UDBX 文件级验证（`file_verified`），不得声称内部数据集级程序化验证（见 [../decisions/0002-supermap-evidence-levels.md](../decisions/0002-supermap-evidence-levels.md)）。
-- 完整体元、水平薄切片和 `RHO >= 77` 高值过滤只有 **人工证据**（iDesktopX 2026 手动验证记录）。
-- 垂直切片 **未验证**：原生“剖切显示”出现空白，当前只用“显示范围”归一化参数做水平薄切片规避。
-- 原生等值面 **失败**：`RHO_ISO_77_K40` 与 `RHO_ISO_HIGH_P95_K40` 两种阈值配置均报 `Failed to extract continuous surface, please check IsoValue.`，输出为空数据集，仅登记为失败/空证据。
-- 失败推断：`RHO >= 77` 高值区接触体元边界，且正式体元 X 向仅 7 个单元；这是推断，不是已确认的 SuperMap 内部规则。补低值边界体元（PAD1）和 Python marching cubes 均为待验证路线，不是已解决。
-- 体元 X 向仅 7 个单元，异常体几何较粗，不能把视觉边界解释为精确地质界面。
+## 5. DSI-like 合同与免责声明
 
-其他已知问题：
+产品名固定为“DSI-like 离散平滑插值”。它是基于 IDW 初始场和离散邻域平滑的 Python **工程近似**方法：规则网格趋势层由 SciPy LGMRES 求解稀疏图拉普拉斯系统，原始观测坐标再叠加 IDW 残差精确化层，因而硬约束针对原始散点而不是吸附后的最近网格节点；仅在观测点三维包围范围内更新，范围外保持 NoData。最大节点变化低于收敛容差才算成功，耗尽外迭代预算仍未收敛则类型化失败。
 
-- SM-01：RHO 可能被误导入为文本；使用真实字段名修复，禁止在 SQL 中使用显示别名。
-- SM-06：失败的等值面会留下同名空数据集外壳；成果登记必须检查状态、对象数和可打开性，空结果必须为 `failed`。
+- **免责声明**：DSI-like 不宣称等同 GOCAD DSI，也不宣称给出唯一真实地质结构；页面选项旁如实展示该说明。
+- 参数：`init_power`（默认 2.0）、`neighbor_connectivity`（默认 6）、`smoothing_strength`（默认 0.5，用于把离散方程残差换算为节点变化收敛门）、`max_iterations`（默认 25，稀疏求解外迭代预算）、`convergence_tolerance` 固定 1e-4、`hard_constraints` 固定 true；算法无随机种子，相同输入必须产生相同预测与网格字节。
+- 失败语义：非有限值、重复坐标、公共有效集为空、未过收敛/覆盖率门一律类型化失败，候选 `failed` 绝不物化；不可用时绝不回退为“看起来成功”的 IDW 或点云渲染。
 
-## 7. 已知限制
+## 6. NetCDF 身份链
 
-- RHO 物理单位未确认。
-- EPSG 未确认，坐标为局部工程坐标。
-- 241 个共同 NoData 不得无依据补值。
-- 垂直切片、原生等值面、数据集级 API 验证均未通过或未实现。
-- GOCAD `.sg`、Voxet、VTU 或论文所述 DSI 输出资料缺失，无法验证真实 GOCAD 到 SuperMap 的端到端转换。
+所有候选（IDW / 普通 Kriging / DSI-like，含官方成果）统一走 `CandidateResult → materialize → NetCDF → RenderAsset` 链：
 
-## 8. 复现命令
+- `POST /api/results/{id}/render-assets/netcdf` 是唯一创建入口（首个成功 201、幂等 200、creating 409）；所有 GET 纯查询。
+- NetCDF manifest 必须包含源 SHA、数据版本指纹、算法、参数、网格规格和 provenance；manifest/grid/NetCDF 哈希双向核验，损坏资产原子隔离（`RENDER_ASSET_CORRUPT`）。
+- 坐标合同为 `wgs84_display_anchor_v1` 显示锚点（`display_anchor_only`），页面必须如实展示“非真实地理配准”。
+- 成果页、Volume、X/Y/Z Slice、Contour、剖面分析与导出全部复用统一组件，无电阻率专用渲染器，无回退渲染器。
+
+## 7. 旧 S3M/legacy 退役（v0.8.0）
+
+- 旧 legacy 渲染端点一律返回 **410 `LEGACY_RESISTIVITY_RETIRED`** 类型化响应，绝不返回旧 S3M 数值：`GET /api/cases/resistivity/render-capability`、`POST|GET /api/cases/resistivity/render-assets/netcdf`、`POST /api/cases/resistivity/render-sources/import`、`GET /api/cases/resistivity/voxel-cells`。
+- 旧 legacy 电阻率卡与旧三维工作台页已从产品路径移除（首页、工作台、路由、前端客户端函数）；未 seed 的运行库显示预置描述卡（能力全 false）。
+- 旧 S3M 文件、旧数据库记录与旧证据**只读保留**，由单独的清理任务处置；旧资产不得作为新候选或默认 featured result。
+
+## 8. 历史事实（v0.1 基线，旧链已退役）
+
+以下事实记录旧 S3M/legacy 链的历史验证状态，仅作证据档案保留；当前产品路径以 §1–§7 为准。
+
+- v0.1.0 发布基线曾验证：标准化登记、契约校验、训练/验证隔离、五模型预测导入、公共有效点指标复算、SuperMap 成果登记与报告导出可复现；`RHO_KRIG_FINAL_20M_40` 是当时唯一正式 SuperMap 成果，`dataset_verified=False`。
+- 旧五模型在 1,722 条验证记录上的公共有效点为 1,481、公共 NoData 241、XY mismatch 0；`-9999` 为 NoData 标记，只在导入适配层识别，不进入误差统计、着色或再次插值。
+- 旧 S3M 证据边界：完整体元、水平薄切片和 `RHO >= 77` 高值过滤只有人工证据；垂直切片未验证；原生等值面失败并留下空数据集（失败推断：高值区接触体元边界且 X 向仅 7 个单元——推断，不是已确认的 SuperMap 内部规则）。
+- 历史遗留限制保持如实声明：RHO 物理单位未确认；EPSG 未确认；GOCAD `.sg`/Voxet/VTU 与论文所述 DSI 输出资料缺失，无法验证真实 GOCAD 到 SuperMap 的端到端转换——这正是 v0.8.0 采用“DSI-like 工程近似 + 显式免责声明”的原因。
+
+## 9. 复现命令
 
 ```powershell
-python -m pip install -e ".[test]"
-geomodeling run-all -o outputs/release_verify
-geomodeling verify-supermap -o outputs/release_verify
-python -m pytest -q
+python -m pip install -e ".[api,test]"
+# 预置 seed（需要外部标准化源 CSV；基线默认读 config/presets/resistivity-official-baseline.json）
+python -m geomodeling.preset_cli seed-resistivity --source <标准化源CSV路径>
 python -m pytest -q -m "not local_data"
-python -m pytest -q -m local_data
 ```
 
-预期：三张表 17,549/15,827/1,722，空间柱重叠 0，五模型均 1,481 valid / 241 NoData / XY mismatch 0，`baseline_passed=True`，`udbx_exists=True`（本机存在 `../Project/expore1.udbx` 时），`dataset_verified=False`。
+预期：seed 输出只含逻辑身份（案例/数据版本/实验/运行/官方成果 ID 与指纹），首页电阻率卡为“标准化散点 · 17,549 个节点”的 `builtin_preset` 预置卡，便携测试不依赖外部源（脱敏夹具承载合同）。

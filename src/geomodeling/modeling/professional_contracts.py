@@ -270,6 +270,26 @@ _ALGORITHM_CAPABILITIES: dict[Algorithm, AlgorithmCapabilities] = {
             "z_scale_weight_distance": "旧候选兼容；新候选归一化到空间变换",
         },
     ),
+    # v0.8.0：DSI-like 无原生不确定性（与 IDW 同档：经验误差尺度可用、
+    # 无 Kriging 原生方差）；规则网格邻接平滑，没有搜索邻域/z_scale/变异
+    # 函数旋钮，诚实标记为类型化「不适用」。
+    Algorithm.DSI_LIKE: AlgorithmCapabilities(
+        algorithm=Algorithm.DSI_LIKE,
+        empirical_variogram=_NA,
+        model_anisotropy=_NA,
+        z_scale_weight_distance=_NA,
+        search_neighborhood=_NA,
+        sector_neighbor_limits=_NA,
+        spatial_fold_inspection=_SUPPORTED,
+        empirical_error_scale=_SUPPORTED,
+        native_kriging_std=_NA,
+        anomaly_extraction=_SUPPORTED,
+        candidate_comparison=_SUPPORTED,
+        notes={
+            "native_kriging_std": "不适用：无原生不确定性，经验误差尺度可用",
+            "search_neighborhood": "不适用：规则网格 6/18/26 邻接平滑，无搜索邻域",
+        },
+    ),
 }
 
 

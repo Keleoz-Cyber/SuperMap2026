@@ -1,0 +1,71 @@
+{
+  "run_id": "run-20260808T153623Z-210b8f15",
+  "git_commit": "d40fdb4b39375b66a9a9ae93dce18b3531f0a40c",
+  "sdk_sha256": "d69dadab01fc452a79f1fa88a46aced3cf29885df7bf4febbd6f24ce5b578120",
+  "sdk_version": "12.1.0",
+  "browser": {
+    "name": "chromium",
+    "version": "149.0.7827.55"
+  },
+  "gpu_renderer": "ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 4070 Laptop GPU/PCIe/SSE2, OpenGL 4.5.0)",
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "device_pixel_ratio": 1,
+  "results": {
+    "resistivity": {
+      "case_id": "resistivity",
+      "official_result_id": "0bb1d41a-30e2-4799-92c2-6d519ab6a306",
+      "dsi_result_id": "5b5136c7-7602-4341-9d10-aa2fd8387041",
+      "grid_sha256": "3030ee36c4362d9e24458e16ed0389a1a9bcaac54248bb70f280e7af343ef780",
+      "netcdf_sha256": "01102babb8ebcc46017a7215d983deab79901f3b8eb971c76b7d180923950768",
+      "asset_id": "nc-1be6dc98f087ae615e217c12fbc6ae39"
+    }
+  },
+  "resistivity": {
+    "official_result_id": "0bb1d41a-30e2-4799-92c2-6d519ab6a306",
+    "dsi_result_id": "5b5136c7-7602-4341-9d10-aa2fd8387041",
+    "asset_id": "nc-1be6dc98f087ae615e217c12fbc6ae39",
+    "renderer": "supermap_voxelgrid_netcdf",
+    "algorithm": "dsi_like",
+    "grid_sha256": "3030ee36c4362d9e24458e16ed0389a1a9bcaac54248bb70f280e7af343ef780",
+    "netcdf_sha256": "01102babb8ebcc46017a7215d983deab79901f3b8eb971c76b7d180923950768",
+    "manifest_shape": [
+      11,
+      11,
+      11
+    ],
+    "variable_name": "RHO",
+    "rendered_identity": {
+      "sourceKind": "candidate_result",
+      "sourceId": "5b5136c7-7602-4341-9d10-aa2fd8387041",
+      "gridSha256": "3030ee36c4362d9e24458e16ed0389a1a9bcaac54248bb70f280e7af343ef780",
+      "netcdfSha256": "01102babb8ebcc46017a7215d983deab79901f3b8eb971c76b7d180923950768"
+    },
+    "diag_layer_type": "VoxelGridLayer3D",
+    "sdk_version": "12.1.0"
+  },
+  "seed": {
+    "case_id": "resistivity",
+    "workspace_kind": "builtin_preset",
+    "dataset_version_id": "8c283725-2d7d-5f8b-9c62-2431613d0ec2",
+    "experiment_id": "253cf9d6-1007-5e8d-ad41-1cc1094a50bd",
+    "run_id": "63077623-460d-5e04-aa86-a3344d2524bb",
+    "official_result_id": "0bb1d41a-30e2-4799-92c2-6d519ab6a306",
+    "official_url": "/results/0bb1d41a-30e2-4799-92c2-6d519ab6a306",
+    "materialized": true,
+    "source_sha256": "04c5914d992f397f7dcec3b0d1a6069a9ddeb4a214e5c7de121f37c861cec167",
+    "baseline_sha256": "67d9189c4b0697b03b9fe9cb762a132192832191146e8fa94ededd57a880ec12"
+  },
+  "retirement": {
+    "code": "LEGACY_RESISTIVITY_RETIRED",
+    "checks": {
+      "GET /api/cases/resistivity/render-capability": 410,
+      "GET /api/cases/resistivity/render-assets/netcdf": 410,
+      "POST /api/cases/resistivity/render-assets/netcdf": 410,
+      "POST /api/cases/resistivity/render-sources/import": 410,
+      "GET /api/cases/resistivity/voxel-cells": 410
+    }
+  }
+}

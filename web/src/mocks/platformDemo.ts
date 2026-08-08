@@ -152,8 +152,9 @@ interface MockState {
   extractionJobPolls: number
   // v0.6.1：cand-1 物化状态机--GET /results 未物化 404，POST materialize 后 200
   resultMaterialized: boolean
-  // v0.6.1：内置电阻率 legacy 渲染源登记状态机--导入 POST 前未登记，导入后 supported
-  legacyRenderSourceRegistered: boolean
+  // v0.8.0：电阻率散点预置的 dsi_like 用户实验状态机（轮询/物化）
+  rhoDsiRunPolls: number
+  rhoResultMaterialized: boolean
   // v0.7.0 batch 3：案例生命周期状态机
   caseName: string | null
   caseTrashed: boolean
@@ -344,6 +345,68 @@ const PRO_PREVIEW = {
   value_range: [90, 130],
 }
 
+// ---------------------------------------------------------------- v0.8.0 电阻率散点预置
+// 预置形态（行数/字段/网格/值域）来自入库公开合同（config/presets/resistivity.json
+// 与 resistivity-official-baseline.json 的已核验事实）；候选指标为本文件夹具值，
+// 只驱动浏览器流程，绝不冒充真实计算结果或外部私有源内容。
+const RHO_SHA = 'e0'.repeat(32)
+const RHO_GRID_SHA = 'e1'.repeat(32)
+const RHO_NC_SHA = 'e2'.repeat(32)
+const RHO_DATASET_ID = 'ds-rho'
+const RHO_OFFICIAL_EXPERIMENT_ID = 'exp-rho-official'
+const RHO_OFFICIAL_RUN_ID = 'run-rho-official'
+const RHO_OFFICIAL_RESULT_ID = 'cand-rho-official'
+const RHO_DSI_EXPERIMENT_ID = 'exp-rho-dsi'
+const RHO_DSI_RUN_ID = 'run-rho-dsi'
+const RHO_DSI_RESULT_ID = 'cand-rho-dsi-1'
+const RHO_ROW_COUNT = 17_549
+const RHO_VALUE_RANGE: [number, number] = [1.032113, 149.984]
+const RHO_GRID_SHAPE = [7, 23, 42]
+const RHO_GRID_BOUNDS = [
+  [-160, -40],
+  [220, 660],
+  [-833.0047143, -19.5999],
+]
+const RHO_GRID_RESOLUTION = [20, 20, 20]
+const RHO_UNIT_NOTE = 'RHO 单位待来源确认'
+const RHO_MAPPING = {
+  dimension: '3d',
+  x: 'X',
+  y: 'Y',
+  z: 'Z',
+  value: 'RHO',
+  value_name: 'RHO',
+  value_unit: RHO_UNIT_NOTE,
+  coordinate_kind: 'local_linear',
+}
+const RHO_DATASET_PROFILE = {
+  source_kind: 'builtin_preset',
+  dimension: '3d',
+  mapping: RHO_MAPPING,
+  row_count: RHO_ROW_COUNT,
+  valid_row_count: RHO_ROW_COUNT,
+  invalid_row_count: 0,
+}
+const RHO_PROVENANCE = {
+  preset_version: 'resistivity-rho-17549/v1',
+  source_sha256: RHO_SHA,
+  badge: '散点预置 · 官方普通克里金成果',
+  data_form: '标准化散点 · 17,549 个节点',
+  fields: ['X', 'Y', 'Z', 'RHO'],
+  value_unit: RHO_UNIT_NOTE,
+  coordinate_kind: 'local_linear',
+}
+// DSI-like 合同默认参数（与后端 DSIParameters 默认值逐位一致）
+const RHO_DSI_PARAMETERS = {
+  init_power: 2,
+  neighbor_connectivity: 6,
+  smoothing_strength: 0.5,
+  max_iterations: 25,
+  convergence_tolerance: 1e-4,
+  hard_constraints: true,
+}
+const RHO_VALIDATION = { method: 'spatial_kfold', folds: 5, seed: 20260723, holdout_fraction: 0.2 }
+
 function json(route: Route, body: unknown, status = 200) {
   return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
 }
@@ -358,7 +421,8 @@ export async function installMockApi(page: Page): Promise<void> {
     diagnosisJobPolls: 0,
     extractionJobPolls: 0,
     resultMaterialized: false,
-    legacyRenderSourceRegistered: false,
+    rhoDsiRunPolls: 0,
+    rhoResultMaterialized: false,
     caseName: null,
     caseTrashed: false,
     casePurged: false,
@@ -406,8 +470,8 @@ export async function installMockApi(page: Page): Promise<void> {
       : [],
   })
 
-  const sliceBody = (axis: string, coordinate: number) => ({
-    result_id: 'cand-1',
+  const sliceBody = (axis: string, coordinate: number, resultId = 'cand-1') => ({
+    result_id: resultId,
     fixed_axis: axis,
     fixed_coordinate: coordinate,
     axes_names: axis === 'z' ? ['x', 'y'] : axis === 'x' ? ['y', 'z'] : ['x', 'z'],
@@ -490,28 +554,54 @@ export async function installMockApi(page: Page): Promise<void> {
     const method = route.request().method()
 
     if (path === '/health') return json(route, { status: 'ok', version: WEB_VERSION, time: T })
-    // v0.7.0：统一工作台 DTO（mock 与 /api/cases 卡片身份一致）
+    // v0.8.0：电阻率统一工作台 DTO（builtin_preset 只读散点预置；形态与
+    // 微震预置一致，内容来自入库公开合同；旧 legacy 形态已随 Task 6 退役）
     if (path === '/cases/resistivity/workspace' && method === 'GET') {
       return json(route, {
         case_id: 'resistivity',
         title: '地下电阻率',
+        case_type: 'generic',
         status: 'active',
-        source_kind: 'builtin_legacy',
-        workspace_kind: 'builtin_legacy',
+        source_kind: 'builtin_preset',
+        workspace_kind: 'builtin_preset',
+        created_at: T,
+        updated_at: T,
         capabilities: {
           data_summary: true,
-          experiments: false,
-          official_result: false,
+          experiments: true,
+          official_result: true,
           native_volume: true,
         },
-        primary_dataset: null,
-        official_result: null,
-        provenance_summary: {
-          data_form: '三维 X/Y/Z/RHO（局部工程坐标）',
-          coordinate: '局部工程坐标',
-          unit_note: 'RHO 单位待来源确认',
+        primary_dataset: {
+          id: RHO_DATASET_ID,
+          case_id: 'resistivity',
+          version: 1,
+          status: 'validated',
+          created_at: T,
+          profile: RHO_DATASET_PROFILE,
         },
-        links: { detail: '/api/cases/resistivity', publish_status: '/api/cases/resistivity/publish-status' },
+        official_result: {
+          result_id: RHO_OFFICIAL_RESULT_ID,
+          url: `/results/${RHO_OFFICIAL_RESULT_ID}`,
+          materialized: true,
+        },
+        provenance_summary: RHO_PROVENANCE,
+        data_preparation: {
+          state: 'validated',
+          dataset_id: null,
+          latest_validated_dataset_id: RHO_DATASET_ID,
+          next_action: {
+            step: 'experiment',
+            label: '新建实验',
+            url: '/#/cases/resistivity/experiments/new',
+          },
+          error: null,
+        },
+        validated_datasets: [],
+        abandoned_datasets: [],
+        recent_experiments: [],
+        recent_results: [],
+        links: { detail: '/api/cases/resistivity', publish_status: null },
       })
     }
     if (path === '/cases/case-e2e/workspace' && method === 'GET') {
@@ -712,15 +802,41 @@ export async function installMockApi(page: Page): Promise<void> {
     if (path === '/cases' && method === 'GET') {
       const cases: unknown[] = [
           {
+            // v0.8.0：电阻率散点预置卡（builtin_preset；官方成果直达 cand-rho-official 夹具）
             case_id: 'resistivity',
             title: '地下电阻率',
-            data_form: '三维 X/Y/Z/RHO（局部工程坐标）',
+            case_type: 'generic',
             status: 'active',
-            coordinate: '局部工程坐标',
-            unit_note: 'RHO 单位待来源确认',
-            v03_stage: 'iServer 纵向闭环',
-            source_kind: 'builtin_legacy',
-            links: { detail: '/api/cases/resistivity', publish_status: '/api/cases/resistivity/publish-status' },
+            source_kind: 'builtin_preset',
+            workspace_kind: 'builtin_preset',
+            created_at: T,
+            updated_at: T,
+            capabilities: {
+              data_summary: true,
+              experiments: true,
+              official_result: true,
+              native_volume: true,
+            },
+            primary_dataset: {
+              id: RHO_DATASET_ID,
+              case_id: 'resistivity',
+              version: 1,
+              status: 'validated',
+              created_at: T,
+              profile: RHO_DATASET_PROFILE,
+            },
+            official_result: {
+              result_id: RHO_OFFICIAL_RESULT_ID,
+              url: `/results/${RHO_OFFICIAL_RESULT_ID}`,
+              materialized: true,
+            },
+            featured_result: {
+              result_id: RHO_OFFICIAL_RESULT_ID,
+              url: `/results/${RHO_OFFICIAL_RESULT_ID}`,
+              materialized: true,
+            },
+            provenance_summary: RHO_PROVENANCE,
+            links: { detail: '/api/cases/resistivity', publish_status: null },
           },
           {
             // v0.7.0：微震 CSV 预置卡（builtin_preset；官方成果直达 cand-1 夹具）
@@ -1000,9 +1116,31 @@ export async function installMockApi(page: Page): Promise<void> {
     }
     if (path === '/experiments' && method === 'POST') {
       const body = route.request().postDataJSON() as {
+        name?: string
+        algorithm?: string
         professional_confirmation_id?: string
         neighborhood?: unknown
         empirical_uncertainty?: unknown
+      }
+      // v0.8.0：电阻率散点预置上的 dsi_like 用户实验（单组参数 → 1 候选）
+      if (body.algorithm === 'dsi_like') {
+        return json(route, {
+          id: RHO_DSI_EXPERIMENT_ID,
+          case_id: 'resistivity',
+          name: body.name ?? '插值实验',
+          params: {
+            case_id: 'resistivity',
+            name: body.name ?? '插值实验',
+            algorithm: 'dsi_like',
+            dataset_version_id: RHO_DATASET_ID,
+            search_mode: 'manual',
+            parameters: RHO_DSI_PARAMETERS,
+            validation: RHO_VALIDATION,
+            grid: null,
+          },
+          created_at: T,
+          updated_at: T,
+        }, 201)
       }
       if (body.professional_confirmation_id) {
         return json(route, {
@@ -1076,6 +1214,136 @@ export async function installMockApi(page: Page): Promise<void> {
     if (path === '/runs/run-e2e' && method === 'GET') {
       state.runPolls += 1
       return json(route, state.runPolls > 1 ? runBody('succeeded', 2) : runBody('running', 1))
+    }
+    // ------------------------------------------- v0.8.0 电阻率散点预置数据/实验链
+    if (path === '/cases/resistivity/datasets' && method === 'GET') {
+      return json(route, {
+        datasets: [
+          {
+            id: RHO_DATASET_ID,
+            case_id: 'resistivity',
+            version: 1,
+            status: 'validated',
+            created_at: T,
+          },
+        ],
+      })
+    }
+    if (path === '/datasets/ds-rho' && method === 'GET') {
+      return json(route, {
+        id: RHO_DATASET_ID,
+        case_id: 'resistivity',
+        version: 1,
+        status: 'validated',
+        profile: RHO_DATASET_PROFILE,
+        created_at: T,
+      })
+    }
+    if (path === '/datasets/ds-rho/points' && method === 'GET') {
+      return json(route, {
+        dataset_id: RHO_DATASET_ID,
+        dimension: '3d',
+        count: 3,
+        served: 3,
+        decimate: 1,
+        x: [-150, -141, -132],
+        y: [260, 292, 324],
+        z: [-50, -150, -250],
+        values: [10.5, 50.2, 60.7],
+        value_range: [10.5, 60.7],
+        value_name: 'RHO',
+        source_sha256: RHO_SHA,
+      })
+    }
+    if (path === '/cases/resistivity/formal-selections' && method === 'GET') {
+      // 只读预置：官方正式选择由 seed 写入，用户候选不得顶替
+      return json(route, {
+        case_id: 'resistivity',
+        selections: [
+          {
+            id: 'sel-rho-official',
+            case_id: 'resistivity',
+            candidate_result_id: RHO_OFFICIAL_RESULT_ID,
+            selected_by: 'preset-seed',
+            note: '官方普通克里金基线（v0.8.0 电阻率散点预置，mock 夹具）',
+            created_at: T,
+          },
+        ],
+      })
+    }
+    // ------------------------------------------- v0.8.0 dsi_like 用户实验运行链
+    const rhoDsiRunBody = (status: string, completed: number) => ({
+      id: RHO_DSI_RUN_ID,
+      experiment_id: RHO_DSI_EXPERIMENT_ID,
+      status,
+      error_code: null,
+      metrics: { current_candidate: status === 'succeeded' ? null : 1, completed, total: 1, failed: 0 },
+      retry_of_run_id: null,
+      created_at: T,
+      professional_analysis_supported: false,
+      updated_at: T,
+      started_at: T,
+      finished_at: status === 'succeeded' ? T : null,
+    })
+    if (path === `/experiments/${RHO_DSI_EXPERIMENT_ID}` && method === 'GET') {
+      return json(route, {
+        id: RHO_DSI_EXPERIMENT_ID,
+        case_id: 'resistivity',
+        name: '插值实验',
+        params: {
+          case_id: 'resistivity',
+          name: '插值实验',
+          algorithm: 'dsi_like',
+          dataset_version_id: RHO_DATASET_ID,
+          search_mode: 'manual',
+          parameters: RHO_DSI_PARAMETERS,
+          validation: RHO_VALIDATION,
+          grid: null,
+        },
+        created_at: T,
+        updated_at: T,
+      })
+    }
+    if (path === `/experiments/${RHO_DSI_EXPERIMENT_ID}/runs` && method === 'POST') {
+      state.rhoDsiRunPolls = 0
+      return json(route, rhoDsiRunBody('queued', 0), 201)
+    }
+    if (path === `/runs/${RHO_DSI_RUN_ID}` && method === 'GET') {
+      state.rhoDsiRunPolls += 1
+      return json(
+        route,
+        state.rhoDsiRunPolls > 1 ? rhoDsiRunBody('succeeded', 1) : rhoDsiRunBody('running', 0),
+      )
+    }
+    if (path === `/experiments/${RHO_DSI_EXPERIMENT_ID}/candidates` && method === 'GET') {
+      const done = state.rhoDsiRunPolls > 1
+      return json(route, {
+        experiment_id: RHO_DSI_EXPERIMENT_ID,
+        public_metrics: { common_valid_count: 17041 },
+        latest_run: done ? rhoDsiRunBody('succeeded', 1) : rhoDsiRunBody('queued', 0),
+        candidates: done
+          ? [
+              {
+                id: RHO_DSI_RESULT_ID,
+                fingerprint: 'fp-rho-dsi-1',
+                status: 'succeeded',
+                parameters: RHO_DSI_PARAMETERS,
+                metrics: {
+                  total_count: 17549,
+                  common_valid_count: 17041,
+                  candidate_valid_count: 17041,
+                  candidate_nodata_count: 508,
+                  coverage: 0.971,
+                  mae: 4.013,
+                  rmse: 7.82,
+                  r2: 0.89,
+                  bias: -0.12,
+                },
+                error: null,
+              },
+            ]
+          : [],
+      })
     }
     if (path === '/results/cand-1' && method === 'GET') {
       // 与真实后端一致：未物化 404 RESULT_NOT_MATERIALIZED，POST materialize 后才可读
@@ -1182,6 +1450,233 @@ export async function installMockApi(page: Page): Promise<void> {
         },
       }, 201)
     }
+    // ------------------------------------------- v0.8.0 电阻率预置成果（官方/dsi_like 用户候选）
+    // 网格/值域为入库公开合同事实；指标为夹具值，绝不冒充真实计算结果。
+    const rhoResultMetadata = (
+      resultId: string,
+      experimentId: string,
+      runId: string,
+      algorithm: string,
+      parameters: Record<string, unknown>,
+      fingerprint: string,
+      evaluation: Record<string, unknown>,
+    ) => ({
+      result_id: resultId,
+      run_id: runId,
+      experiment_id: experimentId,
+      dataset_version_id: RHO_DATASET_ID,
+      algorithm,
+      parameters,
+      dimension: '3d',
+      shape: RHO_GRID_SHAPE,
+      cell_count: 6762,
+      bounds: RHO_GRID_BOUNDS,
+      resolution: RHO_GRID_RESOLUTION,
+      value_range: RHO_VALUE_RANGE,
+      nodata_count: 0,
+      grid_sha256: RHO_GRID_SHA,
+      source_sha256: RHO_SHA,
+      standardized_sha256: RHO_SHA,
+      fingerprint,
+      validation: { folds: 5 },
+      created_at: T,
+      professional_analysis_supported: false,
+      evaluation_summary: evaluation,
+    })
+    const rhoDsiMetadata = () =>
+      rhoResultMetadata(
+        RHO_DSI_RESULT_ID,
+        RHO_DSI_EXPERIMENT_ID,
+        RHO_DSI_RUN_ID,
+        'dsi_like',
+        RHO_DSI_PARAMETERS,
+        'fp-rho-dsi-1',
+        {
+          common_valid_count: 17041,
+          candidate_valid_count: 17041,
+          candidate_nodata_count: 508,
+          total_count: 17549,
+          coverage: 0.971,
+          rmse: 7.82,
+          mae: 4.013,
+          r2: 0.89,
+          bias: -0.12,
+          enhanced_evidence_available: false,
+        },
+      )
+    const rhoOfficialMetadata = () =>
+      rhoResultMetadata(
+        RHO_OFFICIAL_RESULT_ID,
+        RHO_OFFICIAL_EXPERIMENT_ID,
+        RHO_OFFICIAL_RUN_ID,
+        'ordinary_kriging',
+        { variogram_model: 'exponential', neighbor_count: 24 },
+        'fp-rho-official-1',
+        // 官方基线指标：config/presets/resistivity-official-baseline.json 入库公开事实
+        {
+          common_valid_count: 17547,
+          candidate_valid_count: 17547,
+          candidate_nodata_count: 2,
+          total_count: 17549,
+          coverage: 1.0,
+          rmse: 6.454476,
+          mae: 3.251899,
+          r2: 0.923093,
+          bias: -0.095026,
+          enhanced_evidence_available: false,
+        },
+      )
+    const rhoRenderCapability = (resultId: string) => ({
+      source_kind: 'candidate_result',
+      source_id: resultId,
+      supported: true,
+      reason_code: null,
+      reason: null,
+      dimension: '3d',
+      grid_kind: 'regular',
+      property_name: 'RHO',
+      units: RHO_UNIT_NOTE,
+      geolocation_status: 'display_anchor_only',
+      display_transform: {
+        contract: 'wgs84_display_anchor_v1',
+        origin_x: -160,
+        origin_y: 220,
+        anchor_longitude: 120,
+        anchor_latitude: 30,
+        anchor_height: 0,
+        metres_per_degree_lon: 96486.3,
+        metres_per_degree_lat: 110852.4,
+      },
+      // 候选成果默认 linear + viridis（v0.7.0 第二批合同）
+      render_profile: {
+        property_name: 'RHO',
+        unit: RHO_UNIT_NOTE,
+        default_scale: 'linear',
+        default_palette: 'viridis',
+        log_available: true,
+        value_range: RHO_VALUE_RANGE,
+        filter_range: RHO_VALUE_RANGE,
+        lighting: true,
+        gradient_opacity: true,
+        bounding_box: true,
+        opacity: 1,
+      },
+    })
+    const rhoPreview = (resultId: string) => ({
+      result_id: resultId,
+      dimension: '3d',
+      original_cell_count: 6762,
+      served_cell_count: 2,
+      stride: 1,
+      x: [-160, -140],
+      y: [220, 240],
+      z: [-833.0047143, -813.0047143],
+      values: [12.5, 40.2],
+      is_nodata: [false, false],
+      value_range: [12.5, 40.2],
+    })
+    const rhoRenderAsset = (resultId: string, assetId: string) => ({
+      id: assetId,
+      source_kind: 'candidate_result',
+      source_id: resultId,
+      renderer: 'supermap_voxelgrid_netcdf',
+      status: 'ready',
+      grid_sha256: RHO_GRID_SHA,
+      netcdf_sha256: RHO_NC_SHA,
+      manifest_url: `/api/render-assets/${assetId}/manifest`,
+      netcdf_url: `/api/render-assets/${assetId}/volume.nc`,
+      error: null,
+    })
+    if (path === `/experiments/${RHO_OFFICIAL_EXPERIMENT_ID}` && method === 'GET') {
+      return json(route, {
+        id: RHO_OFFICIAL_EXPERIMENT_ID,
+        case_id: 'resistivity',
+        name: '官方普通克里金基线',
+        params: {
+          case_id: 'resistivity',
+          name: '官方普通克里金基线',
+          algorithm: 'ordinary_kriging',
+          dataset_version_id: RHO_DATASET_ID,
+          search_mode: 'manual',
+          parameters: { variogram_model: 'exponential', neighbor_count: 24 },
+          validation: RHO_VALIDATION,
+          grid: { bounds: RHO_GRID_BOUNDS, resolution: RHO_GRID_RESOLUTION, max_cells: 1000000 },
+        },
+        created_at: T,
+        updated_at: T,
+      })
+    }
+    // 官方成果：seed 即物化（GET 恒 200）；资产懒创建（GET 404 → 显式 POST）
+    if (path === `/results/${RHO_OFFICIAL_RESULT_ID}` && method === 'GET') {
+      return json(route, rhoOfficialMetadata())
+    }
+    if (path === `/results/${RHO_OFFICIAL_RESULT_ID}/materialize` && method === 'POST') {
+      return json(route, rhoOfficialMetadata())
+    }
+    // dsi_like 用户候选：未物化 404 RESULT_NOT_MATERIALIZED，POST materialize 后 200
+    if (path === `/results/${RHO_DSI_RESULT_ID}` && method === 'GET') {
+      if (!state.rhoResultMaterialized) {
+        return json(
+          route,
+          { error: { code: 'RESULT_NOT_MATERIALIZED', message: '成果尚未生成', details: { result_id: RHO_DSI_RESULT_ID } } },
+          404,
+        )
+      }
+      return json(route, rhoDsiMetadata())
+    }
+    if (path === `/results/${RHO_DSI_RESULT_ID}/materialize` && method === 'POST') {
+      state.rhoResultMaterialized = true
+      return json(route, rhoDsiMetadata())
+    }
+    if (
+      (path === `/results/${RHO_OFFICIAL_RESULT_ID}/preview` ||
+        path === `/results/${RHO_DSI_RESULT_ID}/preview`) &&
+      method === 'GET'
+    ) {
+      const resultId = path.includes(RHO_OFFICIAL_RESULT_ID)
+        ? RHO_OFFICIAL_RESULT_ID
+        : RHO_DSI_RESULT_ID
+      return json(route, rhoPreview(resultId))
+    }
+    if (
+      (path === `/results/${RHO_OFFICIAL_RESULT_ID}/slices` ||
+        path === `/results/${RHO_DSI_RESULT_ID}/slices`) &&
+      method === 'GET'
+    ) {
+      const resultId = path.includes(RHO_OFFICIAL_RESULT_ID)
+        ? RHO_OFFICIAL_RESULT_ID
+        : RHO_DSI_RESULT_ID
+      const axis = url.searchParams.get('axis') ?? 'z'
+      const coordinate = axis === 'x' ? -160 : axis === 'y' ? 220 : -833.0047143
+      return json(route, sliceBody(axis, coordinate, resultId))
+    }
+    if (
+      (path === `/results/${RHO_OFFICIAL_RESULT_ID}/render-capability` ||
+        path === `/results/${RHO_DSI_RESULT_ID}/render-capability`) &&
+      method === 'GET'
+    ) {
+      const resultId = path.includes(RHO_OFFICIAL_RESULT_ID)
+        ? RHO_OFFICIAL_RESULT_ID
+        : RHO_DSI_RESULT_ID
+      return json(route, rhoRenderCapability(resultId))
+    }
+    if (
+      (path === `/results/${RHO_OFFICIAL_RESULT_ID}/render-assets/netcdf` ||
+        path === `/results/${RHO_DSI_RESULT_ID}/render-assets/netcdf`) &&
+      method === 'GET'
+    ) {
+      return json(
+        route,
+        { error: { code: 'RENDER_ASSET_NOT_FOUND', message: '该渲染源尚未创建渲染资产', details: {} } },
+        404,
+      )
+    }
+    if (path === `/results/${RHO_DSI_RESULT_ID}/render-assets/netcdf` && method === 'POST') {
+      return json(route, rhoRenderAsset(RHO_DSI_RESULT_ID, `nc-${'d5'.repeat(16)}`), 201)
+    }
+    if (path === `/results/${RHO_OFFICIAL_RESULT_ID}/render-assets/netcdf` && method === 'POST') {
+      return json(route, rhoRenderAsset(RHO_OFFICIAL_RESULT_ID, `nc-${'d6'.repeat(16)}`), 201)
+    }
     // ---------------------------------------------------------------- v0.6.1 NetCDF 原生体渲染
     // 物化是唯一显式变异（POST）；能力/资产状态一律纯 GET，绝不隐式 POST。
     if (path === '/results/cand-1/materialize' && method === 'POST') {
@@ -1280,160 +1775,36 @@ export async function installMockApi(page: Page): Promise<void> {
         error: null,
       }, 201)
     }
-    // ------------------------------------------------- v0.6.1 内置电阻率案例
-    // legacy 渲染源登记状态机：导入 POST 前 LEGACY_RENDER_SOURCE_NOT_REGISTERED，
-    // 导入后 capability 翻转 supported，资产创建走既有 NetCDF 流程
-    if (path === '/cases/resistivity' && method === 'GET') {
-      return json(route, {
-        case_id: 'resistivity',
-        title: '地下电阻率',
-        coordinate: { type: 'local', epsg: null, note: '局部工程坐标 · EPSG 未确认 · Z 向下为负' },
-        datasets: [],
-        validation_split: { spatial_column_overlap: 0, seed: 'e2e-seed' },
-        metric_expectations: { common_valid: 100, common_nodata: 0, coverage_rate: 1 },
-        models: [],
-        baseline_comparison: null,
-        metric_source: 'e2e-mock',
-        supermap: { version: '12.1.0', datasource_alias: 'rho', dataset_api: '', results: [] },
-        views: [],
-        issues: [],
-      })
-    }
-    if (path === '/cases/resistivity/publish-status' && method === 'GET') {
-      return json(route, {
-        case_id: 'resistivity',
-        result_id: 'RHO_KRIG_FINAL_20M_40',
-        iserver_available: false,
-        iserver: { base_url: 'http://localhost:8090/iserver', reachable: false, http_status: null, services: [] },
-        service_checks: [],
-        evidence_chain: { result_id: 'RHO_KRIG_FINAL_20M_40', states: [] },
-        failed_results: [],
-        planned_services: {
-          data: 'http://localhost:8090/iserver/services/data-rho/rest/data',
-          map: 'http://localhost:8090/iserver/services/map-rho/rest/maps/rho',
-          realspace: 'http://localhost:8090/iserver/services/3D-WorkSpace/rest/realspace',
-          scene_name: 'RHO_三维全值域',
-          volume: {
-            url: 'http://localhost:8090/iserver/services/3D-WorkSpace/rest/realspace/datas/rho',
-            service_name: 'rho-volume',
-            scene_name: 'RHO_三维全值域',
-            available: false,
-            layers: [],
-            note: 'S3M 缓存未发布',
-          },
-        },
-      })
-    }
-    if (path === '/cases/resistivity/points' && method === 'GET') {
-      return json(route, {
-        case_id: 'resistivity',
-        source: 'csv',
-        source_label: 'rho_measurements.csv',
-        sha256: SHA,
-        decimate: 40,
-        count: 1000,
-        served: 0,
-        value_field: 'rho',
-        unit_note: 'Ω·m',
-        x: [],
-        y: [],
-        z: [],
-        values: [],
-        value_range: [10, 120],
-        x_range: [-150, -60],
-        y_range: [260, 580],
-        z_range: [-300, -100],
-      })
-    }
-    if (path === '/cases/resistivity/render-capability' && method === 'GET') {
-      const transform = {
-        contract: 'wgs84_display_anchor_v1',
-        origin_x: -105,
-        origin_y: 420,
-        anchor_longitude: 120,
-        anchor_latitude: 30,
-        anchor_height: 0,
-        metres_per_degree_lon: 96486.3,
-        metres_per_degree_lat: 110852.4,
-      }
-      if (!state.legacyRenderSourceRegistered) {
-        return json(route, {
-          source_kind: 'builtin_legacy',
-          source_id: 'resistivity',
-          supported: false,
-          reason_code: 'LEGACY_RENDER_SOURCE_NOT_REGISTERED',
-          reason: '内置案例尚未登记权威规则网格，请先运行 render-grid import-csv',
-          dimension: '3d',
-          grid_kind: null,
-          property_name: 'RHO',
-          units: 'unknown',
-          geolocation_status: 'display_anchor_only',
-          display_transform: transform,
-          render_profile: null,
-        })
-      }
-      return json(route, {
-        source_kind: 'builtin_legacy',
-        source_id: 'resistivity',
-        supported: true,
-        reason_code: null,
-        reason: null,
-        dimension: '3d',
-        grid_kind: 'regular',
-        property_name: 'RHO',
-        units: 'unknown',
-        geolocation_status: 'display_anchor_only',
-        display_transform: transform,
-        // v0.7.0 第二批：内置电阻率默认 log + native-spectrum
-        render_profile: {
-          property_name: 'RHO',
-          unit: 'unknown',
-          default_scale: 'log',
-          default_palette: 'native-spectrum',
-          log_available: true,
-          value_range: [10, 120],
-          filter_range: [10, 120],
-          lighting: true,
-          gradient_opacity: true,
-          bounding_box: true,
-          opacity: 1,
-        },
-      })
-    }
-    if (path === '/cases/resistivity/render-sources/import' && method === 'POST') {
-      state.legacyRenderSourceRegistered = true
-      return json(route, {
-        source_kind: 'builtin_legacy',
-        source_id: 'resistivity',
-        grid_sha256: SHA,
-        property_name: 'RHO',
-        units: 'unknown',
-        shape: [3, 4, 5],
-        artifact_dir: `builtin_legacy/resistivity/${SHA}`,
-        import_source_sha256: MICRO_SHA,
-      }, 201)
-    }
-    if (path === '/cases/resistivity/render-assets/netcdf' && method === 'GET') {
+    // ------------------------------------------------- v0.8.0 内置电阻率退役合同
+    // 旧 legacy/S3M 渲染注册/资产/体元路由一律 410 LEGACY_RESISTIVITY_RETIRED，
+    // 绝不返回旧 S3M 数值（与真实后端 rendering.py/app.py 的退役响应同构）。
+    if (
+      (path === '/cases/resistivity/render-capability' && method === 'GET') ||
+      (path === '/cases/resistivity/render-assets/netcdf' && (method === 'GET' || method === 'POST')) ||
+      (path === '/cases/resistivity/render-sources/import' && method === 'POST') ||
+      (path === '/cases/resistivity/voxel-cells' && method === 'GET')
+    ) {
       return json(
         route,
-        { error: { code: 'RENDER_ASSET_NOT_FOUND', message: '该渲染源尚未创建渲染资产', details: {} } },
-        404,
+        {
+          error: {
+            code: 'LEGACY_RESISTIVITY_RETIRED',
+            message:
+              '旧电阻率 legacy 渲染入口已退役：电阻率已迁移为散点预置案例，' +
+              '体渲染请使用统一案例工作台的候选成果渲染链',
+            details: {
+              source_kind: 'builtin_legacy',
+              source_id: 'resistivity',
+              replacement: '/api/cases/resistivity/workspace',
+            },
+          },
+        },
+        410,
       )
     }
-    if (path === '/cases/resistivity/render-assets/netcdf' && method === 'POST') {
-      const assetId = `nc-${'ef'.repeat(16)}`
-      return json(route, {
-        id: assetId,
-        source_kind: 'builtin_legacy',
-        source_id: 'resistivity',
-        renderer: 'supermap_voxelgrid_netcdf',
-        status: 'ready',
-        grid_sha256: SHA,
-        netcdf_sha256: MICRO_SHA,
-        manifest_url: `/api/render-assets/${assetId}/manifest`,
-        netcdf_url: `/api/render-assets/${assetId}/volume.nc`,
-        error: null,
-      }, 201)
+    // 首页 iServer 探测点仍读取该路由（真实后端保留）：mock 只携带探测结果字段
+    if (path === '/cases/resistivity/publish-status' && method === 'GET') {
+      return json(route, { case_id: 'resistivity', iserver_available: false })
     }
     // ------------------------------------------- v0.7.0 第二批：RenderAsset 剖面分析/导出
     if (path.startsWith('/render-assets/') && path.endsWith('/slice-analysis') && method === 'GET') {

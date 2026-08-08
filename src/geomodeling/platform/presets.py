@@ -27,7 +27,9 @@ PRESET_DIR = Path("config/presets")
 _EMBEDDED_ABS_PATH_RE = re.compile(r"[A-Za-z]:[\\/]|\\\\")
 _POSIX_ABS_START_RE = re.compile(r"^/")
 
-_ALLOWED_SOURCES = frozenset({"builtin_legacy", "upload_required", "domain_adapter"})
+_ALLOWED_SOURCES = frozenset(
+    {"builtin_legacy", "builtin_preset", "upload_required", "domain_adapter"}
+)
 # domain_adapter 预设必须声明已登记的领域适配器；此处仅白名单校验，
 # 不做通用插件加载。
 _ALLOWED_DOMAIN_ADAPTERS = frozenset({"microseismic_dat_v05"})

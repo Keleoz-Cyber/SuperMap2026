@@ -4,7 +4,7 @@
 
 The project builds a browser-based modeling platform for independent underground-property cases. The target workflow is upload, field mapping, validation, interpolation tuning, spatial validation, formal modeling, visualization, and evidence export. The approved product design is [product-blueprint.md](product-blueprint.md).
 
-Current implementation is still the Python CLI foundation: v0.1.0 connects standardized `X,Y,Z,RHO` data, train/validation splits, existing SuperMap prediction exports, quality metrics, model/task state, and SuperMap result registration. The current code additionally contains the merged microseismic v0.2a audit foundation, the released v0.5 microseismic second-case modeling loop (a domain adapter derives local XYZ/Vx samples from the 22 formal DATs, applies the confirmed global 3σ filter and exact-XYZ arithmetic-mean aggregation behind a byte-pinned golden gate, and feeds the resulting 1,911 modeling nodes into the generic v0.4 platform; browser wizard and CLI share the same derivation kernel) and, on the v0.6 branch, the professional modeling layer: deterministic omnidirectional/directional variogram diagnostics with human-confirmed anisotropy, rotated sector search neighborhoods shared by IDW and ordinary Kriging, Kriging native estimation variance, out-of-fold residuals with an empirical error scale, fold-leakage inspection, explicit-threshold connected anomaly regions, compatibility-fingerprinted two-candidate comparison, and a hashed professional evidence export. Gas modeling, absolute georeferencing, cross-case overlay, and automated iServer publishing remain target capabilities, not implemented capabilities. External gas CSVs plus iDesktopX experiments are manual evidence, not delivered modules.
+The current implementation is a browser platform backed by FastAPI, SQLite, and Python modeling services. It includes the released microseismic preset, the v0.6 professional modeling layer, the v0.7 unified case lifecycle/comparison/rendering workbenches, and the v0.8 resistivity scattered-data preset with IDW, ordinary Kriging, and DSI-like experiment chains. DSI-like is an explicitly labeled engineering approximation: a sparse graph-Laplacian trend solve plus an original-coordinate residual layer; it is not GOCAD DSI. Gas modeling, absolute georeferencing, cross-case overlay, and automated iServer publishing remain target capabilities, not implemented capabilities. External gas CSVs plus iDesktopX experiments are manual evidence, not delivered modules.
 
 ## Constraints
 
@@ -14,7 +14,7 @@ Current implementation is still the Python CLI foundation: v0.1.0 connects stand
 - Empty or failed SuperMap outputs must not be marked as successful formal results.
 - IDW and ordinary Kriging must not be renamed as DSI.
 - Different research cases retain independent coordinate systems. They may share software and algorithms but must not be spatially overlaid without control points and a proven transformation.
-- Coalbed methane and DSI-like capabilities are interfaces only; microseismic has an implemented audit layer (v0.2a) and, since v0.5, an implemented local-geometry/3σ/aggregation derivation and modeling loop. It still has no absolute CRS and no cross-case overlay.
+- Coalbed methane remains an interface only. DSI-like is implemented for 3D datasets as an engineering approximation with explicit non-GOCAD labeling, original-coordinate hard constraints, and fail-closed convergence; microseismic has an implemented preset modeling loop. None of these cases has an absolute CRS or a valid cross-case overlay transform.
 
 ## Current and target stack
 
@@ -127,7 +127,7 @@ Provides the analysis entry for registering data, validating contracts, importin
 
 ### `geomodeling.api` (implemented in v0.3)
 
-FastAPI layer: `/api/health`, `/api/iserver/status`, `/api/cases`, `/api/cases/resistivity` (leaderboard from config + metric artifacts), `/publish-status` (live evidence chain), `/points` (standardized CSV point cloud with SHA-256), `/voxel-cells` (S3M cache cells fetched via iServer REST, contract-validated, `?refresh=true` bypass), `/api/evidence/browser-load`. Serves `web/dist` when built; browser never holds iServer admin credentials.
+FastAPI layer: `/api/health`, `/api/iserver/status`, unified `/api/cases` and case-workspace routes, experiment/run/result APIs, professional analysis APIs, and the candidate/legacy render-capability and NetCDF asset routes. Historical `/points` and `/voxel-cells` compatibility endpoints remain server-side only; the current resistivity product path is the `builtin_preset` scattered-data chain. Serves `web/dist` when built; browser never holds iServer admin credentials.
 
 ### `geomodeling.platform` (implemented in v0.4)
 
@@ -136,7 +136,7 @@ FastAPI layer: `/api/health`, `/api/iserver/status`, `/api/cases`, `/api/cases/r
 - `uploads`/`ingest`/`quality`: bounded streaming upload (50 MiB / 500k rows), CSV/XLSX inspection and standardization to parquet, and the quality gate (`passed|warnings|blocked`) with exact-set warning confirmation.
 - `experiments`/`jobs`/`worker`: manual and bounded grid search (≤50 combinations, stable candidate fingerprints), persisted jobs, and a single-thread `JobWorker` with cooperative cancellation and explicit retry.
 - `results`/`exports`/`publications`: idempotent grid materialization (atomic tmp-dir replace), decimated preview (≤50k cells), Z/X/Y orthogonal slices with real coordinates, lineage ZIP exports, and publication records that resolve to `manual_required` without claiming iServer success.
-- `legacy_adapter`/`presets`: read-only merge of the immutable v0.3.1 resistivity card (`source_kind="builtin_legacy"`, never writes SQLite) and declarative case presets (`config/presets/`, validated, no absolute paths, no auto-import).
+- `legacy_adapter`/`presets`: historical read-only compatibility for v0.3.1 assets plus declarative case presets (`config/presets/`, validated, no absolute paths, no auto-import). Current resistivity uses the v0.8 `builtin_preset` scattered-data seed chain; old resistivity rendering operations are typed 410 retired.
 
 ### `geomodeling.modeling` (implemented in v0.4)
 
@@ -179,13 +179,13 @@ v0.4 routers (`cases`, `datasets`, `experiments`, `runs`, `results`) registered 
 - `render_coordinates`: the single shared display-anchor transform (WGS84 curvature at the fixed 120°E / 30°N anchor) used by both the NetCDF volume and the auxiliary point layers, so volume axes and points derive lon/lat through one code path.
 - `render_assets`: candidate render-source resolution along the ownership chain (property/units from the dataset profile — never fixed to `rho`), fail-closed regular-grid validation with stable error codes, and `create_render_asset` as the only mutation (hidden stage write + fsync + single `os.replace` rename + `mark_ready`; any failure cleans the stage and marks failed; corrupted ready assets are quarantined atomically, never auto-deleted).
 - `netcdf_volume`: deterministic NetCDF classic/v3 volume package writer (`volume.nc` + manifest v2 + `checksums.sha256`); the same identity always yields byte-identical files with no timestamps or absolute paths.
-- `legacy_render_sources`: authoritative legacy regular-grid registration from a supplied CSV (hash-pinned, atomic, never re-running Kriging, never reconstructing grids from scattered measurements); unregistered legacy sources report `LEGACY_RENDER_SOURCE_NOT_REGISTERED`. `render_cli import-csv` is the only registration entry.
+- `legacy_render_sources`: historical authoritative regular-grid registration for cases that still depend on legacy assets. The resistivity legacy source is retired in v0.8 and no longer has a product import path; remaining compatibility operations are hash-pinned and fail closed.
 - `api/routes/rendering`: candidate and legacy `render-capability` queries, `POST|GET .../render-assets/netcdf` (POST is the only creation path: 201 first success / 200 idempotent reuse / 409 in-progress or persisted failure without `retry_failed=true`), and immutable asset file routes `GET /api/render-assets/{id}/manifest` + `/volume.nc` that re-verify current file hashes before serving bytes. All GET routes are pure queries.
 - `web/`: `NativeVolumePanel.vue` / `SuperMapVolumeFrame.vue` own business state and controls in the Vue parent; SuperMap3D 12.1 (`VoxelGridLayer3D` + NetCDF classic/v3) runs only inside the same-origin volume iframe (`web/public/supermap-volume-frame/`) speaking the `gmp-supermap-volume/v1` postMessage iframe 协议 (handshake, load, filter/opacity/slice/contour commands, rendered/error receipts)——v0.7.0 第二批起被 v2 完整状态协议取代（见下节）。Points are explicitly labeled auxiliary evidence layers sharing the volume's display transform. There is no fallback renderer: capability failures, hash mismatches, and missing SDK surface explicit errors (no silent fallback). The old global Cesium scripts, `Field3D`/`RhoScene3D`, and the superseded custom ray-marching POC are gone from product code, guarded by `tests/test_v061_rendering_contract.py`.
 
 ### Rendering protocol v2 + authoritative slice analysis (implemented in v0.7.0 batch 2)
 
-- `render_profiles`（`render_assets` 扩展）：来源驱动的渲染默认值随 capability 与 slice-analysis DTO 下发——内置 legacy 默认 `log` 标度 + `native-spectrum` 色带，候选成果默认 `linear` + `viridis`；权威有效值非全正时 `log_available=false` 显式禁用并说明，绝不丢弃或平移原始值。
+- `render_profiles`（`render_assets` 扩展）：来源驱动的渲染默认值随 capability 与 slice-analysis DTO 下发——内置 preset/legacy 资产可用 `log` 标度 + `native-spectrum` 色带，候选成果默认 `linear` + `viridis`；权威有效值非全正时 `log_available=false` 显式禁用并说明，绝不丢弃或平移原始值。
 - `slice_analysis`：从资产规则网格权威抽取正交剖面——图表方向固定轴 → (row, column) = x→(z,y)、y→(z,x)、z→(y,x)；统计一律由服务端从原始网格值重算（`std_population` ddof=0、numpy-linear 分位数、valid_count+nodata_count=total_count）；NoData 保持 null，绝不补 0。旧 `GET /api/results/{id}/slices` 经同一平面抽取器保持 v0.4 合同。
 - `api/routes/rendering` 新增：`GET /api/render-assets/{id}/slice-analysis?axis&index`（轴/索引 422、资产 404、未就绪 409）与 `POST /api/render-assets/{id}/slice-exports`（multipart axis/index/image）原子生成 `slice-analysis.zip`（`slice-analysis/v1`：slice.csv 按真实 x,y,z 轴名落列、statistics.json 与 API 完全一致、slice.png、manifest.json 含 asset/grid/NetCDF 哈希）。PNG 是客户端 ECharts 展示工件（`image_provenance=client_echarts_canvas`，只校验签名/IHDR 边界）；矩阵/统计/manifest 一律服务端重算，绝不接受客户端提交。
 - iframe 协议 v2（`renderProtocol.ts` + `supermap-volume-frame/app.js`）：`gmp-supermap-volume/v2` 用单调递增 `revision` 的完整渲染状态（mode/filter/opacity/colorTransferFunction/lighting/gradientOpacity/boundingBox + 可选 slice/contourValue）取代 v1 逐控件命令；过期 revision 忽略；slice 模式必须携带权威 slice 载荷（axis/index/coordinate/relativePosition 只能来自 slice-analysis 响应），缺失即硬校验失败；`FRAME_READY` 上报含 `singleAxisSlice` 的 `FrameCapabilities`；单轴切片以负坐标（sliceCoordinate = -1）隐藏两个非活动轴——这是 SuperMap3D 12.1 的真实 GPU 实测技术（`docs/evidence/v0.7.0-single-axis-probe/`），不是文档化 API 承诺。
@@ -202,7 +202,7 @@ v0.4 routers (`cases`, `datasets`, `experiments`, `runs`, `results`) registered 
 ### Future interfaces (not implemented)
 
 - Coalbed methane: an independent experimental 3D case using Xi'an 1980 zone 20 candidate coordinates, DEM-derived surface elevations, and a vertical-borehole midpoint approximation. The current 58-point table is external evidence; volume rendering is parked because loading the generated voxel crashes iDesktopX.
-- DSI-like/GOCAD: external backends emitting unified XYZV/regular-grid nodes plus model metadata; DSI results must not be re-interpolated with IDW/Kriging inside SuperMap.
+- Real GOCAD DSI integration: an external backend emitting unified XYZV/regular-grid nodes plus model metadata. The implemented Python DSI-like approximation is separate and must never be relabeled as GOCAD DSI; any future genuine DSI result must not be re-interpolated inside SuperMap.
 - Microseismic absolute georeferencing (needs common control points and azimuth evidence) and automated iServer publishing (`manual_required` stays). The local-geometry/3σ/aggregation derivation itself is implemented since v0.5; see the v0.5 derivation layer above.
 
 ## Data Flow

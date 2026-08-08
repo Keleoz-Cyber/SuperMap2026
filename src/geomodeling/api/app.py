@@ -14,7 +14,8 @@ Integration contract (Task 10):
 - one ``PlatformRuntime`` and one ``JobWorker`` are owned by the lifespan;
 - legacy exact routes (``/api/cases/resistivity*``) are registered *before*
   the v0.4 routers so the dynamic ``/api/cases/{case_id}`` can never
-  swallow them;
+  swallow them (v0.8.0 Task 6: the legacy S3M voxel route is retired with
+  a typed 410 ``LEGACY_RESISTIVITY_RETIRED``);
 - ``GET /api/cases`` merges the immutable legacy cards with persisted
   upload cases (the legacy adapter never writes to SQLite);
 - the v0.6 ``professional`` router (Task 17) is registered after the
@@ -63,17 +64,23 @@ from geomodeling.platform.case_lifecycle import recover_case_purges
 from geomodeling.platform.errors import (
     CASE_NOT_FOUND,
     CASE_TRASHED,
+    LEGACY_RESISTIVITY_RETIRED,
     PRESET_NOT_INITIALIZED,
     REDACTED_PATH,
     PlatformError,
     platform_error_handler,
 )
 from geomodeling.platform.legacy_adapter import (
+    PRESET_WORKSPACE_KIND,
     legacy_case_cards,
     merged_case_cards,
     workspace_case_card,
 )
 from geomodeling.platform.microseismic_preset import PRESET_CASE_ID, PRESET_VERSION
+from geomodeling.platform.resistivity_preset import (
+    PRESET_CASE_ID as RESISTIVITY_PRESET_CASE_ID,
+    PRESET_VERSION as RESISTIVITY_PRESET_VERSION,
+)
 from geomodeling.platform.public_dto import public_dataset
 from geomodeling.platform.repositories import (
     CaseRepository,
@@ -84,7 +91,6 @@ from geomodeling.platform.worker import JobWorker
 from geomodeling.publishing import (
     IServerClient,
     BrowserLoadReport,
-    S3MBContractError,
     probe_iserver,
     record_browser_load,
 )
@@ -206,6 +212,9 @@ def create_app() -> FastAPI:
 
         未 seed 的预置案例返回类型化 ``PRESET_NOT_INITIALIZED``（409）；
         未知案例 404；响应只含相对链接与脱敏元数据。
+        v0.8.0 Task 6：电阻率由 ``builtin_preset`` 预置唯一承载——非预置的
+        同 id 持久化行（如剖面导出 FK 支撑行）不再落回 legacy 工作台，按
+        未初始化处理。
         """
 
         for card in legacy_case_cards():
@@ -223,6 +232,14 @@ def create_app() -> FastAPI:
                         raise
                     if exc.code != CASE_NOT_FOUND:
                         raise
+                if record is not None:
+                    config = record.config if isinstance(record.config, dict) else {}
+                    if (
+                        case_id == RESISTIVITY_PRESET_CASE_ID
+                        and config.get("workspace_kind") != PRESET_WORKSPACE_KIND
+                    ):
+                        # 非预置的 resistivity 行不是工作台来源：按未初始化处理
+                        record = None
                 if record is not None:
                     featured = featured_result_for_case(session, record.id)
                     dataset_repo = DatasetRepository(session)
@@ -268,7 +285,25 @@ def create_app() -> FastAPI:
                             limit=5,
                         )
                     else:
-                        card["data_preparation"] = None
+                        # builtin_preset：只读 seed 链的数据版本必经标准化验证，
+                        # 无上传/映射/质量复核等恢复状态机，固定报告 validated
+                        card["data_preparation"] = {
+                            "state": "validated",
+                            "dataset_id": None,
+                            "latest_validated_dataset_id": (
+                                primary["id"] if primary is not None else None
+                            ),
+                            "next_action": {
+                                "step": "experiment",
+                                "label": "新建实验",
+                                "url": (
+                                    f"/#/cases/{record.id}/experiments/new"
+                                    if primary is not None
+                                    else None
+                                ),
+                            },
+                            "error": None,
+                        }
                         card["validated_datasets"] = []
                         card["abandoned_datasets"] = []
                         card["recent_experiments"] = []
@@ -279,6 +314,13 @@ def create_app() -> FastAPI:
                 PRESET_NOT_INITIALIZED,
                 "微震预置案例尚未初始化：需由维护者执行文档化 seed 命令",
                 {"preset_version": PRESET_VERSION},
+                http_status=409,
+            )
+        if case_id == RESISTIVITY_PRESET_CASE_ID:
+            raise PlatformError(
+                PRESET_NOT_INITIALIZED,
+                "电阻率预置案例尚未初始化：需由维护者执行文档化 seed 命令",
+                {"preset_version": RESISTIVITY_PRESET_VERSION},
                 http_status=409,
             )
         raise PlatformError(CASE_NOT_FOUND, "案例不存在", {"case_id": case_id}, http_status=404)
@@ -315,22 +357,20 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     @app.get("/api/cases/resistivity/voxel-cells")
-    def resistivity_voxel_cells(
-        refresh: bool = Query(default=False),
-        settings: ApiSettings = Depends(get_settings),
-        config=Depends(get_app_config),
-        client: IServerClient = Depends(get_iserver_client),
-    ) -> dict:
-        try:
-            return case_service.voxel_cells(config, client, settings.voxel_cache_dir, refresh=refresh)
-        except FileNotFoundError as exc:
-            raise HTTPException(status_code=503, detail=f"voxel cache not generated: {exc}") from exc
-        except S3MBContractError as exc:
-            raise HTTPException(status_code=503, detail=f"S3M 缓存契约校验失败：{exc}") from exc
-        except ConnectionError as exc:
-            raise HTTPException(status_code=503, detail=f"iServer tile fetch failed: {exc}") from exc
-        finally:
-            client.close()
+    def resistivity_voxel_cells() -> dict:
+        """v0.8.0 Task 6：旧 S3M 体元产品入口类型化退役（410）。
+
+        绝不返回旧 S3M 缓存数值；电阻率渲染走统一候选 NetCDF 链
+        （``/api/results/{id}/render-assets/netcdf``）。
+        """
+
+        raise PlatformError(
+            LEGACY_RESISTIVITY_RETIRED,
+            "旧电阻率 S3M 体元入口已退役：电阻率已迁移为散点预置案例，"
+            "体渲染请使用统一案例工作台的候选成果渲染链",
+            {"replacement": "/api/cases/resistivity/workspace"},
+            http_status=410,
+        )
 
     # ----------------------------------------------------------- evidence
     @app.post("/api/evidence/browser-load", status_code=201)

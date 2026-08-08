@@ -1,7 +1,7 @@
 {
   "preset_id": "resistivity",
-  "title": "地下电阻率（内置 v0.3.1 稳定案例）",
-  "source": "builtin_legacy",
+  "title": "地下电阻率（内置散点预置案例）",
+  "source": "builtin_preset",
   "dimension": "3d",
   "semantic_fields": { "x": "X", "y": "Y", "z": "Z", "value": "RHO" },
   "value_unit": "RHO 单位待来源确认",
@@ -9,30 +9,37 @@
   "facts": {
     "standardized_rows": 17549,
     "training_rows": 15827,
-    "validation_rows": 1722,
-    "common_valid": 1481,
-    "common_nodata": 241,
-    "formal_result": "RHO_KRIG_FINAL_20M_40",
-    "s3m_cache": "RHO_KRIG_FINAL_20M_40_VOL_S3M2"
+    "validation_rows": 1722
   },
-  "evidence_levels": [
-    "model_succeeded",
-    "artifact_exported",
-    "iserver_published",
-    "service_metadata_verified",
-    "browser_loaded",
-    "manual_visual_checked"
-  ],
   "recommended_search": {
     "algorithm": "ordinary_kriging",
     "search_mode": "grid",
-    "parameters": { "variogram_model": ["spherical"], "neighbor_count": [16, 24] }
+    "parameters": { "variogram_model": ["spherical", "exponential"], "neighbor_count": [16, 24] }
   },
-  "demo_copy": "内置只读案例：展示 iServer → FastAPI → 浏览器三维闭环与六级证据链，不经上传向导。",
+  "search_grids": {
+    "idw": { "power": [1.5, 2.0, 3.0], "neighbor_count": [16, 24, 32] },
+    "ordinary_kriging": {
+      "variogram_model": ["spherical", "exponential"],
+      "neighbor_count": [16, 24]
+    },
+    "dsi_like": {
+      "neighbor_connectivity": [6, 18, 26],
+      "smoothing_strength": [0.25, 0.5, 0.75],
+      "max_iterations": [25, 50]
+    }
+  },
+  "default_grid": {
+    "bounds": [[-160, -40], [220, 660], [-833.0047143, -19.5999]],
+    "resolution": [20, 20, 20],
+    "estimated_cells": 6762,
+    "max_cells": 1000000
+  },
+  "demo_copy": "内置只读预置案例：17,549 个标准化散点（X/Y/Z/RHO）经源合同校验后 seed 为只读数据版本，直接进入统一案例工作台，不经上传向导。",
   "boundaries": [
-    "局部工程坐标，EPSG 未确认",
-    "RHO 单位待来源确认",
-    "S3M 缓存为 SuperMap 体渲染采样（非逐格导出），单元精确元数据以数据服务 VOLUME 数据集为准",
-    "内置案例不可变：不在 SQLite 中建行，不经通用建模流程改写"
+    "局部工程坐标，未声明 EPSG，不做跨案例空间叠加",
+    "RHO 单位待来源确认，不静默声明单位、不做静默换算",
+    "标准化散点源 CSV 为项目外部私有文件，不提交 Git、不随仓库分发；运行时仅登记其 SHA-256 指纹",
+    "内置只读预置：由 seed 建立只读数据版本与官方成果链，不经上传向导，用户候选不得顶替官方正式选择",
+    "训练/验证沿用空间柱分区：15,827 / 1,722 行，交叉空间柱数为 0"
   ]
 }

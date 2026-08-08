@@ -117,14 +117,16 @@ def test_health(tmp_path):
     client = make_client(tmp_path)
     body = client.get("/api/health").json()
     assert body["status"] == "ok"
-    assert body["version"] == "0.7.0"
+    assert body["version"] == "0.8.0"
 
 
 def test_cases_cards(tmp_path):
     client = make_client(tmp_path)
     body = client.get("/api/cases").json()
     by_id = {c["case_id"]: c for c in body["cases"]}
-    assert by_id["resistivity"]["status"] == "active"
+    # v0.8.0 Task 6：legacy 电阻率卡退役；未 seed 运行库出预置描述卡
+    assert by_id["resistivity"]["status"] == "initialization_required"
+    assert by_id["resistivity"]["workspace_kind"] == "builtin_preset"
     assert by_id["gas"]["status"] == "parked"
     # v0.7.0：旧 DAT 微震卡由 builtin_preset 预置描述符取代（未 seed 时可见但能力全 false）
     assert "microseismic" not in by_id

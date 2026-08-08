@@ -187,8 +187,11 @@ class TestActiveCaseGuards:
 
     def test_builtin_cards_remain_visible(self, client):
         resp = client.get("/api/cases")
-        case_ids = [c["case_id"] for c in resp.json()["cases"]]
-        assert "resistivity" in case_ids
+        cards = {c["case_id"]: c for c in resp.json()["cases"]}
+        assert "resistivity" in cards
+        # v0.8.0 Task 6：legacy 电阻率卡退役；未 seed 运行库出预置描述卡
+        assert cards["resistivity"]["workspace_kind"] == "builtin_preset"
+        assert cards["resistivity"]["status"] == "initialization_required"
 
     def test_trashed_case_all_related_endpoints_return_410(self, client, app):
         """Trashed case: every related endpoint returns 410 CASE_TRASHED."""

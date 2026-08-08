@@ -547,3 +547,39 @@ def test_grid_identity_mismatch_rejected(tmp_path):
         grid_sha256="0" * 64,
     )
     expect_error(runtime, candidate_id, "RENDER_GRID_IDENTITY_MISMATCH", 409)
+
+
+# ---------------------------------------------------------------------------
+# v0.8.0 Task 6：seed 电阻率官方成果经 candidate_result 链解析
+# ---------------------------------------------------------------------------
+
+
+def test_seeded_resistivity_official_result_resolves_as_candidate_source(tmp_path):
+    """seed 后官方成果走统一 candidate_result 渲染源（取代 builtin_legacy 默认路径）。
+
+    legacy 渲染源的产品解析入口已 410 退役（见 test_rendering_api /
+    test_resistivity_preset_seed）；本测试锁定新链：官方候选与任何用户候选
+    一样经 profile mapping 解析出 RHO/local_linear 语义。
+    """
+
+    from geomodeling.platform.resistivity_preset import (
+        load_resistivity_preset,
+        seed_resistivity_preset,
+    )
+    from test_resistivity_preset import write_resistivity_fixture
+    from test_resistivity_preset_seed import _fixture_baseline
+
+    runtime = make_runtime(tmp_path)
+    source_path = write_resistivity_fixture(tmp_path / "rho-source.csv", rows=17_549)
+    source = load_resistivity_preset(source_path)
+    seeded = seed_resistivity_preset(
+        runtime, source_path=source_path, baseline=_fixture_baseline(source)
+    )
+
+    resolved = resolve_candidate_render_source(runtime, seeded.official_result.result_id)
+    assert resolved.source_kind == "candidate_result"
+    assert resolved.source_id == seeded.official_result.result_id
+    assert resolved.property_name == "RHO"
+    assert resolved.units == "RHO 单位待来源确认"
+    assert resolved.coordinate_kind == "local_linear"
+    assert resolved.dimension == "3d"

@@ -1,0 +1,64 @@
+{
+  "schema": "v0.8.0-resistivity-official-baseline/v1",
+  "preset_version": "resistivity-rho-17549/v1",
+  "source_sha256": "04c5914d992f397f7dcec3b0d1a6069a9ddeb4a214e5c7de121f37c861cec167",
+  "standardized_rows": 17549,
+  "candidate_report_sha256": "00aebfd785abd791f16261de1c4aa711c4db0dfd09aebe795f9d0a062d5cab71",
+  "validation": {
+    "folds": 5,
+    "method": "spatial_kfold",
+    "seed": 20260723
+  },
+  "selection_rule": [
+    "rmse_asc",
+    "mae_asc",
+    "r2_desc",
+    "canonical_params_asc"
+  ],
+  "winner": {
+    "algorithm": "ordinary_kriging",
+    "parameters": {
+      "neighbor_count": 24,
+      "variogram_model": "exponential"
+    },
+    "metrics": {
+      "bias": -0.09502595109631172,
+      "common_valid_count": 17547,
+      "coverage": 1.0,
+      "mae": 3.2518994519152296,
+      "r2": 0.9230925632309718,
+      "rmse": 6.45447602276866
+    }
+  },
+  "grid": {
+    "bounds": [
+      [
+        -160.0,
+        -40.0
+      ],
+      [
+        220.0,
+        660.0
+      ],
+      [
+        -833.0047143,
+        -19.5999
+      ]
+    ],
+    "resolution": [
+      20.0,
+      20.0,
+      20.0
+    ],
+    "max_cells": 1000000
+  },
+  "partition": {
+    "spatial_column_overlap": 0,
+    "training_columns": 264,
+    "training_rows": 15827,
+    "validation_column_fingerprint": "9a9b946842081ff5c044a3af995c4f46a63341a8066e2a36e56605b8ba75068c",
+    "validation_columns": 29,
+    "validation_rows": 1722
+  },
+  "selection_reason": "最小官方候选矩阵（1 IDW + 4 普通克里金 + 2 DSI-like）在 17,549 节点（公共有效集 17,547）上做固定种子空间 5 折验证；官方 winner 限定在 ordinary_kriging 候选中按 rmse→mae→r2→规范化参数序选出：exponential/neighbor=24（rmse=6.454476，次优 spherical/neighbor=24 rmse=6.483775）。IDW（rmse=6.360991）与 DSI-like 候选全量保留于候选报告供追溯，不参与官方选择。遗留训练/验证分区与受控源逐行精确匹配：15,827/1,722 行、264/29 空间柱、柱级零重叠、并集恰为源全集；仅登记计数与验证柱身份指纹，坐标清单不入库。网格边界取受控源坐标全范围，20 m 分辨率共 7×23×42=6,762 单元（≤100 万上限）。"
+}
