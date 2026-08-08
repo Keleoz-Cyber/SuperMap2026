@@ -644,3 +644,227 @@ def test_error_bodies_share_envelope_and_hide_local_paths(tmp_path, monkeypatch)
             serialized = json.dumps(body, ensure_ascii=False)
             assert str(tmp_path) not in serialized
             assert "asset_dir" not in serialized
+
+
+# ---------------------------------------------------------------------------
+# v0.8.0 Task 8：dsi_like 成功候选走统一 candidate_result → NetCDF → 分析/导出链
+#
+# 渲染源解析、NetCDF 发布、剖面分析/导出全部算法无关（无任何算法字面量白
+# 名单），dsi_like 与 IDW/普通克里金逐位共用同一路径；绝无 DSI 专用渲染器、
+# 点云回退或第二传输通道。本测试为防回归锁定。
+# ---------------------------------------------------------------------------
+
+
+def _seed_preset_runtime(runtime, tmp_path: Path):
+    """按 test_resistivity_preset_seed 夹具模式 seed 电阻率预置运行库。"""
+
+    from geomodeling.platform.resistivity_preset import (
+        load_resistivity_preset,
+        seed_resistivity_preset,
+    )
+    from test_resistivity_preset import write_resistivity_fixture
+    from test_resistivity_preset_seed import _fixture_baseline
+
+    source_path = write_resistivity_fixture(tmp_path / "rho-source.csv", rows=17_549)
+    source = load_resistivity_preset(source_path)
+    seed_resistivity_preset(
+        runtime, source_path=source_path, baseline=_fixture_baseline(source)
+    )
+    return source
+
+
+def _run_dsi_like_candidate(runtime, source) -> str:
+    """seed 运行库上创建 dsi_like 用户实验成功候选（显式粗网格控制物化耗时）。"""
+
+    import threading
+    import uuid
+
+    from geomodeling.modeling.runner import execute_run
+    from geomodeling.platform.resistivity_preset import PRESET_CASE_ID
+    from test_resistivity_preset_seed import FIXTURE_GRID_RESOLUTION
+
+    with runtime.session() as session:
+        dataset_id = (
+            session.query(tables.DatasetVersion)
+            .filter(tables.DatasetVersion.case_id == PRESET_CASE_ID)
+            .one()
+            .id
+        )
+    frame = source.frame
+    params = {
+        "algorithm": "dsi_like",
+        "dataset_version_id": dataset_id,
+        "search_mode": "manual",
+        "parameters": {"neighbor_connectivity": 6},
+        "validation": {
+            "method": "spatial_kfold",
+            "folds": 3,
+            "seed": 11,
+            "holdout_fraction": 0.2,
+        },
+        # 显式粗网格（同夹具基线口径）：物化网格约百余节点，测试耗时可控
+        "grid": {
+            "bounds": [
+                [float(frame["X"].min()), float(frame["X"].max())],
+                [float(frame["Y"].min()), float(frame["Y"].max())],
+                [float(frame["Z"].min()), float(frame["Z"].max())],
+            ],
+            "resolution": list(FIXTURE_GRID_RESOLUTION),
+            "max_cells": 100_000,
+        },
+    }
+    experiment_id = f"dsi-exp-{uuid.uuid4().hex[:8]}"
+    run_id = f"dsi-run-{uuid.uuid4().hex[:8]}"
+    with runtime.session() as session:
+        session.add(
+            tables.Experiment(
+                id=experiment_id,
+                case_id=PRESET_CASE_ID,
+                name="DSI-like 渲染链实验",
+                params_json=tables.dumps_canonical(params),
+            )
+        )
+        session.add(tables.Run(id=run_id, experiment_id=experiment_id, status="queued"))
+        session.commit()
+    outcome = execute_run(runtime, run_id, threading.Event())
+    assert outcome.status == "succeeded"
+    with runtime.session() as session:
+        return (
+            session.query(tables.CandidateResult)
+            .filter(tables.CandidateResult.run_id == run_id)
+            .one()
+            .id
+        )
+
+
+def _slice_png(width: int = 8, height: int = 8) -> bytes:
+    """最小合法 PNG（同 test_slice_exports._png 构造；复制以避免跨文件循环导入）。"""
+
+    import struct
+    import zlib
+
+    def chunk(tag: bytes, data: bytes) -> bytes:
+        body = tag + data
+        return (
+            struct.pack(">I", len(data))
+            + body
+            + struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF)
+        )
+
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    raw = b"".join(b"\x00" + b"\xff\x00\x00" * width for _ in range(height))
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", ihdr)
+        + chunk(b"IDAT", zlib.compress(raw))
+        + chunk(b"IEND", b"")
+    )
+
+
+def test_dsi_like_candidate_uses_candidate_result_netcdf(tmp_path, monkeypatch):
+    """dsi_like 成功候选与 IDW/Kriging 走完全相同的渲染/分析/导出链。"""
+
+    app = make_app(tmp_path, monkeypatch)
+    with TestClient(app) as client:
+        runtime = app.state.platform_runtime
+        source = _seed_preset_runtime(runtime, tmp_path)
+        candidate_id = _run_dsi_like_candidate(runtime, source)
+
+        # 能力（纯查询）：未物化前与 IDW/Kriging 同一语义——supported=False +
+        # RESULT_NOT_MATERIALIZED，绝不因算法不同而物化或放行
+        resp = client.get(f"/api/results/{candidate_id}/render-capability")
+        assert resp.status_code == 200, resp.text
+        capability = resp.json()
+        assert capability["source_kind"] == "candidate_result"
+        assert capability["source_id"] == candidate_id
+        assert capability["supported"] is False
+        assert capability["reason_code"] == "RESULT_NOT_MATERIALIZED"
+        assert capability["render_profile"] is None
+        assert_no_path_leak(capability, "$.dsi_capability")
+
+        # POST 显式变异：物化 + 首个资产 201 ready
+        resp = client.post(f"/api/results/{candidate_id}/render-assets/netcdf")
+        assert resp.status_code == 201, resp.text
+        record = resp.json()
+        assert record["source_kind"] == "candidate_result"
+        assert record["source_id"] == candidate_id
+        assert record["status"] == "ready"
+
+        # 物化后能力：3D 规则网格、RHO 语义来自预置 profile、候选默认 render_profile
+        resp = client.get(f"/api/results/{candidate_id}/render-capability")
+        assert resp.status_code == 200, resp.text
+        capability = resp.json()
+        assert capability["supported"] is True
+        assert capability["reason_code"] is None
+        assert capability["dimension"] == "3d"
+        assert capability["grid_kind"] == "regular"
+        assert capability["property_name"] == "RHO"
+        assert capability["render_profile"] is not None
+        assert capability["render_profile"]["default_scale"] == "linear"
+        assert capability["render_profile"]["default_palette"] == "viridis"
+        assert_no_path_leak(record, "$.dsi_asset")
+
+        # 物化成果 metadata（结果级 manifest）：算法/参数/源 SHA/数据版本指纹/
+        # 网格规格/归属链 provenance 全部按通用口径落盘
+        metadata = json.loads(
+            (runtime.settings.result_grid(candidate_id).parent / "metadata.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert metadata["algorithm"] == "dsi_like"
+        assert metadata["parameters"]["neighbor_connectivity"] == 6
+        assert metadata["dimension"] == "3d"
+        assert len(metadata["source_sha256"]) == 64
+        assert len(metadata["standardized_sha256"]) == 64
+        assert len(metadata["fingerprint"]) == 64
+        assert metadata["dataset_version_id"]
+        assert metadata["run_id"] and metadata["experiment_id"]
+        assert len(metadata["bounds"]) == 3
+        assert len(metadata["resolution"]) == 3
+        shape = metadata["shape"]
+        assert len(shape) == 3 and all(int(n) >= 2 for n in shape)
+        assert metadata["cell_count"] == shape[0] * shape[1] * shape[2]
+        assert metadata["grid_sha256"] == record["grid_sha256"]
+
+        # NetCDF 包 manifest：与 IDW/Kriging 同一 v2 格式合同（算法无关）
+        manifest_resp = client.get(f"/api/render-assets/{record['id']}/manifest")
+        assert manifest_resp.status_code == 200, manifest_resp.text
+        manifest = manifest_resp.json()
+        assert manifest["format"] == "supermap-voxel-netcdf"
+        assert manifest["version"] == 2
+        assert manifest["source_kind"] == "candidate_result"
+        assert manifest["source_id"] == candidate_id
+        assert manifest["grid_sha256"] == metadata["grid_sha256"]
+        assert manifest["netcdf_sha256"] == record["netcdf_sha256"]
+        assert manifest["property_name"] == "RHO"
+
+        # volume.nc 字节服务（同一传输通道、同一身份头）
+        volume = client.get(f"/api/render-assets/{record['id']}/volume.nc")
+        assert volume.status_code == 200, volume.text
+        assert volume.content[:4] == b"CDF\x01"
+        assert hashlib.sha256(volume.content).hexdigest() == record["netcdf_sha256"]
+
+        # X/Y/Z 正交剖面分析（同一权威网格口径，渲染资产身份回链）
+        for axis in ("x", "y", "z"):
+            analysis = client.get(
+                f"/api/render-assets/{record['id']}/slice-analysis",
+                params={"axis": axis, "index": 0},
+            )
+            assert analysis.status_code == 200, analysis.text
+            body = analysis.json()
+            assert body["asset_identity"]["source_kind"] == "candidate_result"
+            assert body["asset_identity"]["source_id"] == candidate_id
+            assert body["property"] == {"name": "RHO", "unit": "RHO 单位待来源确认"}
+            assert body["statistics"]["valid_count"] > 0
+
+        # 剖面 ZIP 导出（服务端权威重算；导出归属回链到 dsi_like 候选）
+        export = client.post(
+            f"/api/render-assets/{record['id']}/slice-exports",
+            files={
+                "axis": (None, "z"),
+                "index": (None, "0"),
+                "image": ("slice.png", _slice_png(), "image/png"),
+            },
+        )
+        assert export.status_code == 201, export.text
+        assert export.json()["candidate_result_id"] == candidate_id
