@@ -7,13 +7,13 @@ export default defineConfig({
   timeout: 60_000,
   retries: 0,
   use: {
-    baseURL: 'http://localhost:5199',
+    baseURL: 'http://127.0.0.1:3000',
     // 项目组件统一使用 data-test
     testIdAttribute: 'data-test',
   },
   webServer: {
-    command: 'npm run preview -- --port 5199 --strictPort',
-    url: 'http://localhost:5199',
+    command: 'npm run preview -- --port 3000 --strictPort --host 127.0.0.1',
+    url: 'http://127.0.0.1:3000',
     reuseExistingServer: false,
     timeout: 30_000,
   },

@@ -85,7 +85,7 @@ onMounted(load)
       role="alert"
     />
 
-    <div v-else v-loading="loading" data-test="trash-list">
+    <div v-else v-loading="loading" data-test="trash-list" class="trash-table-wrap">
     <table class="trash-table">
       <thead>
         <tr>
@@ -151,6 +151,7 @@ onMounted(load)
   margin: 0 auto;
   padding: 28px;
   box-sizing: border-box;
+  overflow-x: hidden;
 }
 
 .page-header {
@@ -183,8 +184,14 @@ onMounted(load)
   gap: 8px;
 }
 
+.trash-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 .trash-table {
   width: 100%;
+  min-width: 560px;
   border-collapse: collapse;
   font-size: 13px;
 }
@@ -210,5 +217,26 @@ onMounted(load)
   text-align: center;
   color: var(--gmp-text-faint);
   padding: 24px;
+}
+
+@media (max-width: 480px) {
+  .trash-page {
+    padding: 16px 12px;
+  }
+
+  .trash-table {
+    font-size: 12px;
+  }
+
+  .trash-table th,
+  .trash-table td {
+    padding: 6px 8px;
+    white-space: nowrap;
+  }
+
+  .row-actions {
+    flex-direction: column;
+    gap: 4px;
+  }
 }
 </style>

@@ -494,4 +494,44 @@ test.describe('v0.7 生命周期与比较流程（mock API）', () => {
       fullPage: true,
     })
   })
+
+  test('移动端 390x844：TrashView 无页面级横向溢出', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await installMockApi(page)
+
+    // Create case and trash it (following existing trash flow)
+    await page.goto('/')
+    await page.getByTestId('create-case-card').click()
+    await page.getByTestId('case-name').fill('溢出测试')
+    await page.getByTestId('case-file').setInputFiles({
+      name: 'platform_demo_3d.csv',
+      mimeType: 'text/csv',
+      buffer: Buffer.from('x,y,z,rho\n-50,300,-50,67.05\n'),
+    })
+    await page.getByTestId('case-submit').click()
+    await expect(page).toHaveURL(/#\/cases\/case-e2e\/datasets\/ds-e2e\/prepare/)
+
+    // Trash from home
+    await page.goto('/')
+    const caseCard = page.locator('.case-card', { hasText: '溢出测试' })
+    await caseCard.getByTestId('trash-case-btn').click()
+    await page.locator('.el-dropdown-menu__item:visible', { hasText: '移入回收站' }).click()
+
+    // Navigate to trash
+    await page.goto('/#/trash')
+    await expect(page.getByTestId('trash-list')).toBeVisible()
+    await expect(page.getByTestId('trash-row')).toBeVisible()
+
+    // Assert no page-level horizontal overflow
+    const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth)
+    expect(scrollWidth).toBeLessThanOrEqual(390)
+
+    // Assert table wrapper handles internal scroll
+    const wrap = page.locator('.trash-table-wrap')
+    const wrapBox = await wrap.boundingBox()
+    expect(wrapBox!.width).toBeLessThanOrEqual(390)
+
+    // Assert purge button is not clipped (visible within viewport)
+    await expect(page.getByTestId('purge-case-open').first()).toBeVisible()
+  })
 })
