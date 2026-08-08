@@ -1,0 +1,51 @@
+{
+  "run_id": "run-20260808T123300Z-854f4835",
+  "git_commit": "7d4e3cbd618266a37fcfb8a7fd4149cf94d6390c",
+  "sdk_sha256": "d69dadab01fc452a79f1fa88a46aced3cf29885df7bf4febbd6f24ce5b578120",
+  "sdk_version": "12.1.0",
+  "browser": {
+    "name": "chromium",
+    "version": "149.0.7827.55"
+  },
+  "gpu_renderer": "ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 4070 Laptop GPU/PCIe/SSE2, OpenGL 4.5.0)",
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "device_pixel_ratio": 1,
+  "results": {
+    "preset": {
+      "case_id": "builtin-microseismic-vx-1911",
+      "official_result_id": "b10e6600-cd80-49ed-99cd-cf9ab51a2522",
+      "grid_sha256": "9a141ac6ca62dbf55ca3099e54ef55c62aa10b5e7848dca8f9f2f6811f72221b",
+      "netcdf_sha256": "c773b9d51109b05815840e77c2f3193e8ed8fbfbe511c7e5e835f0f1220d06df",
+      "asset_id": "nc-5b2df9421d79b00be6e4ffb9c1693bc9"
+    }
+  },
+  "preset": {
+    "post_ms": 84,
+    "rendered_ms": 1628,
+    "rendered_gate_ms": 60000,
+    "commands": {
+      "slice-mode": 630,
+      "contour": 538,
+      "restore-volume": 577,
+      "palette-turbo": 1350,
+      "scale-log": 572,
+      "scale-linear": 584,
+      "filter": 586,
+      "opacity": 545,
+      "lighting-off": 579,
+      "gradient-off": 570,
+      "bounding-box-off": 558,
+      "filter-restore": 583,
+      "opacity-restore": 533,
+      "lighting-on": 583,
+      "gradient-on": 570,
+      "bounding-box-on": 561,
+      "slice-reenter": 562,
+      "restore-volume-final": 575
+    },
+    "total_ms": 24753
+  }
+}

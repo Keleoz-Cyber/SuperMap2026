@@ -1,0 +1,97 @@
+{
+  "run_id": "run-20260808T123345Z-38e35124",
+  "git_commit": "7d4e3cbd618266a37fcfb8a7fd4149cf94d6390c",
+  "sdk_sha256": "d69dadab01fc452a79f1fa88a46aced3cf29885df7bf4febbd6f24ce5b578120",
+  "case_id": "resistivity",
+  "source_kind": "candidate_result",
+  "official_result_id": "2da64874-9e8d-45ca-8359-7cc174565c9a",
+  "asset_id": "nc-739255effaa7f4747e56c9be9535b92f",
+  "browser": "chromium(persistent)",
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "scenarios": [
+    {
+      "scenario": "fresh-context",
+      "volumeMetrics": {
+        "nonBg": 41026,
+        "total": 153468,
+        "coverage": 0.26732608752313186,
+        "colorStd": 78.34,
+        "largestComponent": 41026,
+        "componentRatio": 1
+      },
+      "sliceMetrics": {
+        "nonBg": 11398,
+        "total": 153468,
+        "coverage": 0.07426955456512106,
+        "colorStd": 102.92,
+        "largestComponent": 11398,
+        "componentRatio": 1
+      }
+    },
+    {
+      "scenario": "normal-reload",
+      "volumeMetrics": {
+        "nonBg": 41026,
+        "total": 153468,
+        "coverage": 0.26732608752313186,
+        "colorStd": 78.34,
+        "largestComponent": 41026,
+        "componentRatio": 1
+      },
+      "sliceMetrics": {
+        "nonBg": 11398,
+        "total": 153468,
+        "coverage": 0.07426955456512106,
+        "colorStd": 102.92,
+        "largestComponent": 11398,
+        "componentRatio": 1
+      }
+    },
+    {
+      "scenario": "server-restart-reload",
+      "volumeMetrics": {
+        "nonBg": 41026,
+        "total": 153468,
+        "coverage": 0.26732608752313186,
+        "colorStd": 78.34,
+        "largestComponent": 41026,
+        "componentRatio": 1
+      },
+      "sliceMetrics": {
+        "nonBg": 11398,
+        "total": 153468,
+        "coverage": 0.07426955456512106,
+        "colorStd": 102.92,
+        "largestComponent": 11398,
+        "componentRatio": 1
+      }
+    },
+    {
+      "scenario": "warm-cache-upgrade",
+      "appJs": {
+        "name": "http://127.0.0.1:5278/supermap-volume-frame/app.js?v=10c53f5514189aff",
+        "transferSize": 0,
+        "fromCache": true
+      },
+      "volumeMetrics": {
+        "nonBg": 41026,
+        "total": 153468,
+        "coverage": 0.26732608752313186,
+        "colorStd": 78.34,
+        "largestComponent": 41026,
+        "componentRatio": 1
+      },
+      "sliceMetrics": {
+        "nonBg": 11398,
+        "total": 153468,
+        "coverage": 0.07426955456512106,
+        "colorStd": 102.92,
+        "largestComponent": 11398,
+        "componentRatio": 1
+      }
+    }
+  ]
+}

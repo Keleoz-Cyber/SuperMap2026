@@ -1,0 +1,65 @@
+{
+  "run_id": "run-20260808T123406Z-7197a194",
+  "git_commit": "7d4e3cbd618266a37fcfb8a7fd4149cf94d6390c",
+  "sdk_sha256": "d69dadab01fc452a79f1fa88a46aced3cf29885df7bf4febbd6f24ce5b578120",
+  "sdk_version": "12.1.0",
+  "browser": {
+    "name": "chromium",
+    "version": "149.0.7827.55"
+  },
+  "gpu_renderer": "ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 4070 Laptop GPU/PCIe/SSE2, OpenGL 4.5.0)",
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "device_pixel_ratio": 1,
+  "results": {
+    "resistivity": {
+      "case_id": "resistivity",
+      "official_result_id": "2da64874-9e8d-45ca-8359-7cc174565c9a",
+      "dsi_result_id": "4bdc49c8-0b8e-472e-991c-190e8cd35b10",
+      "grid_sha256": "f6ae211e4f4a8a6dd423517e43f75db216ca668282d8b100278ee6d1fa1f90c3",
+      "netcdf_sha256": "1c77a026b1d080382e9b12753dcabdfe0767359faa6de4091a6424923c69f868",
+      "asset_id": "nc-51c1473282530f22bd7d30ef93bc1f91"
+    }
+  },
+  "resistivity": {
+    "official_result_id": "2da64874-9e8d-45ca-8359-7cc174565c9a",
+    "dsi_result_id": "4bdc49c8-0b8e-472e-991c-190e8cd35b10",
+    "asset_id": "nc-51c1473282530f22bd7d30ef93bc1f91",
+    "renderer": "supermap_voxelgrid_netcdf",
+    "algorithm": "dsi_like",
+    "grid_sha256": "f6ae211e4f4a8a6dd423517e43f75db216ca668282d8b100278ee6d1fa1f90c3",
+    "netcdf_sha256": "1c77a026b1d080382e9b12753dcabdfe0767359faa6de4091a6424923c69f868",
+    "manifest_shape": [
+      11,
+      11,
+      11
+    ],
+    "variable_name": "RHO",
+    "rendered_identity": {
+      "sourceKind": "candidate_result",
+      "sourceId": "4bdc49c8-0b8e-472e-991c-190e8cd35b10",
+      "gridSha256": "f6ae211e4f4a8a6dd423517e43f75db216ca668282d8b100278ee6d1fa1f90c3",
+      "netcdfSha256": "1c77a026b1d080382e9b12753dcabdfe0767359faa6de4091a6424923c69f868"
+    },
+    "diag_layer_type": "VoxelGridLayer3D",
+    "sdk_version": "12.1.0"
+  },
+  "seed": {
+    "case_id": "resistivity",
+    "workspace_kind": "builtin_preset",
+    "dataset_version_id": "8c283725-2d7d-5f8b-9c62-2431613d0ec2",
+    "experiment_id": "253cf9d6-1007-5e8d-ad41-1cc1094a50bd",
+    "run_id": "63077623-460d-5e04-aa86-a3344d2524bb",
+    "official_result_id": "2da64874-9e8d-45ca-8359-7cc174565c9a",
+    "official_url": "/results/2da64874-9e8d-45ca-8359-7cc174565c9a",
+    "materialized": true,
+    "source_sha256": "04c5914d992f397f7dcec3b0d1a6069a9ddeb4a214e5c7de121f37c861cec167",
+    "baseline_sha256": "0ae4678a0646b776912ace77654473166bbbfe13b9a5713f4d218d4c2e22e7b1"
+  },
+  "retirement": {
+    "code": "LEGACY_RESISTIVITY_RETIRED",
+    "checks": {}
+  }
+}
