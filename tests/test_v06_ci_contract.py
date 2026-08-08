@@ -49,7 +49,7 @@ MOCK_PROFESSIONAL_MARKERS = (
 LIVE_PROFESSIONAL_MARKERS = (
     "start-diagnosis",
     "confirm-submit",
-    "apply-confirmation",
+    "goto-experiment",
     "fold-inspector",
     "layer-tab-empirical",
     "anomaly-save",
