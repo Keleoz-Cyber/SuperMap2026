@@ -8,6 +8,7 @@ import type { CandidateComparisonResult, CandidateRecord } from '../../api/types
 const props = defineProps<{
   candidates: CandidateRecord[]
   firstResultId: string
+  initialSecondResultId?: string
 }>()
 
 const secondResultId = ref<string | null>(null)
@@ -79,6 +80,18 @@ watch(
     comparison.value = null
     error.value = null
   },
+)
+
+// 从模型对比页直达：预选 second 并自动提交比较
+watch(
+  () => props.initialSecondResultId,
+  (newId) => {
+    if (!newId || newId === props.firstResultId) return
+    selectSecond(newId)
+    externalId.value = newId
+    void run()
+  },
+  { immediate: true },
 )
 </script>
 

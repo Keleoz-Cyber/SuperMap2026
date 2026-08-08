@@ -64,16 +64,24 @@ from geomodeling.platform.public_dto import (
     public_residuals,
     public_variogram_evidence,
 )
-from geomodeling.platform.repositories import AnalysisJobRepository, DatasetRepository
+from geomodeling.platform.repositories import (
+    AnalysisJobRepository,
+    DatasetRepository,
+    require_active_dataset,
+    require_active_candidate,
+    require_active_analysis_job,
+)
 from geomodeling.platform.results import CANDIDATE_NOT_SUCCEEDED, _load_candidate, preview
 from geomodeling.platform.schemas import ContractModel, ProfessionalDiagnosisRequest
-from geomodeling.platform.tables import RunStatus
+from geomodeling.platform.candidate_comparisons import CandidateComparisonRequest
+from geomodeling.platform.tables import AnalysisJob, RunStatus
 
 router = APIRouter(tags=["v0.6-professional"])
 
 ANALYSIS_JOB_NOT_CANCELABLE = "ANALYSIS_JOB_NOT_CANCELABLE"
 PROFESSIONAL_ARTIFACT_NOT_FOUND = "PROFESSIONAL_ARTIFACT_NOT_FOUND"
 COMPARISON_NOT_FOUND = "COMPARISON_NOT_FOUND"
+DATASET_NOT_VALIDATED = "DATASET_NOT_VALIDATED"
 
 # 大表内联行数硬上限（decimate 之外的第二道闸，与微震诊断点同一范式）
 MAX_VARIOGRAM_ROWS = 2_000
@@ -114,6 +122,16 @@ def request_professional_diagnosis(
 ) -> JSONResponse:
     """创建专业诊断请求：202 + 任务身份；同指纹成功幂等返回 200。"""
 
+    require_active_dataset(runtime, dataset_id)
+    with runtime.session() as session:
+        dv = session.get(tables.DatasetVersion, dataset_id)
+        if dv is None or dv.status != "validated":
+            raise PlatformError(
+                DATASET_NOT_VALIDATED,
+                "只有已校验（validated）的数据集才能发起专业诊断",
+                {"dataset_id": dataset_id, "status": dv.status if dv else None},
+                http_status=409,
+            )
     record = create_professional_diagnosis(
         runtime, dataset_id, request_body.model_dump(mode="json")
     )
@@ -132,12 +150,111 @@ def request_professional_diagnosis(
     return JSONResponse(status_code=200 if record.reused else 202, content=body)
 
 
+@router.get("/api/datasets/{dataset_id}/professional-diagnostics")
+def list_professional_diagnostics(
+    dataset_id: str,
+    runtime: PlatformRuntime = Depends(get_platform_runtime),
+) -> dict[str, Any]:
+    """List diagnostics for a dataset, newest-first, with job summary and view URL."""
+
+    require_active_dataset(runtime, dataset_id)
+    from geomodeling.platform.repositories import (
+        ProfessionalDiagnosticRepository,
+        ProfessionalConfirmationRepository,
+        AnalysisJobRepository,
+        _analysis_job_record,
+    )
+    from geomodeling.platform.public_dto import (
+        public_professional_diagnosis,
+        public_analysis_job,
+        public_confirmation_summary,
+    )
+    from sqlalchemy import select as sa_select
+
+    with runtime.session() as session:
+        diagnoses = ProfessionalDiagnosticRepository(session).list_for_dataset(dataset_id)
+        conf_repo = ProfessionalConfirmationRepository(session)
+        items = []
+        for diag in diagnoses:
+            job_record = None
+            job_row = session.scalar(
+                sa_select(AnalysisJob)
+                .where(
+                    AnalysisJob.subject_id == diag.id,
+                    AnalysisJob.job_kind == "professional_diagnosis",
+                )
+                .order_by(AnalysisJob.created_at.desc())
+                .limit(1)
+            )
+            if job_row is not None:
+                job_record = _analysis_job_record(job_row)
+            latest = conf_repo.latest_for_diagnostic(diag.id)
+            items.append({
+                "diagnosis": public_professional_diagnosis(diag),
+                "job": public_analysis_job(job_record) if job_record else None,
+                "url": f"/datasets/{dataset_id}/professional-diagnosis?diagnosis={diag.id}",
+                "latest_confirmation": (
+                    public_confirmation_summary(
+                        latest,
+                        applicable=(
+                            latest.diagnostic_id == diag.id
+                            and getattr(diag.status, "value", diag.status) == "succeeded"
+                        ),
+                    )
+                    if latest is not None
+                    else None
+                ),
+            })
+    return {"dataset_id": dataset_id, "diagnostics": items}
+
+
+@router.get("/api/professional-confirmations/{confirmation_id}")
+def get_professional_confirmation(
+    confirmation_id: str,
+    runtime: PlatformRuntime = Depends(get_platform_runtime),
+) -> dict[str, Any]:
+    """Read a confirmation snapshot with diagnosis/dataset/case identity."""
+
+    from geomodeling.platform.repositories import (
+        CaseRepository,
+        ProfessionalConfirmationRepository,
+        ProfessionalDiagnosticRepository,
+    )
+    from geomodeling.platform.public_dto import public_confirmation
+
+    with runtime.session() as session:
+        conf_repo = ProfessionalConfirmationRepository(session)
+        confirmation = conf_repo.get(confirmation_id)
+        diag_repo = ProfessionalDiagnosticRepository(session)
+        diagnosis = diag_repo.get(confirmation.diagnostic_id)
+
+    # Guard: trashed case must not expose confirmation
+    require_active_dataset(runtime, diagnosis.dataset_version_id)
+
+    with runtime.session() as session:
+        conf_repo = ProfessionalConfirmationRepository(session)
+        confirmation = conf_repo.get(confirmation_id)
+        diag_repo = ProfessionalDiagnosticRepository(session)
+        diagnosis = diag_repo.get(confirmation.diagnostic_id)
+        dataset = DatasetRepository(session).get(diagnosis.dataset_version_id)
+        case = CaseRepository(session).get_active(dataset.case_id)
+
+        return {
+            "confirmation": public_confirmation(confirmation),
+            "diagnosis_id": diagnosis.id,
+            "diagnosis_status": getattr(diagnosis.status, "value", diagnosis.status),
+            "dataset_id": dataset.id,
+            "case_id": case.id,
+            "fingerprint": confirmation.fingerprint,
+            "config_summary": confirmation.config,
+        }
+
+
 def _load_succeeded_diagnosis(runtime: PlatformRuntime, diagnosis_id: str):
     """解析诊断与归属数据版本；非 succeeded 诊断 409（证据只在成功态公开）。"""
 
     record = get_professional_diagnosis(runtime, diagnosis_id)
-    with runtime.session() as session:
-        DatasetRepository(session).get(record.dataset_version_id)
+    require_active_dataset(runtime, record.dataset_version_id)
     if record.status != RunStatus.SUCCEEDED.value:
         raise PlatformError(
             PROFESSIONAL_DIAGNOSIS_NOT_SUCCEEDED,
@@ -156,9 +273,28 @@ def get_professional_diagnosis_dto(
     """诊断状态、指纹、manifest 摘要（逻辑工件名/大小/SHA-256）与错误。"""
 
     record = get_professional_diagnosis(runtime, diagnosis_id)
+    require_active_dataset(runtime, record.dataset_version_id)
+    body = public_professional_diagnosis(record)
+    # Attach latest_confirmation summary
+    from geomodeling.platform.repositories import ProfessionalConfirmationRepository
+    from geomodeling.platform.public_dto import public_confirmation_summary
+
     with runtime.session() as session:
-        DatasetRepository(session).get(record.dataset_version_id)
-    return public_professional_diagnosis(record)
+        conf_repo = ProfessionalConfirmationRepository(session)
+        latest = conf_repo.latest_for_diagnostic(diagnosis_id)
+    body["latest_confirmation"] = (
+        public_confirmation_summary(
+            latest,
+            applicable=(
+                latest is not None
+                and latest.diagnostic_id == diagnosis_id
+                and getattr(record.status, "value", record.status) == "succeeded"
+            ),
+        )
+        if latest is not None
+        else None
+    )
+    return body
 
 
 def _bounded_rows(frame: pd.DataFrame, decimate: int, cap: int) -> dict[str, Any]:
@@ -248,6 +384,8 @@ def confirm_diagnosis(
 ) -> dict[str, Any]:
     """为成功诊断创建不可变确认快照（201）；非 succeeded 诊断 409。"""
 
+    _diag = get_professional_diagnosis(runtime, diagnosis_id)
+    require_active_dataset(runtime, _diag.dataset_version_id)
     record = confirm_professional_diagnosis(
         runtime,
         diagnosis_id,
@@ -267,6 +405,7 @@ def get_analysis_job_dto(
     job_id: str,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
+    require_active_analysis_job(runtime, job_id)
     return public_analysis_job(get_analysis_job(runtime, job_id))
 
 
@@ -278,9 +417,10 @@ def cancel_analysis_job(
 ) -> dict[str, Any]:
     """取消分析任务：queued 原子转 canceled；running 写取消旗标协作退出。
 
-    取消只影响当前任务——终态行完全不可变，subject 行与既有成功工件不改写。
+    取消只影响当前任务--终态行完全不可变，subject 行与既有成功工件不改写。
     """
 
+    require_active_analysis_job(runtime, job_id)
     with runtime.session() as session:
         repo = AnalysisJobRepository(session)
         record = repo.get(job_id)
@@ -309,6 +449,7 @@ def retry_analysis_job_route(
 ) -> dict[str, Any]:
     """从 failed/canceled/interrupted 重试：新身份 + ``retry_of_job_id``，原记录不改写。"""
 
+    require_active_analysis_job(runtime, job_id)
     record = retry_analysis_job(runtime, job_id)
     worker = _worker(request)
     if worker is not None:
@@ -347,6 +488,7 @@ def get_professional_result(
     绝不伪造零值指标或能力。
     """
 
+    require_active_candidate(runtime, result_id)
     candidate, _run, experiment = _load_succeeded_candidate(runtime, result_id)
     params = tables.loads_canonical(experiment.params_json)
     algorithm = params["algorithm"]
@@ -403,6 +545,7 @@ def get_result_folds(
 ) -> dict[str, Any]:
     """折分证据：折数、逐折训练/验证计数、空间组身份、泄漏检查与逐折指标（有界）。"""
 
+    require_active_candidate(runtime, result_id)
     candidate, _run, _experiment = _load_succeeded_candidate(runtime, result_id)
     assignments_path = (
         runtime.settings.professional_result_dir(result_id) / "fold_assignments.parquet"
@@ -453,6 +596,7 @@ def get_result_residuals(
 ) -> dict[str, Any]:
     """OOF 残差表：行数上限内联 + decimate 抽稀；完整 parquet 走白名单下载。"""
 
+    require_active_candidate(runtime, result_id)
     _load_succeeded_candidate(runtime, result_id)
     oof_path = (
         runtime.settings.professional_result_dir(result_id) / "out_of_fold_predictions.parquet"
@@ -505,6 +649,7 @@ def get_result_uncertainty(
     能力不适用（IDW 请求 kriging_std）409；层未物化 404；绝不返回 0 场。
     """
 
+    require_active_candidate(runtime, result_id)
     return preview(runtime, result_id, layer=kind)
 
 
@@ -522,6 +667,7 @@ def request_anomaly_extraction(
 ) -> JSONResponse:
     """创建异常提取请求：202 + 任务身份；同成果同配置成功幂等返回 200。"""
 
+    require_active_candidate(runtime, result_id)
     record = create_anomaly_extraction(runtime, result_id, config)
     # 先读 subject 状态再入队：响应身份不受 worker 并发翻转影响（确定性）
     subject = get_anomaly_extraction(runtime, record.id)
@@ -546,6 +692,7 @@ def get_anomaly_extraction_dto(
     """提取状态、配置、manifest 摘要与有界 components 预览。"""
 
     record = get_anomaly_extraction(runtime, extraction_id)
+    require_active_candidate(runtime, record.candidate_result_id)
     _load_candidate(runtime, record.candidate_result_id)  # 归属链核验
     components = None
     if record.status == "succeeded" and record.manifest:
@@ -607,6 +754,8 @@ def create_comparison(
 ) -> dict[str, Any]:
     """比较两个成功候选（只读已登记工件）；结论以 comparison_fingerprint 登记。"""
 
+    require_active_candidate(runtime, request_body.first_result_id)
+    require_active_candidate(runtime, request_body.second_result_id)
     comparison = compare_candidates(
         runtime, request_body.first_result_id, request_body.second_result_id
     )
@@ -708,6 +857,30 @@ def download_professional_artifact(
     if len(parts) != 3:
         raise _artifact_not_found("工件身份须为「类别:subject:逻辑名」", artifact_id=artifact_id)
     kind, subject_id, logical_name = parts
+
+    # Guard: trashed case must not expose professional artifacts
+    # Wrap in try/except to convert entity-not-found to artifact-not-found
+    try:
+        if kind == "diagnosis":
+            from geomodeling.platform.tables import ProfessionalDiagnostic
+            with runtime.session() as session:
+                diag_row = session.get(ProfessionalDiagnostic, subject_id)
+                if diag_row is not None:
+                    require_active_dataset(runtime, diag_row.dataset_version_id)
+        elif kind == "result":
+            require_active_candidate(runtime, subject_id)
+        elif kind == "extraction":
+            from geomodeling.platform.tables import AnomalyExtraction
+            with runtime.session() as session:
+                ext_row = session.get(AnomalyExtraction, subject_id)
+                if ext_row is not None:
+                    require_active_candidate(runtime, ext_row.candidate_result_id)
+    except PlatformError as exc:
+        if exc.http_status == 404:
+            raise _artifact_not_found(
+                "专业工件身份未登记", artifact_kind=kind, subject_id=subject_id,
+            ) from exc
+        raise
     manifest = _subject_manifest(runtime, kind, subject_id)
     entry = (manifest.get("artifacts") or {}).get(logical_name)
     if not isinstance(entry, dict):
@@ -741,3 +914,39 @@ def download_professional_artifact(
         )
     media_type = _ARTIFACT_MEDIA_TYPES.get(path.suffix.lower(), "application/octet-stream")
     return FileResponse(path, media_type=media_type, filename=file_name)
+
+
+# ---------------------------------------------------------------------------
+# v0.7.0 batch 3: candidate catalog and multi-candidate comparison (§8)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/datasets/{dataset_id}/comparison-candidates")
+def list_comparison_candidates(
+    dataset_id: str,
+    runtime: PlatformRuntime = Depends(get_platform_runtime),
+) -> dict[str, Any]:
+    """List comparable candidates across experiments for a dataset version."""
+
+    require_active_dataset(runtime, dataset_id)
+    from geomodeling.platform.candidate_comparisons import candidate_catalog
+
+    return candidate_catalog(runtime, dataset_id)
+
+
+@router.post("/api/candidate-comparisons")
+def compare_candidates_route(
+    request_body: CandidateComparisonRequest,
+    runtime: PlatformRuntime = Depends(get_platform_runtime),
+) -> dict[str, Any]:
+    """Compare 2-4 candidates deterministically without persistence.
+
+    Uses Pydantic body validation: invalid selections return 422, never 500.
+    """
+
+    from geomodeling.platform.candidate_comparisons import compare_candidates_multi
+
+    for cid in request_body.candidate_result_ids:
+        require_active_candidate(runtime, cid)
+    result = compare_candidates_multi(runtime, request_body.candidate_result_ids)
+    return result.model_dump(mode="json")

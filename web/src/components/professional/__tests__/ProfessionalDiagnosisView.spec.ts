@@ -9,7 +9,9 @@ import type {
   DirectionalVariogramBin,
   ExperimentRecord,
   ProfessionalConfirmationRecord,
+  ProfessionalConfirmationSummary,
   ProfessionalDiagnosisRecord,
+  ProfessionalDiagnosticList,
   RunStatus,
   VariogramBin,
   VariogramEvidence,
@@ -24,6 +26,8 @@ vi.mock('../../../api/client', async (importOriginal) => {
     ...actual,
     fetchDataset: vi.fn(),
     fetchCaseDatasets: vi.fn(),
+    fetchProfessionalDiagnostics: vi.fn(),
+    fetchProfessionalConfirmation: vi.fn(),
     requestProfessionalDiagnosis: vi.fn(),
     fetchProfessionalDiagnosis: vi.fn(),
     fetchDiagnosisVariogram: vi.fn(),
@@ -289,6 +293,7 @@ const DIAGNOSIS: ProfessionalDiagnosisRecord = {
   created_at: T,
   updated_at: T,
   finished_at: T,
+  latest_confirmation: null,
 }
 
 const CONFIRMATION: ProfessionalConfirmationRecord = {
@@ -298,6 +303,16 @@ const CONFIRMATION: ProfessionalConfirmationRecord = {
   note: '人工确认主方向',
   config: { model: 'spherical', parameter_strategy: 'automatic_candidate' },
   created_at: T,
+}
+
+const CONFIRMATION_SUMMARY: ProfessionalConfirmationSummary = {
+  confirmation: { id: 'conf1', note: '人工确认主方向' },
+  diagnosis_id: 'diag1',
+  diagnosis_status: 'succeeded',
+  dataset_id: 'ds1',
+  case_id: 'c1',
+  fingerprint: 'fp-conf1',
+  config_summary: {},
 }
 
 function makeJob(
@@ -333,6 +348,7 @@ function makeTestRouter(): Router {
     history: createMemoryHistory(),
     routes: [
       { path: '/', name: 'home', component: { template: '<div />' } },
+      { path: '/cases/:caseId', name: 'case-workspace', component: { template: '<div />' } },
       { path: '/cases/:caseId/experiments/new', name: 'experiment-create', component: ExperimentView },
       { path: '/experiments/:experimentId', name: 'experiment-detail', component: { template: '<div />' } },
       {
@@ -395,35 +411,87 @@ afterEach(() => {
 })
 
 describe('数据集入口与质量门禁', () => {
+  it('页面标题与简介：空间结构分析，适用性与非破坏性说明', async () => {
+    vi.mocked(client.fetchDataset).mockResolvedValue(DATASET)
+    const { wrapper } = await mountDiagnosis('/datasets/ds1/professional-diagnosis?case=c1')
+    expect(wrapper.get('h1').text()).toBe('空间结构分析')
+    expect(wrapper.text()).toContain('普通克里金')
+    expect(wrapper.text()).toContain('IDW 不需要')
+    wrapper.unmount()
+  })
+
   it('数据集未过质量门禁：诊断页显示门禁提示且无开始按钮，导航保留', async () => {
     vi.mocked(client.fetchDataset).mockResolvedValue(UNGATED_DATASET)
     const { wrapper } = await mountDiagnosis('/datasets/ds1/professional-diagnosis?case=c1')
     expect(wrapper.find('[data-test="quality-gate-blocked"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="start-diagnosis"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="nav-home"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="nav-new-experiment"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="crumb-home"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="crumb-case"]').exists()).toBe(true)
     wrapper.unmount()
   })
 
-  it('实验页在质量门禁通过后显示专业诊断入口并跳转到诊断路由', async () => {
+  it('实验页 IDW 模式不显示空间分析 UI', async () => {
     vi.mocked(client.fetchDataset).mockResolvedValue(DATASET)
+    vi.mocked(client.fetchProfessionalDiagnostics).mockResolvedValue({
+      dataset_id: 'ds1',
+      diagnostics: [],
+    })
+    const { wrapper } = await mountExperiment('/cases/c1/experiments/new?dataset=ds1')
+    expect(wrapper.find('[data-test="kriging-basis"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="spatial-analysis-entry"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('实验页 Kriging 模式显示建模依据，默认快速建模', async () => {
+    vi.mocked(client.fetchDataset).mockResolvedValue(DATASET)
+    vi.mocked(client.fetchProfessionalDiagnostics).mockResolvedValue({
+      dataset_id: 'ds1',
+      diagnostics: [],
+    })
+    const { wrapper } = await mountExperiment('/cases/c1/experiments/new?dataset=ds1')
+    await wrapper.find('[data-test="algo-kriging"]').setValue(true)
+    expect(wrapper.find('[data-test="kriging-basis"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="basis-quick"]').attributes('aria-checked')).toBe('true')
+    // No succeeded diagnosis: analysis option shows 开始空间结构分析
+    await wrapper.find('[data-test="basis-analysis"]').trigger('click')
+    expect(wrapper.get('[data-test="basis-analysis"]').attributes('aria-checked')).toBe('true')
+    expect(wrapper.find('[data-test="spatial-analysis-entry"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="spatial-analysis-entry"]').text()).toContain('开始空间结构分析')
+    wrapper.unmount()
+  })
+
+  it('实验页 Kriging 有成功诊断时显示查看并采用已有分析', async () => {
+    vi.mocked(client.fetchDataset).mockResolvedValue(DATASET)
+    vi.mocked(client.fetchProfessionalDiagnostics).mockResolvedValue({
+      dataset_id: 'ds1',
+      diagnostics: [
+        {
+          diagnosis: { id: 'diag1', status: 'succeeded' },
+          job: null,
+          url: '/datasets/ds1/professional-diagnosis?diagnosis=diag1',
+          latest_confirmation: null,
+        },
+      ],
+    })
     const { wrapper, router } = await mountExperiment('/cases/c1/experiments/new?dataset=ds1')
-    const entry = wrapper.find('[data-test="professional-entry"]')
-    expect(entry.exists()).toBe(true)
+    await wrapper.find('[data-test="algo-kriging"]').setValue(true)
+    await wrapper.find('[data-test="basis-analysis"]').trigger('click')
+    const entry = wrapper.find('[data-test="spatial-analysis-entry"]')
+    expect(entry.text()).toContain('查看并采用已有分析')
     await entry.trigger('click')
     await flushPromises()
-    expect(router.currentRoute.value).toMatchObject({
-      name: 'professional-diagnosis',
-      params: { datasetId: 'ds1' },
-    })
-    expect(router.currentRoute.value.query.case).toBe('c1')
+    expect(router.currentRoute.value.name).toBe('professional-diagnosis')
+    expect(router.currentRoute.value.query.diagnosis).toBe('diag1')
     wrapper.unmount()
   })
 
-  it('实验页在数据集未过质量门禁时不显示专业诊断入口', async () => {
+  it('实验页在数据集未过质量门禁时不显示建模依据', async () => {
     vi.mocked(client.fetchDataset).mockResolvedValue(UNGATED_DATASET)
     const { wrapper } = await mountExperiment('/cases/c1/experiments/new?dataset=ds1')
-    expect(wrapper.find('[data-test="professional-entry"]').exists()).toBe(false)
+    await wrapper.find('[data-test="algo-kriging"]').setValue(true)
+    // dataset is loaded but not validated; kriging-basis only shows for validated dataset
+    // (ParameterEditor renders but basis depends on algorithm selection)
+    expect(wrapper.find('[data-test="spatial-analysis-entry"]').exists()).toBe(false)
     wrapper.unmount()
   })
 })
@@ -571,7 +639,7 @@ describe('不可变确认', () => {
     await goto.trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.name).toBe('experiment-create')
-    expect(router.currentRoute.value.query.confirmation).toBe('conf1')
+    expect(router.currentRoute.value.query.professional_confirmation).toBe('conf1')
     expect(router.currentRoute.value.query.dataset).toBe('ds1')
     wrapper.unmount()
   })
@@ -634,8 +702,8 @@ describe('任务失败与重试', () => {
     const jobError = wrapper.find('[data-test="job-error"]')
     expect(jobError.text()).toContain('VARIOGRAM_FIT_FAILED')
     expect(jobError.text()).toContain('变异函数拟合失败')
-    expect(wrapper.find('[data-test="nav-home"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="nav-new-experiment"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="crumb-home"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="crumb-case"]').exists()).toBe(true)
 
     await wrapper.find('[data-test="retry-diagnosis"]').trigger('click')
     await flushPromises()
@@ -665,17 +733,200 @@ describe('任务失败与重试', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-test="job-error"]').text()).toContain('PROCESS_RESTARTED')
-    expect(wrapper.find('[data-test="nav-home"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="nav-new-experiment"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="crumb-home"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="crumb-case"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="retry-diagnosis"]').exists()).toBe(true)
     wrapper.unmount()
   })
 
-  it('初始加载中保留首页与实验导航', async () => {
+  it('初始加载中保留首页与案例导航', async () => {
     vi.mocked(client.fetchDataset).mockReturnValue(new Promise(() => {}))
     const { wrapper } = await mountDiagnosis('/datasets/ds1/professional-diagnosis?case=c1')
-    expect(wrapper.find('[data-test="nav-home"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="nav-new-experiment"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="crumb-home"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="crumb-case"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+})
+
+describe('诊断恢复（query.diagnosis）', () => {
+  function makeDiagnosticList(
+    diagnosis: ProfessionalDiagnosisRecord,
+    job: AnalysisJobRecord | null,
+  ): ProfessionalDiagnosticList {
+    return {
+      dataset_id: diagnosis.dataset_version_id,
+      diagnostics: [{ diagnosis: diagnosis as unknown as Record<string, unknown>, job: job as unknown as Record<string, unknown> | null, url: `/datasets/${diagnosis.dataset_version_id}/professional-diagnosis?diagnosis=${diagnosis.id}`, latest_confirmation: null }],
+    }
+  }
+
+  it('已成功的诊断：从 query.diagnosis 恢复后直接展示证据', async () => {
+    vi.mocked(client.fetchDataset).mockResolvedValue(DATASET)
+    vi.mocked(client.fetchProfessionalDiagnosis).mockResolvedValue(DIAGNOSIS)
+    vi.mocked(client.fetchDiagnosisVariogram).mockResolvedValue(EVIDENCE)
+
+    const { wrapper } = await mountDiagnosis(
+      '/datasets/ds1/professional-diagnosis?case=c1&diagnosis=diag1',
+    )
+    expect(client.fetchProfessionalDiagnosis).toHaveBeenCalledWith('diag1')
+    expect(wrapper.find('[data-test="diagnosis-fingerprint"]').text()).toContain('fp-diag1')
+    expect(wrapper.find('[data-test="diagnosis-config"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('运行中的诊断：从 query.diagnosis 恢复后继续轮询至成功', async () => {
+    const runningDiagnosis: ProfessionalDiagnosisRecord = { ...DIAGNOSIS, status: 'running' }
+    vi.mocked(client.fetchDataset).mockResolvedValue(DATASET)
+    vi.mocked(client.fetchProfessionalDiagnosis)
+      .mockResolvedValueOnce(runningDiagnosis)
+      .mockResolvedValue(DIAGNOSIS)
+    vi.mocked(client.fetchProfessionalDiagnostics).mockResolvedValue(
+      makeDiagnosticList(runningDiagnosis, makeJob('running')),
+    )
+    vi.mocked(client.fetchAnalysisJob)
+      .mockResolvedValueOnce(makeJob('running'))
+      .mockResolvedValue(makeJob('succeeded'))
+    vi.mocked(client.fetchDiagnosisVariogram).mockResolvedValue(EVIDENCE)
+
+    const { wrapper } = await mountDiagnosis(
+      '/datasets/ds1/professional-diagnosis?case=c1&diagnosis=diag1',
+    )
+    expect(wrapper.find('[data-test="job-status"]').exists()).toBe(true)
+
+    await vi.advanceTimersByTimeAsync(1000)
+    await vi.advanceTimersByTimeAsync(1000)
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="diagnosis-fingerprint"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('数据集不匹配时显示错误', async () => {
+    const foreignDiagnosis: ProfessionalDiagnosisRecord = {
+      ...DIAGNOSIS,
+      dataset_version_id: 'ds-other',
+    }
+    vi.mocked(client.fetchDataset).mockResolvedValue(DATASET)
+    vi.mocked(client.fetchProfessionalDiagnosis).mockResolvedValue(foreignDiagnosis)
+
+    const { wrapper } = await mountDiagnosis(
+      '/datasets/ds1/professional-diagnosis?case=c1&diagnosis=diag1',
+    )
+    expect(wrapper.find('[data-test="quality-gate-blocked"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('DIAGNOSIS_DATASET_MISMATCH')
+    wrapper.unmount()
+  })
+
+  it('latest_confirmation applicable=true: 显示采用建议按钮并可直接创建实验', async () => {
+    const diagWithConfirmation: ProfessionalDiagnosisRecord = {
+      ...DIAGNOSIS,
+      latest_confirmation: {
+        id: 'conf1',
+        diagnostic_id: 'diag1',
+        fingerprint: 'fp-conf1',
+        created_at: T,
+        applicable: true,
+      },
+    }
+    vi.mocked(client.fetchDataset).mockResolvedValue(DATASET)
+    vi.mocked(client.fetchProfessionalDiagnosis).mockResolvedValue(diagWithConfirmation)
+    vi.mocked(client.fetchDiagnosisVariogram).mockResolvedValue(EVIDENCE)
+    vi.mocked(client.fetchProfessionalConfirmation).mockResolvedValue(CONFIRMATION_SUMMARY)
+
+    const { wrapper, router } = await mountDiagnosis(
+      '/datasets/ds1/professional-diagnosis?case=c1&diagnosis=diag1',
+    )
+    expect(wrapper.find('[data-test="confirmation-snapshot"]').exists()).toBe(true)
+    const apply = wrapper.find('[data-test="apply-confirmation"]')
+    expect(apply.exists()).toBe(true)
+    expect(apply.text()).toContain('采用建议并创建克里金实验')
+    expect(wrapper.find('[data-test="goto-experiment"]').exists()).toBe(false)
+
+    await apply.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.name).toBe('experiment-create')
+    expect(router.currentRoute.value.query.professional_confirmation).toBe('conf1')
+    expect(router.currentRoute.value.query.dataset).toBe('ds1')
+    wrapper.unmount()
+  })
+
+  it('路由身份变化时 stale 响应不得覆盖当前诊断', async () => {
+    const diagA: ProfessionalDiagnosisRecord = { ...DIAGNOSIS, id: 'diagA', fingerprint: 'fp-diagA' }
+    const diagB: ProfessionalDiagnosisRecord = { ...DIAGNOSIS, id: 'diagB', fingerprint: 'fp-diagB' }
+    const pending = new Map<string, { resolve: (v: ProfessionalDiagnosisRecord) => void; reject: (e: unknown) => void }>()
+    let firstDiagACall = true
+
+    vi.mocked(client.fetchDataset).mockResolvedValue(DATASET)
+    vi.mocked(client.fetchDiagnosisVariogram).mockResolvedValue(EVIDENCE)
+    vi.mocked(client.fetchProfessionalDiagnosis).mockImplementation((id: string) => {
+      if (id === 'diagA' && firstDiagACall) {
+        firstDiagACall = false
+        return Promise.resolve(diagA)
+      }
+      return new Promise<ProfessionalDiagnosisRecord>((resolve, reject) => {
+        pending.set(id === 'diagA' ? 'a2' : 'b', { resolve, reject })
+      })
+    })
+
+    const { wrapper, router } = await mountDiagnosis(
+      '/datasets/ds1/professional-diagnosis?case=c1&diagnosis=diagA',
+    )
+    expect(wrapper.find('[data-test="diagnosis-fingerprint"]').text()).toContain('fp-diagA')
+
+    // Navigate to diagB (pending) then back to diagA (also pending)
+    await router.push('/datasets/ds1/professional-diagnosis?case=c1&diagnosis=diagB')
+    await flushPromises()
+    await router.push('/datasets/ds1/professional-diagnosis?case=c1&diagnosis=diagA')
+    await flushPromises()
+    expect(pending.has('b')).toBe(true)
+    expect(pending.has('a2')).toBe(true)
+
+    // Second diagA resolves first -> shows diagA
+    pending.get('a2')!.resolve(diagA)
+    await flushPromises()
+    expect(wrapper.find('[data-test="diagnosis-fingerprint"]').text()).toContain('fp-diagA')
+
+    // diagB resolves last -> must not overwrite diagA
+    pending.get('b')!.resolve(diagB)
+    await flushPromises()
+    expect(wrapper.find('[data-test="diagnosis-fingerprint"]').text()).toContain('fp-diagA')
+    expect(wrapper.find('[data-test="diagnosis-fingerprint"]').text()).not.toContain('fp-diagB')
+    wrapper.unmount()
+  })
+
+  it('stale rejection 不显示错误，stale finally 不提前结束 loading', async () => {
+    const pending = new Map<string, { resolve: (v: ProfessionalDiagnosisRecord) => void; reject: (e: unknown) => void }>()
+    let firstDiagACall = true
+    vi.mocked(client.fetchDataset).mockResolvedValue(DATASET)
+    vi.mocked(client.fetchDiagnosisVariogram).mockResolvedValue(EVIDENCE)
+    vi.mocked(client.fetchProfessionalDiagnosis).mockImplementation((id: string) => {
+      if (id === 'diagA' && firstDiagACall) {
+        firstDiagACall = false
+        return Promise.resolve(DIAGNOSIS)
+      }
+      return new Promise<ProfessionalDiagnosisRecord>((resolve, reject) => {
+        pending.set(id === 'diagA' ? 'a2' : 'b', { resolve, reject })
+      })
+    })
+
+    const { wrapper, router } = await mountDiagnosis(
+      '/datasets/ds1/professional-diagnosis?case=c1&diagnosis=diagA',
+    )
+    await router.push('/datasets/ds1/professional-diagnosis?case=c1&diagnosis=diagB')
+    await flushPromises()
+    expect(pending.has('b')).toBe(true)
+    await router.push('/datasets/ds1/professional-diagnosis?case=c1&diagnosis=diagA')
+    await flushPromises()
+    expect(pending.has('a2')).toBe(true)
+
+    // stale B fails -> must not show error
+    pending.get('b')!.reject(new Error('network down'))
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('network down')
+
+    // current A completes -> shows normally
+    pending.get('a2')!.resolve(DIAGNOSIS)
+    await flushPromises()
+    expect(wrapper.find('[data-test="diagnosis-fingerprint"]').exists()).toBe(true)
     wrapper.unmount()
   })
 })
@@ -683,6 +934,7 @@ describe('任务失败与重试', () => {
 describe('ExperimentView 专业联动', () => {
   function mockExperimentCreate() {
     vi.mocked(client.fetchDataset).mockResolvedValue(DATASET)
+    vi.mocked(client.fetchProfessionalConfirmation).mockResolvedValue(CONFIRMATION_SUMMARY)
     vi.mocked(client.createExperiment).mockResolvedValue(EXP)
     vi.mocked(client.startRun).mockResolvedValue({
       id: 'run1',
@@ -705,15 +957,20 @@ describe('ExperimentView 专业联动', () => {
     })
   }
 
-  it('Kriging 专业模式：提交携带确认 ID、搜索邻域与经验不确定性', async () => {
+  it('Kriging 专业确认模式：算法锁定、确认快照可见，提交携带确认 ID 与邻域', async () => {
     mockExperimentCreate()
     const { wrapper } = await mountExperiment(
-      '/cases/c1/experiments/new?dataset=ds1&confirmation=conf1',
+      '/cases/c1/experiments/new?dataset=ds1&professional_confirmation=conf1',
     )
-    await wrapper.find('[data-test="professional-toggle"]').setValue(true)
-    await wrapper.find('[data-test="algo-kriging"]').setValue(true)
+    expect(client.fetchProfessionalConfirmation).toHaveBeenCalledWith('conf1')
+    // 算法锁定为 ordinary_kriging
+    expect((wrapper.find('[data-test="algo-idw"]').element as HTMLInputElement).disabled).toBe(true)
+    expect((wrapper.find('[data-test="algo-kriging"]').element as HTMLInputElement).checked).toBe(true)
+    // 确认快照始终可见
     expect(wrapper.find('[data-test="professional-confirmation"]').text()).toContain('conf1')
+    expect(wrapper.find('[data-test="professional-confirmation"]').text()).toContain('fp-conf1')
 
+    // v0.7.0: professional mode auto-enabled, neighborhood section visible
     await wrapper.find('[data-test="nb-radii"]').setValue('80, 40, 20')
     await wrapper.find('[data-test="exp-submit"]').trigger('click')
     await flushPromises()
@@ -737,25 +994,21 @@ describe('ExperimentView 专业联动', () => {
     wrapper.unmount()
   })
 
-  it('IDW 专业模式：只出现邻域与经验误差设置，不出现变异函数确认', async () => {
+  it('专业确认模式自动启用：确认 ID 存在时邻域/经验不确定性自动包含', async () => {
     mockExperimentCreate()
     const { wrapper } = await mountExperiment(
-      '/cases/c1/experiments/new?dataset=ds1&confirmation=conf1',
+      '/cases/c1/experiments/new?dataset=ds1&professional_confirmation=conf1',
     )
-    await wrapper.find('[data-test="professional-toggle"]').setValue(true)
-    // 默认算法即 IDW：确认 UI 绝不出现
-    expect(wrapper.find('[data-test="professional-confirmation"]').exists()).toBe(false)
+    // v0.7.0: no toggle - confirmation auto-enables professional mode
     expect(wrapper.find('[data-test="professional-neighborhood"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="professional-uncertainty"]').exists()).toBe(true)
-
     await wrapper.find('[data-test="exp-submit"]').trigger('click')
     await flushPromises()
 
     const payload = vi.mocked(client.createExperiment).mock.calls[0][0]
-    expect(payload.algorithm).toBe('idw')
-    expect(payload).not.toHaveProperty('professional_confirmation_id')
-    expect(payload.neighborhood).toMatchObject({ radii: [80, 40, 20] })
-    expect(payload.empirical_uncertainty).toMatchObject({ power: 2 })
+    expect(payload.algorithm).toBe('ordinary_kriging')
+    expect(payload.professional_confirmation_id).toBe('conf1')
+    expect(payload).toHaveProperty('neighborhood')
+    expect(payload).toHaveProperty('empirical_uncertainty')
     wrapper.unmount()
   })
 
@@ -773,17 +1026,19 @@ describe('ExperimentView 专业联动', () => {
     wrapper.unmount()
   })
 
-  it('Kriging 专业模式缺确认快照时阻断提交并提示', async () => {
+  it('无确认快照时普通 Kriging 可正常提交（不含专业参数）', async () => {
     mockExperimentCreate()
     const { wrapper } = await mountExperiment('/cases/c1/experiments/new?dataset=ds1')
-    await wrapper.find('[data-test="professional-toggle"]').setValue(true)
+    // v0.7.0: no toggle - without confirmation, professional section is hidden
+    expect(wrapper.find('[data-test="professional-neighborhood"]').exists()).toBe(false)
     await wrapper.find('[data-test="algo-kriging"]').setValue(true)
-    expect(wrapper.find('[data-test="professional-confirmation-missing"]').exists()).toBe(true)
-
     await wrapper.find('[data-test="exp-submit"]').trigger('click')
     await flushPromises()
-    expect(client.createExperiment).not.toHaveBeenCalled()
-    expect(wrapper.find('[data-test="action-error"]').text()).toContain('确认快照')
+    expect(client.createExperiment).toHaveBeenCalledTimes(1)
+    const payload = vi.mocked(client.createExperiment).mock.calls[0][0]
+    expect(payload.algorithm).toBe('ordinary_kriging')
+    expect(payload).not.toHaveProperty('professional_confirmation_id')
+    expect(payload).not.toHaveProperty('neighborhood')
     wrapper.unmount()
   })
 })

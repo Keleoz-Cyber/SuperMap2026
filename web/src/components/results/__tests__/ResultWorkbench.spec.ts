@@ -61,6 +61,18 @@ function makeMetadata(dimension: '2d' | '3d'): ResultMetadata {
     fingerprint: 'fp1',
     validation: { folds: 3 },
     created_at: T,
+    evaluation_summary: {
+      common_valid_count: 96,
+      candidate_valid_count: 96,
+      candidate_nodata_count: 0,
+      total_count: 96,
+      coverage: 1.0,
+      rmse: 1.2,
+      mae: 0.9,
+      r2: 0.94,
+      bias: 0.05,
+      enhanced_evidence_available: false,
+    },
   }
 }
 
@@ -218,7 +230,7 @@ async function mountWorkbench(metadata: ResultMetadata) {
       { path: '/', name: 'home', component: { template: '<div />' } },
       { path: '/experiments/:experimentId', name: 'experiment-detail', component: { template: '<div />' } },
       { path: '/results/:resultId', name: 'result-workbench', component: ResultWorkbenchView },
-      { path: '/results/:resultId/professional', name: 'professional-analysis', component: { template: '<div />' } },
+      { path: '/results/:resultId/evaluation', name: 'model-evaluation', component: { template: '<div />' } },
     ],
   })
   await router.push('/results/r1')
@@ -323,23 +335,27 @@ describe('ResultWorkbenchView', () => {
     expect(wrapper.find('[data-test="publication-instruction"]').text()).toContain('手动发布')
   })
 
-  it('专业分析入口保留并跳转专业分析台', async () => {
-    const { wrapper, router } = await mountWorkbench(makeMetadata('3d'))
-    await wrapper.get('[data-test="professional-entry"]').trigger('click')
+  it('模型评估入口跳转 model-evaluation 路由', async () => {
+    const krigingMeta = makeMetadata('3d')
+    krigingMeta.algorithm = 'ordinary_kriging'
+    krigingMeta.professional_analysis_supported = true
+    const { wrapper, router } = await mountWorkbench(krigingMeta)
+    await wrapper.get('[data-test="model-evaluation-entry"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value).toMatchObject({
-      name: 'professional-analysis',
+      name: 'model-evaluation',
       params: { resultId: 'r1' },
     })
   })
 })
 
 describe('导航', () => {
-  it('成果页显示 nav-home 与 nav-experiment（精确实验 ID）', async () => {
+  it('成果页显示面包屑首页与实验链接（精确实验 ID）', async () => {
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [
         { path: '/', name: 'home', component: { template: '<div />' } },
+        { path: '/cases/:caseId', name: 'case-workspace', component: { template: '<div />' } },
         { path: '/experiments/:experimentId', name: 'experiment-detail', component: { template: '<div />' } },
         { path: '/results/:resultId', name: 'result-workbench', component: ResultWorkbenchView },
       ],
@@ -354,7 +370,7 @@ describe('导航', () => {
     const wrapper = mount(ResultWorkbenchView, { global: { plugins: [router, ElementPlus] } })
     await flushPromises()
 
-    await wrapper.get('[data-test="nav-experiment"]').trigger('click')
+    await wrapper.get('[data-test="crumb-experiment"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value).toMatchObject({
       name: 'experiment-detail',
@@ -363,7 +379,7 @@ describe('导航', () => {
 
     await router.push('/results/r1')
     await flushPromises()
-    await wrapper.get('[data-test="nav-home"]').trigger('click')
+    await wrapper.get('[data-test="crumb-home"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.name).toBe('home')
   })
@@ -386,7 +402,7 @@ describe('导航', () => {
     // 物化失败绝不继续取切片/预览
     expect(client.fetchResultSlice).not.toHaveBeenCalled()
     expect(client.fetchResultPreview).not.toHaveBeenCalled()
-    await wrapper.get('[data-test="nav-home"]').trigger('click')
+    await wrapper.get('[data-test="crumb-home"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.name).toBe('home')
   })
@@ -401,5 +417,22 @@ describe('导出下载', () => {
     const link = wrapper.get('[data-test="export-download"]')
     expect(link.attributes('href')).toBe(`/api/exports/${EXPORT.id}/download`)
     expect(link.attributes('href')).not.toContain('/r1/')
+  })
+})
+
+describe('模型评估入口', () => {
+  it('IDW 成果也显示模型评估入口（无禁用文本）', async () => {
+    const { wrapper } = await mountWorkbench(makeMetadata('3d'))
+    expect(wrapper.find('[data-test="model-evaluation-entry"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="professional-disabled"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('仅生成专业证据')
+  })
+
+  it('Kriging 成果同样显示模型评估入口', async () => {
+    const krigingMeta = makeMetadata('3d')
+    krigingMeta.algorithm = 'ordinary_kriging'
+    krigingMeta.professional_analysis_supported = true
+    const { wrapper } = await mountWorkbench(krigingMeta)
+    expect(wrapper.find('[data-test="model-evaluation-entry"]').exists()).toBe(true)
   })
 })

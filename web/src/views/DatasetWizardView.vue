@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ApiError,
+  abandonDataset,
   confirmWarnings,
   fetchDataset,
   fetchInspection,
@@ -38,6 +39,37 @@ const validating = ref(false)
 const confirming = ref(false)
 const conversion = ref<{ valid: number; invalid: number; total: number } | null>(null)
 
+const showAbandonDialog = ref(false)
+const abandoning = ref(false)
+
+const showMapping = computed(
+  () =>
+    dataset.value !== null &&
+    (dataset.value.status === 'uploaded' || dataset.value.status === 'blocked'),
+)
+const showQuality = computed(
+  () =>
+    dataset.value !== null &&
+    (dataset.value.status === 'mapped' ||
+     (report.value !== null && dataset.value.status === 'validated')),
+)
+const showValidated = computed(
+  () =>
+    dataset.value !== null &&
+    dataset.value.status === 'validated' &&
+    report.value === null,
+)
+const showAbandoned = computed(
+  () => dataset.value !== null && dataset.value.status === 'abandoned',
+)
+const canAbandon = computed(
+  () =>
+    dataset.value !== null &&
+    (dataset.value.status === 'uploaded' ||
+      dataset.value.status === 'mapped' ||
+      dataset.value.status === 'blocked'),
+)
+
 function describeError(e: unknown): string {
   if (e instanceof ApiError) return `${e.code}：${e.message}`
   return e instanceof Error ? e.message : String(e)
@@ -47,13 +79,16 @@ async function loadQuality() {
   try {
     report.value = await fetchQuality(datasetId.value)
   } catch (e) {
-    // 尚未校验（QUALITY_NOT_EVALUATED）属正常中间态，其余错误上浮
     if (e instanceof ApiError && e.code === 'QUALITY_NOT_EVALUATED') {
       report.value = null
     } else {
       throw e
     }
   }
+}
+
+async function refreshDataset() {
+  dataset.value = await fetchDataset(datasetId.value)
 }
 
 // 刷新/重开页面时一律以服务端状态重建向导（不依赖本地缓存）
@@ -65,7 +100,7 @@ onMounted(async () => {
     ])
     dataset.value = ds
     inspection.value = insp
-    if (ds.status === 'validated' || ds.status === 'blocked') {
+    if (ds.status === 'mapped' || ds.status === 'validated' || ds.status === 'blocked') {
       await loadQuality()
     }
   } catch (e) {
@@ -87,6 +122,7 @@ async function runValidate() {
   actionError.value = null
   try {
     report.value = await validateDataset(datasetId.value)
+    await refreshDataset()
   } catch (e) {
     actionError.value = describeError(e)
   } finally {
@@ -99,7 +135,6 @@ async function onMappingSubmit(mapping: FieldMappingPayload) {
   actionError.value = null
   try {
     const updated = await postMapping(datasetId.value, mapping, inspection.value?.sheet ?? null)
-    // 不以 HTTP 200 推断成功：必须看到服务端状态真正落为 mapped
     if (updated.status !== 'mapped' && updated.status !== 'validated') {
       throw new ApiError('MAPPING_NOT_APPLIED', `映射未生效（状态 ${updated.status}）`, 200)
     }
@@ -129,6 +164,7 @@ async function onConfirmWarnings() {
       .map((issue) => issue.code)
       .sort()
     report.value = await confirmWarnings(datasetId.value, codes)
+    await refreshDataset()
   } catch (e) {
     actionError.value = describeError(e)
   } finally {
@@ -136,16 +172,28 @@ async function onConfirmWarnings() {
   }
 }
 
+async function onAbandon() {
+  abandoning.value = true
+  actionError.value = null
+  try {
+    await abandonDataset(datasetId.value)
+    await refreshDataset()
+    showAbandonDialog.value = false
+  } catch (e) {
+    actionError.value = describeError(e)
+  } finally {
+    abandoning.value = false
+  }
+}
+
 function onStart() {
-  // v0.7.0：上传/映射/质量流程完成后进入统一案例工作台；
-  // 新建实验由工作台的显式命令进入
   void router.push(`/cases/${caseId.value}`)
 }
 </script>
 
 <template>
   <div class="wizard-page">
-    <PageNavigation home />
+    <PageNavigation :case-id="caseId" current-label="数据准备向导" />
     <header class="wizard-header">
       <h1>数据准备向导</h1>
       <p class="wizard-sub">
@@ -161,20 +209,88 @@ function onStart() {
       <div v-if="actionError" class="action-error" data-test="action-error">{{ actionError }}</div>
 
       <FileStep :dataset="dataset" :inspection="inspection" @sheet-change="onSheetChange" />
-      <MappingStep
-        :inspection="inspection"
-        :submitting="submitting"
-        :conversion="conversion"
-        @submit="onMappingSubmit"
-      />
-      <QualityStep
-        :report="report"
-        :validating="validating"
-        :confirming="confirming"
-        @validate="runValidate"
-        @confirm="onConfirmWarnings"
-        @start="onStart"
-      />
+
+      <div v-if="showValidated" data-test="wizard-step-validated">
+        <el-result
+          icon="success"
+          title="数据准备完成"
+          sub-title="数据已通过质量校验，可以开始实验与专业诊断。"
+        >
+          <template #extra>
+            <el-button type="primary" data-test="enter-workspace" @click="onStart">
+              进入案例工作台
+            </el-button>
+          </template>
+        </el-result>
+      </div>
+
+      <div v-else-if="showAbandoned" data-test="wizard-step-abandoned">
+        <el-result
+          icon="info"
+          title="数据准备已放弃"
+          sub-title="此数据版本已被放弃，请返回工作台上传新数据。"
+        >
+          <template #extra>
+            <el-button type="primary" data-test="enter-workspace" @click="onStart">
+              返回案例工作台
+            </el-button>
+          </template>
+        </el-result>
+      </div>
+
+      <div v-else-if="showMapping" data-test="wizard-step-mapping">
+        <MappingStep
+          :inspection="inspection"
+          :submitting="submitting"
+          :conversion="conversion"
+          @submit="onMappingSubmit"
+        />
+      </div>
+
+      <div v-else-if="showQuality" data-test="wizard-step-quality">
+        <QualityStep
+          :report="report"
+          :validating="validating"
+          :confirming="confirming"
+          @validate="runValidate"
+          @confirm="onConfirmWarnings"
+          @start="onStart"
+        />
+      </div>
+
+      <div v-if="canAbandon" class="abandon-section">
+        <el-button
+          type="danger"
+          plain
+          data-test="abandon-preparation-btn"
+          @click="showAbandonDialog = true"
+        >
+          放弃本次准备
+        </el-button>
+      </div>
+
+      <el-dialog
+        v-model="showAbandonDialog"
+        title="放弃数据准备"
+        width="440px"
+        :close-on-click-modal="false"
+        data-test="abandon-dialog"
+      >
+        <p class="abandon-warning">
+          确定要放弃本次数据准备吗？此操作不可撤销，放弃后需重新上传数据。
+        </p>
+        <template #footer>
+          <el-button @click="showAbandonDialog = false">取消</el-button>
+          <el-button
+            type="danger"
+            :loading="abandoning"
+            data-test="abandon-confirm-btn"
+            @click="onAbandon"
+          >
+            确定放弃
+          </el-button>
+        </template>
+      </el-dialog>
     </main>
   </div>
 </template>
@@ -222,5 +338,16 @@ function onStart() {
   border-radius: 8px;
   padding: 10px 14px;
   font-size: 13px;
+}
+
+.abandon-section {
+  margin-top: 8px;
+}
+
+.abandon-warning {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--gmp-text);
 }
 </style>

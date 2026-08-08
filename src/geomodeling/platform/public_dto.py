@@ -114,6 +114,8 @@ def public_case(record: CaseRecord) -> dict[str, Any]:
         "name": record.name,
         "case_type": record.case_type,
         "config": scrub_nested(record.config),
+        "lifecycle_state": record.lifecycle_state,
+        "trashed_at": record.trashed_at,
         "created_at": record.created_at,
         "updated_at": record.updated_at,
     }
@@ -210,6 +212,21 @@ def public_confirmation(record: ProfessionalConfirmationRecord) -> dict[str, Any
         "note": record.note,
         "config": scrub_nested(record.config),
         "created_at": record.created_at,
+    }
+
+
+def public_confirmation_summary(
+    record: ProfessionalConfirmationRecord,
+    *,
+    applicable: bool,
+) -> dict[str, Any]:
+    """Bounded confirmation summary for diagnosis list/detail (no config, no paths)."""
+    return {
+        "id": record.id,
+        "diagnostic_id": record.diagnostic_id,
+        "fingerprint": record.fingerprint,
+        "created_at": record.created_at,
+        "applicable": applicable,
     }
 
 

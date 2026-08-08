@@ -56,10 +56,13 @@ from geomodeling.api.routes import (
     rendering,
     results,
     runs,
+    trash,
 )
 from geomodeling.platform import PlatformRuntime
+from geomodeling.platform.case_lifecycle import recover_case_purges
 from geomodeling.platform.errors import (
     CASE_NOT_FOUND,
+    CASE_TRASHED,
     PRESET_NOT_INITIALIZED,
     REDACTED_PATH,
     PlatformError,
@@ -115,9 +118,11 @@ async def platform_lifespan(app: FastAPI):
     runtime = PlatformRuntime()
     runtime.initialize()
     runtime.recover_interrupted_runs()
+    purge_report = recover_case_purges(runtime)
     worker = JobWorker(runtime)
     app.state.platform_runtime = runtime
     app.state.job_worker = worker
+    app.state.case_purge_recovery = purge_report
     try:
         yield
     finally:
@@ -150,7 +155,7 @@ def create_app() -> FastAPI:
             "http://127.0.0.1:4173",
         ],
         allow_credentials=False,
-        allow_methods=["GET", "POST"],
+        allow_methods=["GET", "POST", "DELETE"],
         allow_headers=["*"],
     )
 
@@ -181,7 +186,7 @@ def create_app() -> FastAPI:
         primary_datasets = {}
         if runtime is not None:
             with runtime.session() as session:
-                records = CaseRepository(session).list_all()
+                records = CaseRepository(session).list_active()
                 dataset_repo = DatasetRepository(session)
                 # v0.6.1：每张上传卡少量查询给出主打成果直达链接（正式选择优先）
                 featured = {
@@ -212,18 +217,63 @@ def create_app() -> FastAPI:
         if runtime is not None:
             with runtime.session() as session:
                 try:
-                    record = CaseRepository(session).get(case_id)
+                    record = CaseRepository(session).get_active(case_id)
                 except PlatformError as exc:
+                    if exc.code == CASE_TRASHED:
+                        raise
                     if exc.code != CASE_NOT_FOUND:
                         raise
                 if record is not None:
                     featured = featured_result_for_case(session, record.id)
-                    primary = _latest_validated_public_dataset(
-                        DatasetRepository(session), record.id
-                    )
-                    return workspace_case_card(
+                    dataset_repo = DatasetRepository(session)
+                    primary = _latest_validated_public_dataset(dataset_repo, record.id)
+                    card = workspace_case_card(
                         record, featured_result=featured, primary_dataset=primary
                     )
+                    # v0.7.0: add data_preparation for user_upload cases
+                    config = record.config if isinstance(record.config, dict) else {}
+                    if config.get("workspace_kind", "user_upload") == "user_upload":
+                        from geomodeling.platform.data_preparation import (
+                            resolve_data_preparation,
+                        )
+                        datasets = dataset_repo.list_for_case(record.id)
+                        prep = resolve_data_preparation(
+                            getattr(request.app.state, "platform_runtime"),
+                            record.id,
+                            datasets,
+                        )
+                        card["data_preparation"] = prep.model_dump(mode="json")
+                        card["validated_datasets"] = [
+                            public_dataset(d)
+                            for d in datasets
+                            if d.status == "validated"
+                        ][::-1]
+                        card["abandoned_datasets"] = [
+                            public_dataset(d)
+                            for d in datasets
+                            if d.status == "abandoned"
+                        ][::-1]
+                        # v0.7.0 remediation: bounded recent activity
+                        from geomodeling.platform.repositories import (
+                            recent_experiments_for_case,
+                            recent_results_for_case,
+                        )
+                        card["recent_experiments"] = recent_experiments_for_case(
+                            session, record.id, limit=5,
+                        )
+                        card["recent_results"] = recent_results_for_case(
+                            getattr(request.app.state, "platform_runtime"),
+                            record.id,
+                            featured.result_id if featured is not None else None,
+                            limit=5,
+                        )
+                    else:
+                        card["data_preparation"] = None
+                        card["validated_datasets"] = []
+                        card["abandoned_datasets"] = []
+                        card["recent_experiments"] = []
+                        card["recent_results"] = []
+                    return card
         if case_id == PRESET_CASE_ID:
             raise PlatformError(
                 PRESET_NOT_INITIALIZED,
@@ -307,6 +357,8 @@ def create_app() -> FastAPI:
     # v0.6.1 原生体渲染路由：显式 POST 变异 + 纯查询 GET；结果路由之后、
     # 前端静态挂载之前注册，精确前缀不遮蔽 legacy 与微震路由
     app.include_router(rendering.router)
+    # v0.7.0 案例生命周期路由：回收站列表（DELETE/restore/purge 在 cases.router）
+    app.include_router(trash.router)
 
     # -------------------------------------------------------- frontend
     settings = get_settings()

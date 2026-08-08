@@ -12,7 +12,13 @@ from geomodeling.platform import PlatformRuntime, tables
 from geomodeling.platform.errors import PlatformError, RUN_ALREADY_ACTIVE
 from geomodeling.platform.experiments import resolve_professional_context
 from geomodeling.platform.jobs import assert_quality_gate
-from geomodeling.platform.repositories import DatasetRepository, ExperimentRepository, RunRepository
+from geomodeling.platform.repositories import (
+    DatasetRepository,
+    ExperimentRepository,
+    RunRepository,
+    require_active_case,
+    require_active_experiment,
+)
 from geomodeling.platform.schemas import ExperimentCreateRequest, ExperimentRecord, RunRecord
 
 router = APIRouter(prefix="/api/experiments", tags=["v0.4-experiments"])
@@ -23,6 +29,7 @@ def create_experiment(
     request: ExperimentCreateRequest,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> ExperimentRecord:
+    require_active_case(runtime, request.case_id)
     with runtime.session() as session:
         dataset = DatasetRepository(session).get_for_case(request.case_id, request.dataset_version_id)
         assert_quality_gate(dataset.profile)
@@ -39,6 +46,7 @@ def get_experiment(
     experiment_id: str,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> ExperimentRecord:
+    require_active_experiment(runtime, experiment_id)
     with runtime.session() as session:
         return ExperimentRepository(session).get(experiment_id)
 
@@ -49,6 +57,7 @@ def create_run(
     request: Request,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> RunRecord:
+    require_active_experiment(runtime, experiment_id)
     with runtime.session() as session:
         ExperimentRepository(session).get(experiment_id)
         active = session.scalar(
@@ -76,6 +85,7 @@ def list_candidates(
     experiment_id: str,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
+    require_active_experiment(runtime, experiment_id)
     with runtime.session() as session:
         ExperimentRepository(session).get(experiment_id)
         runs = (

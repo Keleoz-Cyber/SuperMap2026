@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { GridSpecPayload, ValidationSpecPayload } from '../../api/types'
 import {
   combinationCount,
@@ -21,14 +21,24 @@ const props = defineProps<{
   dimension: '2d' | '3d'
   submitting: boolean
   preset?: ExperimentPreset | null
+  algorithmLock?: 'idw' | 'ordinary_kriging' | null
+  zScaleLock?: number | null
+  datasetLocked?: boolean
 }>()
-
 const emit = defineEmits<{
   (e: 'submit', payload: ParameterSubmit): void
 }>()
 
 const algorithm = ref<'idw' | 'ordinary_kriging'>('idw')
 const searchMode = ref<'manual' | 'grid'>('manual')
+
+watch(
+  () => props.algorithmLock,
+  (val) => {
+    if (val) algorithm.value = val
+  },
+  { immediate: true },
+)
 
 // IDW 手动参数
 const idwPower = ref(2)
@@ -56,6 +66,17 @@ const gridModels = ref<Array<'spherical' | 'exponential' | 'gaussian'>>(
 const zScaleHint = Z_SCALE_HINT
 const zScale = ref(props.preset?.zScaleManualDefault ?? 1)
 const gridZScale = ref(props.preset ? props.preset.idwGrid.zScale.join(', ') : '')
+
+watch(
+  () => props.zScaleLock,
+  (val) => {
+    if (val !== null && val !== undefined) {
+      zScale.value = val
+      gridZScale.value = String(val)
+    }
+  },
+  { immediate: true },
+)
 
 // 空间验证
 const folds = ref(5)
@@ -176,7 +197,7 @@ const AXES = ['x', 'y', 'z'] as const
     <div class="editor-row">
       <span class="row-label">算法</span>
       <label class="radio">
-        <input type="radio" name="algo" data-test="algo-idw" :checked="algorithm === 'idw'" @change="algorithm = 'idw'" />
+        <input type="radio" name="algo" data-test="algo-idw" :checked="algorithm === 'idw'" :disabled="!!algorithmLock" @change="algorithm = 'idw'" />
         IDW（反距离加权）
       </label>
       <label class="radio">
@@ -185,10 +206,12 @@ const AXES = ['x', 'y', 'z'] as const
           name="algo"
           data-test="algo-kriging"
           :checked="algorithm === 'ordinary_kriging'"
+          :disabled="!!algorithmLock"
           @change="algorithm = 'ordinary_kriging'"
         />
         普通克里金
       </label>
+      <span v-if="algorithmLock" class="lock-hint" data-test="algorithm-lock">已锁定</span>
     </div>
 
     <div class="editor-row">
@@ -227,7 +250,7 @@ const AXES = ['x', 'y', 'z'] as const
         </label>
         <label v-if="preset" class="field">
           <span>垂向距离缩放 z_scale</span>
-          <input v-model.number="zScale" type="number" step="0.1" min="0.1" max="20" class="gmp-input" data-test="z-scale-manual" />
+          <input v-model.number="zScale" type="number" step="0.1" min="0.1" max="20" class="gmp-input" data-test="z-scale-manual" :disabled="zScaleLock !== null && zScaleLock !== undefined" />
         </label>
       </div>
       <div v-else class="editor-grid">
@@ -266,7 +289,7 @@ const AXES = ['x', 'y', 'z'] as const
         </label>
         <label v-if="preset" class="field">
           <span>垂向距离缩放 z_scale</span>
-          <input v-model.number="zScale" type="number" step="0.1" min="0.1" max="20" class="gmp-input" data-test="z-scale-manual" />
+          <input v-model.number="zScale" type="number" step="0.1" min="0.1" max="20" class="gmp-input" data-test="z-scale-manual" :disabled="zScaleLock !== null && zScaleLock !== undefined" />
         </label>
       </div>
       <p v-if="preset" class="editor-hint" data-test="z-scale-hint">{{ zScaleHint }}</p>
@@ -290,7 +313,7 @@ const AXES = ['x', 'y', 'z'] as const
         </label>
         <label v-if="preset" class="field wide">
           <span>z_scale 候选</span>
-          <input v-model="gridZScale" class="gmp-input" data-test="grid-z-scale" placeholder="如：0.5, 1, 2" />
+          <input v-model="gridZScale" class="gmp-input" data-test="grid-z-scale" placeholder="如：0.5, 1, 2" :disabled="zScaleLock !== null && zScaleLock !== undefined" />
         </label>
       </div>
       <div v-else class="editor-grid">
@@ -307,7 +330,7 @@ const AXES = ['x', 'y', 'z'] as const
         </label>
         <label v-if="preset" class="field wide">
           <span>z_scale 候选</span>
-          <input v-model="gridZScale" class="gmp-input" data-test="grid-z-scale" placeholder="如：0.5, 1, 2" />
+          <input v-model="gridZScale" class="gmp-input" data-test="grid-z-scale" placeholder="如：0.5, 1, 2" :disabled="zScaleLock !== null && zScaleLock !== undefined" />
         </label>
         <p class="editor-hint">网格搜索固定使用自动变异函数拟合（每折独立，防泄漏）。</p>
       </div>
@@ -515,5 +538,10 @@ const AXES = ['x', 'y', 'z'] as const
 .gmp-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+.lock-hint {
+  font-size: 12px;
+  color: #e5c76b;
 }
 </style>

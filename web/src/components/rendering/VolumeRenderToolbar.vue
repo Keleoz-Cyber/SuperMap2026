@@ -216,13 +216,14 @@ function onResetView() {
           circle
           :disabled="!enabled"
           data-test="reset-view"
+          aria-label="重置视角"
           @click="onResetView"
         />
       </el-tooltip>
     </div>
 
     <div class="toolbar-row">
-      <span class="control-label">滤波</span>
+      <label class="control-label" for="filter-min-input">滤波</label>
       <el-input
         v-model="filterDraft.min"
         size="small"
@@ -230,6 +231,9 @@ function onResetView() {
         placeholder="min"
         :disabled="!enabled"
         data-test="filter-min"
+        id="filter-min-input"
+        name="filter_min"
+        autocomplete="off"
       />
       <span class="control-sep">~</span>
       <el-input
@@ -239,6 +243,9 @@ function onResetView() {
         placeholder="max"
         :disabled="!enabled"
         data-test="filter-max"
+        id="filter-max-input"
+        name="filter_max"
+        autocomplete="off"
       />
       <el-button size="small" :disabled="!enabled" data-test="filter-apply" @click="applyFilter">
         应用

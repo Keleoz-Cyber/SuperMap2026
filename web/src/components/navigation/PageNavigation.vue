@@ -1,49 +1,41 @@
 <script setup lang="ts">
-import { useRouter } from 'vue-router'
+import { computed } from 'vue'
+import { RouterLink } from 'vue-router'
 
-// 轻量页面导航：只负责有限的命名路由动作与可访问名称，
-// 不是 AppShell，不决定页面布局；绝不使用 history.back()。
 const props = defineProps<{
-  home?: boolean
-  experimentId?: string
   caseId?: string
-  newExperiment?: boolean
+  caseName?: string
+  datasetId?: string
+  experimentId?: string
+  resultId?: string
+  currentLabel?: string
 }>()
 
-const router = useRouter()
-
-function goHome() {
-  void router.push({ name: 'home' })
-}
-
-function goExperiment() {
-  if (!props.experimentId) return
-  void router.push({ name: 'experiment-detail', params: { experimentId: props.experimentId } })
-}
-
-function goNewExperiment() {
-  if (!props.caseId) return
-  void router.push({ name: 'experiment-create', params: { caseId: props.caseId } })
-}
+const caseLabel = computed(() => props.caseName ?? '案例')
 </script>
 
 <template>
   <nav class="page-nav" aria-label="页面导航">
-    <button v-if="experimentId" type="button" class="nav-btn" data-test="nav-experiment" @click="goExperiment">
-      返回实验
-    </button>
-    <button v-if="home" type="button" class="nav-btn" data-test="nav-home" @click="goHome">
-      返回首页
-    </button>
-    <button
-      v-if="newExperiment && caseId"
-      type="button"
-      class="nav-btn accent"
-      data-test="nav-new-experiment"
-      @click="goNewExperiment"
-    >
-      新建实验
-    </button>
+    <ol class="breadcrumb-list">
+      <li class="crumb">
+        <RouterLink to="/" data-test="crumb-home">首页</RouterLink>
+      </li>
+      <li v-if="caseId" class="crumb">
+        <RouterLink :to="`/cases/${caseId}`" data-test="crumb-case">{{ caseLabel }}</RouterLink>
+      </li>
+      <li v-if="datasetId" class="crumb crumb-text" data-test="crumb-dataset">
+        <span>数据版本</span>
+      </li>
+      <li v-if="experimentId" class="crumb">
+        <RouterLink :to="`/experiments/${experimentId}`" data-test="crumb-experiment">实验</RouterLink>
+      </li>
+      <li v-if="resultId" class="crumb">
+        <RouterLink :to="`/results/${resultId}`" data-test="crumb-result">成果</RouterLink>
+      </li>
+      <li v-if="currentLabel" class="crumb crumb-current" aria-current="page">
+        <span>{{ currentLabel }}</span>
+      </li>
+    </ol>
   </nav>
 </template>
 
@@ -51,30 +43,55 @@ function goNewExperiment() {
 .page-nav {
   display: flex;
   align-items: center;
-  gap: 10px;
 }
 
-.nav-btn {
-  border: 1px solid var(--gmp-border);
-  background: var(--gmp-bg-soft);
-  color: var(--gmp-text);
-  border-radius: 8px;
-  padding: 6px 14px;
-  font-size: 12px;
-  cursor: pointer;
+.breadcrumb-list {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
 }
 
-.nav-btn:hover {
-  border-color: var(--gmp-accent);
+.crumb {
+  display: flex;
+  align-items: center;
+  font-size: 13px;
 }
 
-.nav-btn:focus-visible {
+.crumb a {
+  color: var(--gmp-text-dim);
+  text-decoration: none;
+  border-radius: 6px;
+  padding: 4px 8px;
+  transition: color 0.15s;
+}
+
+.crumb a:hover {
+  color: var(--gmp-accent);
+}
+
+.crumb a:focus-visible {
   outline: 2px solid var(--gmp-accent);
   outline-offset: 2px;
 }
 
-.nav-btn.accent {
-  color: var(--gmp-accent);
-  border-color: var(--gmp-accent);
+.crumb:not(:last-child)::after {
+  content: '/';
+  margin: 0 4px;
+  color: var(--gmp-text-faint);
+}
+
+.crumb-text {
+  color: var(--gmp-text-dim);
+  padding: 4px 0;
+}
+
+.crumb-current {
+  color: var(--gmp-text);
+  font-weight: 600;
+  padding: 4px 0;
 }
 </style>

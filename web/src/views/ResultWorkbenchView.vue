@@ -33,9 +33,9 @@ const route = useRoute()
 const router = useRouter()
 const resultId = computed(() => String(route.params.resultId))
 
-// v0.6：统一专业分析台入口；只跳转路由，不改变现有完整场/切片/选择/导出行为
-function gotoProfessionalAnalysis() {
-  void router.push({ name: 'professional-analysis', params: { resultId: resultId.value } })
+// v0.7.0：每个已物化成果都有模型评估入口
+function gotoModelEvaluation() {
+  void router.push({ name: 'model-evaluation', params: { resultId: resultId.value } })
 }
 
 const metadata = ref<ResultMetadata | null>(null)
@@ -113,8 +113,13 @@ onMounted(async () => {
 
 <template>
   <div class="workbench-page">
-    <PageNavigation home :experiment-id="metadata?.experiment_id" />
-    <el-result v-if="loadError" icon="error" title="成果加载失败" :sub-title="loadError" />
+    <PageNavigation
+      :case-id="experiment?.case_id"
+      :experiment-id="metadata?.experiment_id"
+      :result-id="resultId"
+      current-label="成果工作台"
+    />
+    <el-result v-if="loadError" icon="error" title="成果加载失败" :sub-title="loadError" role="alert" />
 
     <template v-else-if="metadata">
       <header class="page-header">
@@ -128,10 +133,10 @@ onMounted(async () => {
         </p>
         <button
           class="professional-entry"
-          data-test="professional-entry"
-          @click="gotoProfessionalAnalysis"
+          data-test="model-evaluation-entry"
+          @click="gotoModelEvaluation"
         >
-          专业分析
+          模型评估
         </button>
       </header>
 

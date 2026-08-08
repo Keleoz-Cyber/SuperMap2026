@@ -26,16 +26,15 @@ LIVE_SPEC = Path("web/e2e-live/platform-live.spec.ts")
 SYNTHETIC_TESTS = Path("tests/test_professional_synthetic_structures.py")
 EXPECTED_JOBS = {"portable-tests", "browser-smoke", "browser-live"}
 
-# Mock E2E 专业链路必须出现的控件/页面锚点（与 platform-flow.spec.ts 一致）
+# v0.7.0: professional-entry removed from ExperimentView (replaced by spatial-analysis-entry);
+# goto-experiment replaced by apply-confirmation; model-evaluation-entry replaces professional-entry on ResultWorkbench
 MOCK_PROFESSIONAL_MARKERS = (
-    "professional-entry",
     "start-diagnosis",
     "suggestion-label",
     "confirm-note",
     "confirm-submit",
     "confirmation-snapshot",
-    "goto-experiment",
-    "professional-toggle",
+    "apply-confirmation",
     "professional-confirmation",
     "fold-inspector",
     "layer-tab-empirical",
@@ -46,13 +45,11 @@ MOCK_PROFESSIONAL_MARKERS = (
     "comparison-compatible",
 )
 
-# Live E2E 专业链路锚点（真实 FastAPI + 隔离 SQLite + 导出 professional/ 证据）
+# v0.7.0: professional-entry and goto-experiment removed; replaced by apply-confirmation and model-evaluation-entry
 LIVE_PROFESSIONAL_MARKERS = (
-    "professional-entry",
     "start-diagnosis",
     "confirm-submit",
     "goto-experiment",
-    "professional-toggle",
     "fold-inspector",
     "layer-tab-empirical",
     "anomaly-save",

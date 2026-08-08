@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -352,3 +353,113 @@ def test_upload_workspace_without_dataset_has_no_experiment_capability(seeded_cl
     }
     assert body["primary_dataset"] is None
     assert body["official_result"] is None
+
+
+def test_workspace_includes_abandoned_datasets(seeded_client):
+    """Workspace DTO must include abandoned datasets for display."""
+    from geomodeling.platform import tables
+    from geomodeling.platform.schemas import DatasetStatus
+
+    runtime = seeded_client.app.state.platform_runtime
+    # Create a case with a validated v1 and abandoned v2
+    with runtime.session() as session:
+        session.add(
+            tables.Case(id="up-abandon", name="放弃历史测试", case_type="generic", config_json="{}")
+        )
+        session.commit()
+
+    # Upload v1
+    resp = seeded_client.post(
+        "/api/cases/up-abandon/datasets/uploads",
+        files={"file": ("test.csv", b"x,y,v\n1,2,3\n", "text/csv")},
+    )
+    v1_id = resp.json()["id"]
+
+    # Validate v1
+    with runtime.session() as session:
+        repo = tables  # use raw table for direct manipulation
+        row = session.get(tables.DatasetVersion, v1_id)
+        row.status = "validated"
+        session.commit()
+
+    # Upload v2
+    resp = seeded_client.post(
+        "/api/cases/up-abandon/datasets/uploads",
+        files={"file": ("test2.csv", b"x,y,v\n4,5,6\n", "text/csv")},
+    )
+    v2_id = resp.json()["id"]
+
+    # Abandon v2
+    resp = seeded_client.post(f"/api/datasets/{v2_id}/abandon")
+    assert resp.status_code == 200
+
+    # Check workspace includes abandoned_datasets
+    resp = seeded_client.get("/api/cases/up-abandon/workspace")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "abandoned_datasets" in body
+    assert len(body["abandoned_datasets"]) == 1
+    assert body["abandoned_datasets"][0]["id"] == v2_id
+    assert body["abandoned_datasets"][0]["status"] == "abandoned"
+    # v1 should be in validated_datasets
+    assert len(body["validated_datasets"]) == 1
+    assert body["validated_datasets"][0]["id"] == v1_id
+
+
+def test_workspace_includes_recent_experiments_and_results(seeded_client):
+    """Workspace DTO includes bounded recent_experiments and recent_results."""
+    from geomodeling.platform import tables
+
+    runtime = seeded_client.app.state.platform_runtime
+    with runtime.session() as session:
+        session.add(
+            tables.Case(id="up-recent", name="近期活动测试", case_type="generic", config_json="{}")
+        )
+        session.commit()
+
+    # Create a dataset
+    resp = seeded_client.post(
+        "/api/cases/up-recent/datasets/uploads",
+        files={"file": ("test.csv", b"x,y,v\n1,2,3\n", "text/csv")},
+    )
+    dataset_id = resp.json()["id"]
+    with runtime.session() as session:
+        row = session.get(tables.DatasetVersion, dataset_id)
+        row.status = "validated"
+        session.commit()
+
+    # Create an experiment + succeeded run + candidate
+    with runtime.session() as session:
+        session.add(tables.Experiment(
+            id="exp-recent-1", case_id="up-recent", name="实验一",
+            params_json='{"algorithm": "idw", "dataset_version_id": "' + dataset_id + '", "search_mode": "manual", "parameters": {"power": 2}, "validation": {"method": "spatial_kfold", "folds": 5, "seed": 1, "holdout_fraction": 0.2}, "grid": null}',
+        ))
+        session.flush()
+        session.add(tables.Run(
+            id="run-recent-1", experiment_id="exp-recent-1", status="succeeded",
+            metrics_json='{"rmse": 0.5}',
+        ))
+        session.flush()
+        session.add(tables.CandidateResult(
+            id="cand-recent-1", run_id="run-recent-1", category="preview",
+            fingerprint="fp", status="succeeded",
+            params_json="{}", metrics_json='{"rmse": 0.5}',
+            grid_path="/some/path",
+        ))
+        session.commit()
+
+    resp = seeded_client.get("/api/cases/up-recent/workspace")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "recent_experiments" in body
+    assert len(body["recent_experiments"]) == 1
+    assert body["recent_experiments"][0]["id"] == "exp-recent-1"
+    assert body["recent_experiments"][0]["algorithm"] == "idw"
+    assert "params_json" not in json.dumps(body)
+
+    assert "recent_results" in body
+    assert len(body["recent_results"]) == 1
+    assert body["recent_results"][0]["result_id"] == "cand-recent-1"
+    assert body["recent_results"][0]["materialized"] is True
+    assert "metrics_json" not in json.dumps(body)
+    assert "source_path" not in json.dumps(body)

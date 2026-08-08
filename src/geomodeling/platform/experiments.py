@@ -20,6 +20,7 @@ from __future__ import annotations
 import hashlib
 import itertools
 import json
+import math
 from dataclasses import dataclass
 from typing import Any
 
@@ -47,6 +48,27 @@ MAX_GRID_CANDIDATES = 50
 # v0.6 专业实验错误码（稳定公共编码；PROFESSIONAL_CONFIG_INVALID 与
 # platform.professional 的诊断/异常配置失败共用同一字符串）。
 PROFESSIONAL_CONFIG_INVALID = "PROFESSIONAL_CONFIG_INVALID"
+
+
+def _finite_number(value: Any, field: str, *, default: float | None = None) -> float:
+    """Convert to finite float, applying default for None; raise ValueError on failure."""
+    if value is None and default is not None:
+        return default
+    try:
+        result = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field} 必须是有限数值") from exc
+    if not math.isfinite(result):
+        raise ValueError(f"{field} 必须是有限数值")
+    return result
+
+
+def _positive_ratio(value: Any, field: str, *, default: float | None = None) -> float:
+    """Like _finite_number but also requires > 0."""
+    result = _finite_number(value, field, default=default)
+    if result <= 0:
+        raise ValueError(f"{field} 必须大于 0")
+    return result
 PROFESSIONAL_CAPABILITY_NOT_APPLICABLE = "PROFESSIONAL_CAPABILITY_NOT_APPLICABLE"
 PROFESSIONAL_CONFIRMATION_DATASET_MISMATCH = "PROFESSIONAL_CONFIRMATION_DATASET_MISMATCH"
 PROFESSIONAL_CONFIRMATION_REQUIRED = "PROFESSIONAL_CONFIRMATION_REQUIRED"
@@ -263,33 +285,42 @@ def _confirmation_anisotropy_spec(
     「保持各向同性」生成规范各向同性变换（旋转为 0、比例全 1，与旧各向
     同性距离逐位等价）；否则主向尺度比固定为 1，次/垂向尺度比取确认
     range 比的倒数。
+
+    v0.7.0 整改：三维确认的 ``dip_deg``、``roll_deg`` 和
+    ``major_vertical_ratio`` 允许 null/缺失，分别规范化为 0.0、0.0、1.0。
+    ``azimuth_deg`` 和 ``major_minor_ratio`` 仍为必填。所有角度必须有限，
+    所有比例必须有限且大于 0。
     """
 
     if anisotropy.get("keep_isotropic"):
         return KrigingAnisotropySpec.isotropic(dimension)
     try:
-        minor_ratio = float(anisotropy["major_minor_ratio"])
+        minor_ratio = _positive_ratio(anisotropy.get("major_minor_ratio"), "major_minor_ratio")
+        azimuth = _finite_number(anisotropy.get("azimuth_deg"), "azimuth_deg")
         if dimension == "3d":
-            vertical_ratio = float(anisotropy["major_vertical_ratio"])
+            vertical_ratio = _positive_ratio(
+                anisotropy.get("major_vertical_ratio"), "major_vertical_ratio",
+                default=1.0,
+            )
             return KrigingAnisotropySpec(
                 dimension=dimension,
-                azimuth_deg=float(anisotropy["azimuth_deg"]),
-                dip_deg=float(anisotropy["dip_deg"]),
-                roll_deg=float(anisotropy["roll_deg"]),
+                azimuth_deg=azimuth,
+                dip_deg=_finite_number(anisotropy.get("dip_deg"), "dip_deg", default=0.0),
+                roll_deg=_finite_number(anisotropy.get("roll_deg"), "roll_deg", default=0.0),
                 major_scale=1.0,
                 minor_scale=1.0 / minor_ratio,
                 vertical_scale=1.0 / vertical_ratio,
             )
         return KrigingAnisotropySpec(
             dimension=dimension,
-            azimuth_deg=float(anisotropy["azimuth_deg"]),
+            azimuth_deg=azimuth,
             major_scale=1.0,
             minor_scale=1.0 / minor_ratio,
         )
-    except (TypeError, ValueError, ZeroDivisionError) as exc:
+    except (ValueError, ZeroDivisionError) as exc:
         raise PlatformError(
             PROFESSIONAL_CONFIG_INVALID,
-            "确认各向异性无法构造规范变换",
+            "确认各向异性配置非法，请返回空间结构分析重新确认",
             {"reason": str(exc)[:300]},
             http_status=409,
         ) from exc

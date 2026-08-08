@@ -3,14 +3,12 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { describe, expect, it, vi } from 'vitest'
 import ElementPlus from 'element-plus'
 import * as client from '../../api/client'
-import type { CaseWorkspaceSummary } from '../../api/types'
+import type { CaseWorkspaceSummary, DatasetVersionRecord } from '../../api/types'
 import CaseWorkspaceView from '../CaseWorkspaceView.vue'
-
-// v0.7.0 Task 6：统一案例工作台壳（三种身份共用版式与命令位置）。
 
 vi.mock('../../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../api/client')>()
-  return { ...actual, fetchCaseWorkspace: vi.fn() }
+  return { ...actual, fetchCaseWorkspace: vi.fn(), fetchProfessionalDiagnostics: vi.fn() }
 })
 
 const PRESET_ID = 'builtin-microseismic-vx-1911'
@@ -62,6 +60,16 @@ async function mountWorkspace(path: string) {
         name: 'experiment-create',
         component: { template: '<div />' },
       },
+      {
+        path: '/datasets/:datasetId/professional-diagnosis',
+        name: 'professional-diagnosis',
+        component: { template: '<div />' },
+      },
+      {
+        path: '/datasets/:datasetId/candidate-comparison',
+        name: 'candidate-comparison',
+        component: { template: '<div />' },
+      },
     ],
   })
   router.push(path)
@@ -90,7 +98,16 @@ describe('CaseWorkspaceView', () => {
     },
   )
 
-  it('preset: official-result and new-experiment commands route correctly', async () => {
+  it('new-experiment appears only in experiments section, never overview or data', async () => {
+    vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(workspaceOf('user_upload'))
+    const { wrapper } = await mountWorkspace('/cases/up-1')
+    expect(wrapper.findAll('[data-test="new-experiment"]').length).toBe(1)
+    expect(wrapper.find('[data-test="workspace-overview"] [data-test="new-experiment"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="data-preparation-panel"] [data-test="new-experiment"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="workspace-experiments"] [data-test="new-experiment"]').exists()).toBe(true)
+  })
+
+  it('preset: official-result in overview, new-experiment in experiments section', async () => {
     vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(workspaceOf('builtin_preset'))
     const { wrapper, router } = await mountWorkspace(`/cases/${PRESET_ID}`)
     await wrapper.find('[data-test="open-official-result"]').trigger('click')
@@ -126,8 +143,7 @@ describe('CaseWorkspaceView', () => {
     expect(router.currentRoute.value.path).toBe('/')
   })
 
-  it('快速 A→B→A 连切：stale 响应不得覆盖当前案例状态', async () => {
-    // 可控 deferred：B 挂起，第二个 A 先完成，B 最后完成
+  it('快速 A->B->A 连切：stale 响应不得覆盖当前案例状态', async () => {
     const wsA = workspaceOf('builtin_legacy')
     wsA.official_result = { result_id: 'a-r1', url: '/results/a-r1', materialized: true }
     wsA.capabilities = { data_summary: true, experiments: true, official_result: true, native_volume: true }
@@ -135,7 +151,7 @@ describe('CaseWorkspaceView', () => {
     const pending = new Map<string, { resolve: (v: CaseWorkspaceSummary) => void; reject: (e: unknown) => void }>()
     vi.mocked(client.fetchCaseWorkspace).mockImplementation((id: string) => {
       if (id === 'resistivity' && pending.size === 0 && !pending.has('a2') && !pending.has('b')) {
-        return Promise.resolve(wsA) // 首个 A 立即完成
+        return Promise.resolve(wsA)
       }
       return new Promise<CaseWorkspaceSummary>((resolve, reject) => {
         pending.set(id === 'resistivity' ? 'a2' : 'b', { resolve, reject })
@@ -145,18 +161,15 @@ describe('CaseWorkspaceView', () => {
     const { wrapper, router } = await mountWorkspace('/cases/resistivity')
     expect(wrapper.find('[data-test="case-workspace-header"]').text()).toContain('地下电阻率')
 
-    // 切到 B（请求挂起）→ 立即切回 A（第二个 A 也挂起）
     await router.push(`/cases/${PRESET_ID}`)
     await router.push('/cases/resistivity')
     expect(pending.has('b')).toBe(true)
     expect(pending.has('a2')).toBe(true)
 
-    // 第二个 A 先完成 → 页面显示 A
     pending.get('a2')!.resolve(wsA)
     await flushPromises()
     expect(wrapper.find('[data-test="case-workspace-header"]').text()).toContain('地下电阻率')
 
-    // B 最后完成 → 不得覆盖 A 的内容与命令
     pending.get('b')!.resolve(wsB)
     await flushPromises()
     const header = wrapper.find('[data-test="case-workspace-header"]')
@@ -164,7 +177,6 @@ describe('CaseWorkspaceView', () => {
     expect(header.text()).not.toContain('微震速度')
     expect(wrapper.find('[data-test="workspace-not-initialized"]').exists()).toBe(false)
 
-    // 命令仍使用当前 URL 案例（A）的成果与数据集
     await wrapper.find('[data-test="open-official-result"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.path).toBe('/results/a-r1')
@@ -187,16 +199,13 @@ describe('CaseWorkspaceView', () => {
     const { wrapper, router } = await mountWorkspace('/cases/resistivity')
     await router.push(`/cases/${PRESET_ID}`)
     expect(pending.has('b')).toBe(true)
-    // B 仍在途：页面处于 loading（不得被后续 stale finally 影响）
     await router.push('/cases/resistivity')
     expect(pending.has('a2')).toBe(true)
 
-    // stale B 失败 → 不得显示错误页
     pending.get('b')!.reject(new Error('network down'))
     await flushPromises()
     expect(wrapper.find('[data-test="workspace-load-error"]').exists()).toBe(false)
 
-    // 当前 A 完成前 loading 不得被 stale finally 结束；完成后正常显示
     pending.get('a2')!.resolve(wsA)
     await flushPromises()
     expect(wrapper.find('[data-test="case-workspace-header"]').text()).toContain('地下电阻率')
@@ -251,11 +260,128 @@ describe('CaseWorkspaceView', () => {
     expect(wrapper.find('[data-test="open-official-result"]').exists()).toBe(false)
     const results = wrapper.find('[data-test="workspace-results"]')
     expect(results.text()).toContain('暂无成果')
-    // 不恢复「进入调参实验室」语义；新建实验为显式命令
     expect(wrapper.text()).not.toContain('调参实验室')
     await wrapper.find('[data-test="new-experiment"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.path).toBe('/cases/up-1/experiments/new')
     expect(router.currentRoute.value.query.dataset).toBe('ds-1')
+  })
+
+  it('validated_datasets: diagnosis detail navigates with diagnosis ID, reanalyze omits it', async () => {
+    const ws = workspaceOf('user_upload')
+    const validated: DatasetVersionRecord[] = [
+      {
+        id: 'ds-v1',
+        case_id: 'up-1',
+        version: 1,
+        status: 'validated',
+        profile: { dimension: '3d' },
+        created_at: '2026-08-05T00:00:00+00:00',
+      },
+    ]
+    ws.validated_datasets = validated
+    vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(ws)
+    vi.mocked(client.fetchProfessionalDiagnostics).mockResolvedValue({
+      dataset_id: 'ds-v1',
+      diagnostics: [
+        {
+          diagnosis: { id: 'diag1', status: 'succeeded' },
+          job: null,
+          url: '/datasets/ds-v1/professional-diagnosis?diagnosis=diag1',
+          latest_confirmation: null,
+        },
+      ],
+    })
+    const { wrapper, router } = await mountWorkspace('/cases/up-1')
+
+    // No new-experiment button in dataset rows
+    expect(wrapper.find('[data-test="validated-dataset-ds-v1"] [data-test="new-experiment"]').exists()).toBe(false)
+
+    // Diagnosis detail navigates with diagnosis ID (from item.url)
+    await wrapper.find('[data-test="validated-dataset-ds-v1"] [data-test="diagnosis-detail-btn"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.name).toBe('professional-diagnosis')
+    expect(router.currentRoute.value.params.datasetId).toBe('ds-v1')
+    expect(router.currentRoute.value.query.diagnosis).toBe('diag1')
+
+    // Reanalyze navigates WITHOUT diagnosis ID
+    await router.push('/cases/up-1')
+    await flushPromises()
+    await wrapper.find('[data-test="validated-dataset-ds-v1"] [data-test="reanalyze-btn"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.name).toBe('professional-diagnosis')
+    expect(router.currentRoute.value.params.datasetId).toBe('ds-v1')
+    expect(router.currentRoute.value.query.diagnosis).toBeUndefined()
+    expect(router.currentRoute.value.query.case).toBe('up-1')
+    wrapper.unmount()
+  })
+
+  it('diagnosis list failure renders 分析状态暂不可用', async () => {
+    const ws = workspaceOf('user_upload')
+    ws.validated_datasets = [
+      {
+        id: 'ds-v1',
+        case_id: 'up-1',
+        version: 1,
+        status: 'validated',
+        profile: { dimension: '3d' },
+        created_at: '2026-08-05T00:00:00+00:00',
+      },
+    ]
+    vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(ws)
+    vi.mocked(client.fetchProfessionalDiagnostics).mockRejectedValue(new Error('network'))
+    const { wrapper } = await mountWorkspace('/cases/up-1')
+
+    expect(wrapper.find('[data-test="diagnosis-status-ds-v1"]').text()).toContain('分析状态暂不可用')
+    expect(wrapper.text()).not.toContain('未分析')
+    wrapper.unmount()
+  })
+
+  it('recent_experiments and recent_results render in their sections', async () => {
+    const ws = workspaceOf('user_upload')
+    ws.recent_experiments = [
+      {
+        id: 'exp-1',
+        name: '实验一',
+        algorithm: 'idw',
+        dataset_version_id: 'ds-1',
+        latest_run_status: 'succeeded',
+        succeeded_candidate_count: 2,
+        created_at: '2026-08-05T00:00:00+00:00',
+        url: '/experiments/exp-1',
+      },
+    ]
+    ws.recent_results = [
+      {
+        result_id: 'r-1',
+        experiment_id: 'exp-1',
+        algorithm: 'idw',
+        materialized: true,
+        featured: false,
+        created_at: '2026-08-05T00:00:00+00:00',
+        url: '/results/r-1',
+      },
+    ]
+    vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(ws)
+    const { wrapper } = await mountWorkspace('/cases/up-1')
+
+    expect(wrapper.find('[data-test="recent-experiment-exp-1"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="recent-experiments"]').text()).toContain('IDW')
+    expect(wrapper.find('[data-test="recent-result-r-1"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="recent-results"]').text()).toContain('已物化')
+    wrapper.unmount()
+  })
+
+  it('model-comparison link in experiments section navigates to comparison', async () => {
+    const ws = workspaceOf('user_upload')
+    vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(ws)
+    const { wrapper, router } = await mountWorkspace('/cases/up-1')
+
+    const cmp = wrapper.find('[data-test="model-comparison"]')
+    expect(cmp.exists()).toBe(true)
+    await cmp.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/datasets/ds-1/candidate-comparison')
+    wrapper.unmount()
   })
 })

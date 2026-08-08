@@ -25,6 +25,14 @@
   - 权威剖面分析：`GET /api/render-assets/{id}/slice-analysis`（`std_population` ddof=0、numpy-linear 分位数、valid+nodata=total，服务端从原始网格重算）；`POST .../slice-exports` 原子导出 `slice-analysis.zip`（`slice-analysis/v1`：slice.csv 真实 x,y,z 轴列、statistics.json 与 API 一致、manifest.json 哈希齐备；PNG 为 `client_echarts_canvas` 展示工件）；三来源（候选成果/内置电阻率/微震预置）共用 RenderAsset API 与组件。
   - 常驻渲染工具栏：模式/色带/标度/滤波/不透明度/光照/渐变透明度/包围盒运行时可调（受控色带/标度与剖面热力图共享）；X/Y/Z 正交切片控件（change 150ms 防抖、commit 立即）；等值面输入仅 contour 模式；no fallback——能力失败/哈希不符/协议错误/SDK 缺失均显式错误，无回退渲染器。
   - 测试基线（Task 12 后实测，本分支）：后端便携 `1352 passed`、前端 vitest `208 passed`、Mock E2E `10 passed`、真实 SDK live `8 passed`（platform 2 + 32³/64³ + legacy + 微震预置 + 隔离帧 + 单轴探针）。
+- **v0.7.0 案例生命周期、专业诊断解耦与跨实验比较 · 第三批（`feat/v0.7.0-lifecycle-professional-comparison` 分支，发布候选）**：
+  - **案例回收站**：只有 `user_upload` 案例可移入回收站（`DELETE /api/cases/{id}`）；内置电阻率、微震预置和瓦斯卡不可删除。回收站不自动过期，用户可恢复（`POST /api/cases/{id}/restore`）或输入完整案例名称永久删除（`POST /api/cases/{id}/purge`）。永久删除通过隔离区（quarantine）原子执行：文件先移到 `purge-quarantine/{operation_id}`，数据库行在单一事务中按外键拓扑删除，提交后清理隔离区；崩溃恢复覆盖 prepared/quarantined/committed 三态。
+  - **数据准备恢复**：工作台 DTO 增加 `data_preparation` 五状态（needs_upload/needs_mapping/needs_quality_review/ready/blocked），服务端从持久化数据版本和文件哈希解析权威恢复步骤。上传中断后从已有数据版本的实际状态继续，不要求重新上传。可放弃未完成数据版本（`POST /api/datasets/{id}/abandon`），validated 不可放弃。
+  - **专业诊断解耦**：诊断直接从已验证数据版本进入（`GET /api/datasets/{id}/professional-diagnostics`），不再要求先创建实验。确认快照可一键带入新的普通 Kriging 实验草稿（`professional_confirmation` 查询参数），算法和 z_scale=1 锁定，数据版本从确认快照所有权解析。确认快照读取（`GET /api/professional-confirmations/{id}`）返回有界摘要。
+  - **用户流程整改**：将"专业诊断"重命名为"空间结构分析"（仅服务普通 Kriging，IDW 不显示）；移除全局"专业模式"开关，改为快速建模/采用分析建议的单选控件；案例工作台只保留一个"新建实验"主入口；三维确认的 dip/roll/vertical_ratio 允许 null 并规范化为默认值；每个成功成果都有基础"模型评估"（RMSE/MAE/R2/Bias），增强证据按能力展开；模型对比使用中文可读标签、重复配置分组和单一"开始对比"命令；面包屑导航保留案例/实验/成果上下文。
+  - **跨实验候选比较**：候选目录（`GET /api/datasets/{id}/comparison-candidates`）按实验分组列出同一数据版本的候选；2-4 候选统一比较（`POST /api/candidate-comparisons`）按 RMSE 升序确定性排序，验证合同/有效集不一致返回不可比较。选择两个候选时复用既有专业深度比较。不新增比较持久化表。
+  - SQLite 迁移至 v7（lifecycle_state/trashed_at 列 + case_purge_operations 表），v6 迁移幂等可重复启动。
+  - **明确不做**：DSI、瓦斯正式数据接入、系统统计分析中心、全站 UI 重做、AI 预测、iServer 自动发布仍为后续里程碑。
 - **v0.1.0 电阻率基线**：17,549 / 15,827 / 1,722 行，训练/验证空间柱重叠0；五模型各1,481 valid、241 NoData、XY mismatch 0；`baseline_passed=True`。
 - `RHO_KRIG_FINAL_20M_40` 是唯一登记为正式的 SuperMap 体元成果；`dataset_verified=False`，目前只有配置、文件和人工证据。
 - **微震 v0.2a 审计底座**：22个DAT、2,006条源记录、2,005条有限值和1条无效值；三张标准表、一维累计距离、问题清单、审计报告及CLI已经合并。

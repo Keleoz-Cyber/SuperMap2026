@@ -10,9 +10,15 @@ from fastapi import APIRouter, Depends, Query
 
 from geomodeling.api.deps import get_platform_runtime
 from geomodeling.platform import PlatformRuntime, ingest, quality as quality_mod, tables
-from geomodeling.platform.errors import PlatformError
+from geomodeling.platform.errors import (
+    DATASET_ABANDON_FORBIDDEN,
+    PlatformError,
+)
 from geomodeling.platform.public_dto import public_dataset, scrub_nested
-from geomodeling.platform.repositories import DatasetRepository
+from geomodeling.platform.repositories import (
+    DatasetRepository,
+    require_active_dataset,
+)
 from geomodeling.platform.schemas import DatasetStatus, FieldMapping
 
 router = APIRouter(prefix="/api/datasets", tags=["v0.4-datasets"])
@@ -27,6 +33,7 @@ def get_dataset(
     dataset_id: str,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
+    require_active_dataset(runtime, dataset_id)
     with runtime.session() as session:
         record = DatasetRepository(session).get(dataset_id)
     return public_dataset(record)
@@ -40,6 +47,7 @@ def dataset_points(
 ) -> dict[str, Any]:
     """标准化点数据（实测点叠加层用）；只读，始终来自标准化工件。"""
 
+    require_active_dataset(runtime, dataset_id)
     record, profile = _load_quality_context(runtime, dataset_id)
     standardized = record.standardized_path or profile.get("standardized_path")
     if record.status == DatasetStatus.UPLOADED or not standardized:
@@ -76,6 +84,7 @@ def inspect_dataset(
     sheet: str | None = Query(default=None),
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
+    require_active_dataset(runtime, dataset_id)
     settings = runtime.settings
     with runtime.session() as session:
         record = DatasetRepository(session).get(dataset_id)
@@ -96,6 +105,7 @@ def map_dataset(
     sheet: str | None = Query(default=None),
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
+    require_active_dataset(runtime, dataset_id)
     settings = runtime.settings
     with runtime.session() as session:
         repo = DatasetRepository(session)
@@ -153,6 +163,7 @@ def validate_dataset(
     dataset_id: str,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
+    require_active_dataset(runtime, dataset_id)
     record, profile = _load_quality_context(runtime, dataset_id)
     if record.status not in (DatasetStatus.MAPPED, DatasetStatus.BLOCKED, DatasetStatus.VALIDATED):
         raise PlatformError(
@@ -188,6 +199,7 @@ def get_quality(
     dataset_id: str,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
+    require_active_dataset(runtime, dataset_id)
     _, profile = _load_quality_context(runtime, dataset_id)
     report = profile.get("quality")
     if report is None:
@@ -206,6 +218,7 @@ def confirm_warnings(
     payload: dict[str, Any],
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
+    require_active_dataset(runtime, dataset_id)
     _, profile = _load_quality_context(runtime, dataset_id)
     report = profile.get("quality")
     if report is None:
@@ -232,3 +245,43 @@ def confirm_warnings(
         row.profile_json = tables.dumps_canonical(profile)
         session.commit()
     return report
+
+
+@router.post("/{dataset_id}/abandon")
+def abandon_dataset(
+    dataset_id: str,
+    runtime: PlatformRuntime = Depends(get_platform_runtime),
+) -> dict[str, Any]:
+    """Abandon an incomplete dataset version (uploaded/mapped/blocked only)."""
+
+    require_active_dataset(runtime, dataset_id)
+    with runtime.session() as session:
+        repo = DatasetRepository(session)
+        record = repo.get(dataset_id)
+
+        if record.status not in (
+            DatasetStatus.UPLOADED.value,
+            DatasetStatus.MAPPED.value,
+            DatasetStatus.BLOCKED.value,
+        ):
+            raise PlatformError(
+                DATASET_ABANDON_FORBIDDEN,
+                "只有未完成的数据版本可以放弃",
+                {"dataset_id": dataset_id, "status": record.status},
+                http_status=409,
+            )
+
+        # Check case is user_upload (not builtin)
+        case_row = session.get(tables.Case, record.case_id)
+        config = tables.loads_canonical(case_row.config_json)
+        workspace_kind = config.get("workspace_kind", "user_upload")
+        if workspace_kind != "user_upload" or config.get("read_only") is True:
+            raise PlatformError(
+                DATASET_ABANDON_FORBIDDEN,
+                "内置案例的数据版本不可放弃",
+                {"dataset_id": dataset_id},
+                http_status=409,
+            )
+
+        updated = repo.transition_status(dataset_id, DatasetStatus.ABANDONED)
+    return public_dataset(updated)

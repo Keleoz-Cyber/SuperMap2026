@@ -14,6 +14,8 @@ vi.mock('../../api/client', async (importOriginal) => {
     ...actual,
     fetchCases: vi.fn(),
     fetchRhoPublishStatus: vi.fn(),
+    fetchTrashCases: vi.fn(),
+    trashCase: vi.fn(),
   }
 })
 
@@ -86,10 +88,13 @@ const RESISTIVITY_CARD: CaseSummary = {
 async function mountHome(cases: CaseSummary[]) {
   vi.mocked(client.fetchCases).mockResolvedValue({ cases })
   vi.mocked(client.fetchRhoPublishStatus).mockRejectedValue(new Error('iServer offline'))
+  vi.mocked(client.fetchTrashCases).mockResolvedValue({ cases: [] })
+  vi.mocked(client.trashCase).mockResolvedValue({})
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
       { path: '/', name: 'home', component: HomeView },
+      { path: '/trash', name: 'trash', component: { template: '<div />' } },
       { path: '/results/:resultId', name: 'result-workbench', component: { template: '<div />' } },
       { path: '/cases/:caseId', name: 'case-workspace', component: { template: '<div />' } },
       {

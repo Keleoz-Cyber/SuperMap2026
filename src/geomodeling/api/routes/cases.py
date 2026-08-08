@@ -7,9 +7,12 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, UploadFile
+from pydantic import BaseModel, Field
 
 from geomodeling.api.deps import get_platform_runtime
 from geomodeling.platform import PlatformRuntime, tables
+from geomodeling.platform.case_lifecycle import CaseLifecycleService
+from geomodeling.platform.repositories import CaseRepository, DatasetRepository, require_active_case
 
 logger = logging.getLogger("geomodeling.api")
 from geomodeling.platform.public_dto import public_case, public_dataset
@@ -22,6 +25,12 @@ from geomodeling.platform.uploads import (
 )
 
 router = APIRouter(prefix="/api/cases", tags=["v0.4-cases"])
+
+
+class CasePurgeBody(BaseModel):
+    """Strict purge request body: exact case name confirmation."""
+
+    confirmation_name: str = Field(min_length=1, max_length=256)
 
 
 @router.post("", status_code=201)
@@ -39,7 +48,7 @@ def get_case(
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
     with runtime.session() as session:
-        return public_case(CaseRepository(session).get(case_id))
+        return public_case(CaseRepository(session).get_active(case_id))
 
 
 @router.get("/{case_id}/datasets")
@@ -47,8 +56,8 @@ def list_case_datasets(
     case_id: str,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
+    require_active_case(runtime, case_id)
     with runtime.session() as session:
-        CaseRepository(session).get(case_id)
         records = DatasetRepository(session).list_for_case(case_id)
     return {"datasets": [public_dataset(record) for record in records]}
 
@@ -59,6 +68,7 @@ async def upload_dataset(
     file: UploadFile,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
+    require_active_case(runtime, case_id)
     settings = runtime.settings
     receipt = store_upload_stream(settings, file.file, file.filename or "")
     created_dataset_id: str | None = None
@@ -110,3 +120,39 @@ async def upload_dataset(
         except Exception:  # noqa: BLE001
             logger.exception("upload compensation: staged file cleanup failed: %s", receipt.part_path)
         raise
+
+
+@router.delete("/{case_id}")
+def trash_case(
+    case_id: str,
+    runtime: PlatformRuntime = Depends(get_platform_runtime),
+) -> dict[str, Any]:
+    """Move a user-upload case to the trash (DELETE /api/cases/{id})."""
+
+    record = CaseLifecycleService(runtime).trash(case_id)
+    return public_case(record)
+
+
+@router.post("/{case_id}/restore")
+def restore_case(
+    case_id: str,
+    runtime: PlatformRuntime = Depends(get_platform_runtime),
+) -> dict[str, Any]:
+    """Restore a trashed case to active."""
+
+    record = CaseLifecycleService(runtime).restore(case_id)
+    return public_case(record)
+
+
+@router.post("/{case_id}/purge")
+def purge_case(
+    case_id: str,
+    body: CasePurgeBody,
+    runtime: PlatformRuntime = Depends(get_platform_runtime),
+) -> dict[str, Any]:
+    """Permanently purge a trashed case with exact name confirmation."""
+
+    receipt = CaseLifecycleService(runtime).purge(
+        case_id, confirmation_name=body.confirmation_name,
+    )
+    return receipt

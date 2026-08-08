@@ -60,7 +60,7 @@ from geomodeling.platform.slice_exports import (
     MAX_SLICE_IMAGE_BYTES,
     SLICE_EXPORT_UPLOAD_TOO_LARGE,
 )
-from geomodeling.platform.repositories import RenderAssetRepository
+from geomodeling.platform.repositories import RenderAssetRepository, require_active_candidate, require_active_render_asset
 from geomodeling.platform.schemas import (
     STATUS_READY,
     ContractModel,
@@ -88,6 +88,17 @@ _UPLOAD_CHUNK_BYTES = 1024 * 1024
 # 内容寻址资产 ID（设计 §2.2）：``nc-`` + 32 位小写十六进制。
 # 形态校验在一切文件访问之前，路径穿越输入在此即被拒。
 _ASSET_ID_RE = re.compile(r"^nc-[0-9a-f]{32}$")
+
+
+def _validate_asset_id(asset_id: str) -> None:
+    """Validate asset ID format before any DB lookup or guard."""
+    if not _ASSET_ID_RE.fullmatch(asset_id):
+        raise PlatformError(
+            RENDER_ASSET_ID_INVALID,
+            "渲染资产 ID 形态非法",
+            {"asset_id": asset_id},
+            http_status=400,
+        )
 
 
 class RenderAssetCreateBody(ContractModel):
@@ -165,6 +176,7 @@ def get_result_render_capability(
     result_id: str,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
+    require_active_candidate(runtime, result_id)
     # 纯查询：不物化、不建文件、不改行
     return dataclasses.asdict(render_assets.candidate_render_capability(runtime, result_id))
 
@@ -176,6 +188,7 @@ def create_result_render_asset(
     body: RenderAssetCreateBody | None = None,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
+    require_active_candidate(runtime, result_id)
     # POST 是显式变异：先显式物化（幂等），再解析源创建资产
     platform_results.materialize(runtime, result_id)
     source = render_assets.resolve_candidate_render_source(runtime, result_id)
@@ -191,6 +204,7 @@ def get_result_render_asset(
     result_id: str,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
+    require_active_candidate(runtime, result_id)
     return _status_payload(runtime, "candidate_result", result_id)
 
 
@@ -491,6 +505,7 @@ async def create_slice_export(
     矩阵、统计或 manifest。失败不留 Export 行、半成品 ZIP 或临时文件。
     """
 
+    require_active_render_asset(runtime, asset_id)
     chunks: list[bytes] = []
     total = 0
     try:
@@ -524,6 +539,7 @@ def get_render_asset_slice_analysis(
     网格口径；轴/索引错误 422，资产缺失 404，非 ready 409。
     """
 
+    require_active_render_asset(runtime, asset_id)
     return slice_analysis.analyze_render_asset_slice(runtime, asset_id, axis, index)
 
 
@@ -532,6 +548,7 @@ def get_render_asset_manifest(
     asset_id: str,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
+    require_active_render_asset(runtime, asset_id)
     _, package_dir = _verified_ready_package(runtime, asset_id)
     return json.loads((package_dir / "manifest.json").read_text(encoding="utf-8"))
 
@@ -541,6 +558,7 @@ def get_render_asset_volume(
     asset_id: str,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> FileResponse:
+    require_active_render_asset(runtime, asset_id)
     record, package_dir = _verified_ready_package(runtime, asset_id)
     return FileResponse(
         package_dir / "volume.nc",

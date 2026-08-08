@@ -17,13 +17,20 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from geomodeling.platform.tables import RunStatus
+from geomodeling.platform.tables import (
+    CaseLifecycleState,
+    PurgeOperationState,
+    RunStatus,
+)
 
 __all__ = [
     "Algorithm",
     "AnalysisJobRecord",
     "AnomalyExtractionRecord",
     "CaseCreateRequest",
+    "CaseLifecycleState",
+    "CasePurgeManifest",
+    "CasePurgeOperationRecord",
     "CaseRecord",
     "CandidateResultRecord",
     "ContractModel",
@@ -37,6 +44,10 @@ __all__ = [
     "FormalSelectionRecord",
     "FormalSelectionRequest",
     "GridSpec",
+    "WorkspaceExperimentSummary",
+    "WorkspaceResultSummary",
+    "PurgeFileMove",
+    "PurgeOperationState",
     "ProfessionalConfirmationRecord",
     "ProfessionalConfirmationRequest",
     "ProfessionalDiagnosisRequest",
@@ -46,6 +57,7 @@ __all__ = [
     "RENDER_ASSET_STATUSES",
     "RenderAssetError",
     "RenderAssetRecord",
+    "ResultEvaluationSummary",
     "RunRecord",
     "RunStatus",
     "STATUS_CREATING",
@@ -71,6 +83,7 @@ class DatasetStatus(str, Enum):
     MAPPED = "mapped"
     VALIDATED = "validated"
     BLOCKED = "blocked"
+    ABANDONED = "abandoned"
 
 
 class Algorithm(str, Enum):
@@ -238,6 +251,8 @@ class CaseRecord(ContractModel):
     name: str
     case_type: str
     config: dict[str, Any] = Field(default_factory=dict)
+    lifecycle_state: str = "active"
+    trashed_at: str | None = None
     created_at: str
     updated_at: str
 
@@ -433,3 +448,91 @@ class RenderAssetRecord(ContractModel):
     manifest_url: str | None = None
     netcdf_url: str | None = None
     error: RenderAssetError | None = None
+
+
+# ---------------------------------------------------------------------------
+# v0.7.0 case lifecycle records (SQLite v7)
+# ---------------------------------------------------------------------------
+
+
+class CasePurgeOperationRecord(ContractModel):
+    """永久删除操作记录（v0.7.0 第三批设计 §4.2）。
+
+    ``manifest`` 和 ``receipt`` 为解析后的字典；``error`` 为类型化
+    失败信息或 None。公共序列化不得包含绝对路径。
+    """
+
+    id: str
+    case_id: str
+    state: str
+    manifest: dict[str, Any] = Field(default_factory=dict)
+    receipt: dict[str, Any] = Field(default_factory=dict)
+    error: dict[str, Any] | None = None
+    created_at: str
+    updated_at: str
+
+
+class WorkspaceExperimentSummary(ContractModel):
+    """Bounded experiment summary for case workspace recent activity."""
+
+    id: str
+    name: str
+    algorithm: str
+    dataset_version_id: str
+    latest_run_status: str | None = None
+    succeeded_candidate_count: int = 0
+    created_at: str
+    url: str
+
+
+class WorkspaceResultSummary(ContractModel):
+    """Bounded result summary for case workspace recent activity."""
+
+    result_id: str
+    experiment_id: str
+    algorithm: str
+    materialized: bool
+    featured: bool
+    created_at: str
+    url: str
+
+
+class ResultEvaluationSummary(ContractModel):
+    """Baseline model evaluation attached to every result DTO (v0.7.0 Task 4).
+
+    Missing or non-finite metrics are null; they are never coerced to zero.
+    ``enhanced_evidence_available`` is true only when succeeded
+    ``ProfessionalResultArtifacts`` exists for the result.
+    """
+
+    common_valid_count: int | None = None
+    candidate_valid_count: int | None = None
+    candidate_nodata_count: int | None = None
+    total_count: int | None = None
+    coverage: float | None = None
+    rmse: float | None = None
+    mae: float | None = None
+    r2: float | None = None
+    bias: float | None = None
+    enhanced_evidence_available: bool = False
+
+
+class PurgeFileMove(ContractModel):
+    """单文件在受控根目录下的相对路径与哈希（v0.7.0 第三批设计 §5.4）。"""
+
+    root: Literal[
+        "uploads", "datasets", "experiments", "results", "exports",
+        "render_assets", "comparisons",
+    ]
+    relative_path: str
+    sha256: str
+    size_bytes: int
+
+
+class CasePurgeManifest(ContractModel):
+    """案例永久删除清单（v0.7.0 第三批设计 §5.4）。"""
+
+    version: Literal[1] = 1
+    case_id: str
+    row_ids: dict[str, list[str]]
+    files: list[PurgeFileMove]

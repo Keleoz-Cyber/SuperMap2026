@@ -34,6 +34,7 @@ from geomodeling.platform.errors import (
     sanitize_public_details,
 )
 from geomodeling.platform.repositories import (
+    ALLOWED_DATASET_TRANSITIONS,
     DATASET_STATUS_TRANSITIONS,
     RUN_RETRYABLE_STATUSES,
     CandidateRepository,
@@ -46,6 +47,7 @@ from geomodeling.platform.repositories import (
 from geomodeling.platform.schemas import (
     Algorithm,
     CaseCreateRequest,
+    CasePurgeOperationRecord,
     DatasetStatus,
     Dimension,
     ExperimentCreateRequest,
@@ -317,6 +319,13 @@ class TestCasesAndOwnership:
         assert record.config == {"k": 1}
         assert record.created_at and record.updated_at
 
+    def test_new_case_record_has_active_lifecycle_and_null_trashed_at(self, runtime):
+        case_id = create_case(runtime)
+        with runtime.session() as session:
+            record = CaseRepository(session).get(case_id)
+        assert record.lifecycle_state == "active"
+        assert record.trashed_at is None
+
     def test_case_name_is_display_metadata_not_a_path(self, runtime):
         evil = create_case(runtime, name="../../etc/passwd")
         with runtime.session() as session:
@@ -460,15 +469,29 @@ class TestVersionAllocation:
 
 class TestDatasetStatusTransitions:
     def test_transition_table_is_explicit_and_has_no_uploaded_skip(self):
-        assert DATASET_STATUS_TRANSITIONS[DatasetStatus.UPLOADED.value] == frozenset(
-            {DatasetStatus.MAPPED.value, DatasetStatus.BLOCKED.value}
+        assert ALLOWED_DATASET_TRANSITIONS[DatasetStatus.UPLOADED.value] == frozenset(
+            {DatasetStatus.MAPPED.value, DatasetStatus.BLOCKED.value, DatasetStatus.ABANDONED.value}
         )
-        assert DatasetStatus.VALIDATED.value not in DATASET_STATUS_TRANSITIONS[
+        assert DatasetStatus.VALIDATED.value not in ALLOWED_DATASET_TRANSITIONS[
             DatasetStatus.UPLOADED.value
         ]
-        assert DATASET_STATUS_TRANSITIONS[DatasetStatus.BLOCKED.value] == frozenset(
-            {DatasetStatus.MAPPED.value}
+        assert ALLOWED_DATASET_TRANSITIONS[DatasetStatus.BLOCKED.value] == frozenset(
+            {DatasetStatus.MAPPED.value, DatasetStatus.ABANDONED.value}
         )
+
+    def test_abandoned_is_terminal(self):
+        assert ALLOWED_DATASET_TRANSITIONS[DatasetStatus.ABANDONED.value] == frozenset()
+
+    def test_validated_is_terminal(self):
+        assert ALLOWED_DATASET_TRANSITIONS[DatasetStatus.VALIDATED.value] == frozenset()
+
+    def test_mapped_allows_validated_blocked_and_abandoned(self):
+        assert ALLOWED_DATASET_TRANSITIONS[DatasetStatus.MAPPED.value] >= {
+            "validated", "blocked", "abandoned"
+        }
+
+    def test_legacy_alias_matches_new_name(self):
+        assert DATASET_STATUS_TRANSITIONS is ALLOWED_DATASET_TRANSITIONS
 
     def test_dataset_cannot_skip_uploaded_to_validated(self, runtime):
         dataset_id = create_dataset(runtime, create_case(runtime))
@@ -916,3 +939,43 @@ def test_records_survive_runtime_reopen(tmp_path):
         assert dataset.status == DatasetStatus.UPLOADED
         assert dataset.case_id == case_id
     reopened.close()
+
+
+# ---------------------------------------------------------------------------
+# v7: case lifecycle records
+# ---------------------------------------------------------------------------
+
+
+def test_case_purge_operation_record_roundtrip(tmp_path):
+    from geomodeling.platform.tables import CasePurgeOperation
+
+    runtime = PlatformRuntime(tmp_path / "runtime")
+    runtime.initialize()
+    with runtime.session() as session:
+        row = CasePurgeOperation(
+            id="purge-op-1",
+            case_id="case-1",
+            state="prepared",
+            manifest_json='{"version": 1}',
+            receipt_json='{"deleted": 0}',
+        )
+        session.add(row)
+        session.commit()
+
+        record = CasePurgeOperationRecord(
+            id=row.id,
+            case_id=row.case_id,
+            state=row.state,
+            manifest={"version": 1},
+            receipt={"deleted": 0},
+            error=None,
+            created_at=row.created_at,
+            updated_at=row.updated_at,
+        )
+        assert record.id == "purge-op-1"
+        assert record.case_id == "case-1"
+        assert record.state == "prepared"
+        assert record.manifest == {"version": 1}
+        assert record.receipt == {"deleted": 0}
+        assert record.error is None
+    runtime.close()

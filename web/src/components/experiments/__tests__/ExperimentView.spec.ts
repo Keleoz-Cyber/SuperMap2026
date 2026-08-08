@@ -24,6 +24,8 @@ vi.mock('../../../api/client', async (importOriginal) => {
     fetchExperiment: vi.fn(),
     fetchCaseDatasets: vi.fn(),
     fetchDataset: vi.fn(),
+    fetchProfessionalConfirmation: vi.fn(),
+    fetchProfessionalDiagnostics: vi.fn(),
     createExperiment: vi.fn(),
     startRun: vi.fn(),
     fetchRun: vi.fn(),
@@ -191,6 +193,7 @@ function makeTestRouter(): Router {
     history: createMemoryHistory(),
     routes: [
       { path: '/', name: 'home', component: { template: '<div />' } },
+      { path: '/cases/:caseId', name: 'case-workspace', component: { template: '<div />' } },
       { path: '/cases/:caseId/experiments/new', name: 'experiment-create', component: ExperimentView },
       { path: '/experiments/:experimentId', name: 'experiment-detail', component: ExperimentView },
       { path: '/results/:resultId', name: 'result-workbench', component: { template: '<div />' } },
@@ -721,31 +724,29 @@ describe('ExperimentView 成果状态区（v0.6.1）', () => {
 })
 
 describe('导航', () => {
-  it('创建模式显示 nav-home 且点击不调用取消接口', async () => {
+  it('创建模式显示面包屑首页链接且点击不调用取消接口', async () => {
     vi.mocked(client.fetchDataset).mockResolvedValue(DATASET)
     const { wrapper, router } = await mountAt('/cases/c1/experiments/new?dataset=ds1')
-    const navHome = wrapper.get('[data-test="nav-home"]')
-    await navHome.trigger('click')
+    const crumbHome = wrapper.get('[data-test="crumb-home"]')
+    await crumbHome.trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.name).toBe('home')
     expect(client.cancelRun).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 
-  it('详情模式显示 nav-home 与 nav-new-experiment', async () => {
+  it('详情模式显示面包屑首页与案例链接', async () => {
     vi.mocked(client.fetchExperiment).mockResolvedValue(EXP)
     vi.mocked(client.fetchCandidates).mockResolvedValue(
       makeCandidates([], makeRun('succeeded', { completed: 1, total: 1 })),
     )
     const { wrapper, router } = await mountAt('/experiments/exp1')
-    expect(wrapper.get('[data-test="nav-home"]').text()).toContain('返回首页')
-    const navNew = wrapper.get('[data-test="nav-new-experiment"]')
-    await navNew.trigger('click')
+    expect(wrapper.get('[data-test="crumb-home"]').text()).toContain('首页')
+    expect(wrapper.find('[data-test="crumb-case"]').exists()).toBe(true)
+    await wrapper.get('[data-test="crumb-case"]').trigger('click')
     await flushPromises()
-    expect(router.currentRoute.value).toMatchObject({
-      name: 'experiment-create',
-      params: { caseId: 'c1' },
-    })
+    expect(router.currentRoute.value.name).toBe('case-workspace')
+    expect(router.currentRoute.value.params.caseId).toBe('c1')
     wrapper.unmount()
   })
 
@@ -754,7 +755,7 @@ describe('导航', () => {
     vi.mocked(client.fetchCandidates).mockRejectedValue(new client.ApiError('EXPERIMENT_NOT_FOUND', '不存在', 404))
     const { wrapper, router } = await mountAt('/experiments/exp-missing')
     expect(wrapper.text()).toContain('加载失败')
-    await wrapper.get('[data-test="nav-home"]').trigger('click')
+    await wrapper.get('[data-test="crumb-home"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.name).toBe('home')
     wrapper.unmount()

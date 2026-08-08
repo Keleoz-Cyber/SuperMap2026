@@ -1,6 +1,8 @@
 # Acceptance Notes
 
-适用对象：当前代码基线（v0.1.0 电阻率基线 + 微震 v0.2a 审计底座 + v0.3.1 iServer 纵向闭环 + v0.4 通用建模平台 + v0.5 微震第二案例建模闭环（已随 v0.5.0 发布）+ v0.6 专业建模增强（`feat/v0.6-professional-modeling` 分支）+ v0.6.1 NetCDF 原生体渲染（`feat/v0.6.1-netcdf-native-rendering` 分支））。
+适用对象：当前代码基线（v0.1.0 电阻率基线 + 微震 v0.2a 审计底座 + v0.3.1 iServer 纵向闭环 + v0.4 通用建模平台 + v0.5 微震第二案例建模闭环（已随 v0.5.0 发布）+ v0.6 专业建模增强（`feat/v0.6-professional-modeling` 分支）+ v0.6.1 NetCDF 原生体渲染（`feat/v0.6.1-netcdf-native-rendering` 分支）+ v0.7.0 案例生命周期、用户流程整改与空间结构分析（`feat/v0.7.0-lifecycle-professional-comparison` 分支））。
+
+空间结构分析是普通克里金的可选建模依据，不适用于 IDW。每个成功物化的成果都有基础模型评估（RMSE/MAE/R2/Bias），增强证据按能力展开。旧 `/results/:id/professional` 路由重定向到 `/results/:id/evaluation`。
 
 ## 验收命令
 

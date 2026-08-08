@@ -55,6 +55,7 @@ from geomodeling.platform.schemas import (
     AnomalyExtractionRecord,
     CandidateResultRecord,
     CaseCreateRequest,
+    CasePurgeOperationRecord,
     CaseRecord,
     DatasetStatus,
     DatasetVersionRecord,
@@ -75,8 +76,10 @@ from geomodeling.platform.tables import (
     AnomalyExtraction,
     CandidateResult,
     Case,
+    CasePurgeOperation,
     DatasetVersion,
     Experiment,
+    Export,
     FormalSelection,
     ProfessionalConfirmation,
     ProfessionalDiagnostic,
@@ -91,17 +94,23 @@ from geomodeling.platform.tables import (
 # ---------------------------------------------------------------------------
 
 # 数据集生命周期：uploaded→mapped→validated，或 uploaded→blocked→mapped→validated。
-# validated 为终态；重新映射通过产生新 DatasetVersion 完成，不回退状态。
-DATASET_STATUS_TRANSITIONS: dict[str, frozenset[str]] = {
+# v7: uploaded/mapped/blocked 可放弃（abandoned），abandoned 为终态。
+ALLOWED_DATASET_TRANSITIONS: dict[str, frozenset[str]] = {
     DatasetStatus.UPLOADED.value: frozenset(
-        {DatasetStatus.MAPPED.value, DatasetStatus.BLOCKED.value}
+        {DatasetStatus.MAPPED.value, DatasetStatus.BLOCKED.value, DatasetStatus.ABANDONED.value}
     ),
     DatasetStatus.MAPPED.value: frozenset(
-        {DatasetStatus.VALIDATED.value, DatasetStatus.BLOCKED.value}
+        {DatasetStatus.VALIDATED.value, DatasetStatus.BLOCKED.value, DatasetStatus.ABANDONED.value}
     ),
-    DatasetStatus.BLOCKED.value: frozenset({DatasetStatus.MAPPED.value}),
+    DatasetStatus.BLOCKED.value: frozenset(
+        {DatasetStatus.MAPPED.value, DatasetStatus.ABANDONED.value}
+    ),
     DatasetStatus.VALIDATED.value: frozenset(),
+    DatasetStatus.ABANDONED.value: frozenset(),
 }
+
+# Backward-compatible alias for any code still referencing the old name.
+DATASET_STATUS_TRANSITIONS = ALLOWED_DATASET_TRANSITIONS
 
 # 仅 failed/canceled/interrupted 可重试；重试产生新 run（retry_of_run_id），
 # 不覆盖原记录。queued/running 不可重试。
@@ -130,6 +139,8 @@ def _case_record(row: Case) -> CaseRecord:
         name=row.name,
         case_type=row.case_type,
         config=tables.loads_canonical(row.config_json),
+        lifecycle_state=row.lifecycle_state,
+        trashed_at=row.trashed_at,
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
@@ -196,6 +207,23 @@ def _formal_selection_record(row: FormalSelection) -> FormalSelectionRecord:
     )
 
 
+def _case_purge_operation_record(row: CasePurgeOperation) -> CasePurgeOperationRecord:
+    return CasePurgeOperationRecord(
+        id=row.id,
+        case_id=row.case_id,
+        state=row.state,
+        manifest=tables.loads_canonical(row.manifest_json),
+        receipt=tables.loads_canonical(row.receipt_json),
+        error=(
+            tables.loads_canonical(row.error_json)
+            if row.error_json is not None
+            else None
+        ),
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Repositories
 # ---------------------------------------------------------------------------
@@ -224,8 +252,50 @@ class CaseRepository:
             )
         return _case_record(row)
 
+    def get_any_state(self, case_id: str) -> CaseRecord:
+        """Read any lifecycle state (for lifecycle operations)."""
+        return self.get(case_id)
+
+    def get_active(self, case_id: str) -> CaseRecord:
+        """Return active case or raise typed 410 CASE_TRASHED."""
+        from geomodeling.platform.errors import CASE_TRASHED
+
+        row = self._s.get(Case, case_id)
+        if row is None:
+            raise PlatformError(
+                CASE_NOT_FOUND, "案例不存在", {"case_id": case_id}, http_status=404
+            )
+        if row.lifecycle_state != "active":
+            raise PlatformError(
+                CASE_TRASHED,
+                "案例已移入回收站",
+                {"case_id": case_id, "lifecycle_state": row.lifecycle_state},
+                http_status=410,
+            )
+        return _case_record(row)
+
     def list_all(self) -> list[CaseRecord]:
         rows = self._s.query(Case).order_by(Case.created_at.asc()).all()
+        return [_case_record(row) for row in rows]
+
+    def list_active(self) -> list[CaseRecord]:
+        """Active-only cases ordered by created_at asc."""
+        rows = (
+            self._s.query(Case)
+            .filter(Case.lifecycle_state == "active")
+            .order_by(Case.created_at.asc())
+            .all()
+        )
+        return [_case_record(row) for row in rows]
+
+    def list_trashed(self) -> list[CaseRecord]:
+        """Trashed-only cases ordered by trashed_at desc."""
+        rows = (
+            self._s.query(Case)
+            .filter(Case.lifecycle_state == "trashed")
+            .order_by(Case.trashed_at.desc(), Case.id.desc())
+            .all()
+        )
         return [_case_record(row) for row in rows]
 
 
@@ -318,7 +388,7 @@ class DatasetRepository:
         target_value = DatasetStatus(target).value
         row = self._get_row(dataset_id)
         current = row.status
-        allowed = DATASET_STATUS_TRANSITIONS.get(current, frozenset())
+        allowed = ALLOWED_DATASET_TRANSITIONS.get(current, frozenset())
         if target_value not in allowed:
             raise PlatformError(
                 INVALID_STATUS_TRANSITION,
@@ -926,6 +996,22 @@ class ProfessionalDiagnosticRepository:
     def get(self, diagnosis_id: str) -> ProfessionalDiagnosticRecord:
         return _professional_diagnostic_record(self._get_row(diagnosis_id))
 
+    def list_for_dataset(
+        self, dataset_id: str, limit: int = 50,
+    ) -> list[ProfessionalDiagnosticRecord]:
+        """List diagnostics for a dataset, newest-first."""
+        rows = (
+            self._s.query(ProfessionalDiagnostic)
+            .filter(ProfessionalDiagnostic.dataset_version_id == dataset_id)
+            .order_by(
+                ProfessionalDiagnostic.created_at.desc(),
+                ProfessionalDiagnostic.id.desc(),
+            )
+            .limit(limit)
+            .all()
+        )
+        return [_professional_diagnostic_record(row) for row in rows]
+
     def _cas_transition(
         self,
         diagnosis_id: str,
@@ -1072,6 +1158,21 @@ class ProfessionalConfirmationRepository:
             .all()
         )
         return [_professional_confirmation_record(row) for row in rows]
+
+    def latest_for_diagnostic(
+        self, diagnostic_id: str
+    ) -> ProfessionalConfirmationRecord | None:
+        """Return the newest confirmation for a diagnostic, or None."""
+        row = (
+            self._s.query(ProfessionalConfirmation)
+            .filter(ProfessionalConfirmation.diagnostic_id == diagnostic_id)
+            .order_by(
+                ProfessionalConfirmation.created_at.desc(),
+                ProfessionalConfirmation.id.desc(),
+            )
+            .first()
+        )
+        return _professional_confirmation_record(row) if row is not None else None
 
 
 class ProfessionalResultArtifactsRepository:
@@ -1716,3 +1817,248 @@ class RenderAssetRepository:
                 http_status=409,
             )
         return _render_asset_record(row)
+
+
+# ---------------------------------------------------------------------------
+# v0.7.0 active-case subject guards (Task 5)
+# ---------------------------------------------------------------------------
+
+
+def require_active_case(runtime: Any, case_id: str) -> str:
+    """Return case_id if the case is active, else raise typed 410/404."""
+    with runtime.session() as session:
+        CaseRepository(session).get_active(case_id)
+        return case_id
+
+
+def require_active_dataset(runtime: Any, dataset_id: str) -> str:
+    """Walk dataset -> case, return case_id if active."""
+    with runtime.session() as session:
+        dv = session.get(DatasetVersion, dataset_id)
+        if dv is None:
+            raise PlatformError(
+                DATASET_NOT_FOUND, "数据集不存在",
+                {"dataset_id": dataset_id}, http_status=404,
+            )
+        CaseRepository(session).get_active(dv.case_id)
+        return dv.case_id
+
+
+def require_active_experiment(runtime: Any, experiment_id: str) -> str:
+    """Walk experiment -> case, return case_id if active."""
+    with runtime.session() as session:
+        exp = session.get(Experiment, experiment_id)
+        if exp is None:
+            raise PlatformError(
+                EXPERIMENT_NOT_FOUND, "实验不存在",
+                {"experiment_id": experiment_id}, http_status=404,
+            )
+        CaseRepository(session).get_active(exp.case_id)
+        return exp.case_id
+
+
+def require_active_run(runtime: Any, run_id: str) -> str:
+    """Walk run -> experiment -> case, return case_id if active."""
+    with runtime.session() as session:
+        run = session.get(Run, run_id)
+        if run is None:
+            raise PlatformError(
+                RUN_NOT_FOUND, "任务不存在",
+                {"run_id": run_id}, http_status=404,
+            )
+        exp = session.get(Experiment, run.experiment_id)
+        if exp is None:
+            raise PlatformError(
+                EXPERIMENT_NOT_FOUND, "实验不存在",
+                {"experiment_id": run.experiment_id}, http_status=404,
+            )
+        CaseRepository(session).get_active(exp.case_id)
+        return exp.case_id
+
+
+def require_active_candidate(runtime: Any, candidate_id: str) -> str:
+    """Walk candidate -> run -> experiment -> case, return case_id if active."""
+    with runtime.session() as session:
+        cand = session.get(CandidateResult, candidate_id)
+        if cand is None:
+            raise PlatformError(
+                CANDIDATE_NOT_FOUND, "候选结果不存在",
+                {"candidate_result_id": candidate_id}, http_status=404,
+            )
+        run = session.get(Run, cand.run_id)
+        if run is None:
+            raise PlatformError(
+                RUN_NOT_FOUND, "任务不存在",
+                {"run_id": cand.run_id}, http_status=404,
+            )
+        exp = session.get(Experiment, run.experiment_id)
+        if exp is None:
+            raise PlatformError(
+                EXPERIMENT_NOT_FOUND, "实验不存在",
+                {"experiment_id": run.experiment_id}, http_status=404,
+            )
+        CaseRepository(session).get_active(exp.case_id)
+        return exp.case_id
+
+
+def require_active_render_asset(runtime: Any, asset_id: str) -> str | None:
+    """Walk render_asset -> candidate -> run -> experiment -> case, return case_id if active.
+
+    Returns None for builtin_legacy assets (no candidate_result_id) or invalid
+    asset IDs -- these have no deletable Case and are always accessible. The
+    downstream logic will reject invalid IDs with the appropriate error code.
+    """
+    # Skip invalid ID formats -- downstream logic handles validation
+    import re
+    if not re.match(r"^nc-[0-9a-f]{32}$", asset_id):
+        return None
+    with runtime.session() as session:
+        ra = session.get(RenderAsset, asset_id)
+        if ra is None:
+            return None  # let downstream raise the appropriate 404
+        if ra.candidate_result_id is None:
+            return None  # builtin_legacy -- no case to guard
+        return require_active_candidate(runtime, ra.candidate_result_id)
+
+
+def require_active_analysis_job(runtime: Any, job_id: str) -> str:
+    """Resolve analysis job -> subject -> case, return case_id if active.
+
+    For professional_diagnosis: job.subject_id -> ProfessionalDiagnostic -> DatasetVersion -> case
+    For anomaly_extraction: job.subject_id -> AnomalyExtraction -> CandidateResult -> case
+    """
+    with runtime.session() as session:
+        job = session.get(AnalysisJob, job_id)
+        if job is None:
+            raise PlatformError(
+                ANALYSIS_JOB_NOT_FOUND, "分析任务不存在",
+                {"job_id": job_id}, http_status=404,
+            )
+        if job.job_kind == "professional_diagnosis":
+            diag = session.get(ProfessionalDiagnostic, job.subject_id)
+            if diag is None:
+                raise PlatformError(
+                    PROFESSIONAL_DIAGNOSIS_NOT_FOUND, "专业诊断不存在",
+                    {"diagnosis_id": job.subject_id}, http_status=404,
+                )
+            return require_active_dataset(runtime, diag.dataset_version_id)
+        elif job.job_kind == "anomaly_extraction":
+            ext = session.get(AnomalyExtraction, job.subject_id)
+            if ext is None:
+                raise PlatformError(
+                    ANOMALY_EXTRACTION_NOT_FOUND, "异常提取不存在",
+                    {"extraction_id": job.subject_id}, http_status=404,
+                )
+            return require_active_candidate(runtime, ext.candidate_result_id)
+        else:
+            raise PlatformError(
+                ANALYSIS_JOB_NOT_FOUND, "未知分析任务类型",
+                {"job_id": job_id, "job_kind": job.job_kind}, http_status=404,
+            )
+
+
+def require_active_export(runtime: Any, export_id: str) -> str:
+    """Walk export -> case, return case_id if active."""
+    with runtime.session() as session:
+        exp = session.get(Export, export_id)
+        if exp is None:
+            raise PlatformError(
+                "EXPORT_NOT_FOUND", "导出不存在",
+                {"export_id": export_id}, http_status=404,
+            )
+        CaseRepository(session).get_active(exp.case_id)
+        return exp.case_id
+
+
+# ---------------------------------------------------------------------------
+# v0.7.0 workflow remediation: bounded recent activity for workspace
+# ---------------------------------------------------------------------------
+
+
+def recent_experiments_for_case(
+    session: Session, case_id: str, limit: int = 5,
+) -> list[dict[str, Any]]:
+    """Return bounded recent experiment summaries for a case, newest-first."""
+    from geomodeling.platform.schemas import WorkspaceExperimentSummary
+
+    rows = (
+        session.query(Experiment)
+        .filter(Experiment.case_id == case_id)
+        .order_by(Experiment.created_at.desc(), Experiment.id.desc())
+        .limit(limit)
+        .all()
+    )
+    result: list[dict[str, Any]] = []
+    for exp in rows:
+        params = tables.loads_canonical(exp.params_json)
+        algorithm = params.get("algorithm", "unknown")
+        dv_id = params.get("dataset_version_id", "")
+
+        latest_run = (
+            session.query(Run)
+            .filter(Run.experiment_id == exp.id)
+            .order_by(Run.created_at.desc(), Run.id.desc())
+            .first()
+        )
+        latest_run_status = latest_run.status if latest_run else None
+
+        succeeded_count = (
+            session.query(CandidateResult)
+            .join(Run, CandidateResult.run_id == Run.id)
+            .filter(Run.experiment_id == exp.id, CandidateResult.status == "succeeded")
+            .count()
+        )
+
+        summary = WorkspaceExperimentSummary(
+            id=exp.id,
+            name=exp.name,
+            algorithm=algorithm,
+            dataset_version_id=dv_id,
+            latest_run_status=latest_run_status,
+            succeeded_candidate_count=succeeded_count,
+            created_at=exp.created_at,
+            url=f"/experiments/{exp.id}",
+        )
+        result.append(summary.model_dump(mode="json"))
+    return result
+
+
+def recent_results_for_case(
+    runtime: Any, case_id: str, featured_result_id: str | None, limit: int = 5,
+) -> list[dict[str, Any]]:
+    """Return bounded recent succeeded candidate summaries for a case, newest-first."""
+    from geomodeling.platform.schemas import WorkspaceResultSummary
+
+    with runtime.session() as session:
+        rows = (
+            session.query(CandidateResult)
+            .join(Run, CandidateResult.run_id == Run.id)
+            .join(Experiment, Run.experiment_id == Experiment.id)
+            .filter(
+                Experiment.case_id == case_id,
+                CandidateResult.status == RunStatus.SUCCEEDED.value,
+            )
+            .order_by(CandidateResult.created_at.desc(), CandidateResult.id.desc())
+            .limit(limit)
+            .all()
+        )
+        result: list[dict[str, Any]] = []
+        for cand in rows:
+            run = session.get(Run, cand.run_id)
+            exp = session.get(Experiment, run.experiment_id) if run else None
+            if exp is None:
+                continue
+            params = tables.loads_canonical(exp.params_json)
+            algorithm = params.get("algorithm", "unknown")
+
+            summary = WorkspaceResultSummary(
+                result_id=cand.id,
+                experiment_id=exp.id,
+                algorithm=algorithm,
+                materialized=cand.grid_path is not None,
+                featured=(featured_result_id == cand.id),
+                created_at=cand.created_at,
+                url=f"/results/{cand.id}",
+            )
+            result.append(summary.model_dump(mode="json"))
+        return result

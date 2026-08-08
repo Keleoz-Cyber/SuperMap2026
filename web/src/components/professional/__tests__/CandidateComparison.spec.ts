@@ -221,3 +221,35 @@ describe('CandidateComparison 跨实验候选输入', () => {
     wrapper.unmount()
   })
 })
+
+describe('initialSecondResultId 直达比较', () => {
+  it('预选 second 并自动提交比较', async () => {
+    vi.mocked(client.createProfessionalComparison).mockResolvedValue(COMPATIBLE)
+    const wrapper = mount(CandidateComparison, {
+      props: {
+        candidates: CANDIDATES,
+        firstResultId: FIRST,
+        initialSecondResultId: EXTERNAL,
+      },
+    })
+    await flushPromises()
+    expect(client.createProfessionalComparison).toHaveBeenCalledWith(FIRST, EXTERNAL)
+    expect(wrapper.find('[data-test="comparison-compatible"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="comparison-second-current"]').text()).toContain(EXTERNAL)
+    wrapper.unmount()
+  })
+
+  it('initialSecondResultId 等于 first 时不自动提交', async () => {
+    vi.mocked(client.createProfessionalComparison).mockResolvedValue(COMPATIBLE)
+    const wrapper = mount(CandidateComparison, {
+      props: {
+        candidates: CANDIDATES,
+        firstResultId: FIRST,
+        initialSecondResultId: FIRST,
+      },
+    })
+    await flushPromises()
+    expect(client.createProfessionalComparison).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+})

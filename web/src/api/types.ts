@@ -28,7 +28,11 @@ export interface CaseSummary {
     experiments: boolean
     official_result: boolean
     native_volume: boolean
+    delete_case?: boolean
   }
+  // v0.7.0：案例生命周期状态与回收站时间戳
+  lifecycle_state?: 'active' | 'trashed'
+  trashed_at?: string | null
   official_result?: FeaturedResultLink | null
   provenance_summary?: Record<string, unknown>
   links: {
@@ -52,6 +56,7 @@ export interface WorkspaceCapabilities {
   experiments: boolean
   official_result: boolean
   native_volume: boolean
+  delete_case?: boolean
 }
 
 export interface CaseWorkspaceSummary extends CaseSummary {
@@ -63,6 +68,13 @@ export interface CaseWorkspaceSummary extends CaseSummary {
   official_result: FeaturedResultLink | null
   // 只含允许公开的来源说明、字段、坐标语义、单位和摘要指纹
   provenance_summary: Record<string, unknown>
+  // v0.7.0：服务端权威的数据准备恢复状态（user_upload 案例携带，其余为 null）
+  data_preparation?: DataPreparationSummary | null
+  // v0.7.0：已校验数据版本列表（user_upload 案例携带，其余为空）
+  validated_datasets?: DatasetVersionRecord[]
+  abandoned_datasets?: DatasetVersionRecord[]
+  recent_experiments?: WorkspaceExperimentSummary[]
+  recent_results?: WorkspaceResultSummary[]
 }
 
 export interface CasesResponse {
@@ -334,7 +346,7 @@ export interface ApiErrorBody {
   }
 }
 
-export type DatasetStatus = 'uploaded' | 'mapped' | 'validated' | 'blocked'
+export type DatasetStatus = 'uploaded' | 'mapped' | 'validated' | 'blocked' | 'abandoned'
 
 export interface PlatformCaseRecord {
   id: string
@@ -518,11 +530,24 @@ export interface CaseDatasetsResponse {
 
 // ---------------- v0.4 成果 / 切片 / 选择 / 导出 / 发布契约 ----------------
 
+export interface ResultEvaluationSummary {
+  common_valid_count: number | null
+  candidate_valid_count: number | null
+  candidate_nodata_count: number | null
+  total_count: number | null
+  coverage: number | null
+  rmse: number | null
+  mae: number | null
+  r2: number | null
+  bias: number | null
+  enhanced_evidence_available: boolean
+}
+
 export interface ResultMetadata {
   result_id: string
   run_id: string
   experiment_id: string
-  // 成果归属链：result → run → experiment → dataset（Task 10 起服务端下发）
+  // 成果归属链：result -> run -> experiment -> dataset（Task 10 起服务端下发）
   dataset_version_id: string
   algorithm: string
   parameters: Record<string, unknown>
@@ -539,6 +564,9 @@ export interface ResultMetadata {
   fingerprint: string
   validation: Record<string, unknown> | null
   created_at: string
+  professional_analysis_supported?: boolean
+  // v0.7.0：基线模型评估摘要（每个已物化成果均携带）
+  evaluation_summary?: ResultEvaluationSummary
 }
 
 export interface ResultPreview {
@@ -696,6 +724,7 @@ export interface ProfessionalDiagnosisRecord {
   created_at: string
   updated_at: string
   finished_at: string | null
+  latest_confirmation?: ProfessionalConfirmationListSummary | null
 }
 
 // 分析任务公开 DTO（与插值 run 同一生命周期合同；retry 产生新身份）
@@ -1214,4 +1243,116 @@ export interface PointLayerPayload {
   values?: number[]
   isNodata?: boolean[]
   style: PointLayerStyle
+}
+
+// ---------------------------------------------------------------------------
+// v0.7.0 batch 3: case lifecycle, data preparation, diagnostics, comparison
+// ---------------------------------------------------------------------------
+
+export interface TrashCaseSummary {
+  case_id: string
+  name: string
+  trashed_at: string
+  counts: { datasets: number; experiments: number; results: number }
+  can_restore: boolean
+  can_purge: boolean
+  reason: string | null
+}
+
+export interface DataPreparationNextAction {
+  step: 'upload' | 'mapping' | 'quality_review' | 'experiment' | 'repair'
+  label: string
+  url: string | null
+}
+
+export interface DataPreparationSummary {
+  state: 'needs_upload' | 'needs_mapping' | 'needs_quality_review' | 'ready' | 'blocked'
+  dataset_id: string | null
+  latest_validated_dataset_id: string | null
+  next_action: DataPreparationNextAction
+  error: { code: string; dataset_id: string } | null
+}
+
+export interface ProfessionalConfirmationListSummary {
+  id: string
+  diagnostic_id: string
+  fingerprint: string
+  created_at: string
+  applicable: boolean
+}
+
+export interface WorkspaceExperimentSummary {
+  id: string
+  name: string
+  algorithm: string
+  dataset_version_id: string
+  latest_run_status: string | null
+  succeeded_candidate_count: number
+  created_at: string
+  url: string
+}
+
+export interface WorkspaceResultSummary {
+  result_id: string
+  experiment_id: string
+  algorithm: string
+  materialized: boolean
+  featured: boolean
+  created_at: string
+  url: string
+}
+
+export interface ProfessionalDiagnosticListItem {
+  diagnosis: Record<string, unknown>
+  job: Record<string, unknown> | null
+  url: string
+  latest_confirmation: ProfessionalConfirmationListSummary | null
+}
+
+export interface ProfessionalDiagnosticList {
+  dataset_id: string
+  diagnostics: ProfessionalDiagnosticListItem[]
+}
+
+export interface ProfessionalConfirmationSummary {
+  confirmation: Record<string, unknown>
+  diagnosis_id: string
+  diagnosis_status: string
+  dataset_id: string
+  case_id: string
+  fingerprint: string
+  config_summary: Record<string, unknown>
+}
+
+export interface ComparisonCandidateSummary {
+  candidate_result_id: string
+  experiment_id: string
+  run_id: string
+  algorithm: string
+  parameters: Record<string, unknown>
+  selectable: boolean
+  metrics: { rmse: number | null; mae: number | null; r2: number | null; bias: number | null }
+  result_url: string
+  configuration_fingerprint: string
+}
+
+export interface CandidateCatalogGroup {
+  experiment_id: string
+  experiment_name: string
+  candidates: ComparisonCandidateSummary[]
+}
+
+export interface CandidateCatalog {
+  dataset_id: string
+  groups: CandidateCatalogGroup[]
+}
+
+export interface MultiCandidateComparison {
+  candidate_result_ids: string[]
+  dataset_version_id: string
+  comparable: boolean
+  mismatches: string[]
+  candidates: ComparisonCandidateSummary[]
+  ranking: string[] | null
+  comparison_fingerprint: string
 }

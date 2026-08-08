@@ -7,6 +7,7 @@ v0.6.1（Task 7）：``GET /api/results/{id}``、``/preview``、``/slices`` 是�
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
@@ -17,16 +18,96 @@ from geomodeling.platform import PlatformRuntime, tables
 from geomodeling.platform.errors import PlatformError, READ_ONLY_CASE_FORMAL_SELECTION
 from geomodeling.platform.exports import build_export
 from geomodeling.platform.publications import request_publication
-from geomodeling.platform.repositories import FormalSelectionRepository
+from geomodeling.platform.repositories import (
+    FormalSelectionRepository,
+    require_active_candidate,
+    require_active_case,
+    require_active_export,
+)
 from geomodeling.platform.results import (
     materialize,
     preview,
     read_materialized_metadata,
     serve_slice,
 )
-from geomodeling.platform.schemas import FormalSelectionBody, FormalSelectionRequest
+from geomodeling.platform.schemas import FormalSelectionBody, FormalSelectionRequest, ResultEvaluationSummary
 
 router = APIRouter(tags=["v0.4-results"])
+
+
+def _non_negative_int(value: Any) -> int | None:
+    """Sanitize a count metric: non-negative int or None, never coerced to zero."""
+
+    if value is None:
+        return None
+    try:
+        result = int(value)
+    except (TypeError, ValueError):
+        return None
+    if result < 0:
+        return None
+    return result
+
+
+def _finite_float(value: Any) -> float | None:
+    """Sanitize a numeric metric: finite float or None, never coerced to zero."""
+
+    if value is None:
+        return None
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(result):
+        return None
+    return result
+
+
+def _with_evaluation_summary(
+    runtime: PlatformRuntime, result_id: str, metadata: dict[str, Any]
+) -> dict[str, Any]:
+    """Attach baseline evaluation summary and professional capability to every result DTO.
+
+    Loads CandidateResult through the already guarded ownership chain
+    (candidate -> run -> experiment), parses ``metrics_json``, and sanitizes
+    public metrics: non-negative counts become ``int | None``, finite numeric
+    metrics become ``float | None``, and missing/non-finite values become null.
+    The route must not fail merely because an optional evaluation number is
+    unavailable.
+    """
+
+    from geomodeling.platform.tables import CandidateResult, ProfessionalResultArtifacts
+
+    with runtime.session() as session:
+        candidate = session.get(CandidateResult, result_id)
+        metrics: dict[str, Any] = (
+            tables.loads_canonical(candidate.metrics_json) if candidate is not None else {}
+        )
+        supported = (
+            session.query(ProfessionalResultArtifacts)
+            .filter(
+                ProfessionalResultArtifacts.candidate_result_id == result_id,
+                ProfessionalResultArtifacts.status == "succeeded",
+            )
+            .first()
+            is not None
+        )
+
+    summary = ResultEvaluationSummary(
+        common_valid_count=_non_negative_int(metrics.get("common_valid_count")),
+        candidate_valid_count=_non_negative_int(metrics.get("candidate_valid_count")),
+        candidate_nodata_count=_non_negative_int(metrics.get("candidate_nodata_count")),
+        total_count=_non_negative_int(metrics.get("total_count")),
+        coverage=_finite_float(metrics.get("coverage")),
+        rmse=_finite_float(metrics.get("rmse")),
+        mae=_finite_float(metrics.get("mae")),
+        r2=_finite_float(metrics.get("r2")),
+        bias=_finite_float(metrics.get("bias")),
+        enhanced_evidence_available=supported,
+    )
+    metadata["evaluation_summary"] = summary.model_dump(mode="json")
+    metadata["professional_analysis_supported"] = supported
+    return metadata
 
 
 @router.post("/api/results/{result_id}/materialize")
@@ -34,7 +115,8 @@ def materialize_result(
     result_id: str,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
-    return materialize(runtime, result_id)
+    require_active_candidate(runtime, result_id)
+    return _with_evaluation_summary(runtime, result_id, materialize(runtime, result_id))
 
 
 @router.get("/api/results/{result_id}")
@@ -42,8 +124,10 @@ def get_result(
     result_id: str,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
+    require_active_candidate(runtime, result_id)
     # 纯查询：只读已物化 metadata；未物化 404，绝不隐式物化
-    return read_materialized_metadata(runtime, result_id)
+    metadata = read_materialized_metadata(runtime, result_id)
+    return _with_evaluation_summary(runtime, result_id, metadata)
 
 
 @router.get("/api/results/{result_id}/preview")
@@ -51,6 +135,7 @@ def get_result_preview(
     result_id: str,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
+    require_active_candidate(runtime, result_id)
     return preview(runtime, result_id)
 
 
@@ -61,6 +146,7 @@ def get_result_slice(
     index: int = Query(..., ge=0),
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
+    require_active_candidate(runtime, result_id)
     return serve_slice(runtime, result_id, axis, index)
 
 
@@ -79,6 +165,7 @@ def select_formal(
     request: FormalSelectionBody,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
+    require_active_candidate(runtime, result_id)
     with runtime.session() as session:
         candidate = session.get(tables.CandidateResult, result_id)
         if candidate is None:
@@ -134,6 +221,7 @@ def list_formal_selections(
     case_id: str,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
+    require_active_case(runtime, case_id)
     with runtime.session() as session:
         rows = (
             session.query(tables.FormalSelection)
@@ -164,6 +252,7 @@ def create_export(
     result_id: str,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
+    require_active_candidate(runtime, result_id)
     return build_export(runtime, result_id)
 
 
@@ -172,6 +261,7 @@ def download_export(
     export_id: str,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> FileResponse:
+    require_active_export(runtime, export_id)
     with runtime.session() as session:
         row = session.get(tables.Export, export_id)
         if row is None:
@@ -200,4 +290,5 @@ def create_publication(
     result_id: str,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
+    require_active_candidate(runtime, result_id)
     return request_publication(runtime, result_id)
