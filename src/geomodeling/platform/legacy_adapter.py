@@ -33,6 +33,19 @@ UPLOAD_WORKSPACE_KIND = "user_upload"
 #: 旧 DAT 流程的 legacy 微震卡 ID（由预置案例取代，不再出现在案例卡列表）
 LEGACY_MICROSEISMIC_CARD_ID = "microseismic"
 
+#: 旧 S3M 流程的 legacy 电阻率卡 ID（seed 为 builtin_preset 后由统一 seed 卡取代；
+#: 未 seed 的运行库保持 legacy 卡现状，退役见 v0.8.0 后续任务）
+LEGACY_RESISTIVITY_CARD_ID = "resistivity"
+
+#: 预置卡 provenance 兜底常量：微震 seed 尚未写 data_form/value_unit 等键时
+#: 保持 v0.7.0 既有文案，绝不回归；新预置（电阻率）由 seed 写入自己的键。
+_PRESET_PROVENANCE_FALLBACK = {
+    "data_form": "三维 X/Y/Z/Vx（局部测线坐标）",
+    "value_unit": "km/s",
+    "coordinate_kind": "local_linear",
+    "badge": "CSV 预置 · 官方普通克里金成果",
+}
+
 
 def _capabilities(
     *, data_summary: bool, experiments: bool, official_result: bool, native_volume: bool
@@ -108,13 +121,17 @@ def workspace_case_card(
     featured = featured_result.model_dump(mode="json") if featured_result is not None else None
     provenance: dict[str, Any] = {}
     if is_preset:
+        # provenance 键由 seed 写入 Case config_json（v0.8.0 电阻率散点预置）；
+        # 未写这些键的早期预置 seed（微震）用既有常量兜底，文案逐位不回归。
         provenance = {
             "preset_version": config.get("preset_version"),
             "source_sha256": config.get("source_sha256"),
-            "data_form": "三维 X/Y/Z/Vx（局部测线坐标）",
-            "value_unit": "km/s",
-            "coordinate_kind": "local_linear",
-            "badge": "CSV 预置 · 官方普通克里金成果",
+            "data_form": config.get("data_form") or _PRESET_PROVENANCE_FALLBACK["data_form"],
+            "value_unit": config.get("value_unit")
+            or _PRESET_PROVENANCE_FALLBACK["value_unit"],
+            "coordinate_kind": config.get("coordinate_kind")
+            or _PRESET_PROVENANCE_FALLBACK["coordinate_kind"],
+            "badge": config.get("badge") or _PRESET_PROVENANCE_FALLBACK["badge"],
         }
     elif primary_dataset is not None:
         mapping = (primary_dataset.get("profile") or {}).get("mapping") or {}
@@ -146,17 +163,20 @@ def workspace_case_card(
     }
 
 
-def legacy_case_cards() -> list[dict[str, Any]]:
+def legacy_case_cards(exclude_ids: Iterable[str] | None = None) -> list[dict[str, Any]]:
     """Immutable v0.3.1 case cards, marked as built-in legacy.
 
     v0.7.0：旧 DAT 流程的 legacy 微震卡由预置案例取代，不在此列出。
+    v0.8.0：``exclude_ids`` 传入已 seed 为 ``builtin_preset`` 的持久化案例
+    ID（如电阻率），对应 legacy 卡让位给统一 seed 卡（同微震跳过模式）。
     """
 
     from geomodeling.api import case_service  # 避免 platform → api 的模块级反向依赖
 
+    excluded = {LEGACY_MICROSEISMIC_CARD_ID} | set(exclude_ids or ())
     cards: list[dict[str, Any]] = []
     for card in case_service.list_cases():
-        if card.get("case_id") == LEGACY_MICROSEISMIC_CARD_ID:
+        if card.get("case_id") in excluded:
             continue
         merged = dict(card)
         merged["source_kind"] = BUILTIN_SOURCE_KIND
@@ -188,7 +208,16 @@ def merged_case_cards(
     featured = featured_results or {}
     datasets = primary_datasets or {}
     persisted = list(records)
-    cards = legacy_case_cards()
+    # v0.8.0：已 seed 为 builtin_preset 的持久化案例（如电阻率）与同名 legacy 卡
+    # 冲突时，legacy 卡让位——否则 builtin_ids 过滤会让统一 seed 卡从列表消失；
+    # 未 seed 的运行库不含这类持久化行，legacy 卡照旧（退役见后续任务）。
+    seeded_preset_ids = {
+        record.id
+        for record in persisted
+        if isinstance(record.config, dict)
+        and record.config.get("workspace_kind") == PRESET_WORKSPACE_KIND
+    }
+    cards = legacy_case_cards(exclude_ids=seeded_preset_ids)
     builtin_ids = {card["case_id"] for card in cards}
     if not any(record.id == PRESET_CASE_ID for record in persisted):
         cards.append(preset_workspace_card())
