@@ -178,13 +178,15 @@ def test_browser_live_ci_filter_unchanged_and_free_of_private_source():
     )
 
 
-def test_evidence_readme_skeleton_exists_without_results():
+def test_evidence_readme_skeleton_and_committed_runs_identity():
     text = _read(EVIDENCE_README)
     for marker in ("GEOMODELING_RHO_SOURCE", "seed-resistivity", "run_id", "git_commit"):
         assert marker in text, f"证据 README 缺少约定锚点：{marker}"
-    # 骨架提交只含生成约定：不得预登记任何运行结果目录。以 Git 跟踪口径判定
-    # （git ls-files）：本机真实运行产生的未提交输出不是「预登记」，其结果由
-    # 证据提交单独携带；一旦运行结果入库本断言即失败，防止骨架夹带结果。
+    # 以 Git 跟踪口径判定（git ls-files）：本机未提交输出不算入库。骨架阶段
+    # 不得预登记任何 run-* 结果；一旦真实证据入库，每个 run 目录必须携带
+    # 记录 git_commit 的身份 JSON，且该提交必须是当前 HEAD 的祖先（或 HEAD
+    # 本身）——证据与代码身份一致，不得用外来/未来提交冒充。
+    import json
     import subprocess
 
     tracked = subprocess.run(
@@ -193,9 +195,27 @@ def test_evidence_readme_skeleton_exists_without_results():
         capture_output=True,
         text=True,
     ).stdout
-    runs = [
-        entry
-        for entry in tracked.splitlines()
-        if any(part.startswith("run-") for part in entry.split("/"))
-    ]
-    assert not runs, f"证据骨架不得预登记运行结果：{runs}"
+    run_dirs = sorted(
+        {
+            "/".join(entry.split("/")[:-1])
+            for entry in tracked.splitlines()
+            if any(part.startswith("run-") for part in entry.split("/"))
+        }
+    )
+    for run_dir in run_dirs:
+        base = Path(run_dir)
+        identity = base / "identity.json"
+        scenarios = base / "scenarios.json"
+        assert identity.is_file() or scenarios.is_file(), (
+            f"入库证据缺少身份文件（identity.json/scenarios.json）：{run_dir}"
+        )
+        payload = json.loads((identity if identity.is_file() else scenarios).read_text("utf-8"))
+        commit = payload.get("git_commit", "")
+        assert len(commit) == 40 and all(c in "0123456789abcdef" for c in commit), (
+            f"证据 git_commit 非法：{run_dir}"
+        )
+        ancestor = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", commit, "HEAD"],
+            check=False,
+        ).returncode
+        assert ancestor == 0, f"证据 git_commit 不是 HEAD 祖先：{run_dir} → {commit}"
