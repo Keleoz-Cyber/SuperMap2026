@@ -227,6 +227,27 @@ describe('AnalysisCenterView（三态）', () => {
     expect(wrapper.find('[data-test="analysis-loading"]').exists()).toBe(false)
     wrapper.unmount()
   })
+
+  it('summary 未就绪（加载中/加载失败）不渲染导出命令', async () => {
+    let resolveFetch: (value: AnalysisSummaryResponse) => void = () => {}
+    vi.mocked(client.fetchAnalysisSummary).mockImplementation(
+      () =>
+        new Promise<AnalysisSummaryResponse>((resolve) => {
+          resolveFetch = resolve
+        }),
+    )
+    const { wrapper } = await mountAnalysisCenter('/datasets/ds-1/analysis')
+    expect(wrapper.find('[data-test="analysis-loading"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="analysis-export-panel"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="export-command-json"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="export-command-csv"]').exists()).toBe(false)
+
+    resolveFetch(summaryOf('microseismic_velocity'))
+    await flushPromises()
+    expect(wrapper.find('[data-test="export-command-json"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="export-command-csv"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
 })
 
 describe('AnalysisCenterView（A+B 壳）', () => {
@@ -296,6 +317,23 @@ describe('AnalysisCenterView（A+B 壳）', () => {
     const prov = wrapper.find('[data-test="export-provenance"]')
     expect(prov.exists()).toBe(true)
     expect(prov.text()).toContain('analysis.v1')
+    wrapper.unmount()
+  })
+
+  it('顶栏导出入口联动底部导出面板：点击后导出折叠项展开', async () => {
+    vi.mocked(client.fetchAnalysisSummary).mockResolvedValue(fullSummary('microseismic_velocity'))
+    const { wrapper } = await mountAnalysisCenter('/datasets/ds-1/analysis')
+
+    const exportHeader = () =>
+      wrapper
+        .findAll('.el-collapse-item__header')
+        .find((header) => header.text().includes('导出与数据溯源'))
+    expect(exportHeader()?.classes()).not.toContain('is-active')
+    await wrapper.find('[data-test="analysis-export-command"]').trigger('click')
+    await flushPromises()
+    expect(exportHeader()?.classes()).toContain('is-active')
+    expect(wrapper.find('[data-test="export-command-json"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="export-command-csv"]').exists()).toBe(true)
     wrapper.unmount()
   })
 

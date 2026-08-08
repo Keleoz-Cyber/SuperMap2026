@@ -1,8 +1,10 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ElementPlus from 'element-plus'
+import { ApiError, downloadAnalysisExport } from '../../../api/client'
 import type {
+  AnalysisExportDownload,
   AnalysisModuleResult,
   AnalysisProvenance,
   AnalysisSummaryResponse,
@@ -16,7 +18,10 @@ import type {
 // v0.8.0 第二批 Task 5：分析中心模块面板组件测试（模块边界 mock echarts，
 // 与 SliceHeatmap.spec.ts 同一模式）。覆盖：质量/统计数字与单位、ECharts
 // 直方图与空间热力图（含 dispose）、类型化 selection 事件、模型对比表
-// （空候选解释态 + 行点击导航）、剖面轴切换、导出占位 provenance。
+// （空候选解释态 + 行点击导航）、剖面轴切换、导出 provenance。
+// Task 7：导出面板接线——模块边界 mock downloadAnalysisExport，覆盖
+// 点击调用 (datasetId,format)、object URL 创建/回收、a[download] 保存、
+// loading 禁用与失败反馈（ApiError code+message）。
 
 const chartInstances: FakeChart[] = []
 
@@ -48,6 +53,11 @@ vi.mock('echarts/components', () => ({
   LegendComponent: {},
 }))
 vi.mock('echarts/renderers', () => ({ CanvasRenderer: {} }))
+
+vi.mock('../../../api/client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../api/client')>()
+  return { ...actual, downloadAnalysisExport: vi.fn() }
+})
 
 import AnalysisHeader from '../AnalysisHeader.vue'
 import QualitySummaryPanel from '../QualitySummaryPanel.vue'
@@ -776,21 +786,150 @@ describe('ProfileAnalysisPanel', () => {
 })
 
 describe('AnalysisExportPanel', () => {
-  it('渲染 provenance 溯源信息，导出为占位结构（后续任务接线）', () => {
-    const wrapper = mount(AnalysisExportPanel, {
+  const createdUrls: string[] = []
+  const revokedUrls: string[] = []
+  const clickedAnchors: HTMLAnchorElement[] = []
+  let clickSpy: ReturnType<typeof vi.spyOn>
+
+  const originalCreateObjectURL = URL.createObjectURL
+  const originalRevokeObjectURL = URL.revokeObjectURL
+
+  beforeEach(() => {
+    vi.mocked(downloadAnalysisExport).mockReset()
+    createdUrls.length = 0
+    revokedUrls.length = 0
+    clickedAnchors.length = 0
+    URL.createObjectURL = vi.fn((_blob: Blob) => {
+      const url = `blob:mock-export-${createdUrls.length}`
+      createdUrls.push(url)
+      return url
+    }) as typeof URL.createObjectURL
+    URL.revokeObjectURL = vi.fn((url: string) => {
+      revokedUrls.push(url)
+    }) as typeof URL.revokeObjectURL
+    clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(function (this: HTMLAnchorElement) {
+        clickedAnchors.push(this)
+      })
+  })
+
+  afterEach(() => {
+    clickSpy.mockRestore()
+  })
+
+  afterAll(() => {
+    URL.createObjectURL = originalCreateObjectURL
+    URL.revokeObjectURL = originalRevokeObjectURL
+  })
+
+  function mountPanel() {
+    return mount(AnalysisExportPanel, {
       props: { provenance, datasetId: 'ds-1', profile: 'microseismic_velocity' },
       global: { plugins: [ElementPlus] },
     })
+  }
+
+  it('渲染 provenance 溯源信息，导出命令可用（不再占位）', () => {
+    const wrapper = mountPanel()
     const prov = wrapper.find('[data-test="export-provenance"]')
     expect(prov.exists()).toBe(true)
     expect(prov.text()).toContain('aaaa')
     expect(prov.text()).toContain('v3')
     expect(prov.text()).toContain('2026-08-09')
     expect(prov.text()).toContain('analysis.v1')
-    // 占位导出命令存在但不可用
-    expect(wrapper.find('[data-test="export-command-json"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="export-command-csv"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="export-placeholder-hint"]').exists()).toBe(true)
+    const json = wrapper.find('[data-test="export-command-json"]')
+    const csv = wrapper.find('[data-test="export-command-csv"]')
+    expect(json.exists()).toBe(true)
+    expect(csv.exists()).toBe(true)
+    expect(json.attributes('disabled')).toBeUndefined()
+    expect(csv.attributes('disabled')).toBeUndefined()
+    expect(wrapper.find('[data-test="export-placeholder-hint"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('点击 JSON 导出：调用 downloadAnalysisExport(datasetId,json)，创建并回收 object URL，a[download] 保存', async () => {
+    const blob = new Blob(['{"ok":true}'], { type: 'application/json' })
+    vi.mocked(downloadAnalysisExport).mockResolvedValue({
+      blob,
+      filename: 'analysis-ds-1-microseismic_velocity.json',
+    })
+    const wrapper = mountPanel()
+    await wrapper.find('[data-test="export-command-json"]').trigger('click')
+    await flushPromises()
+
+    expect(downloadAnalysisExport).toHaveBeenCalledWith('ds-1', 'json')
+    expect(URL.createObjectURL).toHaveBeenCalledWith(blob)
+    expect(clickedAnchors).toHaveLength(1)
+    expect(clickedAnchors[0].download).toBe('analysis-ds-1-microseismic_velocity.json')
+    expect(clickedAnchors[0].href).toContain('blob:mock-export-')
+    expect(revokedUrls).toEqual([createdUrls[0]])
+    const status = wrapper.find('[data-test="export-status"]')
+    expect(status.text()).toContain('analysis-ds-1-microseismic_velocity.json')
+    expect(status.text()).toContain('ds-1')
+    expect(status.text()).toContain('microseismic_velocity')
+    expect(wrapper.find('[data-test="export-error"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('点击 CSV 导出：调用 downloadAnalysisExport(datasetId,csv) 并保存 csv 文件', async () => {
+    vi.mocked(downloadAnalysisExport).mockResolvedValue({
+      blob: new Blob(['# dataset_id=ds-1'], { type: 'text/csv' }),
+      filename: 'analysis-ds-1-microseismic_velocity.csv',
+    })
+    const wrapper = mountPanel()
+    await wrapper.find('[data-test="export-command-csv"]').trigger('click')
+    await flushPromises()
+
+    expect(downloadAnalysisExport).toHaveBeenCalledWith('ds-1', 'csv')
+    expect(clickedAnchors).toHaveLength(1)
+    expect(clickedAnchors[0].download).toBe('analysis-ds-1-microseismic_velocity.csv')
+    expect(revokedUrls).toEqual([createdUrls[0]])
+    expect(wrapper.find('[data-test="export-status"]').text()).toContain('.csv')
+    wrapper.unmount()
+  })
+
+  it('导出进行中显示 loading 状态并禁用命令，完成后恢复', async () => {
+    let resolveDownload: (value: AnalysisExportDownload) => void = () => {}
+    vi.mocked(downloadAnalysisExport).mockImplementation(
+      () =>
+        new Promise<AnalysisExportDownload>((resolve) => {
+          resolveDownload = resolve
+        }),
+    )
+    const wrapper = mountPanel()
+    await wrapper.find('[data-test="export-command-json"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="export-status"]').text()).toContain('正在导出')
+    expect(wrapper.find('[data-test="export-command-json"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-test="export-command-csv"]').attributes('disabled')).toBeDefined()
+
+    resolveDownload({
+      blob: new Blob(['x']),
+      filename: 'analysis-ds-1-microseismic_velocity.json',
+    })
+    await flushPromises()
+    expect(wrapper.find('[data-test="export-command-json"]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.find('[data-test="export-status"]').text()).toContain('已导出')
+    wrapper.unmount()
+  })
+
+  it('导出失败显示 ApiError code+message，不创建 object URL', async () => {
+    vi.mocked(downloadAnalysisExport).mockRejectedValue(
+      new ApiError('CASE_TRASHED', '案例已被回收', 410),
+    )
+    const wrapper = mountPanel()
+    await wrapper.find('[data-test="export-command-csv"]').trigger('click')
+    await flushPromises()
+
+    const error = wrapper.find('[data-test="export-error"]')
+    expect(error.exists()).toBe(true)
+    expect(error.text()).toContain('CASE_TRASHED')
+    expect(error.text()).toContain('案例已被回收')
+    expect(createdUrls).toHaveLength(0)
+    expect(clickedAnchors).toHaveLength(0)
+    expect(wrapper.find('[data-test="export-status"]').exists()).toBe(false)
     wrapper.unmount()
   })
 })

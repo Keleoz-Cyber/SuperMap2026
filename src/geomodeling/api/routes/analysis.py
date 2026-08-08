@@ -12,6 +12,8 @@
   同一响应组装后导出。json → application/json；csv → text/csv，头部
   provenance 注释行 + 稳定表头 + 轴身份列的明确行模式。两个导出都用
   Content-Disposition 安全文件名（仅含 dataset/profile 逻辑标识）。
+  设计 §2 的「可打印报告导出」在本批以 JSON/CSV 摘要导出兑现（同一份
+  带完整 provenance 的分析摘要），不引入第三种导出格式。
 
 只读语义：绝不改行、绝不物化、绝不重算模型指标——model_comparison 仅
 读取该数据版本下已有 succeeded 候选记录（算法/参数摘要/公共指标/

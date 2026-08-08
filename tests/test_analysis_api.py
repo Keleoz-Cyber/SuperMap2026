@@ -25,6 +25,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -32,6 +33,7 @@ import pandas as pd
 import pytest
 
 from geomodeling.analysis.schemas import CALCULATION_VERSION
+from geomodeling.api.routes import analysis as analysis_routes
 from geomodeling.platform import tables
 from geomodeling.platform.microseismic_preset import (
     PRESET_CASE_ID,
@@ -591,6 +593,103 @@ def test_export_csv_resistivity_profile(rho_client):
 
 
 # ---------------------------------------------------------------------------
+# Task 7 导出合同强化：完整 provenance / ok 模块摘要 / 410 不触盘
+# ---------------------------------------------------------------------------
+
+
+def test_export_json_full_provenance_and_ok_module_summaries(micro_client):
+    """JSON 导出：数据身份 + profile + 源哈希 + 计算版本 + 生成时间 + 全部 ok 模块摘要。"""
+
+    dataset_id = _primary_dataset_id(micro_client, PRESET_CASE_ID)
+    response = micro_client.get(
+        f"/api/datasets/{dataset_id}/analysis-export", params={"format": "json"}
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+
+    assert body["dataset_id"] == dataset_id
+    assert body["case_id"] == PRESET_CASE_ID
+    assert body["analysis_profile"] == "microseismic_velocity"
+    provenance = body["provenance"]
+    assert provenance["source_sha256"] == TRACKED_CSV_SHA256
+    assert provenance["dataset_version"] == 1
+    assert provenance["calculation_version"] == CALCULATION_VERSION
+    generated_at = provenance["generated_at"]
+    assert generated_at and datetime.fromisoformat(generated_at), generated_at
+
+    # 全部 ok 模块摘要随导出出站，且与 analysis-summary 同一组装逐位一致
+    summary = micro_client.get(f"/api/datasets/{dataset_id}/analysis-summary").json()
+    export_modules = {module["module_id"]: module for module in body["modules"]}
+    summary_modules = {module["module_id"]: module for module in summary["modules"]}
+    assert set(export_modules) == set(summary_modules)
+    ok_modules = [module for module in body["modules"] if module["status"] == "ok"]
+    assert ok_modules, "微震预置导出必须包含 ok 模块"
+    for module in ok_modules:
+        assert module["payload"], module["module_id"]
+    for module_id, module in summary_modules.items():
+        assert export_modules[module_id] == module, module_id
+
+
+def test_export_csv_provenance_comment_block_complete_and_verbatim(rho_client):
+    """CSV 导出：provenance 注释行齐全（7 行固定键序）+ 表头逐字稳定 + 轴身份列。"""
+
+    dataset_id = _primary_dataset_id(rho_client, RESISTIVITY_PRESET_CASE_ID)
+    response = rho_client.get(
+        f"/api/datasets/{dataset_id}/analysis-export", params={"format": "csv"}
+    )
+    assert response.status_code == 200, response.text
+    lines = response.text.splitlines()
+
+    comments = [line for line in lines if line.startswith("#")]
+    assert len(comments) == 7, "provenance 注释行必须齐全且仅 7 行"
+    keys = [line[1:].split("=", 1)[0].strip() for line in comments]
+    assert keys == [
+        "dataset_id",
+        "case_id",
+        "analysis_profile",
+        "source_sha256",
+        "dataset_version",
+        "calculation_version",
+        "generated_at",
+    ]
+    values = [line.split("=", 1)[1].strip() for line in comments]
+    assert all(values), "provenance 注释行值不得为空"
+    assert comments[0] == f"# dataset_id={dataset_id}"
+    assert comments[2] == "# analysis_profile=resistivity"
+
+    # 注释块之后立即是逐字稳定表头
+    assert lines[7] == "section,axis,bin_index,metric,lower,upper,value"
+
+    # 轴身份列：profile 行 axis ∈ {x,y,z}，bin_index 为整数序
+    profile_rows = [line.split(",") for line in lines[8:] if line.startswith("profile,")]
+    assert profile_rows, "电阻率导出必须包含剖面行"
+    assert {row[1] for row in profile_rows} == {"x", "y", "z"}
+    for row in profile_rows:
+        assert row[2].isdigit(), row
+        assert row[3] in {"count", "mean", "median"}, row
+
+
+def test_trashed_export_returns_410_without_reading_files(fresh_client, monkeypatch):
+    """回收案例导出：410 CASE_TRASHED，且绝不进入文件加载/读取阶段。"""
+
+    _insert_case_dataset(fresh_client, "gone-case", "gone-ds", status="uploaded")
+    delete = fresh_client.delete("/api/cases/gone-case")
+    assert delete.status_code == 200, delete.text
+
+    def _forbidden(*args, **kwargs):  # pragma: no cover - 触盘即失败
+        raise AssertionError("回收案例导出不得加载/读取任何数据文件")
+
+    monkeypatch.setattr(analysis_routes, "_load_standardized_frame", _forbidden)
+    monkeypatch.setattr(pd, "read_parquet", _forbidden)
+    for fmt in ("json", "csv"):
+        response = fresh_client.get(
+            "/api/datasets/gone-ds/analysis-export", params={"format": fmt}
+        )
+        assert response.status_code == 410, response.text
+        assert response.json()["error"]["code"] == "CASE_TRASHED"
+
+
+# ---------------------------------------------------------------------------
 # 路径泄漏扫描：响应绝不包含 standardized_path 字样或本机绝对路径
 # ---------------------------------------------------------------------------
 
@@ -598,6 +697,8 @@ def test_export_csv_resistivity_profile(rho_client):
 def test_responses_never_leak_paths(micro_client):
     dataset_id = _primary_dataset_id(micro_client, PRESET_CASE_ID)
     runtime_dir = micro_client.runtime_dir
+    # 绝对路径形态：Windows 盘符（反/正斜杠）、UNC、file://、POSIX 用户目录
+    absolute_path_shapes = (":\\", ":/", "\\\\", "file://", "/home/", "/Users/")
     for url in (
         f"/api/datasets/{dataset_id}/analysis-summary",
         f"/api/datasets/{dataset_id}/analysis-export?format=json",
@@ -605,5 +706,6 @@ def test_responses_never_leak_paths(micro_client):
     ):
         text = micro_client.get(url).text
         assert "standardized_path" not in text, url
-        assert ":\\" not in text, url
         assert runtime_dir not in text, url
+        for shape in absolute_path_shapes:
+            assert shape not in text, f"{url} 泄漏绝对路径形态 {shape!r}"

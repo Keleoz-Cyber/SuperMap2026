@@ -3,8 +3,8 @@ import { computed } from 'vue'
 import type { AnalysisProfileId, AnalysisSummaryResponse } from '../../api/types'
 
 // v0.8.0 第二批 Task 5：分析中心顶栏——案例身份、数据版本、变量/单位、
-// 坐标类型、数据质量徽标与导出入口（导出逻辑属 Task 7，此处仅发出
-// export 事件由视图展开底部导出/溯源区）。绝不渲染原始文件路径。
+// 坐标类型、数据质量徽标与导出入口（Task 7 起 export 事件由视图展开底部
+// 导出/溯源区，执行真实 JSON/CSV 导出）。绝不渲染原始文件路径。
 
 const props = defineProps<{ summary: AnalysisSummaryResponse }>()
 const emit = defineEmits<{ (e: 'export'): void }>()
