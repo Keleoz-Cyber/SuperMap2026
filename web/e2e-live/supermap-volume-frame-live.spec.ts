@@ -257,6 +257,10 @@ function makeState(
   }
 }
 
+// 32³ NetCDF 体渲染在 SwiftShader 软渲下单帧可达秒级，会饿死截图/求值导致
+// 假超时；--use-angle=gl 走本机真实 GPU（与 native-volume 规格同一口径）。
+test.use({ launchOptions: { args: ['--use-angle=gl'] } })
+
 test('隔离 SuperMap 帧：真实 NetCDF 体渲染 + 协议控制像素响应', async ({ page, request }) => {
   test.setTimeout(300_000)
   const t0 = Date.now()

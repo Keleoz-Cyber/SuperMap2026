@@ -291,9 +291,16 @@ test.describe('v0.6.1 Task 14：32³/64³ 原生体渲染 live 门', () => {
     expect(capability.render_profile?.default_scale).toBe('linear')
     expect(capability.render_profile?.log_available).toBe(seed.value_range[0] > 0)
 
-    // 全新隔离运行时：此前从未创建资产（纯查询 404，绝不隐式创建）
+    // 纯查询绝不隐式创建资产：该硬门只对 64³ 流程断言。32³ 候选同时被
+    // supermap-volume-frame-live 使用（带自定义 launchOptions 的规格可能先于
+    // 本文件执行），其资产可能已由该规格的显式 POST 创建；64³ 资产仅由本
+    // 文件的显式 POST 创建，因此 404 门在任何套件执行顺序下都保持效力。
     const preAsset = await request.get(`/api/results/${seed.candidate_id}/render-assets/netcdf`)
-    expect(preAsset.status()).toBe(404)
+    if (size === '64') {
+      expect(preAsset.status(), '纯查询不得隐式创建资产（64³ 仅本文件使用）').toBe(404)
+    } else {
+      expect([200, 404]).toContain(preAsset.status())
+    }
 
     // --- 产品页：显式 POST（唯一变异入口）→ iframe 30s 内 rendered ----------
     await page.setViewportSize(VIEWPORT)

@@ -8,7 +8,9 @@ import {
   analyzeVolumePixels,
   expectVolumeContent,
   probeMessages,
+  setSliceIndex,
   waitFrames,
+  waitSliceApplied,
 } from './v070RenderGates'
 
 /**
@@ -173,27 +175,11 @@ async function gateScenario(
   const volumeMetrics = await analyzeVolumePixels(page, await shot())
   expectVolumeContent(volumeMetrics, `${tag} Volume`, { minNonBg: 2000, minCoverage: 0.15 })
 
-  // Z 剖面：切模式 → 等待权威剖面应用 → 内容判据（候选/内置共用通用 RenderAsset 路由）
+  // Z 剖面：切模式 → UI 步进到目标索引 → 权威剖面等待（坐标标签与
+  // STATE_APPLIED 精确匹配由 waitSliceApplied 门禁）→ 内容判据
   await page.getByTestId('mode-slice').click()
-  const analysisResp = await request.get(
-    `${BASE}/api/render-assets/${assetId}/slice-analysis?axis=z&index=${sliceIndex}`,
-  )
-  expect(analysisResp.ok()).toBe(true)
-  const analysis = await analysisResp.json()
-  await expect(page.getByTestId('slice-coordinate-label')).toContainText(
-    `Z = ${analysis.slice.coordinate}`,
-    { timeout: 30_000 },
-  )
-  await expect
-    .poll(
-      async () => {
-        const msgs = await probeMessages(page)
-        const last = [...msgs].reverse().find((m) => m.type === 'STATE_APPLIED' && m.slice)
-        return last?.slice ?? null
-      },
-      { timeout: 30_000 },
-    )
-    .toMatchObject({ axis: 'z', index: sliceIndex, coordinate: analysis.slice.coordinate })
+  await setSliceIndex(page, sliceIndex)
+  await waitSliceApplied(page, request, frame!, assetId, 'z', sliceIndex)
   await waitFrames(frame!, 6)
   const sliceMetrics = await analyzeVolumePixels(page, await shot())
   expectVolumeContent(sliceMetrics, `${tag} Z 剖面`, { minNonBg: 500, minCoverage: 0.03 })
