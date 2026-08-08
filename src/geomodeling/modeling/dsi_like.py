@@ -61,7 +61,7 @@ from geomodeling.modeling.base import CancelFn, PredictionBatch
 from geomodeling.modeling.grid import derive_grid
 from geomodeling.modeling.idw import IDWInterpolator, IDWParameters
 from geomodeling.platform.errors import PlatformError
-from geomodeling.platform.schemas import ContractModel, Dimension
+from geomodeling.platform.schemas import Algorithm, ContractModel, Dimension
 
 PREDICTION_CHUNK_SIZE = 20_000
 RUN_CANCELED = "RUN_CANCELED"
@@ -117,8 +117,7 @@ def _snap_to_nodes(points: np.ndarray, axes: tuple[np.ndarray, ...]) -> np.ndarr
 
 
 class DSILikeInterpolator:
-    # Task 4 注册算法枚举后切换为 Algorithm.DSI_LIKE（schemas/runner 属 Task 4 范围）
-    algorithm = "dsi_like"
+    algorithm = Algorithm.DSI_LIKE
 
     def validate_parameters(
         self, parameters: dict[str, Any], dimension: Dimension | str

@@ -39,6 +39,7 @@ import pandas as pd
 
 from geomodeling.modeling.anisotropy import KrigingAnisotropySpec, build_kriging_transform
 from geomodeling.modeling.contracts import GridDefinition
+from geomodeling.modeling.dsi_like import DSILikeInterpolator
 from geomodeling.modeling.grid import derive_grid
 from geomodeling.modeling.idw import IDWInterpolator
 from geomodeling.modeling.kriging import OrdinaryKrigingInterpolator
@@ -87,6 +88,7 @@ _PROFESSIONAL_NPZ_KEYS = {
 _INTERPOLATORS = {
     Algorithm.IDW.value: IDWInterpolator(),
     Algorithm.ORDINARY_KRIGING.value: OrdinaryKrigingInterpolator(),
+    Algorithm.DSI_LIKE.value: DSILikeInterpolator(),
 }
 
 

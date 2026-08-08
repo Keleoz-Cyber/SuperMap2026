@@ -37,6 +37,7 @@ import numpy as np
 import pandas as pd
 
 from geomodeling.modeling.contracts import Fold
+from geomodeling.modeling.dsi_like import DSILikeInterpolator
 from geomodeling.modeling.fold_artifacts import (
     FOLD_ARTIFACT_WRITE_FAILED,
     build_fold_assignments,
@@ -75,6 +76,7 @@ PROFESSIONAL_ARTIFACT_WRITE_FAILED = "PROFESSIONAL_ARTIFACT_WRITE_FAILED"
 _INTERPOLATORS = {
     Algorithm.IDW.value: IDWInterpolator(),
     Algorithm.ORDINARY_KRIGING.value: OrdinaryKrigingInterpolator(),
+    Algorithm.DSI_LIKE.value: DSILikeInterpolator(),
 }
 
 
