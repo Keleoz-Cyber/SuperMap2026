@@ -14,6 +14,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # 证据身份合同测试（test_v070_ci_contract）需要完整历史做
+          # merge-base 祖先判定；默认浅克隆无法验证证据 git_commit。
+          fetch-depth: 0
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
