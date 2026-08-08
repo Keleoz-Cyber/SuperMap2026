@@ -1,9 +1,9 @@
 """v0.7.0 Batch 1 Task 4：统一案例工作台卡片/工作台 API 合同测试。
 
-三类身份：builtin_legacy（电阻率等既有内置卡）、builtin_preset（微震 CSV
-预置）、user_upload（用户上传）。未 seed 的预置卡在列表中保持可见但能力
-全 false，工作台返回类型化 PRESET_NOT_INITIALIZED；任何响应都不得泄漏
-本机绝对路径。
+三类身份：builtin_legacy（v0.3.1 既有内置卡；v0.8.0 Task 6 起电阻率卡退役，
+只剩 gas 等剩余卡）、builtin_preset（微震 CSV 预置 + 电阻率散点预置）、
+user_upload（用户上传）。未 seed 的预置卡在列表中保持可见但能力全 false，
+工作台返回类型化 PRESET_NOT_INITIALIZED；任何响应都不得泄漏本机绝对路径。
 """
 
 from __future__ import annotations
@@ -72,9 +72,14 @@ def test_case_cards_expose_workspace_kind_capabilities_primary_dataset_and_offic
     seeded_client,
 ):
     cards = _cards(seeded_client)
-    assert cards["resistivity"]["workspace_kind"] == "builtin_legacy"
-    assert cards["resistivity"]["capabilities"]["native_volume"] is True
-    assert cards["resistivity"]["capabilities"]["experiments"] is False
+    # v0.8.0 Task 6：legacy 电阻率卡退役；未 seed 的电阻率出预置描述卡
+    # （本夹具只 seed 微震预置；电阻率 seed 卡合同见 test_resistivity_preset_seed）
+    rho = cards["resistivity"]
+    assert rho["workspace_kind"] == "builtin_preset"
+    assert rho["source_kind"] == "builtin_preset"
+    assert rho["status"] == "initialization_required"
+    assert rho["capabilities"]["experiments"] is False
+    assert rho["capabilities"]["native_volume"] is False
 
     preset = cards[PRESET_CASE_ID]
     assert preset["workspace_kind"] == "builtin_preset"
@@ -142,13 +147,31 @@ def test_upload_case_maps_user_upload_with_capabilities(seeded_client):
     assert response.json()["workspace_kind"] == "user_upload"
 
 
-def test_legacy_resistivity_workspace_resolves_as_builtin_legacy(seeded_client):
+def test_legacy_resistivity_workspace_is_retired_not_builtin_legacy(seeded_client):
+    """v0.8.0 Task 6：legacy 电阻率工作台退役。
+
+    本夹具只 seed 微震，电阻率未 seed → 微震同款 PRESET_NOT_INITIALIZED（409），
+    绝不落回 builtin_legacy 卡字段。
+    """
+
     response = seeded_client.get("/api/cases/resistivity/workspace")
-    assert response.status_code == 200, response.text
-    body = response.json()
-    assert body["workspace_kind"] == "builtin_legacy"
-    assert body["capabilities"]["native_volume"] is True
-    assert body["capabilities"]["experiments"] is False
+    assert response.status_code == 409, response.text
+    assert response.json()["error"]["code"] == "PRESET_NOT_INITIALIZED"
+
+
+def test_no_runtime_state_produces_legacy_resistivity_card(fresh_client, seeded_client):
+    """任何运行库状态下都没有 builtin_legacy 电阻率卡；描述卡无 S3M 字样。"""
+
+    for client in (fresh_client, seeded_client):
+        cards = _cards(client)
+        rho_cards = [card for card in cards.values() if card["case_id"] == "resistivity"]
+        assert len(rho_cards) == 1, "resistivity 卡必须唯一"
+        card = rho_cards[0]
+        assert card["source_kind"] == "builtin_preset"
+        assert card["workspace_kind"] == "builtin_preset"
+        serialized = json.dumps(card, ensure_ascii=False)
+        assert "S3M" not in serialized
+        assert ":\\" not in serialized
 
 
 # ---------------------------------------------------------------------------

@@ -9,9 +9,9 @@
   failed/interrupted 行无 ``retry_failed=true`` 时以 409 返回持久化失败。
 - 文件端点只服务 ready 行：containment 校验 + 当前文件哈希核验，不符
   ``RENDER_ASSET_CORRUPT``（JSON 错误体，绝不下发字节）；非法资产 ID 400。
-- legacy capability GET 纯只读：已登记网格派生 display_transform；未登记但
-  测点 CSV 可读则派生同形 transform（iframe 点云模式）；都不可读
-  ``display_transform=null``。legacy POST 只解析已登记源，绝不重跑 Kriging。
+- v0.8.0 Task 6：legacy 电阻率渲染产品入口（capability/资产 POST/状态 GET/
+  产品内导入 POST）类型化退役，一律 410 ``LEGACY_RESISTIVITY_RETIRED``；
+  已登记的历史 ``builtin_legacy`` 资产仍经不可变资产文件路由只读下发。
 - 所有错误体为 ``{"error":{"code","message","details"}}``，任何响应不含本机
   绝对路径（``asset_dir`` 绝不外发）。
 """
@@ -36,9 +36,13 @@ from geomodeling.api.deps import (
 )
 from geomodeling.platform import tables
 from geomodeling.platform.errors import PlatformError
-from geomodeling.platform.legacy_render_sources import import_legacy_grid
+from geomodeling.platform.legacy_render_sources import (
+    import_legacy_grid,
+    resolve_legacy_render_source,
+)
 from geomodeling.platform.render_assets import resolve_candidate_render_source
 from geomodeling.platform.repositories import RenderAssetRepository
+from geomodeling.platform.schemas import STATUS_READY
 from test_api import FakeIServer, LIVE_RESPONSES, make_config
 from test_platform_results import prepare_completed_run
 from test_public_dto import assert_no_path_leak
@@ -453,123 +457,90 @@ def test_hash_mismatch_returns_corrupt_json_not_bytes(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# legacy 内置电阻率案例
+# v0.8.0 Task 6：legacy 内置电阻率渲染入口类型化退役
+#
+# 四个产品路由（capability / 资产 POST / 资产状态 GET / 产品内导入 POST）一律
+# 410 LEGACY_RESISTIVITY_RETIRED，绝不返回旧 S3M 数值；``builtin_legacy`` 来源
+# 只有 resistivity 一个实例，退役即全部 410。LEGACY_SOURCE_KIND 通用登记/解析
+# 机制保留（render_cli、demo_check、历史资产文件路由不受影响）。
 # ---------------------------------------------------------------------------
 
+RETIRED_LEGACY_RENDER_ROUTES = (
+    ("GET", "/api/cases/resistivity/render-capability"),
+    ("POST", "/api/cases/resistivity/render-assets/netcdf"),
+    ("GET", "/api/cases/resistivity/render-assets/netcdf"),
+    ("POST", "/api/cases/resistivity/render-sources/import"),
+)
 
-def test_legacy_capability_unregistered_and_points_csv_unreadable(tmp_path, monkeypatch):
-    config = make_config(standardized=(tmp_path / "missing.csv").resolve())
-    app = make_app(tmp_path, monkeypatch, config=config)
+
+def _hit(client, method: str, path: str):
+    # 退役判定先于一切请求体/表单解析：裸 POST 也必须 410
+    return client.get(path) if method == "GET" else client.post(path)
+
+
+def test_legacy_render_routes_retired_when_unregistered(tmp_path, monkeypatch):
+    app = make_app(tmp_path, monkeypatch)
     with TestClient(app) as client:
-        resp = client.get("/api/cases/resistivity/render-capability")
-        assert resp.status_code == 200, resp.text
-        capability = resp.json()
-        assert capability["source_kind"] == "builtin_legacy"
-        assert capability["source_id"] == "resistivity"
-        assert capability["supported"] is False
-        assert capability["reason_code"] == "LEGACY_RENDER_SOURCE_NOT_REGISTERED"
-        assert capability["display_transform"] is None
-        assert capability["render_profile"] is None
-        assert capability["property_name"] is None
-        assert capability["geolocation_status"] == "display_anchor_only"
-        assert_no_path_leak(capability, "$.legacy_capability")
+        for method, path in RETIRED_LEGACY_RENDER_ROUTES:
+            _assert_retired(_hit(client, method, path))
 
 
-def test_legacy_capability_unregistered_derives_transform_from_points(tmp_path, monkeypatch):
-    points_csv = tmp_path / "points.csv"
-    points_csv.write_text(
-        "X,Y,Z,RHO\n0,0,0,1\n10,0,0,2\n0,20,-5,3\n10,20,-5,4\n", encoding="utf-8"
-    )
-    config = make_config(standardized=points_csv)
-    app = make_app(tmp_path, monkeypatch, config=config)
-    with TestClient(app) as client:
-        resp = client.get("/api/cases/resistivity/render-capability")
-        assert resp.status_code == 200, resp.text
-        capability = resp.json()
-        assert capability["supported"] is False
-        assert capability["reason_code"] == "LEGACY_RENDER_SOURCE_NOT_REGISTERED"
-        # 测点 CSV 可读：同形 transform 供 iframe 点云模式（display_anchor_only）
-        transform = capability["display_transform"]
-        assert transform is not None
-        assert transform["contract"] == "wgs84_display_anchor_v1"
-        assert transform["origin_x"] == pytest.approx(5.0)
-        assert transform["origin_y"] == pytest.approx(10.0)
-        assert capability["geolocation_status"] == "display_anchor_only"
-        assert_no_path_leak(capability, "$.legacy_capability_points")
+def test_legacy_render_routes_retired_even_when_grid_registered(tmp_path, monkeypatch):
+    """已登记旧网格同样 410：产品解析入口退役，绝不翻回旧 S3M 渲染链。"""
 
-
-def test_legacy_capability_registered_grid_supported(tmp_path, monkeypatch):
     app = make_app(tmp_path, monkeypatch)
     with TestClient(app) as client:
         runtime = app.state.platform_runtime
         register_legacy_grid(runtime)
-
-        resp = client.get("/api/cases/resistivity/render-capability")
-        assert resp.status_code == 200, resp.text
-        capability = resp.json()
-        assert capability["supported"] is True
-        assert capability["reason_code"] is None
-        assert capability["dimension"] == "3d"
-        assert capability["grid_kind"] == "regular"
-        assert capability["property_name"] == "RHO"
-        assert capability["units"] == "unknown"
-        # v0.7.0 第二批：legacy 默认 log/native-spectrum；本夹具最小值为 0
-        # → log_available=False 降级 linear（不丢弃/不平移原始值）
-        profile = capability["render_profile"]
-        assert profile is not None
-        assert profile["default_scale"] == "linear"
-        assert profile["default_palette"] == "native-spectrum"
-        assert profile["log_available"] is False
-        assert profile["value_range"][0] == 0.0
-        assert profile["property_name"] == "RHO"
-        assert profile["unit"] == "unknown"
-        transform = capability["display_transform"]
-        # 灯具网格轴 X=[0,20,40]、Y=[0,20,40,60] → 原点即中心
-        assert transform["origin_x"] == pytest.approx(20.0)
-        assert transform["origin_y"] == pytest.approx(30.0)
-        assert_no_path_leak(capability, "$.legacy_capability_registered")
+        for method, path in RETIRED_LEGACY_RENDER_ROUTES:
+            _assert_retired(_hit(client, method, path))
 
 
-def test_legacy_post_unregistered_404_and_status_absent(tmp_path, monkeypatch):
-    app = make_app(tmp_path, monkeypatch)
-    with TestClient(app) as client:
-        resp = client.post("/api/cases/resistivity/render-assets/netcdf")
-        assert_envelope(resp, 404, "LEGACY_RENDER_SOURCE_NOT_REGISTERED")
-        resp = client.get("/api/cases/resistivity/render-assets/netcdf")
-        assert_envelope(resp, 404, "RENDER_ASSET_NOT_FOUND")
+def _assert_retired(resp) -> None:
+    body = assert_envelope(resp, 410, "LEGACY_RESISTIVITY_RETIRED")
+    serialized = json.dumps(body, ensure_ascii=False)
+    assert "asset_dir" not in serialized
 
 
-def test_legacy_post_registered_201_then_200_never_materializes(tmp_path, monkeypatch):
+def test_historical_legacy_render_asset_files_still_served(tmp_path, monkeypatch):
+    """历史 builtin_legacy 资产经不可变资产文件路由只读保留。
+
+    产品注册/解析入口退役不影响已登记资产记录的读取：资产经服务层创建
+    （与旧 POST 同一 ``create_render_asset``），manifest/volume.nc 照常下发。
+    """
+
     app = make_app(tmp_path, monkeypatch)
     with TestClient(app) as client:
         runtime = app.state.platform_runtime
         register_legacy_grid(runtime)
-        calls = bomb_materialize(monkeypatch)
+        source = resolve_legacy_render_source(runtime, "resistivity")
+        record, created = render_assets.create_render_asset(runtime, source, retry_failed=False)
+        assert created is True
+        assert record.status == STATUS_READY
+        assert record.source_kind == "builtin_legacy"
 
-        resp = client.post("/api/cases/resistivity/render-assets/netcdf")
-        assert resp.status_code == 201, resp.text
-        record = resp.json()
-        assert record["source_kind"] == "builtin_legacy"
-        assert record["source_id"] == "resistivity"
-        assert record["status"] == "ready"
-        assert calls == []  # legacy POST 只解析已登记源，绝不重跑 Kriging/物化
-
-        status = client.get("/api/cases/resistivity/render-assets/netcdf")
-        assert status.status_code == 200, status.text
-        assert status.json() == record
-
-        again = client.post("/api/cases/resistivity/render-assets/netcdf")
-        assert again.status_code == 200, again.text
-        assert again.json()["id"] == record["id"]
-
-        # legacy 资产同样经不可变文件端点下发
-        volume = client.get(f"/api/render-assets/{record['id']}/volume.nc")
+        volume = client.get(f"/api/render-assets/{record.id}/volume.nc")
         assert volume.status_code == 200, volume.text
         assert volume.content[:4] == b"CDF\x01"
+        manifest = client.get(f"/api/render-assets/{record.id}/manifest")
+        assert manifest.status_code == 200, manifest.text
+        assert manifest.json()["source_kind"] == "builtin_legacy"
+        assert manifest.json()["source_id"] == "resistivity"
+
+
+def test_retired_import_route_registers_nothing(tmp_path, monkeypatch):
+    """退役的产品内导入绝不登记新渲染源：render-sources 目录零残留。"""
+
+    app = make_app(tmp_path, monkeypatch)
+    with TestClient(app) as client:
+        runtime = app.state.platform_runtime
+        resp = post_import(client, LEGACY_GRID_FIXTURE.read_text(encoding="utf-8"))
+        _assert_retired(resp)
+        assert legacy_source_listing(runtime) == []
 
 
 # ---------------------------------------------------------------------------
-# legacy 渲染源产品内导入：POST /api/cases/resistivity/render-sources/import
+# legacy 渲染源产品内导入（已退役）：POST /api/cases/resistivity/render-sources/import
 # ---------------------------------------------------------------------------
 
 LEGACY_IMPORT_URL = "/api/cases/resistivity/render-sources/import"
@@ -582,13 +553,6 @@ IMPORT_FORM = {
     "property_name": "RHO",
     "units": "unknown",
 }
-
-# 与 fixture 网格不同（2×2×2、值域不同）的合法网格：覆盖保护测试专用
-OTHER_GRID_CSV = (
-    "X,Y,Z,RHO\n"
-    "0,0,0,1\n10,0,0,2\n0,10,0,3\n10,10,0,4\n"
-    "0,0,-5,5\n10,0,-5,6\n0,10,-5,7\n10,10,-5,8\n"
-)
 
 
 def post_import(client, csv_text: str, **form_overrides):
@@ -607,152 +571,26 @@ def legacy_source_listing(runtime) -> list[str]:
     return sorted(p.relative_to(root).as_posix() for p in root.rglob("*"))
 
 
-def test_legacy_import_registers_201_and_flips_capability(tmp_path, monkeypatch):
-    app = make_app(tmp_path, monkeypatch)
-    with TestClient(app) as client:
-        runtime = app.state.platform_runtime
-        before = client.get("/api/cases/resistivity/render-capability").json()
-        assert before["supported"] is False
-        assert before["reason_code"] == "LEGACY_RENDER_SOURCE_NOT_REGISTERED"
+def test_legacy_import_retired_410_regardless_of_payload(tmp_path, monkeypatch):
+    """退役后任何导入请求（完整表单/缺参/超限）一律 410，绝不读上传字节。"""
 
-        resp = post_import(client, LEGACY_GRID_FIXTURE.read_text(encoding="utf-8"))
-        assert resp.status_code == 201, resp.text
-        record = resp.json()
-        # 登记身份白名单：只有逻辑身份/相对工件目录/SHA，绝无绝对路径
-        assert set(record) == {
-            "source_kind",
-            "source_id",
-            "grid_sha256",
-            "property_name",
-            "units",
-            "shape",
-            "artifact_dir",
-            "import_source_sha256",
-        }
-        assert record["source_kind"] == "builtin_legacy"
-        assert record["source_id"] == "resistivity"
-        assert record["shape"] == [3, 4, 5]
-        assert record["artifact_dir"].startswith("builtin_legacy/resistivity/")
-        assert len(record["grid_sha256"]) == 64
-        assert len(record["import_source_sha256"]) == 64
-        assert_no_path_leak(record, "$.import")
-
-        # 登记后能力翻转为 supported，体渲染走既有资产流程
-        after = client.get("/api/cases/resistivity/render-capability").json()
-        assert after["supported"] is True
-        assert after["property_name"] == "RHO"
-
-        listing = legacy_source_listing(runtime)
-        assert "builtin_legacy/resistivity/current.json" in listing
-
-
-def test_legacy_import_idempotent_reimport_200_same_identity(tmp_path, monkeypatch):
     app = make_app(tmp_path, monkeypatch)
     with TestClient(app) as client:
         runtime = app.state.platform_runtime
         csv_text = LEGACY_GRID_FIXTURE.read_text(encoding="utf-8")
-
-        first = post_import(client, csv_text)
-        assert first.status_code == 201, first.text
-        current_json = (
-            runtime.settings.render_sources_dir / "builtin_legacy" / "resistivity" / "current.json"
-        )
-        mtime = current_json.stat().st_mtime_ns
-
-        second = post_import(client, csv_text)
-        assert second.status_code == 200, second.text
-        assert second.json() == first.json()  # 幂等：同身份返回既有登记
-        assert current_json.stat().st_mtime_ns == mtime  # 登记状态未改写
-
-
-def test_legacy_import_conflict_409_never_overwrites(tmp_path, monkeypatch):
-    app = make_app(tmp_path, monkeypatch)
-    with TestClient(app) as client:
-        runtime = app.state.platform_runtime
-        register_legacy_grid(runtime)
-
-        resp = post_import(client, OTHER_GRID_CSV)
-        assert_envelope(resp, 409, "LEGACY_RENDER_SOURCE_CONFLICT")
-        serialized = json.dumps(resp.json(), ensure_ascii=False)
-        assert str(tmp_path) not in serialized
-
-        # 既有登记原样保留：同网格重导入仍幂等 200
-        again = post_import(client, LEGACY_GRID_FIXTURE.read_text(encoding="utf-8"))
-        assert again.status_code == 200, again.text
-
-
-def test_legacy_import_validation_failures_422_and_zero_residue(tmp_path, monkeypatch):
-    app = make_app(tmp_path, monkeypatch)
-    with TestClient(app) as client:
-        runtime = app.state.platform_runtime
-        cases = [
-            # 缺一个笛卡尔格点（8 缺 1）
-            (
-                "X,Y,Z,RHO\n0,0,0,1\n10,0,0,2\n0,10,0,3\n10,10,0,4\n"
-                "0,0,-5,5\n10,0,-5,6\n0,10,-5,7\n",
-                {},
-                "LEGACY_IMPORT_GRID_INCOMPLETE",
-            ),
-            # 指定的坐标列不存在
-            ("X,Y,Z,RHO\n0,0,0,1\n", {"y_column": "LAT"}, "LEGACY_IMPORT_COLUMN_NOT_FOUND"),
-            # 重复坐标元组
-            ("X,Y,Z,RHO\n0,0,0,1\n0,0,0,2\n", {}, "LEGACY_IMPORT_DUPLICATE_COORDINATES"),
-            # 非有限坐标
-            ("X,Y,Z,RHO\n0,0,0,1\nNaN,0,0,2\n", {}, "LEGACY_IMPORT_COORDINATE_INVALID"),
-            # X 轴间距不等（0,10,30），不是规则轴
-            (
-                "X,Y,Z,RHO\n0,0,0,1\n10,0,0,2\n30,0,0,3\n0,10,0,4\n10,10,0,5\n30,10,0,6\n"
-                "0,0,-5,7\n10,0,-5,8\n30,0,-5,9\n0,10,-5,10\n10,10,-5,11\n30,10,-5,12\n",
-                {},
-                "LEGACY_IMPORT_AXIS_IRREGULAR",
-            ),
-            # 空文件
-            ("", {}, "LEGACY_IMPORT_PARSE_FAILED"),
-        ]
-        for csv_text, overrides, code in cases:
-            resp = post_import(client, csv_text, **overrides)
-            assert_envelope(resp, 422, code)
-            serialized = json.dumps(resp.json(), ensure_ascii=False)
-            assert str(tmp_path) not in serialized
-        # 零残留：全部失败后 render-sources 目录没有任何登记状态或工件
-        assert legacy_source_listing(runtime) == []
-
-
-def test_legacy_import_missing_parameters_keep_unified_envelope(tmp_path, monkeypatch):
-    app = make_app(tmp_path, monkeypatch)
-    with TestClient(app) as client:
-        runtime = app.state.platform_runtime
-        csv_bytes = LEGACY_GRID_FIXTURE.read_bytes()
-
-        # 缺文件
-        resp = client.post(LEGACY_IMPORT_URL, data=IMPORT_FORM)
-        assert_envelope(resp, 422, "LEGACY_IMPORT_REQUEST_INVALID")
-        # 缺列名参数
+        # 完整合法表单
+        _assert_retired(post_import(client, csv_text))
+        # 缺文件/缺参数同样 410（退役判定先于请求校验）
+        _assert_retired(client.post(LEGACY_IMPORT_URL, data=IMPORT_FORM))
         form = {key: value for key, value in IMPORT_FORM.items() if key != "z_column"}
-        resp = client.post(
-            LEGACY_IMPORT_URL,
-            files={"file": ("grid.csv", csv_bytes, "text/csv")},
-            data=form,
+        _assert_retired(
+            client.post(
+                LEGACY_IMPORT_URL,
+                files={"file": ("grid.csv", csv_text.encode("utf-8"), "text/csv")},
+                data=form,
+            )
         )
-        assert_envelope(resp, 422, "LEGACY_IMPORT_REQUEST_INVALID")
-        # 空白属性名
-        resp = post_import(
-            client, LEGACY_GRID_FIXTURE.read_text(encoding="utf-8"), property_name="  "
-        )
-        assert_envelope(resp, 422, "LEGACY_IMPORT_REQUEST_INVALID")
-        assert legacy_source_listing(runtime) == []
-
-
-def test_legacy_import_oversized_upload_413(tmp_path, monkeypatch):
-    app = make_app(tmp_path, monkeypatch)
-    monkeypatch.setattr(
-        "geomodeling.api.routes.rendering.MAX_LEGACY_IMPORT_BYTES", 1024
-    )
-    with TestClient(app) as client:
-        runtime = app.state.platform_runtime
-        big_csv = "X,Y,Z,RHO\n" + "0,0,0,1\n" * 200  # 远超 1024 字节
-        resp = post_import(client, big_csv)
-        assert_envelope(resp, 413, "LEGACY_IMPORT_UPLOAD_TOO_LARGE")
+        # 全部拒绝后零登记残留
         assert legacy_source_listing(runtime) == []
 
 
@@ -780,10 +618,11 @@ def test_rendering_routes_registered_without_shadowing(tmp_path, monkeypatch):
         assert legacy.status_code == 200, legacy.text
         assert legacy.json()["case_id"] == "resistivity"
         assert "/api/cases/{case_id}/microseismic-imports" not in paths
-        # 渲染 capability 命中渲染路由而非动态案例路由
+        # v0.8.0 Task 6：legacy 渲染路由仍注册但已类型化退役（410），
+        # 命中退役路由而非动态案例路由
         capability = client.get("/api/cases/resistivity/render-capability")
-        assert capability.status_code == 200, capability.text
-        assert capability.json()["source_kind"] == "builtin_legacy"
+        assert capability.status_code == 410, capability.text
+        assert capability.json()["error"]["code"] == "LEGACY_RESISTIVITY_RETIRED"
 
 
 def test_error_bodies_share_envelope_and_hide_local_paths(tmp_path, monkeypatch):
@@ -795,7 +634,7 @@ def test_error_bodies_share_envelope_and_hide_local_paths(tmp_path, monkeypatch)
             client.get(f"/api/results/{candidate_id}/render-assets/netcdf"),  # 404
             client.get("/api/render-assets/bogus/manifest"),  # 400
             client.get(f"/api/render-assets/{'nc-' + '0' * 32}/volume.nc"),  # 404
-            client.post("/api/cases/resistivity/render-assets/netcdf"),  # 404
+            client.post("/api/cases/resistivity/render-assets/netcdf"),  # 410 退役
             client.get("/api/results/no-such-result/render-capability"),  # 404
         ]
         for resp in responses:

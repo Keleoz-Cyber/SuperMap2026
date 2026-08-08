@@ -618,15 +618,103 @@ def test_seeded_resistivity_appears_once_as_builtin_preset_card(seeded_client):
     assert provenance["badge"] == "散点预置 · 官方普通克里金成果"
 
 
-def test_unseeded_runtime_keeps_legacy_resistivity_card(fresh_client):
-    """未 seed 运行库保持 Task 6 前现状：只有 builtin_legacy 电阻率卡。"""
+def test_unseeded_runtime_shows_resistivity_preset_descriptor_card(fresh_client):
+    """v0.8.0 Task 6：legacy 电阻率卡退役；未 seed 运行库改出预置描述卡。
+
+    描述卡可见但能力全 false（同微震预置描述符模式）；provenance 取入库
+    基线事实（模块常量：行数/字段/坐标类型/单位待确认），绝无绝对路径与
+    S3M 字样，绝不读外部文件。
+    """
 
     cards = _cards(fresh_client)
     card = cards["resistivity"]
-    assert card["workspace_kind"] == "builtin_legacy"
-    assert card["capabilities"]["native_volume"] is True
-    assert card["capabilities"]["experiments"] is False
+    assert card["workspace_kind"] == "builtin_preset"
+    assert card["source_kind"] == "builtin_preset"
+    assert card["status"] == "initialization_required"
+    assert card["capabilities"] == {
+        "data_summary": False,
+        "experiments": False,
+        "official_result": False,
+        "native_volume": False,
+    }
     assert card["official_result"] is None
+    assert card["primary_dataset"] is None
+    provenance = card["provenance_summary"]
+    assert provenance["preset_version"] == PRESET_VERSION
+    assert provenance["data_form"] == "标准化散点 · 17,549 个节点"
+    assert provenance["fields"] == ["X", "Y", "Z", "RHO"]
+    assert provenance["coordinate_kind"] == "local_linear"
+    assert provenance["value_unit"] == "RHO 单位待来源确认"
+    serialized = json.dumps(card, ensure_ascii=False)
+    assert "S3M" not in serialized
+    assert ":\\" not in serialized
+
+
+def test_resistivity_workspace_is_builtin_preset(seeded_client):
+    """计划 Task 6 Step 1：已 seed 运行库返回统一 builtin_preset 工作台 DTO。"""
+
+    response = seeded_client.get("/api/cases/resistivity/workspace")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["workspace_kind"] == "builtin_preset"
+    assert body["source_kind"] == "builtin_preset"
+    assert body["data_preparation"]["state"] == "validated"
+    assert body["capabilities"] == {
+        "data_summary": True,
+        "experiments": True,
+        "official_result": True,
+        "native_volume": True,
+    }
+    assert body["primary_dataset"]["status"] == "validated"
+    assert body["primary_dataset"]["profile"]["mapping"]["value"] == "RHO"
+    assert body["official_result"]["materialized"] is True
+    assert body["official_result"]["url"].startswith("/results/")
+    # provenance 键由 Task 2 seed 写入 config_json
+    provenance = body["provenance_summary"]
+    assert provenance["preset_version"] == PRESET_VERSION
+    assert provenance["data_form"] == "三维 X/Y/Z/RHO（局部工程坐标）"
+    assert provenance["value_unit"] == "RHO 单位待来源确认"
+    assert provenance["coordinate_kind"] == "local_linear"
+    assert provenance["badge"] == "散点预置 · 官方普通克里金成果"
+    # 不再落回 legacy 卡字段
+    assert "v03_stage" not in body
+    assert "unit_note" not in body
+    assert "source_path" not in response.text
+
+
+def test_unseeded_resistivity_workspace_returns_preset_not_initialized(fresh_client):
+    """未 seed 运行库：微震同款"预置未初始化"语义，不再返回 legacy 工作台。"""
+
+    response = fresh_client.get("/api/cases/resistivity/workspace")
+    assert response.status_code == 409, response.text
+    assert response.json()["error"]["code"] == "PRESET_NOT_INITIALIZED"
+
+
+def test_old_legacy_render_source_is_retired(seeded_client):
+    """计划 Task 6 Step 1：旧体元入口 410 + 类型化错误码，绝不返回旧 S3M 数值。"""
+
+    response = seeded_client.get("/api/cases/resistivity/voxel-cells")
+    assert response.status_code == 410, response.text
+    body = response.json()
+    assert body["error"]["code"] == "LEGACY_RESISTIVITY_RETIRED"
+    assert "cells" not in body  # 绝不下发旧 S3M 体元数值
+
+
+def test_legacy_render_routes_retired_regardless_of_seed_state(seeded_client, fresh_client):
+    """旧 legacy 渲染源解析/注册入口全部退役（与 seed 状态无关）。"""
+
+    retired = (
+        ("GET", "/api/cases/resistivity/render-capability"),
+        ("POST", "/api/cases/resistivity/render-assets/netcdf"),
+        ("GET", "/api/cases/resistivity/render-assets/netcdf"),
+        ("POST", "/api/cases/resistivity/render-sources/import"),
+        ("GET", "/api/cases/resistivity/voxel-cells"),
+    )
+    for client in (seeded_client, fresh_client):
+        for method, path in retired:
+            resp = client.get(path) if method == "GET" else client.post(path)
+            assert resp.status_code == 410, f"{method} {path} -> {resp.status_code}"
+            assert resp.json()["error"]["code"] == "LEGACY_RESISTIVITY_RETIRED"
 
 
 def test_read_only_preset_rejects_user_formal_selection(seeded_client):
