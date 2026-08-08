@@ -251,7 +251,7 @@ test.describe('v0.8.0：电阻率散点预置 + DSI-like 真实 SDK live 门', (
       expect(resp.status(), `${method} ${p} 必须 410`).toBe(410)
       const body = await resp.json()
       expect(body.error?.code).toBe('LEGACY_RESISTIVITY_RETIRED')
-      retiredChecks[`${method} ${p}`] = resp.status
+      retiredChecks[`${method} ${p}`] = resp.status()
     }
     record.retirement = { code: 'LEGACY_RESISTIVITY_RETIRED', checks: retiredChecks }
 

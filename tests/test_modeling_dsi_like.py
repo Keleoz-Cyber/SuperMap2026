@@ -403,14 +403,31 @@ def test_diagnostics_are_bounded_and_complete(fitted_main):
     assert batch.auxiliary == {}
 
 
-def test_max_iterations_without_convergence_is_not_failure(fitted_main):
-    coords, values, axes, _fitted = fitted_main
+def test_max_iterations_without_convergence_fails_closed(fitted_main):
+    """达 max_iterations 仍未收敛 = 类型化失败（fail-closed，绝不物化）。
+
+    审查语义变更：旧口径「未收敛不是失败」作废——收敛门与覆盖率门同级，
+    未过收敛门的候选一律 failed。
+    """
+
+    coords, values, _axes, _fitted = fitted_main
     params = DSIParameters(convergence_tolerance=1e-300, max_iterations=25)
-    fitted = DSILikeInterpolator().fit(coords, values, params)
-    query = interior_midpoints(axes)
-    batch = fitted.predict(query, cancel=lambda: False)
-    # 有界工程近似：达 max_iterations 未收敛仍是成功候选，仅 converged=False
-    assert batch.diagnostics["converged"] is False
-    assert batch.diagnostics["iterations"] == 25
-    assert not batch.is_nodata.any()
-    assert np.isfinite(batch.values).all()
+    with pytest.raises(PlatformError) as exc:
+        DSILikeInterpolator().fit(coords, values, params)
+    assert exc.value.code == "DSI_LIKE_NOT_CONVERGED"
+    assert exc.value.details["iterations"] == 25
+    assert exc.value.details["max_delta"] >= 1e-300
+
+
+def test_default_parameters_converge_within_max_iterations(fitted_main):
+    """收敛真实化：稀疏 Krylov 求解在默认 25 次内达到 max_delta < 1e-4。
+
+    纯 Jacobi 在该夹具网格（98,304 节点）上 25 次迭代 max_delta≈6e-3、
+    50 次仍不收敛；稀疏求解必须在默认预算内真实收敛。
+    """
+
+    _coords, _values, _axes, fitted = fitted_main
+    diagnostics = fitted.diagnostics
+    assert diagnostics["converged"] is True
+    assert 1 <= diagnostics["iterations"] <= 25
+    assert diagnostics["max_delta"] < 1e-4

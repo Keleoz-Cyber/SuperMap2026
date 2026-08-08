@@ -3,7 +3,7 @@
   "preset_version": "resistivity-rho-17549/v1",
   "source_sha256": "04c5914d992f397f7dcec3b0d1a6069a9ddeb4a214e5c7de121f37c861cec167",
   "standardized_rows": 17549,
-  "candidate_report_sha256": "934633419cd0f6af9d68dd674166ca493efa4ebbe6db2565e055cd5216f938f5",
+  "candidate_report_sha256": "00aebfd785abd791f16261de1c4aa711c4db0dfd09aebe795f9d0a062d5cab71",
   "validation": {
     "folds": 5,
     "method": "spatial_kfold",

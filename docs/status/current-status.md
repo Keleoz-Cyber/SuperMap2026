@@ -15,7 +15,7 @@
 - **v0.8.0 电阻率散点迁移与 DSI-like（`feat/v0.8.0-resistivity-dsi-like` 分支，发布候选）**：
   - 电阻率从只读 `builtin_legacy` 迁移为统一 `builtin_preset` 散点预置（案例 ID `resistivity` 不变）：外部标准化 CSV（17,549 行 `X,Y,Z,RHO`）绝不入库，运行时登记 SHA-256 指纹（`04c5914d…`）；`preset_cli seed-resistivity` 唯一生产入口，合同校验 fail-closed；预置数据版本只读，官方正式选择用户不可改写。
   - 官方基线冻结 `config/presets/resistivity-official-baseline.json`：winner `ordinary_kriging` exponential/neighbor=24（RMSE=6.454476、MAE=3.251899、R²=0.923093、Bias=-0.095026，公共有效集 17,547；生产 `spatial_kfold` 5 折 seed=20260723），网格 7×23×42 @20 m；IDW 与 DSI-like 候选只追溯不参与官方选择；遗留训练/验证分区（15,827/1,722 行、264/29 柱、零重叠）作为源溯源事实写入 profile。
-  - 新算法 **DSI-like 离散平滑插值**：IDW 初始场 + 规则网格邻域加权 Jacobi 平滑 + 观测点硬约束的工程近似（参数 `init_power/neighbor_connectivity/smoothing_strength/max_iterations`，收敛容差 1e-4）；**不等同 GOCAD DSI**，页面如实展示免责声明；失败语义类型化，绝不回退为“看起来成功”的 IDW/点云。
+  - 新算法 **DSI-like 离散平滑插值**：IDW 初始场 + 稀疏图拉普拉斯邻域平滑趋势层 + 原始观测坐标的 IDW 残差精确化层（参数 `init_power/neighbor_connectivity/smoothing_strength/max_iterations`，收敛容差 1e-4）；硬约束门要求全部训练坐标复算误差 ≤1e-8，稀疏求解耗尽预算未收敛则候选失败且不可物化；**不等同 GOCAD DSI**，页面如实展示免责声明，绝不回退为“看起来成功”的 IDW/点云。
   - 三算法（IDW/普通 Kriging/DSI-like）统一 `CandidateResult → materialize → NetCDF → RenderAsset` 链；首页卡（“标准化散点 · 17,549 个节点” + 字段行 X/Y/Z/RHO）、案例工作台、参数编辑器、成果页五模式渲染全复用统一组件。
   - 旧 S3M/legacy 退役：五个 legacy 渲染端点 410 `LEGACY_RESISTIVITY_RETIRED`；旧 legacy 电阻率卡、旧三维工作台页（`RhoCaseView`）与其专用面板/客户端函数全部移除；旧资产只读保留待单独清理任务；未 seed 运行库出预置描述卡（能力全 false）。
   - 测试基线（Task 10 后实测，本分支）：后端便携 `1584 passed`、前端 vitest `287 passed`、Mock E2E `19 passed`、type-check/build 干净；真实 SDK live 门证据见 `docs/evidence/v0.8.0-resistivity-dsi-like/`。

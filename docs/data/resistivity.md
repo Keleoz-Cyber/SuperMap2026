@@ -57,16 +57,16 @@ profile 只登记计数与验证柱身份指纹（64 位 SHA-256），坐标清�
 | 公共有效集 | 17,547 |
 | 网格 | 7×23×42 = 6,762 单元，20 m 分辨率 |
 | 网格边界 | X [-160, -40]，Y [220, 660]，Z [-833.0047143, -19.5999]（局部工程坐标） |
-| 候选报告指纹 | `93463341…38f5`（完整值见基线文件） |
+| 候选报告指纹 | `00aebfd7…ab71`（完整值见基线文件） |
 
-选择规则：`rmse → mae → r2 → 规范化参数序`，官方 winner 限定在 ordinary_kriging 候选中选出（次优 `spherical/neighbor=24`，RMSE=6.483775）。最小官方候选矩阵（1 IDW + 4 普通克里金 + 2 DSI-like）全量保留于候选报告供追溯；IDW（RMSE=6.360991）与 DSI-like 候选**不参与官方选择**。
+选择规则：`rmse → mae → r2 → 规范化参数序`，官方 winner 限定在 ordinary_kriging 候选中选出（次优 `spherical/neighbor=24`，RMSE=6.483775）。最小官方候选矩阵（1 IDW + 4 普通克里金 + 2 DSI-like）全量保留于候选报告供追溯；IDW（RMSE=6.360991）与 DSI-like（6 邻接 RMSE=6.467770，26 邻接 RMSE=6.506906）候选**不参与官方选择**。
 
 ## 5. DSI-like 合同与免责声明
 
-产品名固定为“DSI-like 离散平滑插值”。它是基于 IDW 初始场和离散邻域平滑的 Python **工程近似**方法：对非观测节点按规则网格邻接关系做加权平滑，每轮重写观测点原值（硬约束始终开启），仅在观测点三维包围范围内更新，范围外保持 NoData；达到最大迭代或最大节点变化低于收敛容差即停止。
+产品名固定为“DSI-like 离散平滑插值”。它是基于 IDW 初始场和离散邻域平滑的 Python **工程近似**方法：规则网格趋势层由 SciPy LGMRES 求解稀疏图拉普拉斯系统，原始观测坐标再叠加 IDW 残差精确化层，因而硬约束针对原始散点而不是吸附后的最近网格节点；仅在观测点三维包围范围内更新，范围外保持 NoData。最大节点变化低于收敛容差才算成功，耗尽外迭代预算仍未收敛则类型化失败。
 
 - **免责声明**：DSI-like 不宣称等同 GOCAD DSI，也不宣称给出唯一真实地质结构；页面选项旁如实展示该说明。
-- 参数：`init_power`（默认 2.0）、`neighbor_connectivity`（默认 6）、`smoothing_strength`（默认 0.5）、`max_iterations`（默认 25）、`convergence_tolerance` 固定 1e-4、`hard_constraints` 固定 true；算法无随机种子，相同输入必须产生相同预测与网格字节。
+- 参数：`init_power`（默认 2.0）、`neighbor_connectivity`（默认 6）、`smoothing_strength`（默认 0.5，用于把离散方程残差换算为节点变化收敛门）、`max_iterations`（默认 25，稀疏求解外迭代预算）、`convergence_tolerance` 固定 1e-4、`hard_constraints` 固定 true；算法无随机种子，相同输入必须产生相同预测与网格字节。
 - 失败语义：非有限值、重复坐标、公共有效集为空、未过收敛/覆盖率门一律类型化失败，候选 `failed` 绝不物化；不可用时绝不回退为“看起来成功”的 IDW 或点云渲染。
 
 ## 6. NetCDF 身份链

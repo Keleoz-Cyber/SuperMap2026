@@ -122,6 +122,13 @@ def test_live_spec_has_source_skip_gate_isolation_and_render_gates():
     )
 
 
+def test_live_retirement_evidence_serializes_numeric_statuses():
+    text = _read(LIVE_SPEC)
+    assert "retiredChecks[`${method} ${p}`] = resp.status()" in text, (
+        "退役证据必须保存 HTTP 状态码数值；保存 status 函数会在 JSON 序列化时丢失"
+    )
+
+
 def test_legacy_volume_live_spec_is_retired():
     assert not RETIRED_LIVE_SPEC.exists(), (
         "旧 legacy 电阻率产品页门已随入口 410 退役删除，不得复活"
