@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import type { GridSpecPayload, ValidationSpecPayload } from '../../api/types'
+import type { Algorithm, GridSpecPayload, ValidationSpecPayload } from '../../api/types'
 import {
   combinationCount,
   parseNumberList,
@@ -10,7 +10,7 @@ import {
 } from './searchSpace'
 
 export interface ParameterSubmit {
-  algorithm: 'idw' | 'ordinary_kriging'
+  algorithm: Algorithm
   search_mode: 'manual' | 'grid'
   parameters: Record<string, unknown>
   validation: ValidationSpecPayload
@@ -21,7 +21,7 @@ const props = defineProps<{
   dimension: '2d' | '3d'
   submitting: boolean
   preset?: ExperimentPreset | null
-  algorithmLock?: 'idw' | 'ordinary_kriging' | null
+  algorithmLock?: Algorithm | null
   zScaleLock?: number | null
   datasetLocked?: boolean
 }>()
@@ -29,7 +29,7 @@ const emit = defineEmits<{
   (e: 'submit', payload: ParameterSubmit): void
 }>()
 
-const algorithm = ref<'idw' | 'ordinary_kriging'>('idw')
+const algorithm = ref<Algorithm>('idw')
 const searchMode = ref<'manual' | 'grid'>('manual')
 
 watch(
@@ -51,6 +51,42 @@ const krigingNugget = ref(0)
 const krigingSill = ref(1)
 const krigingRange = ref(100)
 const krigingNeighbors = ref(24)
+
+// ---------------------------------------------------------------------------
+// v0.8.0：DSI-like 离散平滑插值（工程近似，仅 3D，不等同 GOCAD DSI）。
+// 可选值与后端 DSIParameters 合同一致；convergence_tolerance 与
+// hard_constraints 是固定合同项，界面只读展示并随载荷原样提交。
+// 后端 ContractModel extra=forbid：dsi_like 不携带 z_scale 等额外字段。
+const DSI_INIT_POWER_OPTIONS = [1.5, 2, 3]
+const DSI_CONNECTIVITY_OPTIONS = [6, 18, 26]
+const DSI_SMOOTHING_OPTIONS = [0.25, 0.5, 0.75]
+const DSI_ITERATION_OPTIONS = [25, 50]
+const DSI_CONVERGENCE_TOLERANCE = 1e-4
+
+// DSI-like 手动参数
+const dsiInitPower = ref(2)
+const dsiConnectivity = ref(6)
+const dsiSmoothing = ref(0.5)
+const dsiIterations = ref(25)
+
+// DSI-like 网格候选（默认仅勾选合同默认值 → 1 组合）
+const dsiGridInitPower = ref<number[]>([2])
+const dsiGridConnectivity = ref<number[]>([6])
+const dsiGridSmoothing = ref<number[]>([0.5])
+const dsiGridIterations = ref<number[]>([25])
+
+// 切入 dsi_like 时回到合同默认值，避免上一次选择的参数静默残留
+watch(algorithm, (val) => {
+  if (val !== 'dsi_like') return
+  dsiInitPower.value = 2
+  dsiConnectivity.value = 6
+  dsiSmoothing.value = 0.5
+  dsiIterations.value = 25
+  dsiGridInitPower.value = [2]
+  dsiGridConnectivity.value = [6]
+  dsiGridSmoothing.value = [0.5]
+  dsiGridIterations.value = [25]
+})
 
 // 网格搜索离散候选（逗号分隔输入）
 const gridPower = ref(props.preset ? props.preset.idwGrid.power.join(', ') : '2')
@@ -93,6 +129,17 @@ const boundsText = ref<Array<{ min: number | null; max: number | null }>>([
 ])
 
 const gridParameters = computed<Record<string, unknown>>(() => {
+  if (algorithm.value === 'dsi_like') {
+    // 固定项以单元素列表随网格提交（后端 grid 合同要求全值为离散列表）
+    return {
+      init_power: dsiGridInitPower.value,
+      neighbor_connectivity: dsiGridConnectivity.value,
+      smoothing_strength: dsiGridSmoothing.value,
+      max_iterations: dsiGridIterations.value,
+      convergence_tolerance: [DSI_CONVERGENCE_TOLERANCE],
+      hard_constraints: [true],
+    }
+  }
   const zScalePart = props.preset ? { z_scale: parseNumberList(gridZScale.value) ?? [] } : {}
   if (algorithm.value === 'idw') {
     return {
@@ -146,6 +193,16 @@ const canSubmit = computed(
 
 function buildParameters(): Record<string, unknown> {
   if (searchMode.value === 'grid') return gridParameters.value
+  if (algorithm.value === 'dsi_like') {
+    return {
+      init_power: dsiInitPower.value,
+      neighbor_connectivity: dsiConnectivity.value,
+      smoothing_strength: dsiSmoothing.value,
+      max_iterations: dsiIterations.value,
+      convergence_tolerance: DSI_CONVERGENCE_TOLERANCE,
+      hard_constraints: true,
+    }
+  }
   const zScalePart = props.preset ? { z_scale: zScale.value } : {}
   if (algorithm.value === 'idw') {
     return { power: idwPower.value, neighbor_count: idwNeighbors.value, ...zScalePart }
@@ -211,6 +268,20 @@ const AXES = ['x', 'y', 'z'] as const
         />
         普通克里金
       </label>
+      <label class="radio">
+        <input
+          type="radio"
+          name="algo"
+          data-test="algo-dsi-like"
+          :checked="algorithm === 'dsi_like'"
+          :disabled="dimension !== '3d' || !!algorithmLock"
+          @change="algorithm = 'dsi_like'"
+        />
+        DSI-like 离散平滑插值
+      </label>
+      <span class="algo-note" data-test="dsi-like-note">
+        基于 IDW 初始场和离散邻域平滑的工程近似方法，不等同于 GOCAD DSI。
+      </span>
       <span v-if="algorithmLock" class="lock-hint" data-test="algorithm-lock">已锁定</span>
     </div>
 
@@ -253,7 +324,7 @@ const AXES = ['x', 'y', 'z'] as const
           <input v-model.number="zScale" type="number" step="0.1" min="0.1" max="20" class="gmp-input" data-test="z-scale-manual" :disabled="zScaleLock !== null && zScaleLock !== undefined" />
         </label>
       </div>
-      <div v-else class="editor-grid">
+      <div v-else-if="algorithm === 'ordinary_kriging'" class="editor-grid">
         <label class="field">
           <span>变异函数模型</span>
           <select v-model="krigingModel" class="gmp-select" data-test="kriging-model">
@@ -292,7 +363,41 @@ const AXES = ['x', 'y', 'z'] as const
           <input v-model.number="zScale" type="number" step="0.1" min="0.1" max="20" class="gmp-input" data-test="z-scale-manual" :disabled="zScaleLock !== null && zScaleLock !== undefined" />
         </label>
       </div>
-      <p v-if="preset" class="editor-hint" data-test="z-scale-hint">{{ zScaleHint }}</p>
+      <div v-else class="editor-grid">
+        <label class="field">
+          <span>IDW 初始场幂次 init_power</span>
+          <select v-model.number="dsiInitPower" class="gmp-select" data-test="dsi-init-power">
+            <option v-for="p in DSI_INIT_POWER_OPTIONS" :key="p" :value="p">{{ p.toFixed(1) }}</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>邻域连通性 neighbor_connectivity</span>
+          <select v-model.number="dsiConnectivity" class="gmp-select" data-test="dsi-connectivity">
+            <option v-for="c in DSI_CONNECTIVITY_OPTIONS" :key="c" :value="c">{{ c }}</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>平滑强度 smoothing_strength</span>
+          <select v-model.number="dsiSmoothing" class="gmp-select" data-test="dsi-smoothing">
+            <option v-for="s in DSI_SMOOTHING_OPTIONS" :key="s" :value="s">{{ s }}</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>最大迭代次数 max_iterations</span>
+          <select v-model.number="dsiIterations" class="gmp-select" data-test="dsi-iterations">
+            <option v-for="m in DSI_ITERATION_OPTIONS" :key="m" :value="m">{{ m }}</option>
+          </select>
+        </label>
+        <p class="field fixed-field" data-test="dsi-convergence-tolerance">
+          <span>收敛容差 convergence_tolerance</span>
+          <span class="fixed-value">固定 1e-4（只读）</span>
+        </p>
+        <p class="field fixed-field" data-test="dsi-hard-constraints">
+          <span>观测点硬约束 hard_constraints</span>
+          <span class="fixed-value">始终开启，不可关闭</span>
+        </p>
+      </div>
+      <p v-if="preset && algorithm !== 'dsi_like'" class="editor-hint" data-test="z-scale-hint">{{ zScaleHint }}</p>
       <p v-if="manualKrigingInvalid" class="editor-error" data-test="kriging-manual-invalid">
         手动变异函数要求 sill &gt; nugget ≥ 0 且 range &gt; 0
       </p>
@@ -316,7 +421,7 @@ const AXES = ['x', 'y', 'z'] as const
           <input v-model="gridZScale" class="gmp-input" data-test="grid-z-scale" placeholder="如：0.5, 1, 2" :disabled="zScaleLock !== null && zScaleLock !== undefined" />
         </label>
       </div>
-      <div v-else class="editor-grid">
+      <div v-else-if="algorithm === 'ordinary_kriging'" class="editor-grid">
         <div class="field wide">
           <span>变异函数模型候选</span>
           <label v-for="m in ['spherical', 'exponential', 'gaussian'] as const" :key="m" class="radio inline">
@@ -334,7 +439,40 @@ const AXES = ['x', 'y', 'z'] as const
         </label>
         <p class="editor-hint">网格搜索固定使用自动变异函数拟合（每折独立，防泄漏）。</p>
       </div>
-      <p v-if="preset" class="editor-hint" data-test="z-scale-hint">{{ zScaleHint }}</p>
+      <div v-else class="editor-grid">
+        <div class="field wide">
+          <span>init_power 候选</span>
+          <label v-for="p in DSI_INIT_POWER_OPTIONS" :key="p" class="radio inline">
+            <input v-model="dsiGridInitPower" type="checkbox" :value="p" :data-test="`grid-dsi-init-power-${p}`" />
+            {{ p.toFixed(1) }}
+          </label>
+        </div>
+        <div class="field wide">
+          <span>邻域连通性候选</span>
+          <label v-for="c in DSI_CONNECTIVITY_OPTIONS" :key="c" class="radio inline">
+            <input v-model="dsiGridConnectivity" type="checkbox" :value="c" :data-test="`grid-dsi-connectivity-${c}`" />
+            {{ c }}
+          </label>
+        </div>
+        <div class="field wide">
+          <span>平滑强度候选</span>
+          <label v-for="s in DSI_SMOOTHING_OPTIONS" :key="s" class="radio inline">
+            <input v-model="dsiGridSmoothing" type="checkbox" :value="s" :data-test="`grid-dsi-smoothing-${s}`" />
+            {{ s }}
+          </label>
+        </div>
+        <div class="field wide">
+          <span>最大迭代次数候选</span>
+          <label v-for="m in DSI_ITERATION_OPTIONS" :key="m" class="radio inline">
+            <input v-model="dsiGridIterations" type="checkbox" :value="m" :data-test="`grid-dsi-iterations-${m}`" />
+            {{ m }}
+          </label>
+        </div>
+        <p class="editor-hint">
+          网格搜索同样固定 convergence_tolerance = 1e-4 与 hard_constraints = 开启（每个组合一份）。
+        </p>
+      </div>
+      <p v-if="preset && algorithm !== 'dsi_like'" class="editor-hint" data-test="z-scale-hint">{{ zScaleHint }}</p>
 
       <div class="count-line" :class="countState" data-test="count-preview">
         预计 {{ candidateCount }} 个候选组合
@@ -543,5 +681,20 @@ const AXES = ['x', 'y', 'z'] as const
 .lock-hint {
   font-size: 12px;
   color: #e5c76b;
+}
+
+.algo-note {
+  flex-basis: 100%;
+  font-size: 12px;
+  color: var(--gmp-text-faint);
+}
+
+.fixed-field {
+  margin: 0;
+}
+
+.fixed-value {
+  font-size: 13px;
+  color: var(--gmp-text);
 }
 </style>

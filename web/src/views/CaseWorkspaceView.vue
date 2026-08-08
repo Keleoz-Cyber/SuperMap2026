@@ -15,6 +15,8 @@ const caseId = computed(() => String(route.params.caseId))
 const workspace = ref<CaseWorkspaceSummary | null>(null)
 const loadError = ref<string | null>(null)
 const notInitialized = ref(false)
+// PRESET_NOT_INITIALIZED 的后端消息（按案例区分：微震/电阻率），前端不硬编码案例文案
+const notInitializedMessage = ref('')
 const loading = ref(true)
 
 type DiagnosisLookupState =
@@ -133,6 +135,8 @@ function diagnosisHasDetail(datasetId: string): boolean {
 const ALGORITHM_LABELS: Record<string, string> = {
   idw: 'IDW',
   ordinary_kriging: '普通克里金',
+  // v0.8.0：DSI-like 离散平滑插值（工程近似，仅 3D，不等同 GOCAD DSI）
+  dsi_like: 'DSI-like 离散平滑插值',
 }
 
 function algorithmLabel(id: string): string {
@@ -166,6 +170,7 @@ async function loadWorkspace() {
   workspace.value = null
   loadError.value = null
   notInitialized.value = false
+  notInitializedMessage.value = ''
   diagnosisByDataset.value.clear()
   try {
     const result = await fetchCaseWorkspace(targetId)
@@ -176,6 +181,7 @@ async function loadWorkspace() {
     if (!isCurrent()) return
     if (exc instanceof ApiError && exc.code === 'PRESET_NOT_INITIALIZED') {
       notInitialized.value = true
+      notInitializedMessage.value = exc.message
     } else {
       loadError.value = exc instanceof Error ? exc.message : String(exc)
     }
@@ -197,8 +203,8 @@ watch(caseId, (next, prev) => {
       <PageNavigation current-label="案例工作台" />
       <el-result
         icon="warning"
-        title="微震预置案例尚未初始化"
-        sub-title="需由维护者执行文档化 seed 命令；初始化完成后官方普通克里金成果自动可用，无需任何用户操作。"
+        title="预置案例尚未初始化"
+        :sub-title="notInitializedMessage || '需由维护者执行文档化 seed 命令；初始化完成后官方普通克里金成果自动可用，无需任何用户操作。'"
         role="alert"
       >
         <template #extra>
@@ -283,8 +289,10 @@ watch(caseId, (next, prev) => {
           <p v-if="workspace.provenance_summary.badge" class="provenance-line">
             {{ workspace.provenance_summary.badge }}
           </p>
+          <!-- v0.8.0：builtin_preset 的 data_preparation 是固定 validated 摘要，
+               上传恢复面板仅对 user_upload 渲染；预置数据状态由上方数据版本行表达 -->
           <DataPreparationPanel
-            v-if="workspace.data_preparation"
+            v-if="workspace.data_preparation && workspace.workspace_kind === 'user_upload'"
             :preparation="workspace.data_preparation"
             :case-id="caseId"
           />
@@ -540,5 +548,25 @@ watch(caseId, (next, prev) => {
   font-size: 12px;
   color: #6b7785;
   text-decoration: line-through;
+}
+
+/* 窄屏（如 390x844）：收紧页边距并允许换行，避免横向溢出 */
+@media (max-width: 480px) {
+  .case-workspace-page {
+    padding: 12px 12px 32px;
+  }
+  .header-title h1 {
+    font-size: 17px;
+  }
+  .header-sub {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .workspace-section {
+    padding: 12px 14px;
+  }
+  .command-row {
+    flex-wrap: wrap;
+  }
 }
 </style>

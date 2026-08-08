@@ -15,8 +15,9 @@ export interface CaseSummary {
   coordinate?: string
   unit_note?: string
   v03_stage?: string
-  // v0.4：builtin_legacy（内置电阻率等）或 upload（持久化上传案例）
-  source_kind?: 'builtin_legacy' | 'upload'
+  // v0.4：builtin_legacy（旧内置只读）或 upload（持久化上传案例）；
+  // v0.8.0：预置案例（builtin_preset）也经统一卡片下发
+  source_kind?: 'builtin_legacy' | 'builtin_preset' | 'upload'
   case_type?: string
   created_at?: string
   // v0.6.1：上传案例卡的主打成果直达链接；无成果为 null，legacy 卡片不携带
@@ -68,7 +69,8 @@ export interface CaseWorkspaceSummary extends CaseSummary {
   official_result: FeaturedResultLink | null
   // 只含允许公开的来源说明、字段、坐标语义、单位和摘要指纹
   provenance_summary: Record<string, unknown>
-  // v0.7.0：服务端权威的数据准备恢复状态（user_upload 案例携带，其余为 null）
+  // v0.7.0：服务端权威的数据准备恢复状态；v0.8.0 起 builtin_preset 也携带
+  // 固定 state=validated 摘要（只读 seed 链无上传状态机），builtin_legacy 为 null
   data_preparation?: DataPreparationSummary | null
   // v0.7.0：已校验数据版本列表（user_upload 案例携带，其余为空）
   validated_datasets?: DatasetVersionRecord[]
@@ -468,10 +470,13 @@ export interface GridSpecPayload {
   max_cells?: number
 }
 
+// v0.8.0：dsi_like 离散平滑插值（工程近似，仅 3D，不等同 GOCAD DSI）
+export type Algorithm = 'idw' | 'ordinary_kriging' | 'dsi_like'
+
 export interface ExperimentCreatePayload {
   case_id: string
   name: string
-  algorithm: 'idw' | 'ordinary_kriging'
+  algorithm: Algorithm
   dataset_version_id: string
   search_mode: 'manual' | 'grid'
   parameters: Record<string, unknown>
@@ -1266,7 +1271,8 @@ export interface DataPreparationNextAction {
 }
 
 export interface DataPreparationSummary {
-  state: 'needs_upload' | 'needs_mapping' | 'needs_quality_review' | 'ready' | 'blocked'
+  // user_upload 为上传恢复状态机；v0.8.0 起 builtin_preset 固定报告 validated 摘要
+  state: 'needs_upload' | 'needs_mapping' | 'needs_quality_review' | 'ready' | 'blocked' | 'validated'
   dataset_id: string | null
   latest_validated_dataset_id: string | null
   next_action: DataPreparationNextAction
