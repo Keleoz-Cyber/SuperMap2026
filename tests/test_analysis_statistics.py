@@ -663,3 +663,49 @@ def test_spatial_anomaly_summary_is_bit_deterministic_and_finite():
     second = spatial_anomaly_summary(frame, MICROSEISMIC_MAPPING).model_dump_json()
     assert first == second
     _assert_json_finite(first)
+
+
+def test_spatial_anomaly_thresholds_use_cell_mean_quantiles_not_sample_quantiles():
+    """致密采样回归：样本值方差很大但单元均值平滑时，样本级阈值会把全部
+    单元判为 normal（真实电阻率实测高/低占比恒 0%）；区域口径必须基于
+    非空单元均值自身的 p75/p25，保证真实数据上区域可见且来源如实标注。
+    """
+
+    rows = []
+    # 4 个 XY 柱；每柱内部样本值剧烈交替 ±10（样本方差大），但柱均值聚拢
+    # 在 19–22：样本级 p75/p25（≈30.25/≈11.75）会把全部柱均值判为 normal，
+    # 正是真实电阻率 17,549 行实测高/低占比恒 0% 的病理形态。
+    for col, base in enumerate((19.0, 20.0, 21.0, 22.0)):
+        for layer in range(20):
+            rows.append((float(col), 0.0, float(layer), base + (10.0 if layer % 2 else -10.0), True))
+    frame = _standardized_frame(rows)
+    summary = spatial_anomaly_summary(frame, RESISTIVITY_MAPPING, grid_size=4)
+    assert summary.thresholds.source == "cell_mean_quantiles_p25_p75"
+    assert "单元均值" in summary.thresholds.method
+    assert "p75" in summary.thresholds.method
+    # 单元均值 19/20/21/22 → 最高柱为高值区域、最低柱为低值区域
+    by_x = sorted((item.x_lower, item.region) for item in summary.bins if item.count > 0)
+    assert len(by_x) == 4
+    assert by_x[0][1] == "low"
+    assert by_x[-1][1] == "high"
+    assert summary.high_cell_count >= 1
+    assert summary.low_cell_count >= 1
+    assert summary.high_volume_ratio is not None and summary.high_volume_ratio > 0
+    # 对照：样本级 p75/p25 会把这四个聚拢的柱均值全部判为 normal（旧行为）
+    sample_values = frame["value"].to_numpy(dtype="float64")
+    sample_q = anomaly_thresholds(sample_values[np.isfinite(sample_values)])
+    assert all(sample_q.low < mean < sample_q.high for mean in (19.0, 20.0, 21.0, 22.0))
+
+
+def test_spatial_anomaly_degenerate_cell_means_mark_all_normal():
+    """单元均值无方差（p75==p25）时不伪造高/低区域：全部非空单元 normal。"""
+
+    rows = [(float(i % 4), float(i // 4), 0.0, 7.0, True) for i in range(16)]
+    frame = _standardized_frame(rows)
+    summary = spatial_anomaly_summary(frame, RESISTIVITY_MAPPING, grid_size=4)
+    assert summary.high_cell_count == 0
+    assert summary.low_cell_count == 0
+    assert summary.high_volume_ratio == 0.0
+    assert summary.low_volume_ratio == 0.0
+    regions = {item.region for item in summary.bins}
+    assert regions == {"normal"}

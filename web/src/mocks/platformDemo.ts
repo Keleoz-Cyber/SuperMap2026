@@ -432,10 +432,11 @@ const ANALYSIS_METHOD = {
     '层样本数，低值占比=层内 value≤p25 样本数/层样本数（体积占比以样本计数' +
     '为口径）；空层为 null；阈值来源见 thresholds',
   spatialAnomaly:
-    'XY 平面 32×32 网格单元均值与有效值 p75/p25 分位阈值比较划分高/低值区域；' +
+    'XY 平面 32×32 网格单元均值与非空单元均值 p75/p25 分位阈值比较划分高/低值' +
+    '区域（致密采样下样本级阈值会被单元均值平滑掉，区域口径基于单元均值分布）；' +
     '体积占比=区域样本计数/有效样本总数（样本计数口径）；阈值来源见 thresholds',
-  thresholdSource: 'valid_value_quantiles_p25_p75',
-  thresholdMethod: '高值阈值=有效值 p75、低值阈值=有效值 p25',
+  thresholdSource: 'cell_mean_quantiles_p25_p75',
+  thresholdMethod: '高值阈值=非空网格单元均值 p75、低值阈值=非空网格单元均值 p25',
 }
 
 interface AnalysisHistBin {

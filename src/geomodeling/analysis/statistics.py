@@ -487,6 +487,15 @@ _ANOMALY_THRESHOLD_METHOD = (
     "阈值由数据分位数产生，非人工输入"
 )
 
+#: 空间异常（单元均值）阈值来源：非空网格单元均值的 p75/p25 分位数。
+#: 样本级阈值在致密采样下会被单元均值平滑掉（真实电阻率 17,549 行实测
+#: 高/低单元占比恒为 0%），空间区域口径必须以单元均值自身的分位数为阈。
+_CELL_ANOMALY_THRESHOLD_SOURCE = "cell_mean_quantiles_p25_p75"
+_CELL_ANOMALY_THRESHOLD_METHOD = (
+    "高值阈值=非空网格单元均值 p75、低值阈值=非空网格单元均值 p25（NumPy "
+    "线性插值分位数）；阈值由单元均值分位数产生，非人工输入"
+)
+
 
 def anomaly_thresholds(values: Values) -> AnomalyThresholds:
     """有效值 p75/p25 分位阈值（高/低值区域共用同一阈值机制）。
@@ -573,24 +582,43 @@ def depth_slice_ratios(
 def spatial_anomaly_summary(
     frame: pd.DataFrame, mapping: FrameMapping, grid_size: int = 32
 ) -> SpatialAnomalySummary:
-    """XY 网格高/低值区域聚合：单元均值与有效值 p75/p25 阈值比较分类。
+    """XY 网格高/低值区域聚合：单元均值与非空单元均值 p75/p25 阈值比较分类。
 
     区域口径：单元均值 ≥ 高值阈值 → ``high``，≤ 低值阈值 → ``low``，其余
-    非空单元 → ``normal``，空格 → ``empty``。体积占比 = 区域内样本计数 /
-    有效样本总数（样本计数口径）。网格与 ``aggregate_spatial`` 同一确定
-    性定义；阈值来源随 ``thresholds`` 出站。
+    非空单元 → ``normal``，空格 → ``empty``；单元均值无方差（p75==p25）
+    时全部非空单元为 ``normal``（无空间异常信号，不伪造区域）。体积占比
+    = 区域内样本计数 / 有效样本总数（样本计数口径）。网格与
+    ``aggregate_spatial`` 同一确定性定义；阈值以**非空单元均值**的分位
+    数产生（致密采样下样本级阈值会被单元均值平滑掉，区域口径必须基于
+    单元均值分布），来源随 ``thresholds`` 出站。
     """
 
     spatial = aggregate_spatial(frame, mapping, grid_size)
     valid_values = frame["value"].to_numpy(dtype="float64")[_finite_valid_mask(frame)]
-    thresholds = anomaly_thresholds(valid_values)
     total_points = int(valid_values.size)
+    if total_points == 0:
+        raise _empty_common_valid({"function": "spatial_anomaly_summary"})
+    cell_means = np.array(
+        [cell.mean for cell in spatial.bins if cell.count > 0 and cell.mean is not None],
+        dtype="float64",
+    )
+    if cell_means.size == 0:
+        raise _empty_common_valid({"function": "spatial_anomaly_summary", "grid_size": grid_size})
+    mean_quantiles = quantiles(cell_means)
+    assert mean_quantiles.p75 is not None and mean_quantiles.p25 is not None
+    thresholds = AnomalyThresholds(
+        high=float(mean_quantiles.p75),
+        low=float(mean_quantiles.p25),
+        source=_CELL_ANOMALY_THRESHOLD_SOURCE,
+        method=_CELL_ANOMALY_THRESHOLD_METHOD,
+    )
+    degenerate = thresholds.high == thresholds.low
 
     bins: list[SpatialAnomalyBin] = []
     non_empty = high_cells = low_cells = high_points = low_points = 0
     for cell in spatial.bins:
-        if cell.count == 0 or cell.mean is None:
-            region = "empty"
+        if cell.count == 0 or cell.mean is None or degenerate:
+            region = "empty" if cell.count == 0 or cell.mean is None else "normal"
         elif cell.mean >= thresholds.high:
             region = "high"
         elif cell.mean <= thresholds.low:

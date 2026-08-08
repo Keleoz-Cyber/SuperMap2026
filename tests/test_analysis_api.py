@@ -302,12 +302,15 @@ def test_resistivity_summary_returns_resistivity_profile(rho_client):
     assert len(depth["slices"]) == 16
     assert sum(slice_["count"] for slice_ in depth["slices"]) == 17_549
 
-    # spatial_anomaly：高/低阻区域聚合，与 depth_slices 同一分位阈值
+    # spatial_anomaly：高/低阻区域聚合；阈值以非空单元均值自身分位数产生
+    # （致密采样下样本级阈值会被单元均值平滑掉），与 depth_slices 的样本级
+    # 阈值是两个不同口径，各自来源字段如实标注
     anomaly = modules["spatial_anomaly"]["payload"]
     assert anomaly["method"]
-    assert anomaly["thresholds"]["source"]
-    assert anomaly["thresholds"]["high"] == depth["thresholds"]["high"]
-    assert anomaly["thresholds"]["low"] == depth["thresholds"]["low"]
+    assert anomaly["thresholds"]["source"] == "cell_mean_quantiles_p25_p75"
+    assert "单元均值" in anomaly["thresholds"]["method"]
+    assert depth["thresholds"]["source"] == "valid_value_quantiles_p25_p75"
+    assert anomaly["high_cell_count"] + anomaly["low_cell_count"] > 0
     assert {bin_["region"] for bin_ in anomaly["bins"]} <= {
         "high",
         "low",
