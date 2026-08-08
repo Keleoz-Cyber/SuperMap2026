@@ -252,7 +252,7 @@ const capabilityEntries = computed(() => {
       </section>
 
       <section v-if="baseline" class="baseline-section" data-test="baseline-metrics">
-        <h3>基线评估</h3>
+        <h2>基线评估</h2>
         <div class="metrics-grid">
           <span data-test="baseline-rmse">RMSE {{ fmtMetric(baseline.rmse) }}</span>
           <span data-test="baseline-mae">MAE {{ fmtMetric(baseline.mae) }}</span>

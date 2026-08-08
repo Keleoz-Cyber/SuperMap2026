@@ -367,9 +367,9 @@ watch(caseId, (next, prev) => {
               class="recent-row"
               :data-test="`recent-experiment-${exp.id}`"
             >
-              <el-link type="primary" :underline="false" @click="router.push(exp.url)">
+              <router-link :to="exp.url" class="recent-link" :data-test="`recent-experiment-${exp.id}`">
                 {{ exp.name }}
-              </el-link>
+              </router-link>
               <span class="recent-meta">
                 {{ algorithmLabel(exp.algorithm) }}
                 <template v-if="exp.latest_run_status"> · {{ exp.latest_run_status }}</template>
@@ -383,9 +383,9 @@ watch(caseId, (next, prev) => {
           <h2 class="section-title">成果</h2>
           <p v-if="workspace.official_result">
             {{ workspace.workspace_kind === 'builtin_preset' ? '官方成果' : '主打成果' }}：
-            <el-link type="primary" @click="openOfficialResult">
+            <router-link :to="workspace.official_result.url" class="recent-link">
               {{ workspace.official_result.url }}
-            </el-link>
+            </router-link>
             （{{ workspace.official_result.materialized ? '已物化' : '未物化' }}）
           </p>
           <p v-else-if="workspace.workspace_kind !== 'builtin_legacy'" data-test="results-empty">
@@ -398,9 +398,9 @@ watch(caseId, (next, prev) => {
               class="recent-row"
               :data-test="`recent-result-${res.result_id}`"
             >
-              <el-link type="primary" :underline="false" @click="router.push(res.url)">
+              <router-link :to="res.url" class="recent-link">
                 {{ algorithmLabel(res.algorithm) }} 成果
-              </el-link>
+              </router-link>
               <span class="recent-meta">
                 {{ res.materialized ? '已物化' : '未物化' }}
                 <template v-if="res.featured"> · 主打</template>
@@ -514,6 +514,13 @@ watch(caseId, (next, prev) => {
 .recent-meta {
   font-size: 12px;
   color: #7f8ca0;
+}
+.recent-link {
+  color: var(--el-color-primary);
+  text-decoration: none;
+}
+.recent-link:hover {
+  text-decoration: underline;
 }
 .abandoned-history {
   margin-top: 8px;

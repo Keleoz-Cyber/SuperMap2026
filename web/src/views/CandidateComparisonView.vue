@@ -340,7 +340,7 @@ watch(datasetId, (next, prev) => {
 
         <section v-if="comparison" class="result-section">
           <div class="result-header">
-            <h3>比较结果</h3>
+            <h2>比较结果</h2>
             <el-button
               v-if="showDeepCompare"
               size="small"
