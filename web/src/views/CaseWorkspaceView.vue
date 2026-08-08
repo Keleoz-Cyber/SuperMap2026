@@ -47,6 +47,11 @@ const canCreateExperiment = computed(
     workspace.value.capabilities.experiments &&
     workspace.value.primary_dataset !== null,
 )
+// v0.8.0 第二批：统计与空间分析中心入口仅对已验证数据版本开放；
+// 未验证版本不出现入口，改显类型化原因文案
+const canOpenAnalysisCenter = computed(
+  () => workspace.value?.primary_dataset?.status === 'validated',
+)
 const officialAbnormal = computed(
   () =>
     !!workspace.value &&
@@ -280,6 +285,17 @@ watch(caseId, (next, prev) => {
                 ，{{ mapping.value_unit }}</template
               >）
             </p>
+            <router-link
+              v-if="canOpenAnalysisCenter"
+              class="analysis-entry"
+              data-test="analysis-center-entry"
+              :to="`/datasets/${workspace.primary_dataset.id}/analysis`"
+            >
+              统计与空间分析
+            </router-link>
+            <p v-else class="analysis-unavailable" data-test="analysis-center-unavailable">
+              数据版本尚未通过验证：完成质量验证后，统计与空间分析才可用。
+            </p>
           </template>
           <p v-else>当前没有可查看的数据版本。</p>
           <p v-if="workspace.provenance_summary.badge" class="provenance-line">
@@ -469,6 +485,21 @@ watch(caseId, (next, prev) => {
 .provenance-line {
   color: #7f8ca0;
   font-size: 12px;
+}
+.analysis-entry {
+  display: inline-block;
+  margin-top: 6px;
+  color: var(--el-color-primary);
+  font-size: 13px;
+  text-decoration: none;
+}
+.analysis-entry:hover {
+  text-decoration: underline;
+}
+.analysis-unavailable {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: #7f8ca0;
 }
 .validated-datasets {
   margin-top: 10px;

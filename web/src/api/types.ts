@@ -1185,3 +1185,118 @@ export interface MultiCandidateComparison {
   ranking: string[] | null
   comparison_fingerprint: string
 }
+
+// ---------------------------------------------------------------------------
+// v0.8.0 第二批：统计与空间分析中心契约
+// （与 src/geomodeling/analysis/schemas.py 一一对应；统计字段 null 表示
+// 未计算/不可用，服务端在模型层拒绝 NaN/Inf，前端绝不以 0 或空值伪造语义）
+// ---------------------------------------------------------------------------
+
+export type AnalysisProfileId = 'microseismic_velocity' | 'resistivity' | 'gas_content' | 'generic_3d'
+
+// 模块状态判别联合：disabled/error 必须携带 message 说明，绝不返回空图表伪成功
+export type AnalysisModuleStatus = 'ok' | 'disabled' | 'error'
+
+export interface AnalysisVariable {
+  name: string
+  // 单位未确认时为 null，禁止伪造语义结论
+  unit: string | null
+}
+
+export interface QuantileSummary {
+  p05: number | null
+  p25: number | null
+  p50: number | null
+  p75: number | null
+  p95: number | null
+}
+
+export interface NumericSummary {
+  count: number | null
+  min: number | null
+  max: number | null
+  mean: number | null
+  median: number | null
+  std: number | null
+  quantiles: QuantileSummary | null
+}
+
+export interface HistogramBin {
+  lower: number
+  upper: number
+  count: number
+}
+
+export interface QualitySummary {
+  row_count: number | null
+  valid_count: number | null
+  invalid_count: number | null
+  duplicate_coordinate_count: number | null
+  // 键为坐标轴名（x/y/z），值为 (min, max)
+  bounds: Record<string, [number, number]> | null
+}
+
+export interface SpatialBin {
+  x_lower: number
+  x_upper: number
+  y_lower: number
+  y_upper: number
+  count: number
+  mean: number | null
+}
+
+export interface SpatialSummary {
+  grid_size: number
+  cell_count: number | null
+  bounds: Record<string, [number, number]> | null
+  bins: SpatialBin[]
+}
+
+export interface ProfileSliceBin {
+  lower: number
+  upper: number
+  count: number
+  mean: number | null
+  median: number | null
+}
+
+export interface ProfileSliceSummary {
+  axis: 'x' | 'y' | 'z'
+  bins: ProfileSliceBin[]
+}
+
+export interface AnalysisModuleResult {
+  module_id: string
+  status: AnalysisModuleStatus
+  payload: Record<string, unknown>
+  message: string | null
+}
+
+// 结果溯源：源哈希、数据版本、生成时间与计算管线版本
+export interface AnalysisProvenance {
+  source_sha256: string
+  dataset_version: number
+  generated_at: string
+  calculation_version: string
+}
+
+// GET /api/datasets/{id}/analysis-summary 响应骨架
+export interface AnalysisSummaryResponse {
+  dataset_id: string
+  case_id: string
+  analysis_profile: AnalysisProfileId
+  profile_version: number
+  variable: AnalysisVariable
+  quality: QualitySummary
+  statistics: NumericSummary | null
+  modules: AnalysisModuleResult[]
+  provenance: AnalysisProvenance
+}
+
+// GET /api/datasets/{id}/analysis-export?format=json|csv 的浏览器下载结果
+export type AnalysisExportFormat = 'json' | 'csv'
+
+export interface AnalysisExportDownload {
+  blob: Blob
+  filename: string
+}

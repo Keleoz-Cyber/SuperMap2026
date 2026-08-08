@@ -48,6 +48,12 @@ const router = createRouter({
       component: CandidateComparisonView,
     },
     {
+      // v0.8.0 第二批：统计与空间分析中心；面板链（ECharts）按需懒加载
+      path: '/datasets/:datasetId/analysis',
+      name: 'analysis-center',
+      component: () => import('../views/AnalysisCenterView.vue'),
+    },
+    {
       path: '/experiments/:experimentId',
       name: 'experiment-detail',
       component: ExperimentView,
