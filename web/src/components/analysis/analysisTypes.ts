@@ -192,3 +192,86 @@ export function comparisonCandidatesOf(
   }
   return candidates
 }
+
+// ---------------------------------------------------------------------------
+// Task 6：profile 专属载荷（log10 分布 / 空间异常区域）
+// ---------------------------------------------------------------------------
+
+/** distribution.log10 载荷：仅严格正值进 log10 的分箱与排除计数 */
+export interface Log10Distribution {
+  bins: HistogramBin[]
+  excludedNonPositiveCount: number
+  method: string | null
+}
+
+export function log10DistributionOf(module: AnalysisModuleResult): Log10Distribution | null {
+  const raw = module.payload.log10
+  if (!isRecord(raw) || !Array.isArray(raw.bins)) return null
+  const bins: HistogramBin[] = []
+  for (const item of raw.bins) {
+    if (!isRecord(item)) continue
+    const lower = asNumber(item.lower)
+    const upper = asNumber(item.upper)
+    const count = asNumber(item.count)
+    if (lower === null || upper === null || count === null) continue
+    bins.push({ lower, upper, count })
+  }
+  if (bins.length === 0) return null
+  return {
+    bins,
+    excludedNonPositiveCount: asNumber(raw.excluded_non_positive_count) ?? 0,
+    method: typeof raw.method === 'string' ? raw.method : null,
+  }
+}
+
+/** spatial_anomaly 载荷：高/低值区域聚合（分位阈值来源随载荷出站） */
+export interface SpatialAnomalySummary {
+  grid_size: number
+  bins: Array<SpatialBin & { region: 'high' | 'low' | 'normal' | 'empty' }>
+  thresholds: { high: number | null; low: number | null; method: string | null }
+  highVolumeRatio: number | null
+  lowVolumeRatio: number | null
+}
+
+const ANOMALY_REGIONS = new Set(['high', 'low', 'normal', 'empty'])
+
+export function spatialAnomalyOf(module: AnalysisModuleResult): SpatialAnomalySummary | null {
+  const rawThresholds = module.payload.thresholds
+  if (!isRecord(rawThresholds)) return null
+  const raw = module.payload.bins
+  if (!Array.isArray(raw)) return null
+  const bins: SpatialAnomalySummary['bins'] = []
+  for (const item of raw) {
+    if (!isRecord(item)) continue
+    const xLower = asNumber(item.x_lower)
+    const xUpper = asNumber(item.x_upper)
+    const yLower = asNumber(item.y_lower)
+    const yUpper = asNumber(item.y_upper)
+    if (xLower === null || xUpper === null || yLower === null || yUpper === null) continue
+    const region =
+      typeof item.region === 'string' && ANOMALY_REGIONS.has(item.region)
+        ? (item.region as 'high' | 'low' | 'normal' | 'empty')
+        : 'empty'
+    bins.push({
+      x_lower: xLower,
+      x_upper: xUpper,
+      y_lower: yLower,
+      y_upper: yUpper,
+      count: asNumber(item.count) ?? 0,
+      mean: asNumber(item.mean),
+      region,
+    })
+  }
+  if (bins.length === 0) return null
+  return {
+    grid_size: asNumber(module.payload.grid_size) ?? 32,
+    bins,
+    thresholds: {
+      high: asNumber(rawThresholds.high),
+      low: asNumber(rawThresholds.low),
+      method: typeof rawThresholds.method === 'string' ? rawThresholds.method : null,
+    },
+    highVolumeRatio: asNumber(module.payload.high_volume_ratio),
+    lowVolumeRatio: asNumber(module.payload.low_volume_ratio),
+  }
+}

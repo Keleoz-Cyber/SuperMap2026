@@ -19,10 +19,16 @@ from geomodeling.analysis.statistics import (
     ANALYSIS_AXIS_INVALID,
     ANALYSIS_EMPTY_COMMON_VALID,
     aggregate_spatial,
+    anomaly_thresholds,
+    axis_trends,
+    depth_slice_ratios,
+    gradient_summary,
     histogram,
+    log10_histogram,
     log10_positive,
     profile_axis,
     quantiles,
+    spatial_anomaly_summary,
     summarize_numeric,
     summarize_quality,
 )
@@ -436,3 +442,224 @@ def test_all_outputs_serialize_without_nan_or_infinity():
     payloads.append(profile.model_dump_json())
     for payload in payloads:
         _assert_json_finite(payload)
+
+
+# ---------------------------------------------------------------------------
+# Task 6：微震 axis_trends（X/Y/Z 逐轴分箱均值/中位数趋势，profile_axis 口径）
+# ---------------------------------------------------------------------------
+
+
+def test_axis_trends_returns_per_axis_binned_trends_with_identity_and_counts():
+    frame = _microseismic_frame()
+    trends = axis_trends(frame, MICROSEISMIC_MAPPING, bins=8)
+    assert [trend.axis for trend in trends] == ["x", "y", "z"]
+    for trend in trends:
+        assert trend.sample_count == 10  # 无效/非有限行守恒排除
+        assert len(trend.bins) == 8
+        assert sum(item.count for item in trend.bins) == trend.sample_count
+    z_means = [item.mean for item in trends[2].bins if item.count]
+    assert z_means == sorted(z_means)  # Vx 随深度单调增大的趋势被恢复
+
+
+def test_axis_trends_is_bit_deterministic_and_serializes_finite():
+    frame = _microseismic_frame()
+    first = [trend.model_dump_json() for trend in axis_trends(frame, MICROSEISMIC_MAPPING)]
+    second = [trend.model_dump_json() for trend in axis_trends(frame, MICROSEISMIC_MAPPING)]
+    assert first == second
+    for payload in first:
+        _assert_json_finite(payload)
+
+
+# ---------------------------------------------------------------------------
+# Task 6：微震 gradient（相邻 XY 网格单元均值差分幅值的有限统计）
+# ---------------------------------------------------------------------------
+
+
+def test_gradient_summary_counts_finite_neighbor_diffs_and_preserves_excluded():
+    frame = _standardized_frame(
+        [
+            (0.0, 0.0, 0.0, 1.0, True),
+            (1.0, 0.0, 0.0, 3.0, True),
+            (0.0, 1.0, 0.0, 5.0, True),
+            (1.0, 1.0, 0.0, 9.0, True),
+            (2.0, 2.0, 0.0, float("nan"), False),  # 无效行不进入任何格
+        ]
+    )
+    summary = gradient_summary(frame, RESISTIVITY_MAPPING, grid_size=2)
+    # 2×2 单元均值 1/3/5/9；相邻对：横向 |1-3|、|5-9|，纵向 |1-5|、|3-9|
+    assert summary.pair_count == 4
+    assert summary.excluded_pair_count == 0
+    assert summary.count == 4
+    assert summary.mean == pytest.approx(4.0)
+    assert summary.max == pytest.approx(6.0)
+    assert summary.p95 == pytest.approx(
+        float(np.quantile([2.0, 4.0, 4.0, 6.0], 0.95, method="linear"))
+    )
+
+
+def test_gradient_summary_isolated_cells_keep_excluded_count_without_nan():
+    frame = _standardized_frame([(0.0, 0.0, 0.0, 1.0, True)])
+    summary = gradient_summary(frame, RESISTIVITY_MAPPING, grid_size=4)
+    assert summary.count == 0
+    assert summary.mean is None and summary.p95 is None and summary.max is None
+    assert summary.excluded_pair_count == summary.pair_count > 0
+    _assert_json_finite(summary.model_dump_json())
+
+
+def test_gradient_summary_is_bit_deterministic():
+    frame = _microseismic_frame()
+    first = gradient_summary(frame, MICROSEISMIC_MAPPING).model_dump_json()
+    second = gradient_summary(frame, MICROSEISMIC_MAPPING).model_dump_json()
+    assert first == second
+    _assert_json_finite(first)
+
+
+# ---------------------------------------------------------------------------
+# Task 6：分位阈值（depth_slices / spatial_anomaly 共用同一阈值机制）
+# ---------------------------------------------------------------------------
+
+
+def test_anomaly_thresholds_come_from_valid_quantiles_with_source():
+    values = [float(v) for v in range(1, 101)]
+    thresholds = anomaly_thresholds(values)
+    assert thresholds.high == pytest.approx(
+        float(np.quantile(values, 0.75, method="linear"))
+    )
+    assert thresholds.low == pytest.approx(
+        float(np.quantile(values, 0.25, method="linear"))
+    )
+    assert thresholds.source  # 阈值来源字段必须存在
+    assert "p75" in thresholds.method and "p25" in thresholds.method
+
+    with pytest.raises(PlatformError) as excinfo:
+        anomaly_thresholds([float("nan")])
+    assert excinfo.value.code == ANALYSIS_EMPTY_COMMON_VALID
+
+
+# ---------------------------------------------------------------------------
+# Task 6：电阻率 log10 分箱（仅严格正值进 log10，排除计数保留）
+# ---------------------------------------------------------------------------
+
+
+def test_log10_histogram_bins_only_strictly_positive_and_preserves_excluded_count():
+    bins, excluded = log10_histogram(
+        [1.0, 10.0, 100.0, 0.0, -1.0, float("nan")], bins=4
+    )
+    assert excluded == 3  # 0.0、-1.0、NaN 全部排除且计数保留
+    assert bins is not None
+    assert len(bins) == 4
+    assert sum(item.count for item in bins) == 3
+    assert bins[0].lower == pytest.approx(0.0)  # log10(1)
+    assert bins[-1].upper == pytest.approx(2.0)  # log10(100)
+
+
+def test_log10_histogram_without_positive_values_returns_none_with_count():
+    bins, excluded = log10_histogram([0.0, -2.0, float("nan")], bins=4)
+    assert bins is None
+    assert excluded == 3
+
+
+# ---------------------------------------------------------------------------
+# Task 6：电阻率 depth_slices（逐 Z 层超阈面积/体积占比，分位阈值来源明示）
+# ---------------------------------------------------------------------------
+
+
+def test_depth_slice_ratios_compute_per_layer_threshold_ratios():
+    rows = [
+        (0.0, 0.0, float(layer), float(layer * 4 + i + 1), True)
+        for layer in range(4)
+        for i in range(4)
+    ]
+    frame = _standardized_frame(rows)  # 4 个 Z 层，每层 4 个样本，值 1..16
+    summary = depth_slice_ratios(frame, RESISTIVITY_MAPPING, bins=4)
+    assert summary.slice_count == 4
+    assert len(summary.slices) == 4
+
+    values = [float(v) for v in range(1, 17)]
+    thresholds = summary.thresholds
+    assert thresholds.high == pytest.approx(
+        float(np.quantile(values, 0.75, method="linear"))
+    )
+    assert thresholds.low == pytest.approx(
+        float(np.quantile(values, 0.25, method="linear"))
+    )
+    assert thresholds.source  # 阈值来源字段必须存在
+    assert sum(s.high_count for s in summary.slices) == sum(
+        1 for v in values if v >= thresholds.high
+    )
+    assert sum(s.low_count for s in summary.slices) == sum(
+        1 for v in values if v <= thresholds.low
+    )
+    # 顶层（值 13..16）全部超 p75=12.25，底层（值 1..4）全部低于 p25=4.75
+    assert summary.slices[-1].count == 4
+    assert summary.slices[-1].high_ratio == pytest.approx(1.0)
+    assert summary.slices[-1].low_ratio == pytest.approx(0.0)
+    assert summary.slices[0].low_ratio == pytest.approx(1.0)
+
+
+def test_depth_slice_ratios_empty_layer_has_null_ratio_and_stays_finite():
+    frame = _standardized_frame(
+        [
+            (0.0, 0.0, 0.0, 1.0, True),
+            (0.0, 0.0, 0.0, 2.0, True),
+            (0.0, 0.0, 10.0, 100.0, True),
+        ]
+    )
+    summary = depth_slice_ratios(frame, RESISTIVITY_MAPPING, bins=4)
+    empty = [s for s in summary.slices if s.count == 0]
+    assert empty
+    for slice_ in empty:
+        assert slice_.high_ratio is None and slice_.low_ratio is None
+    _assert_json_finite(summary.model_dump_json())
+
+
+def test_depth_slice_ratios_is_bit_deterministic():
+    frame = _microseismic_frame()
+    first = depth_slice_ratios(frame, MICROSEISMIC_MAPPING).model_dump_json()
+    second = depth_slice_ratios(frame, MICROSEISMIC_MAPPING).model_dump_json()
+    assert first == second
+    _assert_json_finite(first)
+
+
+# ---------------------------------------------------------------------------
+# Task 6：spatial_anomaly（XY 网格高/低值区域聚合，体积占比与阈值来源）
+# ---------------------------------------------------------------------------
+
+
+def test_spatial_anomaly_summary_classifies_regions_and_volume_ratios():
+    frame = _standardized_frame(
+        [
+            (0.0, 0.0, 0.0, 1.0, True),
+            (1.0, 0.0, 0.0, 2.0, True),
+            (0.0, 1.0, 0.0, 3.0, True),
+            (1.0, 1.0, 0.0, 4.0, True),
+        ]
+    )
+    summary = spatial_anomaly_summary(frame, RESISTIVITY_MAPPING, grid_size=2)
+    assert summary.grid_size == 2
+    assert summary.cell_count == 4
+    assert len(summary.bins) == 4
+    # p75=3.25 / p25=1.75：均值 4 的单元为高值区域，均值 1 的单元为低值区域
+    # （2×2 网格边界为 0.5，单元键为分箱下界）
+    regions = {(item.x_lower, item.y_lower): item.region for item in summary.bins}
+    assert regions[(0.0, 0.0)] == "low"
+    assert regions[(0.5, 0.5)] == "high"
+    assert regions[(0.5, 0.0)] == "normal"
+    assert regions[(0.0, 0.5)] == "normal"
+    assert summary.non_empty_cell_count == 4
+    assert summary.high_cell_count == 1
+    assert summary.low_cell_count == 1
+    assert summary.high_point_count == 1
+    assert summary.low_point_count == 1
+    assert summary.high_volume_ratio == pytest.approx(0.25)
+    assert summary.low_volume_ratio == pytest.approx(0.25)
+    assert summary.thresholds.source  # 阈值来源字段必须存在
+    assert "p75" in summary.thresholds.method
+
+
+def test_spatial_anomaly_summary_is_bit_deterministic_and_finite():
+    frame = _microseismic_frame()
+    first = spatial_anomaly_summary(frame, MICROSEISMIC_MAPPING).model_dump_json()
+    second = spatial_anomaly_summary(frame, MICROSEISMIC_MAPPING).model_dump_json()
+    assert first == second
+    _assert_json_finite(first)

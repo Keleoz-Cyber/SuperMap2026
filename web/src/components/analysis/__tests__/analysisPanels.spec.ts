@@ -350,7 +350,7 @@ describe('DistributionPanel', () => {
     wrapper.unmount()
   })
 
-  it('电阻率 profile 显示对数尺度说明（log 专属展示属后续任务）', async () => {
+  it('电阻率 profile 无 log10 载荷时回退原始分箱并说明', async () => {
     const wrapper = mount(DistributionPanel, {
       props: { module: distributionModule(), variable, profile: 'resistivity' },
       global: { plugins: [ElementPlus] },
@@ -360,8 +360,54 @@ describe('DistributionPanel', () => {
     const note = wrapper.find('[data-test="distribution-log-note"]')
     expect(note.exists()).toBe(true)
     expect(note.text()).toContain('对数')
-    // 本批仍渲染原始分箱
+    // 无 log10 载荷时回退原始值分箱
     expect(chartInstances).toHaveLength(1)
+    expect(lastOption().series[0].data).toHaveLength(32)
+    wrapper.unmount()
+  })
+
+  it('电阻率 profile 渲染 log10 分箱：对数尺度轴、非正值排除计数提示', async () => {
+    const module = distributionModule()
+    module.payload.log10 = {
+      bin_count: 4,
+      bins: [
+        { lower: 0, upper: 0.5, count: 3 },
+        { lower: 0.5, upper: 1.0, count: 5 },
+        { lower: 1.0, upper: 1.5, count: 2 },
+        { lower: 1.5, upper: 2.0, count: 1 },
+      ],
+      excluded_non_positive_count: 2,
+      method: '对数尺度分箱仅使用严格正值有限值',
+    }
+    const wrapper = mount(DistributionPanel, {
+      props: { module, variable: { name: 'RHO', unit: null }, profile: 'resistivity' },
+      global: { plugins: [ElementPlus] },
+      attachTo: document.body,
+    })
+    await flushPromises()
+    const option = lastOption()
+    expect(option.xAxis.name).toContain('log10')
+    expect(option.xAxis.name).toContain('RHO')
+    expect(option.series[0].data).toEqual([3, 5, 2, 1])
+    const note = wrapper.find('[data-test="distribution-log-note"]')
+    expect(note.text()).toContain('对数尺度')
+    expect(note.text()).toContain('2') // 非正值排除计数
+    const summary = wrapper.find('[data-test="distribution-summary"]')
+    expect(summary.text()).toContain('对数')
+    expect(summary.text()).toContain('11') // log10 分箱计数守恒样本数
+    wrapper.unmount()
+  })
+
+  it('微震 profile 保持原始值分箱，不显示对数说明', async () => {
+    const wrapper = mount(DistributionPanel, {
+      props: { module: distributionModule(), variable, profile: 'microseismic_velocity' },
+      global: { plugins: [ElementPlus] },
+      attachTo: document.body,
+    })
+    await flushPromises()
+    expect(wrapper.find('[data-test="distribution-log-note"]').exists()).toBe(false)
+    expect(lastOption().xAxis.name).toContain('km/s')
+    expect(lastOption().series[0].data).toHaveLength(32)
     wrapper.unmount()
   })
 
@@ -478,6 +524,118 @@ describe('SpatialFeaturePanel', () => {
   })
 })
 
+describe('SpatialFeaturePanel（spatial_anomaly 专属模块）', () => {
+  function anomalyModule(): AnalysisModuleResult {
+    const regions = ['low', 'normal', 'normal', 'high'] as const
+    const bins = []
+    for (let index = 0; index < 4; index += 1) {
+      const col = index % 2
+      const row = Math.floor(index / 2)
+      bins.push({
+        x_lower: col * 10,
+        x_upper: (col + 1) * 10,
+        y_lower: row * 10,
+        y_upper: (row + 1) * 10,
+        count: 2,
+        mean: 1 + index * 2,
+        region: regions[index],
+      })
+    }
+    return {
+      module_id: 'spatial_anomaly',
+      status: 'ok',
+      payload: {
+        grid_size: 2,
+        cell_count: 4,
+        bounds: { x: [0, 20], y: [0, 20] },
+        thresholds: {
+          high: 4.5,
+          low: 1.5,
+          source: 'valid_value_quantiles_p25_p75',
+          method: '高值阈值=有效值 p75、低值阈值=有效值 p25',
+        },
+        non_empty_cell_count: 4,
+        high_cell_count: 1,
+        low_cell_count: 1,
+        high_point_count: 2,
+        low_point_count: 2,
+        high_volume_ratio: 0.25,
+        low_volume_ratio: 0.25,
+        bins,
+      },
+      message: null,
+    }
+  }
+
+  it('微震 profile：速度高/低值区域标题、图例、阈值与单位文案', async () => {
+    const wrapper = mount(SpatialFeaturePanel, {
+      props: {
+        module: anomalyModule(),
+        variable,
+        datasetId: 'ds-1',
+        profile: 'microseismic_velocity',
+      },
+      global: { plugins: [ElementPlus] },
+      attachTo: document.body,
+    })
+    await flushPromises()
+    expect(wrapper.text()).toContain('速度高/低值区域')
+    const legend = wrapper.find('[data-test="spatial-anomaly-legend"]')
+    expect(legend.exists()).toBe(true)
+    expect(legend.text()).toContain('速度高值区域')
+    expect(legend.text()).toContain('速度低值区域')
+    expect(legend.text()).toContain('km/s')
+    expect(legend.text()).toContain('p75')
+    const summary = wrapper.find('[data-test="spatial-summary"]')
+    expect(summary.text()).toContain('25')
+    const option = lastOption()
+    expect(option.series[0].type).toBe('heatmap')
+    const pieces = JSON.stringify(option.visualMap)
+    expect(pieces).toContain('速度高值区域')
+    expect(pieces).toContain('速度低值区域')
+    wrapper.unmount()
+  })
+
+  it('电阻率 profile：高/低阻区域标题与图例（单位未确认不做地质语义结论）', async () => {
+    const wrapper = mount(SpatialFeaturePanel, {
+      props: {
+        module: anomalyModule(),
+        variable: { name: 'RHO', unit: null },
+        datasetId: 'ds-1',
+        profile: 'resistivity',
+      },
+      global: { plugins: [ElementPlus] },
+      attachTo: document.body,
+    })
+    await flushPromises()
+    expect(wrapper.text()).toContain('高/低阻区域')
+    const legend = wrapper.find('[data-test="spatial-anomaly-legend"]')
+    expect(legend.text()).toContain('高阻区域')
+    expect(legend.text()).toContain('低阻区域')
+    for (const term of ['含水', '水体', '矿体', '矿产', '瓦斯']) {
+      expect(wrapper.text()).not.toContain(term)
+    }
+    wrapper.unmount()
+  })
+
+  it('disabled 专属模块仍是解释性空状态，不初始化图表', () => {
+    const wrapper = mount(SpatialFeaturePanel, {
+      props: {
+        module: disabledModule('spatial_anomaly'),
+        variable,
+        datasetId: 'ds-1',
+        profile: 'microseismic_velocity',
+      },
+      global: { plugins: [ElementPlus] },
+    })
+    expect(wrapper.find('[data-test="spatial-empty"]').text()).toContain(
+      '专属模块计算将在后续批次就位',
+    )
+    expect(chartInstances).toHaveLength(0)
+    wrapper.unmount()
+  })
+})
+
 describe('ModelComparisonPanel', () => {
   function mountWithRouter(module: AnalysisModuleResult) {
     const router = createRouter({
@@ -523,6 +681,26 @@ describe('ModelComparisonPanel', () => {
     const { wrapper, pushSpy } = mountWithRouter(comparisonModule())
     await wrapper.findAll('[data-test="model-candidate-row"]')[0].trigger('click')
     expect(pushSpy).toHaveBeenCalledWith({ path: '/results/cand-1' })
+    wrapper.unmount()
+  })
+
+  it('dsi_like 算法显示「DSI-like 离散平滑插值」标签', () => {
+    const { wrapper } = mountWithRouter(
+      comparisonModule([
+        {
+          result_id: 'cand-3',
+          algorithm: 'dsi_like',
+          parameters: { neighbor_count: 12 },
+          metrics: { rmse: 1.5, mae: 1.1, r2: 0.9, bias: 0.02 },
+          materialized: true,
+          formal_selection: false,
+          result_url: '/results/cand-3',
+        },
+      ]),
+    )
+    const row = wrapper.find('[data-test="model-candidate-row"]')
+    expect(row.text()).toContain('DSI-like 离散平滑插值')
+    expect(row.text()).not.toContain('dsi_like')
     wrapper.unmount()
   })
 

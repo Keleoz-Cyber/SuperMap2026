@@ -21,13 +21,20 @@ __all__ = [
     "AnalysisProvenance",
     "AnalysisSummaryResponse",
     "AnalysisVariable",
+    "AnomalyThresholds",
+    "AxisTrendSummary",
     "CALCULATION_VERSION",
+    "DepthSliceBin",
+    "DepthSliceSummary",
+    "GradientSummary",
     "HistogramBin",
     "NumericSummary",
     "ProfileSliceBin",
     "ProfileSliceSummary",
     "QualitySummary",
     "QuantileSummary",
+    "SpatialAnomalyBin",
+    "SpatialAnomalySummary",
     "SpatialBin",
     "SpatialSummary",
 ]
@@ -134,6 +141,88 @@ class ProfileSliceBin(AnalysisContractModel):
 class ProfileSliceSummary(AnalysisContractModel):
     axis: Literal["x", "y", "z"]
     bins: list[ProfileSliceBin] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Task 6：专属模块载荷模型（微震趋势/梯度、分位阈值、深度层占比、空间异常）
+# ---------------------------------------------------------------------------
+
+
+class AxisTrendSummary(AnalysisContractModel):
+    """单轴分箱趋势（``profile_axis`` 口径），附轴身份与样本数。"""
+
+    axis: Literal["x", "y", "z"]
+    sample_count: int = 0
+    bins: list[ProfileSliceBin] = Field(default_factory=list)
+
+
+class GradientSummary(AnalysisContractModel):
+    """相邻 XY 网格单元均值差分幅值的有限统计（局部变化强度）。
+
+    ``count`` 为参与统计的有限差分幅值数；``count=0`` 时统计字段为
+    None（绝不以 NaN 占位）；任一侧为空格的相邻对排除且计数保留在
+    ``excluded_pair_count``。
+    """
+
+    grid_size: int
+    pair_count: int = 0
+    excluded_pair_count: int = 0
+    count: int = 0
+    mean: float | None = None
+    p95: float | None = None
+    max: float | None = None
+
+
+class AnomalyThresholds(AnalysisContractModel):
+    """高/低值阈值（有效值分位数口径）；``source``/``method`` 明示阈值来源。"""
+
+    high: float
+    low: float
+    source: str
+    method: str
+
+
+class DepthSliceBin(AnalysisContractModel):
+    """单个 Z 层超阈占比；``count=0`` 时占比为 None（绝不以 NaN 占位）。"""
+
+    z_lower: float
+    z_upper: float
+    count: int = 0
+    high_count: int = 0
+    low_count: int = 0
+    high_ratio: float | None = None
+    low_ratio: float | None = None
+
+
+class DepthSliceSummary(AnalysisContractModel):
+    """逐 Z 层异常占比：分位阈值 + 层分箱（占比以层内样本计数为口径）。"""
+
+    thresholds: AnomalyThresholds
+    slice_count: int
+    slices: list[DepthSliceBin] = Field(default_factory=list)
+
+
+class SpatialAnomalyBin(SpatialBin):
+    """空间异常单元：在 ``SpatialBin``（XY 格网 count/mean）上加区域分类。"""
+
+    region: Literal["high", "low", "normal", "empty"] = "empty"
+
+
+class SpatialAnomalySummary(AnalysisContractModel):
+    """XY 网格高/低值区域聚合：分位阈值 + 逐格区域 + 体积占比（样本计数口径）。"""
+
+    grid_size: int
+    cell_count: int | None = None
+    bounds: dict[str, tuple[float, float]] | None = None
+    thresholds: AnomalyThresholds
+    non_empty_cell_count: int = 0
+    high_cell_count: int = 0
+    low_cell_count: int = 0
+    high_point_count: int = 0
+    low_point_count: int = 0
+    high_volume_ratio: float | None = None
+    low_volume_ratio: float | None = None
+    bins: list[SpatialAnomalyBin] = Field(default_factory=list)
 
 
 class AnalysisModuleResult(AnalysisContractModel):

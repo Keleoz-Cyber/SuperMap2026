@@ -6,7 +6,9 @@
 
 - 已验证微震/电阻率预置数据返回正确 ``analysis_profile``、质量/统计/分布/
   空间/三轴剖面模块与 provenance（source_sha256/dataset_version/
-  calculation_version）；专属模块本批为 ``disabled`` 骨架（计算属 Task 6）。
+  calculation_version）；Task 6 起专属模块为真实有限计算（微震
+  axis_trends/gradient/spatial_anomaly，电阻率 log 分布/depth_slices/
+  spatial_anomaly），载荷带计算方法/来源字段/阈值来源。
 - 未知 dataset → 404 ``DATASET_NOT_FOUND``；回收案例 → 410 ``CASE_TRASHED``；
   未验证 dataset → 409 ``DATASET_NOT_VALIDATED``；空公共有效集 → 409
   ``ANALYSIS_EMPTY_COMMON_VALID``（绝不返回 null 堆叠伪成功面板）。
@@ -187,16 +189,63 @@ def test_microseismic_summary_returns_profile_quality_statistics_modules_provena
         "profile_slices",
         "model_comparison",
     }
-    # 通用模块本批就位；专属模块为 Task 6 骨架（disabled + 解释消息）
-    for module_id in ("quality", "statistics", "distribution", "profile_slices", "model_comparison"):
+    # 不生成时间演化/震源能量等数据中不存在的指标（设计 §5.1）
+    assert not {"time_evolution", "temporal_trend", "source_energy", "magnitude"} & set(
+        modules
+    )
+    # 通用模块与 Task 6 专属模块全部就位（status == "ok"）
+    for module_id in (
+        "quality",
+        "statistics",
+        "distribution",
+        "profile_slices",
+        "model_comparison",
+        "axis_trends",
+        "gradient",
+        "spatial_anomaly",
+    ):
         assert modules[module_id]["status"] == "ok", module_id
-    for module_id in ("axis_trends", "gradient", "spatial_anomaly"):
-        assert modules[module_id]["status"] == "disabled", module_id
-        assert modules[module_id]["message"], module_id
 
     distribution = modules["distribution"]["payload"]
     assert len(distribution["bins"]) == 32
     assert sum(bin_["count"] for bin_ in distribution["bins"]) == 1911
+
+    # axis_trends：X/Y/Z 逐轴分箱趋势，附计算方法/来源字段/轴身份/样本数
+    axis_trends = modules["axis_trends"]["payload"]
+    assert axis_trends["method"]
+    assert axis_trends["source_fields"]["value"] == "VX_KM_S"
+    assert axis_trends["source_fields"]["z"] == "Z_LOCAL_M"
+    assert {axis["axis"] for axis in axis_trends["axes"]} == {"x", "y", "z"}
+    for axis_summary in axis_trends["axes"]:
+        assert axis_summary["sample_count"] == 1911
+        assert len(axis_summary["bins"]) == 32
+        assert sum(bin_["count"] for bin_ in axis_summary["bins"]) == 1911
+
+    # gradient：相邻网格差分幅值有限统计，方法与排除计数保留
+    gradient = modules["gradient"]["payload"]
+    assert gradient["method"]
+    assert gradient["source_fields"]["value"] == "VX_KM_S"
+    assert gradient["count"] > 0
+    assert gradient["mean"] is not None
+    assert gradient["p95"] is not None
+    assert gradient["pair_count"] > gradient["count"]
+    assert gradient["excluded_pair_count"] >= 0
+
+    # spatial_anomaly：速度高/低值区域，含体积占比与阈值来源
+    anomaly = modules["spatial_anomaly"]["payload"]
+    assert anomaly["method"]
+    assert anomaly["thresholds"]["source"]
+    assert "p75" in anomaly["thresholds"]["method"]
+    assert "p25" in anomaly["thresholds"]["method"]
+    assert len(anomaly["bins"]) == 32 * 32
+    assert {bin_["region"] for bin_ in anomaly["bins"]} <= {
+        "high",
+        "low",
+        "normal",
+        "empty",
+    }
+    assert 0.0 <= anomaly["high_volume_ratio"] <= 1.0
+    assert 0.0 <= anomaly["low_volume_ratio"] <= 1.0
 
     profile_slices = modules["profile_slices"]["payload"]
     assert {axis["axis"] for axis in profile_slices["axes"]} == {"x", "y", "z"}
@@ -222,11 +271,47 @@ def test_resistivity_summary_returns_resistivity_profile(rho_client):
     assert body["statistics"]["count"] == 17_549
 
     modules = _modules(body)
-    assert modules["distribution"]["status"] == "ok"
-    assert modules["profile_slices"]["status"] == "ok"
-    assert modules["model_comparison"]["status"] == "ok"
-    assert modules["depth_slices"]["status"] == "disabled"
-    assert modules["spatial_anomaly"]["status"] == "disabled"
+    for module_id in (
+        "distribution",
+        "profile_slices",
+        "model_comparison",
+        "depth_slices",
+        "spatial_anomaly",
+    ):
+        assert modules[module_id]["status"] == "ok", module_id
+
+    # distribution 升级：log10 分箱（仅严格正值）与原始值分箱并存，排除计数保留
+    distribution = modules["distribution"]["payload"]
+    assert distribution["method"]
+    assert distribution["source_fields"]["value"] == "RHO"
+    assert len(distribution["bins"]) == 32  # 原始值分箱保留
+    log10 = distribution["log10"]
+    assert log10["method"]
+    assert log10["bins"] is not None and len(log10["bins"]) == 32
+    assert log10["excluded_non_positive_count"] == 0  # 夹具 RHO 全为严格正值
+    assert sum(bin_["count"] for bin_ in log10["bins"]) == 17_549
+
+    # depth_slices：逐 Z 层超阈占比，分位阈值来源明示
+    depth = modules["depth_slices"]["payload"]
+    assert depth["method"]
+    assert depth["source_fields"]["z"] == "Z"
+    assert depth["thresholds"]["source"]
+    assert "p75" in depth["thresholds"]["method"]
+    assert len(depth["slices"]) == 16
+    assert sum(slice_["count"] for slice_ in depth["slices"]) == 17_549
+
+    # spatial_anomaly：高/低阻区域聚合，与 depth_slices 同一分位阈值
+    anomaly = modules["spatial_anomaly"]["payload"]
+    assert anomaly["method"]
+    assert anomaly["thresholds"]["source"]
+    assert anomaly["thresholds"]["high"] == depth["thresholds"]["high"]
+    assert anomaly["thresholds"]["low"] == depth["thresholds"]["low"]
+    assert {bin_["region"] for bin_ in anomaly["bins"]} <= {
+        "high",
+        "low",
+        "normal",
+        "empty",
+    }
 
     provenance = body["provenance"]
     assert len(provenance["source_sha256"]) == 64
@@ -276,6 +361,14 @@ def test_summary_spatial_extent_module_for_generic_profile(fresh_client):
     assert body["analysis_profile"] == "generic_3d"
     assert body["variable"]["unit"] is None
     modules = _modules(body)
+    # 通用降级不暴露任何专属模块（微震/电阻率/瓦斯专属一律不出现）
+    assert not {
+        "axis_trends",
+        "gradient",
+        "depth_slices",
+        "spatial_anomaly",
+        "threshold_zones",
+    } & set(modules)
     spatial = modules["spatial_extent"]
     assert spatial["status"] == "ok"
     payload = spatial["payload"]
@@ -283,6 +376,17 @@ def test_summary_spatial_extent_module_for_generic_profile(fresh_client):
     assert payload["cell_count"] == 32 * 32
     assert len(payload["bins"]) == 32 * 32
     assert modules["model_comparison"]["payload"]["candidates"] == []
+
+
+def test_resistivity_payload_has_no_geological_semantic_conclusions(rho_client):
+    """单位未确认（RHO）：payload/copy 禁止水、矿、瓦斯通道等地质语义结论。"""
+
+    dataset_id = _primary_dataset_id(rho_client, RESISTIVITY_PRESET_CASE_ID)
+    response = rho_client.get(f"/api/datasets/{dataset_id}/analysis-summary")
+    assert response.status_code == 200, response.text
+    text = response.text
+    for term in ("含水", "水体", "矿体", "矿产", "瓦斯"):
+        assert term not in text, term
 
 
 # ---------------------------------------------------------------------------

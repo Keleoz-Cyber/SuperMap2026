@@ -51,7 +51,13 @@ MICROSEISMIC_MAPPING = {
     "coordinate_kind": "local_linear",
 }
 
-SPECIALIZED_MODULE_IDS = {"depth_slices", "axis_trends", "gradient", "threshold_zones"}
+SPECIALIZED_MODULE_IDS = {
+    "depth_slices",
+    "axis_trends",
+    "gradient",
+    "threshold_zones",
+    "spatial_anomaly",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -172,6 +178,53 @@ def test_profile_resolution_never_reads_case_id():
     # case_id 即使指向电阻率官方案例，输出也逐位一致、只由 mapping 决定
     assert results[0] == results[1] == results[2]
     assert all(r.profile_id == "microseismic_velocity" for r in results)
+
+
+# ---------------------------------------------------------------------------
+# Task 6 Step 1：专属模块集锁定（微震趋势/梯度、电阻率对数分布/深度、generic 皆无）
+# ---------------------------------------------------------------------------
+
+
+def test_task6_microseismic_exposes_trend_gradient_and_spatial_anomaly_only():
+    profile = resolve_analysis_profile({"mapping": MICROSEISMIC_MAPPING})
+    assert {"axis_trends", "gradient", "spatial_anomaly"} <= set(profile.modules)
+    # 不生成时间演化/震源能量等数据中不存在的指标（设计 §5.1）
+    assert not {
+        "time_evolution",
+        "temporal_trend",
+        "source_energy",
+        "magnitude",
+    } & set(profile.modules)
+
+
+def test_task6_resistivity_exposes_log_distribution_depth_and_spatial_anomaly():
+    profile = resolve_analysis_profile({"mapping": RESISTIVITY_MAPPING})
+    assert {"distribution", "depth_slices", "spatial_anomaly"} <= set(profile.modules)
+    distribution = next(s for s in profile.module_specs if s.module_id == "distribution")
+    assert "对数" in distribution.description
+    # 微震专属模块不得出现在电阻率 profile
+    assert not {"axis_trends", "gradient"} & set(profile.modules)
+
+
+def test_task6_generic_profile_exposes_no_specialized_module():
+    profile = resolve_analysis_profile(
+        {"mapping": {"dimension": "3d", "value": "VALUE", "value_name": "UNKNOWN"}}
+    )
+    assert profile.profile_id == PROFILE_GENERIC_3D
+    assert not SPECIALIZED_MODULE_IDS & set(profile.modules)
+
+
+def test_task6_gas_profile_stays_registered_skeleton_without_extra_modules():
+    """瓦斯 profile 注册但不额外实现（设计 §5.3）：声明在，无微震/电阻率模块。"""
+
+    profile = resolve_analysis_profile(
+        {"mapping": {"dimension": "3d", "value_name": "CH4"}}
+    )
+    assert profile.profile_id == PROFILE_GAS_CONTENT
+    assert {"distribution", "threshold_zones", "depth_slices", "spatial_anomaly"} <= set(
+        profile.modules
+    )
+    assert not {"axis_trends", "gradient"} & set(profile.modules)
 
 
 # ---------------------------------------------------------------------------

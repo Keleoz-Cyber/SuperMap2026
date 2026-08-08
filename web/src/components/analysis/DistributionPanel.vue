@@ -5,13 +5,14 @@ import { BarChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import type { AnalysisModuleResult, AnalysisProfileId, AnalysisVariable } from '../../api/types'
-import { distributionBinsOf, formatNumber } from './analysisTypes'
+import { distributionBinsOf, formatNumber, log10DistributionOf } from './analysisTypes'
 
 // v0.8.0 第二批 Task 5：属性值分布直方图（ECharts bar，后端确定性等宽
 // 分箱，默认 32 格）。轴带变量单位，图下给出可访问文本摘要（样本数/分箱
 // 数/值域/峰值分箱）；disabled/error/空分箱一律解释性空状态，绝不渲染空
-// 图表。电阻率 profile 提示对数尺度展示属后续专业模块（数据已是原始分
-// 箱，本批不做 log 专属展示）。卸载必须 dispose。
+// 图表。Task 6：电阻率 profile 携带 log10 载荷时切换为对数尺度分箱
+// （仅严格正值，排除计数显式提示）；无 log10 载荷回退原始分箱并说明。
+// 卸载必须 dispose。
 
 echartsUse([BarChart, GridComponent, TooltipComponent, CanvasRenderer])
 
@@ -22,7 +23,11 @@ const props = defineProps<{
 }>()
 
 const bins = computed(() => distributionBinsOf(props.module))
-const usable = computed(() => props.module.status === 'ok' && bins.value.length > 0)
+const log10 = computed(() =>
+  props.profile === 'resistivity' ? log10DistributionOf(props.module) : null,
+)
+const activeBins = computed(() => log10.value?.bins ?? bins.value)
+const usable = computed(() => props.module.status === 'ok' && activeBins.value.length > 0)
 
 const emptyMessage = computed(() => {
   if (props.module.status !== 'ok') {
@@ -32,58 +37,72 @@ const emptyMessage = computed(() => {
 })
 
 const unit = computed(() => props.variable.unit ?? '')
-const sampleCount = computed(() => bins.value.reduce((acc, bin) => acc + bin.count, 0))
+const sampleCount = computed(() => activeBins.value.reduce((acc, bin) => acc + bin.count, 0))
+
+const logNote = computed(() => {
+  if (props.profile !== 'resistivity') return ''
+  if (log10.value) {
+    const method = log10.value.method ?? '对数尺度分箱仅使用严格正值有限值'
+    return `对数尺度展示：${method}；已排除非正值样本 ${formatNumber(log10.value.excludedNonPositiveCount)} 个。`
+  }
+  return 'RHO 当前展示原始值分箱；对数尺度展示将在电阻率专业模块就位后提供。'
+})
 
 const binLabels = computed(() =>
-  bins.value.map((bin) => `${formatNumber(bin.lower)} – ${formatNumber(bin.upper)}`),
+  activeBins.value.map((bin) => `${formatNumber(bin.lower)} – ${formatNumber(bin.upper)}`),
 )
 
 const peakBin = computed(() => {
   let peak = 0
-  for (let i = 1; i < bins.value.length; i += 1) {
-    if (bins.value[i].count > bins.value[peak].count) peak = i
+  for (let i = 1; i < activeBins.value.length; i += 1) {
+    if (activeBins.value[i].count > activeBins.value[peak].count) peak = i
   }
-  return bins.value.length > 0 ? peak : -1
+  return activeBins.value.length > 0 ? peak : -1
 })
 
 const summaryText = computed(() => {
   if (!usable.value) return ''
-  const first = bins.value[0]
-  const last = bins.value[bins.value.length - 1]
-  const peak = peakBin.value >= 0 ? bins.value[peakBin.value] : null
+  const first = activeBins.value[0]
+  const last = activeBins.value[activeBins.value.length - 1]
+  const peak = peakBin.value >= 0 ? activeBins.value[peakBin.value] : null
   const peakText = peak
     ? `；峰值分箱 ${formatNumber(peak.lower)} – ${formatNumber(peak.upper)}（计数 ${formatNumber(peak.count)}）`
     : ''
-  return `样本数 ${formatNumber(sampleCount.value)}，${bins.value.length} 分箱；值域 ${formatNumber(first.lower)} – ${formatNumber(last.upper)} ${unit.value}${peakText}`
+  const scaleText = log10.value ? '对数尺度（log10）' : '原始值'
+  const unitText = log10.value ? '' : ` ${unit.value}`
+  return `${scaleText}分布：样本数 ${formatNumber(sampleCount.value)}，${activeBins.value.length} 分箱；值域 ${formatNumber(first.lower)} – ${formatNumber(last.upper)}${unitText}${peakText}`
 })
 
 const host = ref<HTMLDivElement | null>(null)
 let chart: ReturnType<typeof echartsInit> | null = null
 
 function buildOption() {
+  const axisName = log10.value
+    ? `log10（${props.variable.name}）`
+    : `${props.variable.name}${unit.value ? `（${unit.value}）` : ''}`
   return {
     grid: { left: 56, right: 16, top: 16, bottom: 72 },
     xAxis: {
       type: 'category' as const,
-      name: `${props.variable.name}${unit.value ? `（${unit.value}）` : ''}`,
+      name: axisName,
       nameLocation: 'middle' as const,
       nameGap: 56,
       data: binLabels.value,
-      axisLabel: { interval: Math.ceil(bins.value.length / 8), rotate: 30, fontSize: 10 },
+      axisLabel: { interval: Math.ceil(activeBins.value.length / 8), rotate: 30, fontSize: 10 },
     },
     yAxis: { type: 'value' as const, name: '样本数', minInterval: 1 },
     tooltip: {
       formatter: (param: { dataIndex: number; data: number }) => {
-        const bin = bins.value[param.dataIndex]
+        const bin = activeBins.value[param.dataIndex]
         if (!bin) return ''
-        return `${props.variable.name} ${formatNumber(bin.lower)} – ${formatNumber(bin.upper)} ${unit.value}<br/>样本数 ${bin.count}`
+        return `${axisName} ${formatNumber(bin.lower)} – ${formatNumber(bin.upper)}<br/>样本数 ${bin.count}`
       },
     },
     series: [
       {
         type: 'bar' as const,
         name: '样本数',
-        data: bins.value.map((bin) => bin.count),
+        data: activeBins.value.map((bin) => bin.count),
         itemStyle: { color: '#4ea1ff' },
       },
     ],
@@ -123,9 +142,7 @@ onBeforeUnmount(() => {
 <template>
   <section class="panel distribution-panel" data-test="distribution-panel">
     <h3>属性值分布</h3>
-    <p v-if="profile === 'resistivity'" class="log-note" data-test="distribution-log-note">
-      RHO 当前展示原始值分箱；对数尺度展示将在电阻率专业模块就位后提供。
-    </p>
+    <p v-if="logNote" class="log-note" data-test="distribution-log-note">{{ logNote }}</p>
     <template v-if="usable">
       <div ref="host" class="chart" data-test="distribution-chart" />
       <p class="chart-summary" data-test="distribution-summary">{{ summaryText }}</p>

@@ -12,6 +12,13 @@
 固定格数，恒定值范围对称扩展 ±0.5），同一输入两次调用逐位一致。输出全部
 为 ``schemas.py`` 骨架模型：统计源头绝不产生 NaN/Inf（空分箱统计、
 count=1 的样本标准差一律用 ``None`` 占位）。
+
+Task 6 追加专属计算（同样遵守上述口径）：微震 ``axis_trends``（逐轴分箱
+趋势，复用 ``profile_axis``）与 ``gradient_summary``（相邻 XY 网格单元均值
+差分幅值有限统计）；电阻率/微震共用的分位阈值 ``anomaly_thresholds``
+（有效值 p75/p25，阈值来源必须明示）、``depth_slice_ratios``（逐 Z 层超阈
+占比）、``spatial_anomaly_summary``（XY 网格高/低值区域聚合）与
+``log10_histogram``（仅严格正值进 log10，排除计数保留）。
 """
 
 from __future__ import annotations
@@ -22,12 +29,19 @@ import numpy as np
 import pandas as pd
 
 from geomodeling.analysis.schemas import (
+    AnomalyThresholds,
+    AxisTrendSummary,
+    DepthSliceBin,
+    DepthSliceSummary,
+    GradientSummary,
     HistogramBin,
     NumericSummary,
     ProfileSliceBin,
     ProfileSliceSummary,
     QualitySummary,
     QuantileSummary,
+    SpatialAnomalyBin,
+    SpatialAnomalySummary,
     SpatialBin,
     SpatialSummary,
 )
@@ -38,10 +52,16 @@ __all__ = [
     "ANALYSIS_AXIS_INVALID",
     "ANALYSIS_EMPTY_COMMON_VALID",
     "aggregate_spatial",
+    "anomaly_thresholds",
+    "axis_trends",
+    "depth_slice_ratios",
+    "gradient_summary",
     "histogram",
+    "log10_histogram",
     "log10_positive",
     "profile_axis",
     "quantiles",
+    "spatial_anomaly_summary",
     "summarize_numeric",
     "summarize_quality",
 ]
@@ -352,3 +372,253 @@ def log10_positive(values: Values) -> tuple[np.ndarray, int]:
     keep = np.isfinite(array) & (array > 0.0)
     excluded = int(array.size - keep.sum())
     return np.log10(array[keep]), excluded
+
+
+# ---------------------------------------------------------------------------
+# Task 6：电阻率 log10 分箱（与原始值分箱并存）
+# ---------------------------------------------------------------------------
+
+
+def log10_histogram(values: Values, bins: int = 32) -> tuple[list[HistogramBin] | None, int]:
+    """log10 分箱：仅严格正值有限值进 log10，排除计数保留。
+
+    返回 ``(分箱或 None, 排除计数)``；无严格正值有限值时分箱为 None
+    （对数分布不可用是类型化空态，绝不伪造全零分箱），排除计数照常保留。
+    分箱定义沿用 ``histogram`` 确定性口径（log10 值域 + 固定格数）。
+    """
+
+    transformed, excluded = log10_positive(values)
+    if transformed.size == 0:
+        return None, excluded
+    return histogram(transformed, bins), excluded
+
+
+# ---------------------------------------------------------------------------
+# Task 6：微震 axis_trends（X/Y/Z 逐轴分箱趋势，复用 profile_axis 口径）
+# ---------------------------------------------------------------------------
+
+
+def axis_trends(
+    frame: pd.DataFrame, mapping: FrameMapping, bins: int = 32
+) -> list[AxisTrendSummary]:
+    """映射维度内逐轴等宽分箱均值/中位数趋势，附轴身份与样本数。
+
+    逐轴直接复用 ``profile_axis``（同一确定性分箱与排除口径）；样本数 =
+    该轴全部分箱计数之和（守恒）。空公共有效集在 ``profile_axis`` 内
+    fail-closed 抛 ``ANALYSIS_EMPTY_COMMON_VALID``。
+    """
+
+    trends: list[AxisTrendSummary] = []
+    for axis in _coord_columns(mapping):
+        summary = profile_axis(frame, mapping, axis, bins=bins)
+        trends.append(
+            AxisTrendSummary(
+                axis=axis,  # type: ignore[arg-type]  # _coord_columns 只产出 x/y/z
+                sample_count=sum(item.count for item in summary.bins),
+                bins=summary.bins,
+            )
+        )
+    return trends
+
+
+# ---------------------------------------------------------------------------
+# Task 6：微震 gradient（相邻 XY 网格单元均值差分幅值的有限统计）
+# ---------------------------------------------------------------------------
+
+
+def gradient_summary(
+    frame: pd.DataFrame, mapping: FrameMapping, grid_size: int = 16
+) -> GradientSummary:
+    """局部变化强度：XY 网格相邻单元均值差分幅值 |Δmean| 的有限统计。
+
+    网格定义与 ``aggregate_spatial`` 完全一致（数据范围 + 固定格数）。逐
+    对相邻（X 向/Y 向）单元：两侧均值均非空（有限）才进入差分，任一侧为
+    空格的对排除且计数保留（``excluded_pair_count``）。只用有限值；
+    ``count=0`` 时统计字段为 None（绝不以 NaN 占位）。
+    """
+
+    spatial = aggregate_spatial(frame, mapping, grid_size)
+    means = [item.mean for item in spatial.bins]  # 行主序（x 最快）
+    diffs: list[float] = []
+    pair_count = 0
+    excluded = 0
+    for row in range(grid_size):
+        for col in range(grid_size):
+            index = row * grid_size + col
+            neighbors: list[int] = []
+            if col + 1 < grid_size:
+                neighbors.append(index + 1)
+            if row + 1 < grid_size:
+                neighbors.append(index + grid_size)
+            for other in neighbors:
+                pair_count += 1
+                left, right = means[index], means[other]
+                if left is None or right is None:
+                    excluded += 1
+                    continue
+                diffs.append(abs(left - right))
+    count = len(diffs)
+    if count:
+        array = np.asarray(diffs, dtype="float64")
+        mean = float(array.mean())
+        p95 = float(np.quantile(array, 0.95, method="linear"))
+        peak = float(array.max())
+    else:
+        mean = p95 = peak = None
+    return GradientSummary(
+        grid_size=grid_size,
+        pair_count=pair_count,
+        excluded_pair_count=excluded,
+        count=count,
+        mean=mean,
+        p95=p95,
+        max=peak,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Task 6：分位阈值（depth_slices / spatial_anomaly 共用同一阈值机制）
+# ---------------------------------------------------------------------------
+
+#: 阈值来源标识：有效值 p75/p25 分位数（非人工输入）
+_ANOMALY_THRESHOLD_SOURCE = "valid_value_quantiles_p25_p75"
+_ANOMALY_THRESHOLD_METHOD = (
+    "高值阈值=有效值 p75、低值阈值=有效值 p25（NumPy 线性插值分位数）；"
+    "阈值由数据分位数产生，非人工输入"
+)
+
+
+def anomaly_thresholds(values: Values) -> AnomalyThresholds:
+    """有效值 p75/p25 分位阈值（高/低值区域共用同一阈值机制）。
+
+    阈值来源写进 ``source``/``method``；只统计有限值，空有效集抛
+    ``ANALYSIS_EMPTY_COMMON_VALID``。
+    """
+
+    finite = _finite_values(values)
+    if finite.size == 0:
+        raise _empty_common_valid({"function": "anomaly_thresholds"})
+    summary = quantiles(finite)
+    assert summary.p75 is not None and summary.p25 is not None  # quantiles 恒产出
+    return AnomalyThresholds(
+        high=float(summary.p75),
+        low=float(summary.p25),
+        source=_ANOMALY_THRESHOLD_SOURCE,
+        method=_ANOMALY_THRESHOLD_METHOD,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Task 6：电阻率 depth_slices（逐 Z 层超阈占比）
+# ---------------------------------------------------------------------------
+
+
+def depth_slice_ratios(
+    frame: pd.DataFrame, mapping: FrameMapping, bins: int = 16
+) -> DepthSliceSummary:
+    """逐 Z 层异常占比：高值=样本值 ≥ p75，低值=样本值 ≤ p25（同一分位阈值）。
+
+    Z 轴等宽分层（数据范围 + 固定层数，确定性同 ``profile_axis``）；层内
+    高/低值占比 = 超阈样本数/层样本数（体积占比以样本计数为口径），空层
+    占比为 None。阈值来源随 ``thresholds`` 出站。映射无 z 轴抛
+    ``ANALYSIS_AXIS_INVALID``；空公共有效集抛 ``ANALYSIS_EMPTY_COMMON_VALID``。
+    """
+
+    if "z" not in _coord_columns(mapping):
+        raise PlatformError(
+            ANALYSIS_AXIS_INVALID,
+            "深度切片要求映射含 z 轴",
+            {"axis": "z"},
+            http_status=400,
+        )
+    if bins < 1:
+        raise ValueError("bins 必须 >= 1")
+    valid = frame.loc[_finite_valid_mask(frame)]
+    zs = valid["z"].to_numpy(dtype="float64")
+    finite_z = np.isfinite(zs)
+    zs = zs[finite_z]
+    values = valid["value"].to_numpy(dtype="float64")[finite_z]
+    if zs.size == 0:
+        raise _empty_common_valid({"function": "depth_slice_ratios", "bins": bins})
+    thresholds = anomaly_thresholds(values)
+    edges = _bin_edges(float(zs.min()), float(zs.max()), bins)
+    indices = _bin_indices(edges, zs)
+    counts = np.bincount(indices, minlength=bins)
+    high_counts = np.bincount(indices[values >= thresholds.high], minlength=bins)
+    low_counts = np.bincount(indices[values <= thresholds.low], minlength=bins)
+    slices: list[DepthSliceBin] = []
+    for i in range(bins):
+        count = int(counts[i])
+        high = int(high_counts[i])
+        low = int(low_counts[i])
+        slices.append(
+            DepthSliceBin(
+                z_lower=float(edges[i]),
+                z_upper=float(edges[i + 1]),
+                count=count,
+                high_count=high,
+                low_count=low,
+                high_ratio=high / count if count else None,
+                low_ratio=low / count if count else None,
+            )
+        )
+    return DepthSliceSummary(thresholds=thresholds, slice_count=bins, slices=slices)
+
+
+# ---------------------------------------------------------------------------
+# Task 6：spatial_anomaly（XY 网格高/低值区域聚合，微震/电阻率共用机制）
+# ---------------------------------------------------------------------------
+
+
+def spatial_anomaly_summary(
+    frame: pd.DataFrame, mapping: FrameMapping, grid_size: int = 32
+) -> SpatialAnomalySummary:
+    """XY 网格高/低值区域聚合：单元均值与有效值 p75/p25 阈值比较分类。
+
+    区域口径：单元均值 ≥ 高值阈值 → ``high``，≤ 低值阈值 → ``low``，其余
+    非空单元 → ``normal``，空格 → ``empty``。体积占比 = 区域内样本计数 /
+    有效样本总数（样本计数口径）。网格与 ``aggregate_spatial`` 同一确定
+    性定义；阈值来源随 ``thresholds`` 出站。
+    """
+
+    spatial = aggregate_spatial(frame, mapping, grid_size)
+    valid_values = frame["value"].to_numpy(dtype="float64")[_finite_valid_mask(frame)]
+    thresholds = anomaly_thresholds(valid_values)
+    total_points = int(valid_values.size)
+
+    bins: list[SpatialAnomalyBin] = []
+    non_empty = high_cells = low_cells = high_points = low_points = 0
+    for cell in spatial.bins:
+        if cell.count == 0 or cell.mean is None:
+            region = "empty"
+        elif cell.mean >= thresholds.high:
+            region = "high"
+        elif cell.mean <= thresholds.low:
+            region = "low"
+        else:
+            region = "normal"
+        if region == "high":
+            high_cells += 1
+            high_points += cell.count
+            non_empty += 1
+        elif region == "low":
+            low_cells += 1
+            low_points += cell.count
+            non_empty += 1
+        elif region == "normal":
+            non_empty += 1
+        bins.append(SpatialAnomalyBin(**cell.model_dump(), region=region))
+    return SpatialAnomalySummary(
+        grid_size=grid_size,
+        cell_count=grid_size * grid_size,
+        bounds=spatial.bounds,
+        thresholds=thresholds,
+        non_empty_cell_count=non_empty,
+        high_cell_count=high_cells,
+        low_cell_count=low_cells,
+        high_point_count=high_points,
+        low_point_count=low_points,
+        high_volume_ratio=high_points / total_points if total_points else None,
+        low_volume_ratio=low_points / total_points if total_points else None,
+        bins=bins,
+    )

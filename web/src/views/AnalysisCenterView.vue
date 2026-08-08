@@ -250,11 +250,16 @@ watch(datasetId, (next, prev) => {
 
         <main class="primary-area" data-test="primary-area">
           <SpatialFeaturePanel
-            v-if="activeNavItem?.usable && activeModuleId === 'spatial_extent' && activeModule"
+            v-if="
+              activeNavItem?.usable &&
+              (activeModuleId === 'spatial_extent' || activeModuleId === 'spatial_anomaly') &&
+              activeModule
+            "
             :module="activeModule"
             :variable="summary.variable"
             :dataset-id="datasetId"
             :result-id="materializedResultId"
+            :profile="summary.analysis_profile"
             @select="handleSelection"
           />
           <DistributionPanel

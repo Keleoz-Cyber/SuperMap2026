@@ -3,9 +3,11 @@
 - ``GET /api/datasets/{dataset_id}/analysis-summary``：按不可变数据版本
   组装 ``AnalysisSummaryResponse``——质量/统计/分布直方图/空间聚合/三轴
   剖面/模型对比 + provenance（source_sha256/dataset_version/generated_at/
-  calculation_version）。专属 profile 模块本批为 ``disabled`` 骨架
-  （具体计算属 Task 6）；通用模块（quality/statistics/distribution/
-  spatial_extent/profile_slices/model_comparison）全部就位。
+  calculation_version）。通用模块（quality/statistics/distribution/
+  spatial_extent/profile_slices/model_comparison）与 Task 6 专属模块
+  （微震 axis_trends/gradient/spatial_anomaly，电阻率 log 分布/depth_slices/
+  spatial_anomaly）全部为真实有限计算，载荷带计算方法/来源字段/阈值来源；
+  瓦斯等未实现专属模块仍为 ``disabled`` 骨架。
 - ``GET /api/datasets/{dataset_id}/analysis-export?format=json|csv``：
   同一响应组装后导出。json → application/json；csv → text/csv，头部
   provenance 注释行 + 稳定表头 + 轴身份列的明确行模式。两个导出都用
@@ -32,7 +34,12 @@ import pandas as pd
 from fastapi import APIRouter, Depends, Query, Response
 from fastapi.responses import JSONResponse
 
-from geomodeling.analysis.profiles import AnalysisProfile, resolve_analysis_profile
+from geomodeling.analysis.profiles import (
+    PROFILE_MICROSEISMIC_VELOCITY,
+    PROFILE_RESISTIVITY,
+    AnalysisProfile,
+    resolve_analysis_profile,
+)
 from geomodeling.analysis.schemas import (
     AnalysisModuleResult,
     AnalysisProvenance,
@@ -43,8 +50,13 @@ from geomodeling.analysis.schemas import (
 )
 from geomodeling.analysis.statistics import (
     aggregate_spatial,
+    axis_trends,
+    depth_slice_ratios,
+    gradient_summary,
     histogram,
+    log10_histogram,
     profile_axis,
+    spatial_anomaly_summary,
     summarize_numeric,
     summarize_quality,
 )
@@ -74,7 +86,8 @@ ANALYSIS_EXPORT_FORMAT_INVALID = "ANALYSIS_EXPORT_FORMAT_INVALID"
 _EXPORT_FORMATS = ("json", "csv")
 #: 模型对比随记录出站的公共指标白名单（不重算；非有限值一律剔除）
 _PUBLIC_METRIC_KEYS = ("rmse", "mae", "r2", "bias")
-#: 本批就位的通用模块；其余（专属）模块输出 disabled 骨架（Task 6 计算）
+#: 本批就位的通用模块；Task 6 专属模块由 ``_specialized_payload`` 计算，
+#: 未实现的（profile, module）组合（如瓦斯）输出 disabled 骨架
 _GENERIC_MODULES = frozenset(
     {
         "quality",
@@ -86,6 +99,32 @@ _GENERIC_MODULES = frozenset(
     }
 )
 _SPECIALIZED_SKELETON_MESSAGE = "专属模块计算将在后续批次就位，本批仅提供能力声明"
+
+#: Task 6 专属模块计算方法文案（随 payload 出站；电阻率单位未确认，
+#: 文案只描述数值口径，绝不含水、矿、瓦斯通道等地质语义结论）
+_METHOD_DISTRIBUTION = "原始值等宽分箱（数据范围+固定 32 格），计数守恒"
+_METHOD_LOG10_DISTRIBUTION = (
+    "对数尺度分箱仅使用严格正值有限值（log10 变换后等宽 32 格）；"
+    "非正值排除且计数保留，原始值分箱与统计不受影响"
+)
+_METHOD_AXIS_TRENDS = (
+    "X/Y/Z 逐轴等宽分箱（数据范围+固定 32 格），逐格 count/mean/median，"
+    "空格为 null；与剖面统计同一确定性口径"
+)
+_METHOD_GRADIENT = (
+    "XY 平面 16×16 网格单元均值 → 相邻（X/Y 向）非空单元差分幅值 |Δmean| "
+    "的有限统计（count/mean/p95/max）；任一侧为空格的相邻对排除且计数保留；"
+    "仅用有限值"
+)
+_METHOD_DEPTH_SLICES = (
+    "Z 轴等宽 16 层（数据范围+固定层数）；层高值占比=层内 value≥p75 样本数/"
+    "层样本数，低值占比=层内 value≤p25 样本数/层样本数（体积占比以样本计数"
+    "为口径）；空层为 null；阈值来源见 thresholds"
+)
+_METHOD_SPATIAL_ANOMALY = (
+    "XY 平面 32×32 网格单元均值与有效值 p75/p25 分位阈值比较划分高/低值区域；"
+    "体积占比=区域样本计数/有效样本总数（样本计数口径）；阈值来源见 thresholds"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -209,6 +248,65 @@ def _succeeded_candidates(
 # ---------------------------------------------------------------------------
 
 
+def _source_fields(mapping: dict[str, Any], *roles: str) -> dict[str, str]:
+    """模块来源字段：mapping 角色 → 源列名（只含映射中存在的角色）。"""
+
+    fields: dict[str, str] = {}
+    for role in roles:
+        raw = mapping.get(role)
+        if raw:
+            fields[role] = str(raw)
+    return fields
+
+
+def _specialized_payload(
+    profile_id: str,
+    module_id: str,
+    frame: pd.DataFrame,
+    mapping: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Task 6 专属模块真实有限计算（载荷带计算方法与来源字段）。
+
+    按 ``(profile_id, module_id)`` 派发；未实现的组合（瓦斯 profile 及
+    其他未接线模块）返回 None → 调用方输出 disabled 骨架，绝不伪造成功。
+    微震与电阻率的 ``spatial_anomaly`` 共用同一分位阈值机制，语义文案
+    由前端按 profile 渲染，载荷保持数值口径中性。
+    """
+
+    if profile_id == PROFILE_MICROSEISMIC_VELOCITY:
+        if module_id == "axis_trends":
+            return {
+                "method": _METHOD_AXIS_TRENDS,
+                "source_fields": _source_fields(mapping, "x", "y", "z", "value"),
+                "axes": [
+                    trend.model_dump(mode="json")
+                    for trend in axis_trends(frame, mapping)
+                ],
+            }
+        if module_id == "gradient":
+            payload = gradient_summary(frame, mapping).model_dump(mode="json")
+            payload["method"] = _METHOD_GRADIENT
+            payload["source_fields"] = _source_fields(mapping, "x", "y", "value")
+            return payload
+        if module_id == "spatial_anomaly":
+            payload = spatial_anomaly_summary(frame, mapping).model_dump(mode="json")
+            payload["method"] = _METHOD_SPATIAL_ANOMALY
+            payload["source_fields"] = _source_fields(mapping, "x", "y", "value")
+            return payload
+    elif profile_id == PROFILE_RESISTIVITY:
+        if module_id == "depth_slices":
+            payload = depth_slice_ratios(frame, mapping).model_dump(mode="json")
+            payload["method"] = _METHOD_DEPTH_SLICES
+            payload["source_fields"] = _source_fields(mapping, "z", "value")
+            return payload
+        if module_id == "spatial_anomaly":
+            payload = spatial_anomaly_summary(frame, mapping).model_dump(mode="json")
+            payload["method"] = _METHOD_SPATIAL_ANOMALY
+            payload["source_fields"] = _source_fields(mapping, "x", "y", "value")
+            return payload
+    return None
+
+
 def _build_modules(
     analysis_profile: AnalysisProfile,
     frame: pd.DataFrame,
@@ -217,7 +315,7 @@ def _build_modules(
     runtime: PlatformRuntime,
     record: DatasetVersionRecord,
 ) -> tuple[list[AnalysisModuleResult], QualitySummary, NumericSummary]:
-    """按 profile.module_specs 生成模块结果：通用模块计算，专属模块骨架。"""
+    """按 profile.module_specs 生成模块结果：通用模块 + Task 6 专属模块计算。"""
 
     axes = ["x", "y"] + (["z"] if mapping.get("z") else [])
     quality = summarize_quality(frame, mapping)
@@ -226,13 +324,19 @@ def _build_modules(
     for spec in analysis_profile.module_specs:
         module_id = spec.module_id
         if module_id not in _GENERIC_MODULES:
-            modules.append(
-                AnalysisModuleResult(
-                    module_id=module_id,
-                    status="disabled",
-                    message=_SPECIALIZED_SKELETON_MESSAGE,
-                )
+            payload = _specialized_payload(
+                analysis_profile.profile_id, module_id, frame, mapping
             )
+            if payload is None:
+                modules.append(
+                    AnalysisModuleResult(
+                        module_id=module_id,
+                        status="disabled",
+                        message=_SPECIALIZED_SKELETON_MESSAGE,
+                    )
+                )
+                continue
+            modules.append(AnalysisModuleResult(module_id=module_id, payload=payload))
             continue
         if module_id == "quality":
             payload = quality.model_dump(mode="json")
@@ -240,7 +344,25 @@ def _build_modules(
             payload = numeric.model_dump(mode="json")
         elif module_id == "distribution":
             bins = histogram(valid_values)
-            payload = {"bin_count": len(bins), "bins": [b.model_dump(mode="json") for b in bins]}
+            payload = {
+                "bin_count": len(bins),
+                "bins": [b.model_dump(mode="json") for b in bins],
+                "method": _METHOD_DISTRIBUTION,
+                "source_fields": _source_fields(mapping, "value"),
+            }
+            if analysis_profile.profile_id == PROFILE_RESISTIVITY:
+                # Task 6：log10 分箱（仅严格正值）与原始值分箱并存，排除计数保留
+                log_bins, log_excluded = log10_histogram(valid_values)
+                payload["log10"] = {
+                    "bin_count": len(log_bins) if log_bins is not None else 0,
+                    "bins": (
+                        [b.model_dump(mode="json") for b in log_bins]
+                        if log_bins is not None
+                        else None
+                    ),
+                    "excluded_non_positive_count": log_excluded,
+                    "method": _METHOD_LOG10_DISTRIBUTION,
+                }
         elif module_id == "spatial_extent":
             payload = aggregate_spatial(frame, mapping).model_dump(mode="json")
         elif module_id == "profile_slices":
