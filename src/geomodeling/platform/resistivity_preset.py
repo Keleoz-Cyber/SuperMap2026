@@ -707,8 +707,10 @@ SEED_NOTE = (
 
 #: RHO 单位待来源确认：诚实表述，绝不写 Ω·m 等未确认单位
 VALUE_UNIT_NOTE = "RHO 单位待来源确认"
-#: 工作台 provenance 键（seed 写入 Case config_json，legacy_adapter 读取）
-DATA_FORM = "三维 X/Y/Z/RHO（局部工程坐标）"
+#: 工作台 provenance 键（seed 写入 Case config_json，legacy_adapter 读取）；
+#: v0.8.0 Task 10：data_form 统一为设计 §5 口径（与预置描述卡同一文案），
+#: 并新增 fields 键（首页字段行逐字渲染）
+DATA_FORM = f"标准化散点 · {EXPECTED_ROW_COUNT:,} 个节点"
 PRESET_BADGE = "散点预置 · 官方普通克里金成果"
 
 
@@ -882,6 +884,7 @@ def _create_preset_chain(
             "candidate_report_sha256": baseline.candidate_report_sha256,
             # 工作台 provenance（legacy_adapter 读取；微震卡走既有常量兜底）
             "data_form": DATA_FORM,
+            "fields": list(REQUIRED_COLUMNS),
             "value_unit": VALUE_UNIT_NOTE,
             "coordinate_kind": "local_linear",
             "badge": PRESET_BADGE,

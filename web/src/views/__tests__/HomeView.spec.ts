@@ -232,7 +232,8 @@ const RESISTIVITY_PRESET_CARD: CaseSummary = {
   official_result: { result_id: 'rho-official-1', url: '/results/rho-official-1', materialized: true },
   provenance_summary: {
     badge: '散点预置 · 官方普通克里金成果',
-    data_form: '三维 X/Y/Z/RHO（局部工程坐标）',
+    data_form: '标准化散点 · 17,549 个节点',
+    fields: ['X', 'Y', 'Z', 'RHO'],
     value_unit: 'RHO 单位待来源确认',
     coordinate_kind: 'local_linear',
   },
@@ -275,8 +276,12 @@ describe('HomeView v0.8.0 电阻率散点预置卡', () => {
 
     const text = wrapper.text()
     expect(text).toContain('散点预置 · 官方普通克里金成果')
-    expect(text).toContain('三维 X/Y/Z/RHO（局部工程坐标）')
+    expect(text).toContain('标准化散点 · 17,549 个节点')
     expect(text).toContain('RHO 单位待来源确认')
+    // 已 seed 卡同样渲染字段行（设计 §5 统一口径，逐字来自 DTO fields 键）
+    const rows = fieldRows(wrapper)
+    expect(rows.length).toBe(1)
+    expect(rows[0].text()).toContain('X/Y/Z/RHO')
     expect(text).not.toContain('S3M')
     expect(text).not.toContain('DAT')
     expect(text).not.toContain('v0.3.1')

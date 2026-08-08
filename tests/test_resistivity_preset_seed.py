@@ -337,8 +337,10 @@ def test_seed_resistivity_creates_read_only_preset_chain(runtime, source_path: P
     assert config["preset_version"] == PRESET_VERSION
     assert config["source_sha256"] == source.sha256
     assert config["baseline_sha256"] == baseline.sha256
-    # 工作台 provenance 键由 seed 写入（legacy_adapter 读取，无需硬编码）
-    assert config["data_form"] == "三维 X/Y/Z/RHO（局部工程坐标）"
+    # 工作台 provenance 键由 seed 写入（legacy_adapter 读取，无需硬编码）；
+    # v0.8.0 Task 10：data_form 与描述卡统一为设计 §5 口径，并写 fields 键
+    assert config["data_form"] == "标准化散点 · 17,549 个节点"
+    assert config["fields"] == ["X", "Y", "Z", "RHO"]
     assert config["value_unit"] == "RHO 单位待来源确认"
     assert config["coordinate_kind"] == "local_linear"
     assert config["badge"] == "散点预置 · 官方普通克里金成果"
@@ -612,7 +614,8 @@ def test_seeded_resistivity_appears_once_as_builtin_preset_card(seeded_client):
     assert card["primary_dataset"]["profile"]["mapping"]["value"] == "RHO"
     provenance = card["provenance_summary"]
     assert provenance["preset_version"] == PRESET_VERSION
-    assert provenance["data_form"] == "三维 X/Y/Z/RHO（局部工程坐标）"
+    assert provenance["data_form"] == "标准化散点 · 17,549 个节点"
+    assert provenance["fields"] == ["X", "Y", "Z", "RHO"]
     assert provenance["value_unit"] == "RHO 单位待来源确认"
     assert provenance["coordinate_kind"] == "local_linear"
     assert provenance["badge"] == "散点预置 · 官方普通克里金成果"
@@ -650,6 +653,34 @@ def test_unseeded_runtime_shows_resistivity_preset_descriptor_card(fresh_client)
     assert ":\\" not in serialized
 
 
+def test_legacy_generation_seed_config_falls_back_to_unified_copy(tmp_path):
+    """Task 10 前旧 seed（无 fields 键、旧 data_form 字面量）读配置时兜底为统一口径。
+
+    已 seed 的旧运行库不会重写 config_json（幂等 no-op）；``workspace_case_card``
+    读到无 fields 键的电阻率预置配置时按设计 §5 口径兜底（参照微震
+    ``_PRESET_PROVENANCE_FALLBACK`` 模式），首页卡与工作台文案保持统一。
+    """
+
+    client = _make_client(tmp_path, seed=True)
+    runtime = client.app.state.platform_runtime
+    with runtime.session() as session:
+        case = session.get(tables.Case, PRESET_CASE_ID)
+        config = tables.loads_canonical(case.config_json)
+        config.pop("fields", None)
+        config["data_form"] = "三维 X/Y/Z/RHO（局部工程坐标）"  # Task 2 时代字面量
+        case.config_json = tables.dumps_canonical(config)
+        session.commit()
+
+    provenance = _cards(client)["resistivity"]["provenance_summary"]
+    assert provenance["data_form"] == "标准化散点 · 17,549 个节点"
+    assert provenance["fields"] == ["X", "Y", "Z", "RHO"]
+    assert provenance["badge"] == "散点预置 · 官方普通克里金成果"
+
+    workspace = client.get("/api/cases/resistivity/workspace").json()
+    assert workspace["provenance_summary"]["data_form"] == "标准化散点 · 17,549 个节点"
+    assert workspace["provenance_summary"]["fields"] == ["X", "Y", "Z", "RHO"]
+
+
 def test_resistivity_workspace_is_builtin_preset(seeded_client):
     """计划 Task 6 Step 1：已 seed 运行库返回统一 builtin_preset 工作台 DTO。"""
 
@@ -669,10 +700,11 @@ def test_resistivity_workspace_is_builtin_preset(seeded_client):
     assert body["primary_dataset"]["profile"]["mapping"]["value"] == "RHO"
     assert body["official_result"]["materialized"] is True
     assert body["official_result"]["url"].startswith("/results/")
-    # provenance 键由 Task 2 seed 写入 config_json
+    # provenance 键由 Task 2 seed 写入 config_json；Task 10 起为设计 §5 统一口径
     provenance = body["provenance_summary"]
     assert provenance["preset_version"] == PRESET_VERSION
-    assert provenance["data_form"] == "三维 X/Y/Z/RHO（局部工程坐标）"
+    assert provenance["data_form"] == "标准化散点 · 17,549 个节点"
+    assert provenance["fields"] == ["X", "Y", "Z", "RHO"]
     assert provenance["value_unit"] == "RHO 单位待来源确认"
     assert provenance["coordinate_kind"] == "local_linear"
     assert provenance["badge"] == "散点预置 · 官方普通克里金成果"

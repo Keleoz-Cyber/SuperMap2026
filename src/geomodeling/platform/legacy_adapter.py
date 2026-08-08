@@ -26,7 +26,7 @@ from geomodeling.platform.microseismic_preset import (
     TRACKED_CSV_SHA256,
 )
 from geomodeling.platform.resistivity_preset import (
-    EXPECTED_ROW_COUNT as RESISTIVITY_EXPECTED_ROW_COUNT,
+    DATA_FORM as RESISTIVITY_DATA_FORM,
     PRESET_BADGE as RESISTIVITY_PRESET_BADGE,
     PRESET_CASE_ID as RESISTIVITY_PRESET_CASE_ID,
     PRESET_VERSION as RESISTIVITY_PRESET_VERSION,
@@ -57,6 +57,14 @@ _PRESET_PROVENANCE_FALLBACK = {
     "value_unit": "km/s",
     "coordinate_kind": "local_linear",
     "badge": "CSV 预置 · 官方普通克里金成果",
+}
+
+#: 电阻率预置兜底（v0.8.0 Task 10）：Task 2 时代旧 seed 无 fields 键、data_form
+#: 为旧字面量；读配置遇到该旧代际时按设计 §5 统一口径兜底（fields 缺键即旧
+#: 代际标记）。仅作用于电阻率预置案例；微震卡绝不经过本映射（逐位不变）。
+_RESISTIVITY_PROVENANCE_FALLBACK = {
+    "data_form": RESISTIVITY_DATA_FORM,
+    "fields": list(RESISTIVITY_REQUIRED_COLUMNS),
 }
 
 
@@ -149,7 +157,7 @@ def resistivity_preset_workspace_card() -> dict[str, Any]:
         "provenance_summary": {
             "preset_version": RESISTIVITY_PRESET_VERSION,
             "source_sha256": None,  # 源 SHA 由 seed 写入 config_json；描述卡不读外部文件
-            "data_form": f"标准化散点 · {RESISTIVITY_EXPECTED_ROW_COUNT:,} 个节点",
+            "data_form": RESISTIVITY_DATA_FORM,
             "fields": list(RESISTIVITY_REQUIRED_COLUMNS),
             "value_unit": RESISTIVITY_VALUE_UNIT_NOTE,
             "coordinate_kind": "local_linear",
@@ -185,6 +193,16 @@ def workspace_case_card(
             or _PRESET_PROVENANCE_FALLBACK["coordinate_kind"],
             "badge": config.get("badge") or _PRESET_PROVENANCE_FALLBACK["badge"],
         }
+        if record.id == RESISTIVITY_PRESET_CASE_ID:
+            # v0.8.0 Task 10：seed 自本批起写入 fields 键与统一 data_form。
+            # Task 2 时代旧 seed（无 fields 键）整体兜底为设计 §5 统一口径，
+            # 已 seed 的旧运行库首页卡文案与描述卡一致。
+            fields = config.get("fields")
+            if isinstance(fields, list) and fields:
+                provenance["fields"] = list(fields)
+            else:
+                provenance["data_form"] = _RESISTIVITY_PROVENANCE_FALLBACK["data_form"]
+                provenance["fields"] = list(_RESISTIVITY_PROVENANCE_FALLBACK["fields"])
     elif primary_dataset is not None:
         mapping = (primary_dataset.get("profile") or {}).get("mapping") or {}
         provenance = {
