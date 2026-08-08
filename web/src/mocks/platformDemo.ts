@@ -407,6 +407,583 @@ const RHO_DSI_PARAMETERS = {
 }
 const RHO_VALIDATION = { method: 'spatial_kfold', folds: 5, seed: 20260723, holdout_fraction: 0.2 }
 
+// ---------------------------------------------------------------- v0.8.0 第二批：统计与空间分析中心
+// analysis-summary / analysis-export mock 与真实后端合同逐字段对齐
+// （src/geomodeling/api/routes/analysis.py + analysis/schemas.py）：quality/
+// statistics/quantiles/32 分箱 distribution/profile_axes 三轴/model_comparison
+// 候选/modules 状态数组/provenance；微震含 axis_trends/gradient/spatial_anomaly
+// ok，电阻率含 log10/depth_slices/spatial_anomaly ok，generic_3d 只含通用模块
+// 且模块清单与 profiles.py 注册表顺序一致。数值为本文件按固定算术公式生成的
+// 确定性演示合成口径（无随机源），只驱动浏览器流程，绝不冒充真实计算结果或
+// 私有证据。方法文案与后端 _METHOD_* 常量逐字一致。
+const ANALYSIS_METHOD = {
+  distribution: '原始值等宽分箱（数据范围+固定 32 格），计数守恒',
+  log10:
+    '对数尺度分箱仅使用严格正值有限值（log10 变换后等宽 32 格）；' +
+    '非正值排除且计数保留，原始值分箱与统计不受影响',
+  axisTrends:
+    'X/Y/Z 逐轴等宽分箱（数据范围+固定 32 格），逐格 count/mean/median，' +
+    '空格为 null；与剖面统计同一确定性口径',
+  gradient:
+    'XY 平面 16×16 网格单元均值 → 相邻（X/Y 向）非空单元差分幅值 |Δmean| ' +
+    '的有限统计（count/mean/p95/max）；任一侧为空格的相邻对排除且计数保留；仅用有限值',
+  depthSlices:
+    'Z 轴等宽 16 层（数据范围+固定层数）；层高值占比=层内 value≥p75 样本数/' +
+    '层样本数，低值占比=层内 value≤p25 样本数/层样本数（体积占比以样本计数' +
+    '为口径）；空层为 null；阈值来源见 thresholds',
+  spatialAnomaly:
+    'XY 平面 32×32 网格单元均值与有效值 p75/p25 分位阈值比较划分高/低值区域；' +
+    '体积占比=区域样本计数/有效样本总数（样本计数口径）；阈值来源见 thresholds',
+  thresholdSource: 'valid_value_quantiles_p25_p75',
+  thresholdMethod: '高值阈值=有效值 p75、低值阈值=有效值 p25',
+}
+
+interface AnalysisHistBin {
+  lower: number
+  upper: number
+  count: number
+}
+interface AnalysisProfileBin extends AnalysisHistBin {
+  mean: number | null
+  median: number | null
+}
+interface AnalysisSpatialBinOut {
+  x_lower: number
+  x_upper: number
+  y_lower: number
+  y_upper: number
+  count: number
+  mean: number | null
+}
+interface AnalysisAnomalyBinOut extends AnalysisSpatialBinOut {
+  region: 'high' | 'low' | 'normal' | 'empty'
+}
+type AnalysisAxisId = 'x' | 'y' | 'z'
+interface AnalysisModuleOut {
+  module_id: string
+  status: 'ok'
+  payload: Record<string, unknown>
+  message: null
+}
+interface AnalysisSummaryOut {
+  dataset_id: string
+  case_id: string
+  analysis_profile: string
+  profile_version: number
+  variable: { name: string; unit: string | null }
+  quality: Record<string, unknown>
+  statistics: {
+    count: number
+    min: number
+    max: number
+    mean: number
+    median: number
+    std: number
+    quantiles: Record<string, number>
+  }
+  modules: AnalysisModuleOut[]
+  provenance: {
+    source_sha256: string
+    dataset_version: number
+    generated_at: string
+    calculation_version: string
+  }
+}
+
+const analysisModule = (moduleId: string, payload: Record<string, unknown>): AnalysisModuleOut => ({
+  module_id: moduleId,
+  status: 'ok',
+  payload,
+  message: null,
+})
+
+/** 确定性计数权重（固定算术，无随机源） */
+const analysisWeights = (base: number, span: number, bins = 32): number[] =>
+  Array.from({ length: bins }, (_, i) => base + ((i * 37) % span))
+
+/** 等宽直方图分箱；末格吸收剩余计数（计数守恒口径与后端一致） */
+function analysisHistogram(
+  min: number,
+  max: number,
+  weightsArr: number[],
+  total: number,
+): AnalysisHistBin[] {
+  const width = (max - min) / weightsArr.length
+  let assigned = 0
+  return weightsArr.map((weight, i) => {
+    const count = i === weightsArr.length - 1 ? total - assigned : weight
+    assigned += count
+    return { lower: min + i * width, upper: min + (i + 1) * width, count }
+  })
+}
+
+/** 逐轴剖面分箱（count/mean/median；空箱 mean/median 为 null，绝不以 NaN 占位） */
+function analysisProfileBins(
+  min: number,
+  max: number,
+  valueBase: number,
+  weightsArr: number[],
+): AnalysisProfileBin[] {
+  const width = (max - min) / weightsArr.length
+  return weightsArr.map((weight, i) => ({
+    lower: min + i * width,
+    upper: min + (i + 1) * width,
+    count: weight,
+    mean: weight > 0 ? valueBase + i * 0.01 : null,
+    median: weight > 0 ? valueBase + i * 0.01 - 0.004 : null,
+  }))
+}
+
+/** XY 平面网格单元（行主序：先 row 后 col，与后端 spatial bins 顺序一致） */
+function analysisSpatialBins(
+  xMin: number,
+  xMax: number,
+  yMin: number,
+  yMax: number,
+  valueBase: number,
+  grid = 32,
+): AnalysisSpatialBinOut[] {
+  const xw = (xMax - xMin) / grid
+  const yw = (yMax - yMin) / grid
+  const bins: AnalysisSpatialBinOut[] = []
+  for (let row = 0; row < grid; row += 1) {
+    for (let col = 0; col < grid; col += 1) {
+      const count = (row * 7 + col * 13) % 5 === 0 ? 0 : 1 + ((row * 31 + col * 17) % 9)
+      bins.push({
+        x_lower: xMin + col * xw,
+        x_upper: xMin + (col + 1) * xw,
+        y_lower: yMin + row * yw,
+        y_upper: yMin + (row + 1) * yw,
+        count,
+        mean: count > 0 ? valueBase + ((row * 3 + col * 5) % 40) / 10 : null,
+      })
+    }
+  }
+  return bins
+}
+
+/** 空间异常分箱 + 区域计数摘要（分位阈值口径，与后端载荷字段一致） */
+function analysisAnomalyGrid(
+  xMin: number,
+  xMax: number,
+  yMin: number,
+  yMax: number,
+  low: number,
+  high: number,
+  grid = 32,
+) {
+  const xw = (xMax - xMin) / grid
+  const yw = (yMax - yMin) / grid
+  const span = high - low
+  const bins: AnalysisAnomalyBinOut[] = []
+  for (let row = 0; row < grid; row += 1) {
+    for (let col = 0; col < grid; col += 1) {
+      const count = (row * 7 + col * 13) % 6 === 0 ? 0 : 2 + ((row * 31 + col * 17) % 11)
+      const mean =
+        count > 0 ? low - span * 0.3 + (((row * 11 + col * 7) % 120) / 100) * span * 1.6 : null
+      const region: AnalysisAnomalyBinOut['region'] =
+        count === 0 || mean === null
+          ? 'empty'
+          : mean >= high
+            ? 'high'
+            : mean < low
+              ? 'low'
+              : 'normal'
+      bins.push({
+        x_lower: xMin + col * xw,
+        x_upper: xMin + (col + 1) * xw,
+        y_lower: yMin + row * yw,
+        y_upper: yMin + (row + 1) * yw,
+        count,
+        mean,
+        region,
+      })
+    }
+  }
+  const nonEmpty = bins.filter((bin) => bin.count > 0)
+  const highCells = nonEmpty.filter((bin) => bin.region === 'high')
+  const lowCells = nonEmpty.filter((bin) => bin.region === 'low')
+  const totalPoints = nonEmpty.reduce((acc, bin) => acc + bin.count, 0)
+  const highPoints = highCells.reduce((acc, bin) => acc + bin.count, 0)
+  const lowPoints = lowCells.reduce((acc, bin) => acc + bin.count, 0)
+  return {
+    bins,
+    non_empty_cell_count: nonEmpty.length,
+    high_cell_count: highCells.length,
+    low_cell_count: lowCells.length,
+    high_point_count: highPoints,
+    low_point_count: lowPoints,
+    high_volume_ratio: totalPoints > 0 ? highPoints / totalPoints : null,
+    low_volume_ratio: totalPoints > 0 ? lowPoints / totalPoints : null,
+  }
+}
+
+/** Z 轴 16 层异常占比（末层吸收剩余计数；high/low 计数与占比逐层确定） */
+function analysisDepthSlices(zMin: number, zMax: number, total: number) {
+  const layers = 16
+  const width = (zMax - zMin) / layers
+  const weightsArr = analysisWeights(700, 500, layers)
+  let assigned = 0
+  return weightsArr.map((weight, i) => {
+    const count = i === layers - 1 ? total - assigned : weight
+    assigned += count
+    const highCount = Math.floor(count * (0.08 + ((i * 7) % 26) / 100))
+    const lowCount = Math.floor(count * (0.06 + ((i * 11) % 22) / 100))
+    return {
+      z_lower: zMin + i * width,
+      z_upper: zMin + (i + 1) * width,
+      count,
+      high_count: highCount,
+      low_count: lowCount,
+      high_ratio: highCount / count,
+      low_ratio: lowCount / count,
+    }
+  })
+}
+
+function analysisProfileAxes(
+  bounds: Record<AnalysisAxisId, [number, number]>,
+  valueBase: number,
+  weightsArr: number[],
+) {
+  return (['x', 'y', 'z'] as const).map((axis) => ({
+    axis,
+    bins: analysisProfileBins(bounds[axis][0], bounds[axis][1], valueBase, weightsArr),
+  }))
+}
+
+/** CSV 导出：行模式与后端 _csv_export 逐行一致（provenance 注释头 + 稳定表头） */
+function analysisCsvExport(summary: AnalysisSummaryOut): string {
+  const lines: string[] = [
+    `# dataset_id=${summary.dataset_id}`,
+    `# case_id=${summary.case_id}`,
+    `# analysis_profile=${summary.analysis_profile}`,
+    `# source_sha256=${summary.provenance.source_sha256}`,
+    `# dataset_version=${summary.provenance.dataset_version}`,
+    `# calculation_version=${summary.provenance.calculation_version}`,
+    `# generated_at=${summary.provenance.generated_at}`,
+    'section,axis,bin_index,metric,lower,upper,value',
+  ]
+  const stats = summary.statistics
+  for (const metric of ['count', 'min', 'max', 'mean', 'median', 'std'] as const) {
+    lines.push(`statistics,,,${metric},,,${stats[metric]}`)
+  }
+  for (const q of ['p05', 'p25', 'p50', 'p75', 'p95']) {
+    lines.push(`statistics,,,${q},,,${stats.quantiles[q]}`)
+  }
+  const distribution = summary.modules.find((m) => m.module_id === 'distribution')
+  const histBins = (distribution?.payload.bins ?? []) as AnalysisHistBin[]
+  histBins.forEach((bin, index) => {
+    lines.push(`distribution,,${index},count,${bin.lower},${bin.upper},${bin.count}`)
+  })
+  const profiles = summary.modules.find((m) => m.module_id === 'profile_slices')
+  const axes = (profiles?.payload.axes ?? []) as { axis: string; bins: AnalysisProfileBin[] }[]
+  for (const axis of axes) {
+    axis.bins.forEach((bin, index) => {
+      for (const metric of ['count', 'mean', 'median'] as const) {
+        const value = bin[metric] === null ? '' : String(bin[metric])
+        lines.push(`profile,${axis.axis},${index},${metric},${bin.lower},${bin.upper},${value}`)
+      }
+    })
+  }
+  return `${lines.join('\n')}\n`
+}
+
+// ---- 微震预置（ds-preset）：microseismic_velocity 专属模块全量 ok ----
+const MICRO_ANALYSIS_BOUNDS: Record<AnalysisAxisId, [number, number]> = {
+  x: [-750, 960],
+  y: [-995, 1310],
+  z: [-55.556, -50],
+}
+const MICRO_ANALYSIS_THRESHOLDS = { high: 5.9, low: 5.02 }
+
+function microAnalysisSummary(): AnalysisSummaryOut {
+  const weights32 = analysisWeights(20, 40)
+  const { bins: anomalyBins, ...anomalySummary } = analysisAnomalyGrid(
+    -750,
+    960,
+    -995,
+    1310,
+    MICRO_ANALYSIS_THRESHOLDS.low,
+    MICRO_ANALYSIS_THRESHOLDS.high,
+  )
+  const statistics = {
+    count: 1911,
+    min: 4.21,
+    max: 6.83,
+    mean: 5.47,
+    median: 5.45,
+    std: 0.62,
+    quantiles: { p05: 4.45, p25: 5.02, p50: 5.45, p75: 5.9, p95: 6.5 },
+  }
+  const quality = {
+    row_count: 1911,
+    valid_count: 1911,
+    invalid_count: 0,
+    duplicate_coordinate_count: 0,
+    bounds: MICRO_ANALYSIS_BOUNDS,
+  }
+  return {
+    dataset_id: 'ds-preset',
+    case_id: 'builtin-microseismic-vx-1911',
+    analysis_profile: 'microseismic_velocity',
+    profile_version: 1,
+    variable: { name: 'Vx', unit: 'km/s' },
+    quality,
+    statistics,
+    modules: [
+      analysisModule('quality', { ...quality }),
+      analysisModule('statistics', { ...statistics }),
+      analysisModule('distribution', {
+        bin_count: 32,
+        bins: analysisHistogram(4.21, 6.83, weights32, 1911),
+        method: ANALYSIS_METHOD.distribution,
+        source_fields: { value: 'VX_KM_S' },
+      }),
+      analysisModule('axis_trends', {
+        method: ANALYSIS_METHOD.axisTrends,
+        source_fields: { x: 'X_LOCAL_M', y: 'Y_LOCAL_M', z: 'Z_LOCAL_M', value: 'VX_KM_S' },
+        axes: analysisProfileAxes(MICRO_ANALYSIS_BOUNDS, 5.2, analysisWeights(15, 30)).map(
+          (entry) => ({ axis: entry.axis, sample_count: 1911, bins: entry.bins }),
+        ),
+      }),
+      analysisModule('gradient', {
+        grid_size: 16,
+        pair_count: 480,
+        excluded_pair_count: 12,
+        count: 468,
+        mean: 0.18,
+        p95: 0.52,
+        max: 0.91,
+        method: ANALYSIS_METHOD.gradient,
+        source_fields: { x: 'X_LOCAL_M', y: 'Y_LOCAL_M', value: 'VX_KM_S' },
+      }),
+      analysisModule('spatial_anomaly', {
+        grid_size: 32,
+        cell_count: 32 * 32,
+        bounds: { x: MICRO_ANALYSIS_BOUNDS.x, y: MICRO_ANALYSIS_BOUNDS.y },
+        thresholds: {
+          high: MICRO_ANALYSIS_THRESHOLDS.high,
+          low: MICRO_ANALYSIS_THRESHOLDS.low,
+          source: ANALYSIS_METHOD.thresholdSource,
+          method: ANALYSIS_METHOD.thresholdMethod,
+        },
+        ...anomalySummary,
+        bins: anomalyBins,
+        method: ANALYSIS_METHOD.spatialAnomaly,
+        source_fields: { x: 'X_LOCAL_M', y: 'Y_LOCAL_M', value: 'VX_KM_S' },
+      }),
+      analysisModule('profile_slices', {
+        axes: analysisProfileAxes(MICRO_ANALYSIS_BOUNDS, 5.2, weights32),
+      }),
+      analysisModule('model_comparison', {
+        candidates: [
+          {
+            result_id: 'cand-1',
+            algorithm: 'ordinary_kriging',
+            parameters: { variogram_model: 'spherical', neighbor_count: 16 },
+            metrics: { rmse: 0.121, mae: 0.092, r2: 0.93, bias: 0.008 },
+            materialized: true,
+            formal_selection: true,
+            result_url: '/results/cand-1',
+          },
+        ],
+      }),
+    ],
+    provenance: {
+      source_sha256: MICRO_SHA,
+      dataset_version: 1,
+      generated_at: T,
+      calculation_version: 'analysis.v1',
+    },
+  }
+}
+
+// ---- 电阻率预置（ds-rho）：log10 分箱/depth_slices/spatial_anomaly ok ----
+const RHO_ANALYSIS_BOUNDS: Record<AnalysisAxisId, [number, number]> = {
+  x: [-160, -40],
+  y: [220, 660],
+  z: [-833.0047143, -19.5999],
+}
+const RHO_ANALYSIS_THRESHOLDS = { high: 52.74, low: 23.41 }
+
+function rhoAnalysisSummary(): AnalysisSummaryOut {
+  const weights32 = analysisWeights(200, 500)
+  const { bins: anomalyBins, ...anomalySummary } = analysisAnomalyGrid(
+    -160,
+    -40,
+    220,
+    660,
+    RHO_ANALYSIS_THRESHOLDS.low,
+    RHO_ANALYSIS_THRESHOLDS.high,
+  )
+  const statistics = {
+    count: 17547,
+    min: RHO_VALUE_RANGE[0],
+    max: RHO_VALUE_RANGE[1],
+    mean: 42.06,
+    median: 31.27,
+    std: 24.81,
+    quantiles: { p05: 8.12, p25: 23.41, p50: 31.27, p75: 52.74, p95: 98.2 },
+  }
+  const quality = {
+    row_count: RHO_ROW_COUNT,
+    valid_count: 17547,
+    invalid_count: 2,
+    duplicate_coordinate_count: 0,
+    bounds: RHO_ANALYSIS_BOUNDS,
+  }
+  return {
+    dataset_id: RHO_DATASET_ID,
+    case_id: 'resistivity',
+    analysis_profile: 'resistivity',
+    profile_version: 1,
+    variable: { name: 'RHO', unit: RHO_UNIT_NOTE },
+    quality,
+    statistics,
+    modules: [
+      analysisModule('quality', { ...quality }),
+      analysisModule('statistics', { ...statistics }),
+      analysisModule('distribution', {
+        bin_count: 32,
+        bins: analysisHistogram(RHO_VALUE_RANGE[0], RHO_VALUE_RANGE[1], weights32, 17547),
+        method: ANALYSIS_METHOD.distribution,
+        source_fields: { value: 'RHO' },
+        // Task 6：log10 分箱（仅严格正值）与原始值分箱并存，排除计数保留
+        log10: {
+          bin_count: 32,
+          bins: analysisHistogram(
+            Math.log10(RHO_VALUE_RANGE[0]),
+            Math.log10(RHO_VALUE_RANGE[1]),
+            analysisWeights(180, 420),
+            17545,
+          ),
+          excluded_non_positive_count: 2,
+          method: ANALYSIS_METHOD.log10,
+        },
+      }),
+      analysisModule('spatial_anomaly', {
+        grid_size: 32,
+        cell_count: 32 * 32,
+        bounds: { x: RHO_ANALYSIS_BOUNDS.x, y: RHO_ANALYSIS_BOUNDS.y },
+        thresholds: {
+          high: RHO_ANALYSIS_THRESHOLDS.high,
+          low: RHO_ANALYSIS_THRESHOLDS.low,
+          source: ANALYSIS_METHOD.thresholdSource,
+          method: ANALYSIS_METHOD.thresholdMethod,
+        },
+        ...anomalySummary,
+        bins: anomalyBins,
+        method: ANALYSIS_METHOD.spatialAnomaly,
+        source_fields: { x: 'X', y: 'Y', value: 'RHO' },
+      }),
+      analysisModule('depth_slices', {
+        thresholds: {
+          high: RHO_ANALYSIS_THRESHOLDS.high,
+          low: RHO_ANALYSIS_THRESHOLDS.low,
+          source: ANALYSIS_METHOD.thresholdSource,
+          method: ANALYSIS_METHOD.thresholdMethod,
+        },
+        slice_count: 16,
+        slices: analysisDepthSlices(RHO_ANALYSIS_BOUNDS.z[0], RHO_ANALYSIS_BOUNDS.z[1], 17547),
+        method: ANALYSIS_METHOD.depthSlices,
+        source_fields: { z: 'Z', value: 'RHO' },
+      }),
+      analysisModule('profile_slices', {
+        axes: analysisProfileAxes(RHO_ANALYSIS_BOUNDS, 40, weights32),
+      }),
+      analysisModule('model_comparison', {
+        candidates: [
+          {
+            result_id: RHO_OFFICIAL_RESULT_ID,
+            algorithm: 'ordinary_kriging',
+            parameters: { variogram_model: 'exponential', neighbor_count: 24 },
+            // 官方基线指标：config/presets/resistivity-official-baseline.json 入库公开事实
+            metrics: { rmse: 6.454476, mae: 3.251899, r2: 0.923093, bias: -0.095026 },
+            materialized: true,
+            formal_selection: true,
+            result_url: `/results/${RHO_OFFICIAL_RESULT_ID}`,
+          },
+        ],
+      }),
+    ],
+    provenance: {
+      source_sha256: RHO_SHA,
+      dataset_version: 1,
+      generated_at: T,
+      calculation_version: 'analysis.v1',
+    },
+  }
+}
+
+// ---- 通用上传（ds-e2e）：generic_3d 只含通用模块，无专属模块 ----
+const GENERIC_ANALYSIS_BOUNDS: Record<AnalysisAxisId, [number, number]> = {
+  x: [-50, 50],
+  y: [300, 400],
+  z: [-350, -50],
+}
+
+function genericAnalysisSummary(): AnalysisSummaryOut {
+  const weights32 = analysisWeights(1, 6)
+  const statistics = {
+    count: 144,
+    min: 67,
+    max: 240,
+    mean: 148.5,
+    median: 146,
+    std: 49.7,
+    quantiles: { p05: 76.1, p25: 109.5, p50: 146, p75: 188.5, p95: 228.9 },
+  }
+  const quality = {
+    row_count: 144,
+    valid_count: 144,
+    invalid_count: 0,
+    duplicate_coordinate_count: 0,
+    bounds: GENERIC_ANALYSIS_BOUNDS,
+  }
+  return {
+    dataset_id: 'ds-e2e',
+    case_id: 'case-e2e',
+    analysis_profile: 'generic_3d',
+    profile_version: 1,
+    variable: { name: '电阻率', unit: 'unknown' },
+    quality,
+    statistics,
+    modules: [
+      analysisModule('quality', { ...quality }),
+      analysisModule('statistics', { ...statistics }),
+      analysisModule('distribution', {
+        bin_count: 32,
+        bins: analysisHistogram(67, 240, weights32, 144),
+        method: ANALYSIS_METHOD.distribution,
+        source_fields: { value: 'rho' },
+      }),
+      analysisModule('spatial_extent', {
+        grid_size: 32,
+        cell_count: 32 * 32,
+        bounds: { x: GENERIC_ANALYSIS_BOUNDS.x, y: GENERIC_ANALYSIS_BOUNDS.y },
+        bins: analysisSpatialBins(-50, 50, 300, 400, 148),
+      }),
+      analysisModule('profile_slices', {
+        axes: analysisProfileAxes(GENERIC_ANALYSIS_BOUNDS, 148, weights32),
+      }),
+      analysisModule('model_comparison', { candidates: [] }),
+    ],
+    provenance: {
+      source_sha256: SHA,
+      dataset_version: 1,
+      generated_at: T,
+      calculation_version: 'analysis.v1',
+    },
+  }
+}
+
+function analysisSummaryFor(datasetId: string): AnalysisSummaryOut {
+  if (datasetId === 'ds-preset') return microAnalysisSummary()
+  if (datasetId === RHO_DATASET_ID) return rhoAnalysisSummary()
+  return genericAnalysisSummary()
+}
+
 function json(route: Route, body: unknown, status = 200) {
   return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
 }
@@ -2470,6 +3047,68 @@ export async function installMockApi(page: Page): Promise<void> {
         candidates: summaries,
         ranking: null,
         comparison_fingerprint: 'fp-multi-cmp-2',
+      })
+    }
+    // ---------------------------------- v0.8.0 第二批：统计与空间分析中心
+    // summary/export 与真实后端合同逐字段对齐；数值为确定性演示合成口径。
+    if (
+      (path === '/datasets/ds-preset/analysis-summary' ||
+        path === '/datasets/ds-rho/analysis-summary' ||
+        path === '/datasets/ds-e2e/analysis-summary') &&
+      method === 'GET'
+    ) {
+      const datasetId = path.split('/')[2]
+      if (datasetId === 'ds-e2e' && state.datasetStatus !== 'validated') {
+        // 与真实后端一致：未验证 409 DATASET_NOT_VALIDATED（fail-closed）
+        return json(
+          route,
+          {
+            error: {
+              code: 'DATASET_NOT_VALIDATED',
+              message: '数据版本尚未通过验证，分析摘要不可用',
+              details: { dataset_id: 'ds-e2e', status: state.datasetStatus },
+            },
+          },
+          409,
+        )
+      }
+      return json(route, analysisSummaryFor(datasetId))
+    }
+    const analysisExportMatch = /^\/datasets\/(ds-preset|ds-rho|ds-e2e)\/analysis-export$/.exec(
+      path,
+    )
+    if (analysisExportMatch && method === 'GET') {
+      const format = url.searchParams.get('format') ?? 'json'
+      if (format !== 'json' && format !== 'csv') {
+        return json(
+          route,
+          {
+            error: {
+              code: 'ANALYSIS_EXPORT_FORMAT_INVALID',
+              message: '不支持的导出格式（仅支持 json/csv）',
+              details: { format, supported: ['json', 'csv'] },
+            },
+          },
+          422,
+        )
+      }
+      const summary = analysisSummaryFor(analysisExportMatch[1])
+      // Content-Disposition 文件名形态与后端一致：analysis-{dataset}-{profile}.{format}
+      const filename = `analysis-${summary.dataset_id}-${summary.analysis_profile}.${format}`
+      const disposition = `attachment; filename="${filename}"`
+      if (format === 'csv') {
+        return route.fulfill({
+          status: 200,
+          contentType: 'text/csv',
+          headers: { 'content-disposition': disposition },
+          body: analysisCsvExport(summary),
+        })
+      }
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        headers: { 'content-disposition': disposition },
+        body: JSON.stringify(summary),
       })
     }
     return json(route, { error: { code: 'MOCK_NOT_FOUND', message: `未 mock 的端点：${method} ${path}`, details: {} } }, 404)

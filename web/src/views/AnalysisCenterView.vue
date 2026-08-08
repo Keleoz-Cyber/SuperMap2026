@@ -19,10 +19,12 @@ import {
 
 // v0.8.0 第二批 Task 5：统计与空间分析中心 A+B 工作台壳（设计 §7）。
 // 顶栏 AnalysisHeader；左侧窄栏模块导航（选中态 + disabled 标记）；中央
-// 主区单焦点（默认空间视图，可切换分布/剖面）；右栏 QualitySummary +
+// 主区单焦点（默认空间视图：generic 为 spatial_extent，微震/电阻率为
+// spatial_anomaly 专属空间异常，可切换分布/剖面）；右栏 QualitySummary +
 // ModelComparison；底部可折叠（剖面统计 + 导出/溯源）。数据获取沿用单调
 // 请求守卫与三态；模块可见性由后端 modules.status 驱动（disabled/error
-// → 解释性空状态，绝不渲染空图表）。空间/剖面选择 → 有物化成果时
+// → 解释性空状态，绝不渲染空图表）；generic_3d 显示降级原因说明（§5.4）。
+// 空间/剖面选择 → 有物化成果时
 // router.push /results/{id}（带 axis/range/dataset 查询参数），否则非阻
 // 断解释提示。响应式：<900px 右栏折到主区下方，<600px 左导航横向滚动。
 
@@ -45,13 +47,25 @@ function describeError(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
 }
 
+// 设计 §5.4：generic 降级必须写明为什么未启用专业分析（字段口径与后端
+// profiles.py 注册表一致，按 profile id 静态说明，绝不按案例 ID 分支）
+const GENERIC_FALLBACK_TEXT =
+  '当前数据按 generic_3d 通用 profile 分析：未满足专业分析字段要求' +
+  '（微震速度需变量 Vx 且单位 km/s；电阻率需变量名 RHO；瓦斯含量字段合同待定）。' +
+  '页面仅展示数据质量、基础统计、分布、空间范围、剖面与已有模型指标，不展示专业专属模块。'
+
 // ---------------------------------------------------------------------------
 // 模块导航：右栏模块（quality/statistics/model_comparison）不进导航；
 // 通用视图模块按固定顺序在前，其余（专属）模块按响应顺序在后
 // ---------------------------------------------------------------------------
 
 const RIGHTBAR_MODULE_IDS = new Set(['quality', 'statistics', 'model_comparison'])
-const PRIMARY_MODULE_ORDER = ['spatial_extent', 'distribution', 'profile_slices']
+// 主区可承载的模块（顺序即导航优先级）：spatial_extent/spatial_anomaly 由
+// SpatialFeaturePanel 承载（Task 6：spatial_anomaly 为微震/电阻率的默认空间
+// 视图——这两个 profile 无 spatial_extent），distribution/profile_slices 各
+// 有专属面板；其余专属模块（axis_trends/gradient/depth_slices）暂无面板，
+// 选中后展示解释性状态而非空图表
+const PRIMARY_MODULE_ORDER = ['spatial_extent', 'spatial_anomaly', 'distribution', 'profile_slices']
 
 interface NavItem {
   module: AnalysisModuleResult
@@ -221,6 +235,15 @@ watch(datasetId, (next, prev) => {
 
     <template v-else-if="summary">
       <AnalysisHeader :summary="summary" @export="openExport" />
+
+      <el-alert
+        v-if="summary.analysis_profile === 'generic_3d'"
+        type="info"
+        show-icon
+        :closable="false"
+        :title="GENERIC_FALLBACK_TEXT"
+        data-test="analysis-generic-fallback"
+      />
 
       <el-alert
         v-if="selectionHint"
