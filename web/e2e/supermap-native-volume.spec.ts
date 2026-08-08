@@ -1,74 +1,14 @@
 import { expect, test } from '@playwright/test'
 import { installMockApi } from '../src/mocks/platformDemo'
+import { MOCK_VOLUME_FRAME_HTML } from './mockVolumeFrame'
 
 // v0.6.1 Task 11 → v0.7.0 第二批 Task 11：mock 产品流程浏览器测试。
 // 验证：路由加载、显式物化/资产创建（POST）、iframe v2 协议握手、常驻工具栏
 // 完整渲染状态命令、X/Y/Z 正交切片（3D slice 只来自权威剖面响应）、等值面
 // 输入、multipart 剖面导出、切片 tab、无 /volume-demo 链接。
-// iframe 由本文件的协议 mock 页面扮演（无 SuperMap3D SDK），本测试只证明
-// 协议与产品接线正确，绝不宣称真实渲染。
-
-// 协议 mock 子帧：与 web/public/supermap-volume-frame/app.js 同一份
-// gmp-supermap-volume/v2 信封纪律（request_id 关联、目标 origin 恒为本源），
-// 但不做任何 SDK 调用；INIT 后按 asset 回 RENDER_STATE，命令回 STATE_APPLIED /
-// COMMAND_APPLIED，并记录全部父级消息供断言。
-const MOCK_FRAME_HTML = `<!doctype html>
-<html><head><meta charset="utf-8"></head><body>
-<script>
-(function () {
-  var PROTOCOL = 'gmp-supermap-volume/v2'
-  var requestId = new URLSearchParams(window.location.search).get('request_id') || ''
-  var received = []
-  window.__GMP_MOCK_FRAME__ = { requestId: requestId, received: received }
-  function post(msg) {
-    var out = { protocol: PROTOCOL, requestId: requestId }
-    for (var k in msg) out[k] = msg[k]
-    window.parent.postMessage(out, window.location.origin)
-  }
-  window.addEventListener('message', function (event) {
-    var msg = event.data
-    if (!msg || msg.protocol !== PROTOCOL || msg.requestId !== requestId) return
-    received.push(msg)
-    if (msg.type === 'INIT') {
-      var asset = msg.asset
-      post({
-        type: 'RENDER_STATE',
-        phase: asset ? 'rendered' : 'unsupported',
-        identity: asset
-          ? {
-              sourceKind: asset.source_kind,
-              sourceId: asset.source_id,
-              gridSha256: asset.grid_sha256,
-              netcdfSha256: asset.netcdf_sha256,
-            }
-          : null,
-      })
-    } else if (msg.type === 'APPLY_RENDER_STATE') {
-      post({
-        type: 'STATE_APPLIED',
-        commandId: msg.commandId,
-        revision: msg.state.revision,
-        appliedState: msg.state,
-      })
-    } else if (msg.type === 'SET_POINT_LAYER' || msg.type === 'RESET_VIEW') {
-      post({ type: 'COMMAND_APPLIED', commandId: msg.commandId, commandType: msg.type })
-    }
-  })
-  post({
-    type: 'FRAME_READY',
-    sdkVersion: 'mock-frame/0',
-    contextType: 2,
-    capabilities: {
-      singleAxisSlice: true,
-      lighting: true,
-      gradientOpacity: true,
-      boundingBox: true,
-      transferFunction: true,
-    },
-  })
-})()
-</script>
-</body></html>`
+// iframe 由 mockVolumeFrame.ts 的协议 mock 页面扮演（无 SuperMap3D SDK），
+// 本测试只证明协议与产品接线正确，绝不宣称真实渲染。
+// v0.8.0：内置电阻率 legacy 导入用例随入口 410 退役改写为退役合同断言。
 
 interface PostedRequest {
   path: string
@@ -117,7 +57,7 @@ test('3D 成果工作台：物化 + 原生体渲染 + 工具栏完整状态 + �
   // 协议 mock 子帧：同源路由拦截，不加载任何专有 SDK
   await page.route(
     (url) => url.pathname === '/supermap-volume-frame/index.html',
-    (route) => route.fulfill({ status: 200, contentType: 'text/html', body: MOCK_FRAME_HTML }),
+    (route) => route.fulfill({ status: 200, contentType: 'text/html', body: MOCK_VOLUME_FRAME_HTML }),
   )
 
   // 路由加载：深链直达成果工作台
@@ -266,49 +206,37 @@ test('3D 成果工作台：物化 + 原生体渲染 + 工具栏完整状态 + �
   expect(await page.locator('a[href*="volume-demo"]').count()).toBe(0)
 })
 
-test('内置电阻率：产品内导入权威规则网格 → 生成 NetCDF 资产 → 原生渲染', async ({ page }) => {
-  // v0.6.1：全新运行时未登记 legacy 渲染源 → 页内显式导入入口（multipart CSV）→
-  // 登记成功后面板翻转为可生成资产 → 显式创建 → 协议握手渲染。
-  const importPosts: { contentType: string }[] = []
-  page.on('request', (req) => {
-    if (req.method() === 'POST' && new URL(req.url()).pathname.includes('render-sources/import')) {
-      importPosts.push({ contentType: req.headers()['content-type'] ?? '' })
-    }
-  })
-
+test('内置电阻率：旧 legacy/S3M 渲染入口类型化退役（410），统一工作台无导入入口', async ({ page }) => {
+  // v0.8.0 Task 6：电阻率迁移为 builtin_preset 散点预置后，旧 legacy 渲染
+  // 注册/资产/体元路由一律 410 LEGACY_RESISTIVITY_RETIRED，绝不返回旧 S3M
+  // 数值；/#/case/resistivity 兼容别名重定向到统一案例工作台。
   await installMockApi(page)
-  await page.route(
-    (url) => url.pathname === '/supermap-volume-frame/index.html',
-    (route) => route.fulfill({ status: 200, contentType: 'text/html', body: MOCK_FRAME_HTML }),
-  )
 
+  // 退役合同：任何方法/载荷一律 410 + 稳定错误码（页内 fetch 走 mock 路由）
+  await page.goto('/')
+  const retired: [string, string][] = [
+    ['GET', '/api/cases/resistivity/render-capability'],
+    ['GET', '/api/cases/resistivity/render-assets/netcdf'],
+    ['POST', '/api/cases/resistivity/render-assets/netcdf'],
+    ['POST', '/api/cases/resistivity/render-sources/import'],
+    ['GET', '/api/cases/resistivity/voxel-cells'],
+  ]
+  for (const [method, path] of retired) {
+    const result = await page.evaluate(
+      async ([m, p]) => {
+        const resp = await fetch(p as string, { method: m as string })
+        return { status: resp.status, body: await resp.json() }
+      },
+      [method, path],
+    )
+    expect(result.status, `${method} ${path} 必须 410`).toBe(410)
+    expect(result.body.error?.code).toBe('LEGACY_RESISTIVITY_RETIRED')
+  }
+
+  // 兼容别名 → 统一工作台（builtin_preset）；旧导入/未注册原因码入口不存在
   await page.goto('/#/case/resistivity')
-
-  // 未登记：稳定原因码 + 显式导入入口；绝无创建资产入口
-  await expect(page.getByTestId('unsupported-reason')).toContainText(
-    'LEGACY_RENDER_SOURCE_NOT_REGISTERED',
-  )
-  await expect(page.getByTestId('legacy-import')).toBeVisible()
-  await expect(page.getByTestId('legacy-import-submit')).toBeDisabled()
-  await expect(page.getByTestId('create-asset')).toHaveCount(0)
-
-  // 上传权威规则网格 CSV（X,Y,Z,RHO）并显式导入
-  await page.getByTestId('legacy-import-file').setInputFiles({
-    name: 'grid.csv',
-    mimeType: 'text/csv',
-    buffer: Buffer.from('X,Y,Z,RHO\n0,0,0,1\n10,0,0,2\n'),
-  })
-  await page.getByTestId('legacy-import-submit').click()
-  expect(importPosts).toHaveLength(1)
-  expect(importPosts[0].contentType).toContain('multipart/form-data')
-
-  // 登记身份展示，导入入口不再显示；面板转为可生成资产
-  await expect(page.getByTestId('legacy-import-identity')).toBeVisible()
+  await expect(page).toHaveURL(/#\/cases\/resistivity/)
+  await expect(page.getByTestId('case-workspace-header')).toContainText('地下电阻率')
   await expect(page.getByTestId('legacy-import')).toHaveCount(0)
-  await expect(page.getByTestId('create-asset')).toBeVisible()
-
-  // 既有 NativeVolumePanel 流程：显式创建 → 握手 → 渲染
-  await page.getByTestId('create-asset').click()
-  await expect(page.getByTestId('volume-phase')).toContainText('已渲染')
-  await expect(page.getByTestId('asset-identity')).toContainText('supermap_voxelgrid_netcdf')
+  await expect(page.getByTestId('unsupported-reason')).toHaveCount(0)
 })
