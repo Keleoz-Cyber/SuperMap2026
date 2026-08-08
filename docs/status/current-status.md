@@ -1,6 +1,6 @@
 # 当前开发状态
 
-> 更新时间：2026-08-07（v0.7.0 第二批渲染与剖面分析分支更新）。本文是开发人员和开发 Agent 判断“现在做到哪一步”的唯一状态入口。数据细节见 [电阻率](../data/resistivity.md)、[微震](../data/microseismic.md)、[瓦斯](../data/gas.md) 和 [数据契约](../data/contracts.md)；目标产品见 [产品蓝图](../product-blueprint.md)。
+> 更新时间：2026-08-08（v0.8.0 电阻率散点迁移与 DSI-like 分支更新）。本文是开发人员和开发 Agent 判断“现在做到哪一步”的唯一状态入口。数据细节见 [电阻率](../data/resistivity.md)、[微震](../data/microseismic.md)、[瓦斯](../data/gas.md) 和 [数据契约](../data/contracts.md)；目标产品见 [产品蓝图](../product-blueprint.md)。
 
 ## 1. 状态分层
 
@@ -12,6 +12,13 @@
 
 ## 2. 当前代码已实现
 
+- **v0.8.0 电阻率散点迁移与 DSI-like（`feat/v0.8.0-resistivity-dsi-like` 分支，发布候选）**：
+  - 电阻率从只读 `builtin_legacy` 迁移为统一 `builtin_preset` 散点预置（案例 ID `resistivity` 不变）：外部标准化 CSV（17,549 行 `X,Y,Z,RHO`）绝不入库，运行时登记 SHA-256 指纹（`04c5914d…`）；`preset_cli seed-resistivity` 唯一生产入口，合同校验 fail-closed；预置数据版本只读，官方正式选择用户不可改写。
+  - 官方基线冻结 `config/presets/resistivity-official-baseline.json`：winner `ordinary_kriging` exponential/neighbor=24（RMSE=6.454476、MAE=3.251899、R²=0.923093、Bias=-0.095026，公共有效集 17,547；生产 `spatial_kfold` 5 折 seed=20260723），网格 7×23×42 @20 m；IDW 与 DSI-like 候选只追溯不参与官方选择；遗留训练/验证分区（15,827/1,722 行、264/29 柱、零重叠）作为源溯源事实写入 profile。
+  - 新算法 **DSI-like 离散平滑插值**：IDW 初始场 + 规则网格邻域加权 Jacobi 平滑 + 观测点硬约束的工程近似（参数 `init_power/neighbor_connectivity/smoothing_strength/max_iterations`，收敛容差 1e-4）；**不等同 GOCAD DSI**，页面如实展示免责声明；失败语义类型化，绝不回退为“看起来成功”的 IDW/点云。
+  - 三算法（IDW/普通 Kriging/DSI-like）统一 `CandidateResult → materialize → NetCDF → RenderAsset` 链；首页卡（“标准化散点 · 17,549 个节点” + 字段行 X/Y/Z/RHO）、案例工作台、参数编辑器、成果页五模式渲染全复用统一组件。
+  - 旧 S3M/legacy 退役：五个 legacy 渲染端点 410 `LEGACY_RESISTIVITY_RETIRED`；旧 legacy 电阻率卡、旧三维工作台页（`RhoCaseView`）与其专用面板/客户端函数全部移除；旧资产只读保留待单独清理任务；未 seed 运行库出预置描述卡（能力全 false）。
+  - 测试基线（Task 10 后实测，本分支）：后端便携 `1584 passed`、前端 vitest `287 passed`、Mock E2E `19 passed`、type-check/build 干净；真实 SDK live 门证据见 `docs/evidence/v0.8.0-resistivity-dsi-like/`。
 - **v0.7.0 统一案例工作台 · 第一批（`feat/v0.7.0-unified-case-workspace` 分支，发布候选）**：
   - 微震 **CSV 预置**案例：受控入库 `data/presets/microseismic/microseismic-vx-1911.csv`（LF 归一化字节 SHA-256 `ea3917c2…`，溯源原始文件 `微震局部三维点_3Sigma_去重均值_1911.csv`；1,911 行、XYZ 唯一、全有限、局部测线坐标、Vx=km/s），合同校验 fail-closed（`PRESET_SOURCE_INVALID`）。
   - 官方**普通克里金**基线：`python -m geomodeling.preset_cli analyze-microseismic` 执行固定 27 成员候选矩阵（spherical/exponential/gaussian × 12/24/36 邻域 × z_scale 0.5/1/2，固定种子 20260723 空间 5 折，公共有效集 1,910/1,911）；评审冻结 `config/presets/microseismic-official-baseline.json`——winner `exponential/neighbor=12/z_scale=2.0`，RMSE=0.268062、MAE=0.212624、R²=0.844559、Bias=0.053333（z_scale 为距离实验参数，不代表已确认地质各向异性）；源/报告指纹不符或选择不可复算即 `PRESET_BASELINE_INVALID`，绝不覆盖既有成果。
@@ -34,7 +41,7 @@
   - SQLite 迁移至 v7（lifecycle_state/trashed_at 列 + case_purge_operations 表），v6 迁移幂等可重复启动。
   - **明确不做**：DSI、瓦斯正式数据接入、系统统计分析中心、全站 UI 重做、AI 预测、iServer 自动发布仍为后续里程碑。
 - **v0.1.0 电阻率基线**：17,549 / 15,827 / 1,722 行，训练/验证空间柱重叠0；五模型各1,481 valid、241 NoData、XY mismatch 0；`baseline_passed=True`。
-- `RHO_KRIG_FINAL_20M_40` 是唯一登记为正式的 SuperMap 体元成果；`dataset_verified=False`，目前只有配置、文件和人工证据。
+- `RHO_KRIG_FINAL_20M_40` 是旧 S3M 链唯一登记为正式的 SuperMap 体元成果；`dataset_verified=False`，只有配置、文件和人工证据。**v0.8.0 起旧链类型化退役**（410），电阻率官方成果由散点预置普通克里金候选链承载，旧资产只读保留待清理。
 - **微震 v0.2a 审计底座**：22个DAT、2,006条源记录、2,005条有限值和1条无效值；三张标准表、一维累计距离、问题清单、审计报告及CLI已经合并。
 - **v0.3 iServer 纵向闭环（本分支）**：
   - `geomodeling.publishing`：iServer 客户端（Token、非异常化探测）、运行时探测（服务列表/数据服务 VOLUME 元数据比对/三维场景与图层）、六级发布证据链、浏览器加载回执存储。
@@ -137,7 +144,7 @@
 - 通用CSV/XLSX上传的字段映射外扩展与数据版本管理；
 - 微震绝对地理配准与跨案例空间叠加（需共同控制点证据）；
 - iServer 程序化发布（REST workspaces POST，ISSUE-V03-01）、S3M 体元缓存发布与体渲染、垂直切片 Web 验证；
-- 瓦斯体元稳定显示、原生等值面、DSI-like/GOCAD后端；
+- 瓦斯体元稳定显示、原生等值面、真实 GOCAD DSI 后端（v0.8.0 的 DSI-like 为工程近似，不宣称等同 GOCAD DSI）；
 - 自动成矿概率、储量或地质结论。
 
 ## 7. 给开发 Agent 的判定规则

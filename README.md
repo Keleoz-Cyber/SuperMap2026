@@ -6,21 +6,22 @@
 
 ## 项目目标
 
-建设面向超图杯答辩的浏览器建模平台：用户上传 CSV、Excel 或受支持的专业文本数据，完成字段映射、质量校验、二维/三维插值调参、空间验证、成果展示和报告导出。第一版（v0.1.0）已打通地下电阻率从标准数据到 SuperMap 三维成果的闭环；当前代码还包含微震 v0.2a 数据审计底座、已随 v0.5.0 发布的微震第二案例建模闭环，以及 v0.6 专业建模增强（`feat/v0.6-professional-modeling` 分支）。
+建设面向超图杯答辩的浏览器建模平台：用户上传 CSV、Excel 或受支持的专业文本数据，完成字段映射、质量校验、二维/三维插值调参、空间验证、成果展示和报告导出。第一版（v0.1.0）已打通地下电阻率从标准数据到 SuperMap 三维成果的闭环；当前代码还包含微震 v0.2a 数据审计底座、已随 v0.5.0 发布的微震第二案例建模闭环、v0.6 专业建模增强、v0.7.0 统一案例工作台，以及 v0.8.0 电阻率散点预置迁移与 DSI-like 工程近似插值（本分支）。
 
 电阻率、微震、瓦斯及后续新增属性作为**独立案例**复用平台能力。没有共同坐标依据时不得空间叠加，不做无证据的多源融合。
 
 ## 当前能力
 
+- **v0.8.0 电阻率散点迁移与 DSI-like（本分支，发布候选）**：电阻率从只读 `builtin_legacy` 迁移为统一 `builtin_preset` 散点预置案例（案例 ID `resistivity` 不变）——外部标准化散点源（17,549 行 `X,Y,Z,RHO`，局部工程坐标）绝不入库，运行时登记 SHA-256 指纹；`preset_cli seed-resistivity` 唯一生产入口经 `Case → DatasetVersion → Experiment → Run → CandidateResult → materialize → FormalSelection` 链登记官方成果（只读、幂等、指纹不符绝不覆盖）。官方基线冻结于 `config/presets/resistivity-official-baseline.json`：winner `ordinary_kriging` exponential/neighbor=24（RMSE=6.454476、MAE=3.251899、R²=0.923093，生产 `spatial_kfold` 5 折 seed=20260723），网格 7×23×42 @20 m。新算法 **DSI-like 离散平滑插值**（IDW 初始场 + 邻域加权平滑 + 观测点硬约束的工程近似，**不等同 GOCAD DSI**）与 IDW、普通 Kriging 共用统一实验/候选/NetCDF 体渲染链；首页卡、参数编辑器与成果页全复用统一组件。旧 S3M/legacy 渲染端点一律 410 `LEGACY_RESISTIVITY_RETIRED`，旧 legacy 电阻率页与首页残留入口已移除；旧资产只读保留待单独清理任务。
 - **v0.7.0 统一案例工作台 · 第一批（本分支）**：微震第二案例改为开箱可用的 **CSV 预置**案例——受控入库的 1,911 节点 CSV（`data/presets/microseismic/microseismic-vx-1911.csv`，字节级 SHA-256 溯源，局部测线坐标、Vx 单位 km/s）经固定 27 成员**普通克里金**候选矩阵（3 变异函数 × 3 邻域 × 3 `z_scale`，固定种子空间 5 折、公共有效集 1,910 点）评审冻结官方基线（`config/presets/microseismic-official-baseline.json`：exponential / neighbor=12 / z_scale=2.0，RMSE=0.2681、MAE=0.2126、R²=0.8446；`z_scale` 是距离实验参数，不代表已确认地质各向异性）；维护命令 `python -m geomodeling.preset_cli analyze-microseismic / seed-microseismic` 经正常 `Case → DatasetVersion → Experiment → Run → CandidateResult → materialize → FormalSelection` 链登记官方成果（幂等、指纹不符绝不覆盖、失败补偿不留半成品），官方成果走 v0.6.1 的 **NetCDF** 原生体渲染资产链（35×47×82 网格，变量 `Vx`，display_anchor_only 显示锚点，非真实地理配准）。电阻率、微震预置、用户上传三类案例以 `builtin_legacy` / **`builtin_preset`** / `user_upload` 统一身份进入同一案例工作台（`/#/cases/:caseId`，`/case/resistivity` 兼容重定向）；首页入口与命令全部由工作台 DTO 驱动。微震 **DAT** 导入向导、路由与 HTTP 端点已**退出产品面**（历史运行时文件与派生服务层保留，CLI 不受影响；历史成果经通用结果 URL 只读查看，领域证据导出契约不变）。
 - **v0.7.0 渲染与剖面分析 · 第二批（本分支）**：体渲染 iframe 协议升级 `gmp-supermap-volume/v2`（单调 `revision` 完整渲染状态，过期忽略；slice 模式只接受权威剖面响应的 axis/index/coordinate/relativePosition；`FRAME_READY` 上报 `singleAxisSlice` 能力；单轴切片负坐标隐藏非活动轴为 SDK 12.1 实测技术，证据 `docs/evidence/v0.7.0-single-axis-probe/`）；渲染默认值按来源驱动（内置电阻率 log + native-spectrum，候选成果 linear + viridis，log 不可用显式说明）；`GET /api/render-assets/{id}/slice-analysis` 权威剖面与统计（`std_population` ddof=0、numpy-linear 分位数、valid+nodata=total）；`POST .../slice-exports` 原子导出 `slice-analysis.zip`（`slice-analysis/v1`，CSV 真实 x,y,z 轴列、统计与 API 一致、manifest 哈希齐备，PNG 为 `client_echarts_canvas` 展示工件）；常驻工具栏（模式/色带/标度/滤波/不透明度/光照/渐变透明度/包围盒）+ X/Y/Z 正交切片控件 + ECharts 剖面热力图与统计；三来源共用 RenderAsset API 与组件；no fallback——失败只显式报错，无回退渲染器。
 - **v0.6 专业建模增强（本分支）**：全向/方向经验半变异函数诊断（点对确定性采样，种子=数据 SHA-256+配置，≤50,000 点对上限并披露采样率）；球状/指数/高斯三模型按 bin 点对数加权的有界最小二乘拟合证据（`weighted_sse`/收敛/边界/参数来源）；各向异性候选仅作诊断建议，**人工确认**后写入不可变快照（改参数必生成新快照）；Kriging 各向异性变换 `x′ = S Rᵀ x`（legacy `z_scale` 归一化，不叠加）；旋转椭圆/椭球+扇区搜索邻域（IDW 与普通 Kriging 共用选择器，IDW 权重仍用 `z_scale` 距离）；普通 Kriging 原生估计标准差（`σ² = λᵀγ₀ + μ`，微负钳制/显著负值 NoData/lstsq 标记）；所有算法基于折外残差的经验误差尺度（距离加权局部 RMSE，非标准误）；空间折分检查（整柱不泄漏，泄漏 fail-closed）；显式阈值异常连通区（2D 4 邻接/3D 6 邻接，Voronoi「网格支持面积/体积估计」，非储量）；单候选联动与双候选兼容比较（兼容才显示指标差）；SQLite v5 五张专业表与 `analysis_jobs` 持久化任务；专业证据 ZIP（`professional/` 目录，声明缺失或哈希不符 409 fail-closed）；能力矩阵区分 IDW 与普通 Kriging（`not_applicable` 类型化），旧候选返回 `LEGACY_RESULT_NOT_COMPUTED`。浏览器专业诊断工作台与专业分析台、API、CLI（`geomodeling professional`）三入口齐备。运行手册见 [docs/v0.6-professional-modeling-loop.md](docs/v0.6-professional-modeling-loop.md)。
 - **v0.5 微震第二案例建模闭环（已发布，v0.5.0）**：微震 DAT 派生内核（CLI `geomodeling microseismic derive` / `import-case` 与 v0.5 时代浏览器向导共用）：22 DAT → 2,006 源记录 → 2,005 有限 → 一次全局 3σ（`ddof=1`）剔除 80 → 1,925 候选 → 算术平均聚合 1,911 建模节点；黄金门禁逐字节锁定两张派生表 SHA-256，不过即阻断。调参（IDW/普通克里金、`z_scale` 实验参数）、空间验证、成果工作台三层诊断图层与证据导出复用 v0.4 平台；发布登记保持 `manual_required`。注：v0.7.0 起 DAT 浏览器导入退出产品面，改由 CSV 预置案例承载微震第二案例；派生服务层与 CLI 保留。运行手册见 [docs/v0.5-microseismic-loop.md](docs/v0.5-microseismic-loop.md)。
 - **v0.4 通用建模平台**：CSV/XLSX 上传（50 MiB / 50 万行上限）、字段映射（2D/3D）、质量门禁（阻断/警告+显式确认）、IDW 与普通克里金调参（手动 + ≤50 组合有限网格搜索）、空间折分验证、公共有效掩膜排行榜、SQLite 持久化任务（取消/重试/重启恢复）、成果完整场与 X/Y/Z 切片、附理由的正式选择、证据 ZIP 导出、发布登记（manual_required）。运行说明见 [docs/v0.4-generic-modeling-loop.md](docs/v0.4-generic-modeling-loop.md)。
-- **v0.3.1 内置电阻率案例（只读保留）**：FastAPI 案例/成果/发布证据链接口 + 浏览器三维工作台（模型排行榜、RHO 点云、S3M 体元缓存自定义渲染、阈值过滤、证据链、服务检查）。闭环含义、运行方式与实测证据见 [docs/v0.3-iserver-loop.md](docs/v0.3-iserver-loop.md)。
-- 电阻率数据登记与契约校验：17,549 / 15,827 / 1,722 行，训练/验证空间柱重叠 0。
-- 五种模型预测导入与公共有效点指标复算：每个模型 1,481 valid、241 NoData、XY mismatch 0，`baseline_passed=True`。
-- 模型任务、SuperMap 成果登记与证据等级管理：`RHO_KRIG_FINAL_20M_40` 为唯一正式成果，`dataset_verified=False`。
+- **v0.3.1 内置电阻率案例（v0.8.0 起类型化退役）**：旧 S3M/legacy 产品路径（legacy 卡、旧三维工作台、legacy 渲染端点）已退出产品面，端点返回 410 `LEGACY_RESISTIVITY_RETIRED`，旧资产只读保留待清理；电阻率现由 v0.8.0 散点预置案例承载。历史闭环含义、运行方式与实测证据见 [docs/v0.3-iserver-loop.md](docs/v0.3-iserver-loop.md)。
+- 电阻率数据登记与契约校验：17,549 / 15,827 / 1,722 行，训练/验证空间柱重叠 0（v0.8.0 起作为源溯源事实记录，官方验证合同为生产 spatial_kfold 5 折 seed=20260723）。
+- 五种模型预测导入与公共有效点指标复算（历史 v0.1 基线，旧链）：每个模型 1,481 valid、241 NoData、XY mismatch 0，`baseline_passed=True`。
+- 模型任务、SuperMap 成果登记与证据等级管理（历史旧链）：`RHO_KRIG_FINAL_20M_40` 为旧链唯一正式成果，`dataset_verified=False`。
 - 微震数据审计（v0.2a）：22 个 DAT 清单与哈希、2,006 条源记录标准化、三张标准表、一维累计距离、契约验证、问题清单和审计报告；v0.5 以 `domain_adapter` 预设接入平台（`config/presets/microseismic.json`，`adapter_id=microseismic_dat_v05`）。
 - 测试分层：后端便携测试（CI）+ 本机真实数据回归（`local_data`）+ 前端 vitest + Playwright mock 冒烟。
 
@@ -149,7 +150,7 @@ geomodeling professional compare --help
 
 开始开发前按顺序阅读：`README.md` → [当前状态](docs/status/current-status.md) → [产品蓝图](docs/product-blueprint.md) → [SuperMap集成说明](docs/supermap-integration.md) → 对应案例数据文档。论文只作来源证据，不能覆盖这些已确认规则。
 
-发布基线：v0.5.0 已发布（tag `v0.5.0`，merge `d37eb94`），见 [v0.5 运行手册](docs/v0.5-microseismic-loop.md)；更早基线 v0.4.1（tag `v0.4.1`）与 v0.4.0（tag `v0.4.0`，merge `b95f12b`）已发布，v0.4.1 演示加固见 [运行手册](docs/v0.4.1-demo-runbook.md) 与 [通用建模契约](docs/v0.4-generic-modeling-loop.md)；v0.6 专业建模增强为发布候选（本分支，PR/tag 待批准），见 [v0.6 运行手册](docs/v0.6-professional-modeling-loop.md)。
+发布基线：v0.5.0 已发布（tag `v0.5.0`，merge `d37eb94`），见 [v0.5 运行手册](docs/v0.5-microseismic-loop.md)；更早基线 v0.4.1（tag `v0.4.1`）与 v0.4.0（tag `v0.4.0`，merge `b95f12b`）已发布，v0.4.1 演示加固见 [运行手册](docs/v0.4.1-demo-runbook.md) 与 [通用建模契约](docs/v0.4-generic-modeling-loop.md)；v0.6 专业建模增强、v0.7.0 统一案例工作台与 v0.8.0 电阻率散点迁移 + DSI-like 为发布候选（本分支，tag/release 待批准；历史 `v0.7.0` tag 与 Release 不可变）。
 
 ## 原始资料保护
 
