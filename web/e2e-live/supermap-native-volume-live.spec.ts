@@ -171,6 +171,22 @@ test.describe('v0.6.1 Task 14：32³/64³ 原生体渲染 live 门', () => {
 
   test.beforeAll(() => {
     const dataDir = assertIsolatedDataDir()
+    // 基准候选链自举（幂等）：与 supermap-volume-frame-live 同一
+    // fixtures/seed_volume_benchmarks.py；本文件不得依赖其它规格的执行顺序。
+    execFileSync(
+      process.env.PYTHON ?? 'python',
+      [path.join(REPO_ROOT, 'web', 'e2e-live', 'fixtures', 'seed_volume_benchmarks.py')],
+      {
+        cwd: REPO_ROOT,
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          GEOMODELING_DATA_DIR: dataDir,
+          PYTHONPATH: path.join(REPO_ROOT, 'src'),
+        },
+        timeout: 120_000,
+      },
+    )
     const seedFile = path.join(dataDir, SEED_JSON_REL)
     const seedDoc = JSON.parse(readFileSync(seedFile, 'utf8'))
     expect(seedDoc.schema).toBe('v0.6.1-volume-benchmarks/v1')

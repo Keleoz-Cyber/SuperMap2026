@@ -10,6 +10,10 @@ export default defineConfig({
   testDir: './e2e-live',
   timeout: 120_000,
   retries: process.env.CI ? 1 : 0,
+  // live 规格共享同一 GEOMODELING_DATA_DIR：预置 seed（电阻率/微震）与基准
+  // seed 必须串行，避免两个规格文件并发首建同一预置链相互误判半成品；
+  // 同时避免多 GPU 渲染会话争用导致像素门抖动。live 门取确定性而非速度。
+  workers: 1,
   use: {
     baseURL: process.env.GEOMODELING_E2E_URL ?? `http://127.0.0.1:${livePort}`,
     testIdAttribute: 'data-test',
