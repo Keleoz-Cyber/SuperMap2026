@@ -1,0 +1,332 @@
+"""v0.8.0 Task 3 tests: deterministic DSI-like interpolator core (3D only)."""
+
+from __future__ import annotations
+
+import numpy as np
+import pytest
+from pydantic import ValidationError
+
+from geomodeling.modeling.dsi_like import DSILikeInterpolator, DSIParameters
+from geomodeling.modeling.grid import derive_grid
+from geomodeling.modeling.idw import IDWInterpolator, IDWParameters
+from geomodeling.platform.errors import PlatformError
+
+
+def make_observations():
+    """观测点恰落在派生工作网格节点上（吸附恒等、每观测独占节点）。
+
+    ``_default_grid`` 只依赖逐轴 min/max：先用锚点求轴，再按步长子采样并
+    强制包含首末节点，保证子采样点集的包围盒与锚点一致 —— ``fit`` 内部
+    推导出的轴与本函数逐位相同，观测点即节点。
+    """
+
+    anchors = np.array([[0.0, 0.0, 0.0], [2.0, 3.0, 4.0]])
+    axes = tuple(np.asarray(a, dtype="float64") for a in derive_grid(anchors, "3d", None).axes)
+    picks = []
+    for axis in axes:
+        stride = max(1, len(axis) // 5)
+        index = np.unique(np.concatenate([np.arange(0, len(axis), stride), [len(axis) - 1]]))
+        picks.append(axis[index])
+    meshes = np.meshgrid(*picks, indexing="ij")
+    coords = np.column_stack([m.ravel() for m in meshes])
+    values = (
+        np.sin(coords[:, 0] * 3.1)
+        + np.cos(coords[:, 1] * 2.3)
+        + 0.37 * coords[:, 2]
+        + 0.11 * np.sin(coords[:, 0] * 7.7 + coords[:, 1] * 3.3 + coords[:, 2] * 1.9)
+        + 12.0
+    )
+    return coords, values, axes
+
+
+def interior_midpoints(axes) -> np.ndarray:
+    """相邻节点中点：必不是节点，用于非观测位置的采样断言。"""
+
+    mids = []
+    for axis in axes:
+        idx = np.linspace(0, len(axis) - 2, 3).astype(np.int64)
+        mids.append((axis[idx] + axis[idx + 1]) / 2.0)
+    meshes = np.meshgrid(*mids, indexing="ij")
+    return np.column_stack([m.ravel() for m in meshes])
+
+
+@pytest.fixture(scope="module")
+def fitted_main():
+    coords, values, axes = make_observations()
+    interpolator = DSILikeInterpolator()
+    params = interpolator.validate_parameters({}, "3d")
+    fitted = interpolator.fit(coords, values, params)
+    return coords, values, axes, fitted
+
+
+# ---------------------------------------------------------------------------
+# 确定性 + 硬约束（计划 Step 1）
+# ---------------------------------------------------------------------------
+
+
+def test_reproduces_observations_and_is_deterministic(fitted_main):
+    coords, values, _axes, fitted = fitted_main
+    first = fitted.predict(coords, cancel=lambda: False)
+    second = fitted.predict(coords, cancel=lambda: False)
+    # 硬约束：恰在观测节点上的查询精确复现观测原值
+    np.testing.assert_allclose(first.values, values, atol=1e-10)
+    assert not first.is_nodata.any()
+    # 同一 fitted 对象两次 predict 字节相同
+    np.testing.assert_array_equal(first.values, second.values)
+    np.testing.assert_array_equal(first.is_nodata, second.is_nodata)
+
+
+def test_independent_fit_predict_is_byte_identical(fitted_main):
+    coords, values, _axes, fitted = fitted_main
+    query = interior_midpoints(_axes)
+    reference = fitted.predict(query, cancel=lambda: False)
+    refit = DSILikeInterpolator().fit(coords, values, DSIParameters())
+    rerun = refit.predict(query, cancel=lambda: False)
+    np.testing.assert_array_equal(reference.values, rerun.values)
+    np.testing.assert_array_equal(reference.is_nodata, rerun.is_nodata)
+    assert reference.diagnostics == rerun.diagnostics
+
+
+# ---------------------------------------------------------------------------
+# 参数校验
+# ---------------------------------------------------------------------------
+
+
+def test_parameter_validation_rejects_invalid_values():
+    interpolator = DSILikeInterpolator()
+    bad_parameters = [
+        {"init_power": 0.0},
+        {"init_power": 8.5},
+        {"neighbor_connectivity": 7},
+        {"neighbor_connectivity": 12},
+        {"smoothing_strength": 0.0},
+        {"smoothing_strength": 1.5},
+        {"max_iterations": 30},
+        {"max_iterations": 0},
+        {"convergence_tolerance": 0.0},
+        {"convergence_tolerance": 2.0},
+        {"hard_constraints": False},
+        {"unknown_key": 1},
+    ]
+    for bad in bad_parameters:
+        with pytest.raises(ValidationError):
+            interpolator.validate_parameters(bad, "3d")
+
+
+def test_parameter_validation_accepts_allowed_values():
+    interpolator = DSILikeInterpolator()
+    ok = interpolator.validate_parameters(
+        {
+            "init_power": 1.5,
+            "neighbor_connectivity": 18,
+            "smoothing_strength": 0.75,
+            "max_iterations": 50,
+            "convergence_tolerance": 1e-6,
+            "hard_constraints": True,
+        },
+        "3d",
+    )
+    assert ok.neighbor_connectivity == 18
+    assert ok.max_iterations == 50
+    defaults = interpolator.validate_parameters({}, "3d")
+    assert defaults == DSIParameters()
+
+
+def test_validate_parameters_rejects_2d():
+    interpolator = DSILikeInterpolator()
+    with pytest.raises(ValueError):
+        interpolator.validate_parameters({}, "2d")
+
+
+# ---------------------------------------------------------------------------
+# 输入失败语义（fail-closed，稳定码）
+# ---------------------------------------------------------------------------
+
+
+def test_non_finite_input_rejected():
+    coords, values, _axes = make_observations()
+    interpolator = DSILikeInterpolator()
+    params = DSIParameters()
+    bad_values = values.copy()
+    bad_values[3] = np.nan
+    with pytest.raises(PlatformError) as exc:
+        interpolator.fit(coords, bad_values, params)
+    assert exc.value.code == "DSI_LIKE_INPUT_INVALID"
+    bad_coords = coords.copy()
+    bad_coords[0, 1] = np.inf
+    with pytest.raises(PlatformError) as exc:
+        interpolator.fit(bad_coords, values, params)
+    assert exc.value.code == "DSI_LIKE_INPUT_INVALID"
+
+
+def test_shape_mismatch_and_empty_input_rejected():
+    coords, values, _axes = make_observations()
+    interpolator = DSILikeInterpolator()
+    params = DSIParameters()
+    with pytest.raises(PlatformError) as exc:
+        interpolator.fit(coords[:-1], values, params)
+    assert exc.value.code == "DSI_LIKE_INPUT_INVALID"
+    with pytest.raises(PlatformError) as exc:
+        interpolator.fit(coords[:, :2], values, params)
+    assert exc.value.code == "DSI_LIKE_INPUT_INVALID"
+    with pytest.raises(PlatformError) as exc:
+        interpolator.fit(np.zeros((0, 3)), np.zeros(0), params)
+    assert exc.value.code == "DSI_LIKE_INPUT_INVALID"
+
+
+def test_duplicate_coordinates_rejected():
+    coords, values, _axes = make_observations()
+    interpolator = DSILikeInterpolator()
+    duplicated = coords.copy()
+    duplicated[5] = duplicated[0]
+    with pytest.raises(PlatformError) as exc:
+        interpolator.fit(duplicated, values, DSIParameters())
+    assert exc.value.code == "DSI_LIKE_DUPLICATE_COORDINATES"
+
+
+def test_zero_supported_nodes_is_typed_failure():
+    # 训练点 < 3 时 3 邻居 IDW 初始化没有任何有效节点 → 受支持节点数为 0
+    interpolator = DSILikeInterpolator()
+    params = DSIParameters()
+    for coords, values in (
+        (np.array([[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]]), np.array([10.0, 20.0])),
+        (np.array([[0.0, 0.0, 0.0]]), np.array([10.0])),
+    ):
+        with pytest.raises(PlatformError) as exc:
+            interpolator.fit(coords, values, params)
+        assert exc.value.code == "DSI_LIKE_NO_SUPPORTED_NODES"
+
+
+# ---------------------------------------------------------------------------
+# 取消语义（与 IDW 同码同模式）
+# ---------------------------------------------------------------------------
+
+
+def test_fit_cancellation_raises_run_canceled():
+    coords, values, _axes = make_observations()
+    interpolator = DSILikeInterpolator()
+    with pytest.raises(PlatformError) as exc:
+        interpolator.fit(coords, values, DSIParameters(), cancel=lambda: True)
+    assert exc.value.code == "RUN_CANCELED"
+
+
+def test_smoothing_loop_checks_cancel_every_iteration():
+    coords, values, _axes = make_observations()
+    interpolator = DSILikeInterpolator()
+    # 不收敛配置（容差逼近 0）：保证取消前迭代不会因收敛停止；
+    # IDW 初始化分块检查次数 ≤ 5，第 6 次之后取消 → 必在平滑循环内抛出
+    params = DSIParameters(convergence_tolerance=1e-300)
+    calls = {"n": 0}
+
+    def cancel() -> bool:
+        calls["n"] += 1
+        return calls["n"] > 6
+
+    with pytest.raises(PlatformError) as exc:
+        interpolator.fit(coords, values, params, cancel=cancel)
+    assert exc.value.code == "RUN_CANCELED"
+    assert exc.value.details["completed"] >= 1  # 已进入平滑迭代
+
+
+def test_predict_cancellation_between_chunks(fitted_main):
+    _coords, _values, _axes, fitted = fitted_main
+    query = np.tile(np.array([[0.5, 0.5, 0.5]]), (20_001, 1))
+    calls = {"n": 0}
+
+    def cancel() -> bool:
+        calls["n"] += 1
+        return calls["n"] > 1
+
+    with pytest.raises(PlatformError) as exc:
+        fitted.predict(query, cancel=cancel)
+    assert exc.value.code == "RUN_CANCELED"
+
+
+# ---------------------------------------------------------------------------
+# 连通性、包围盒与平滑语义
+# ---------------------------------------------------------------------------
+
+
+def test_connectivity_6_18_26_all_finite_and_semantically_distinct(fitted_main):
+    coords, values, axes, fitted6 = fitted_main
+    query = interior_midpoints(axes)
+    interpolator = DSILikeInterpolator()
+    batches = {6: fitted6.predict(query, cancel=lambda: False)}
+    for connectivity in (18, 26):
+        params = DSIParameters(neighbor_connectivity=connectivity)
+        batches[connectivity] = interpolator.fit(coords, values, params).predict(
+            query, cancel=lambda: False
+        )
+    for connectivity, batch in batches.items():
+        assert not batch.is_nodata.any(), connectivity
+        assert np.isfinite(batch.values).all(), connectivity
+    assert np.abs(batches[6].values - batches[18].values).max() > 1e-9
+    assert np.abs(batches[18].values - batches[26].values).max() > 1e-9
+
+
+def test_query_outside_observed_bounds_is_nodata(fitted_main):
+    _coords, _values, _axes, fitted = fitted_main
+    query = np.array(
+        [
+            [-1e-6, 1.5, 2.0],  # x 出界
+            [1.0, 3.0 + 1e-6, 2.0],  # y 出界
+            [1.0, 1.5, -0.25],  # z 出界
+            [10.0, 10.0, 10.0],
+            [1.0, 1.5, 2.0],  # 界内
+        ]
+    )
+    batch = fitted.predict(query, cancel=lambda: False)
+    assert batch.is_nodata[:4].all()
+    assert np.isnan(batch.values[:4]).all()
+    assert not batch.is_nodata[4]
+    assert np.isfinite(batch.values[4])
+
+
+def test_smoothing_changes_non_observed_but_keeps_observations(fitted_main):
+    coords, values, axes, fitted = fitted_main
+    query = interior_midpoints(axes)
+    smoothed = fitted.predict(query, cancel=lambda: False)
+    # 纯 IDW 初值参考：与实现内部初始化同口径（power=2、min_neighbors=3）
+    idw_reference = IDWInterpolator().fit(
+        coords, values, IDWParameters(power=2.0, min_neighbors=3)
+    ).predict(query, cancel=lambda: False)
+    assert not smoothed.is_nodata.any()
+    assert np.abs(smoothed.values - idw_reference.values).max() > 1e-6
+    # 观测值不被平滑改动
+    at_observed = fitted.predict(coords, cancel=lambda: False)
+    np.testing.assert_allclose(at_observed.values, values, atol=1e-10)
+
+
+# ---------------------------------------------------------------------------
+# 诊断与收敛门
+# ---------------------------------------------------------------------------
+
+
+def test_diagnostics_are_bounded_and_complete(fitted_main):
+    coords, _values, axes, fitted = fitted_main
+    batch = fitted.predict(coords[:4], cancel=lambda: False)
+    diagnostics = batch.diagnostics
+    expected = {"iterations", "converged", "max_delta", "supported_count"}
+    assert expected <= set(diagnostics)
+    assert 1 <= diagnostics["iterations"] <= 25
+    assert isinstance(diagnostics["converged"], bool)
+    assert np.isfinite(diagnostics["max_delta"])
+    assert diagnostics["max_delta"] >= 0.0
+    if diagnostics["converged"]:
+        assert diagnostics["max_delta"] < 1e-4
+    node_count = int(np.prod([len(axis) for axis in axes]))
+    assert diagnostics["supported_count"] == node_count
+    assert batch.auxiliary == {}
+
+
+def test_max_iterations_without_convergence_is_not_failure(fitted_main):
+    coords, values, axes, _fitted = fitted_main
+    params = DSIParameters(convergence_tolerance=1e-300, max_iterations=25)
+    fitted = DSILikeInterpolator().fit(coords, values, params)
+    query = interior_midpoints(axes)
+    batch = fitted.predict(query, cancel=lambda: False)
+    # 有界工程近似：达 max_iterations 未收敛仍是成功候选，仅 converged=False
+    assert batch.diagnostics["converged"] is False
+    assert batch.diagnostics["iterations"] == 25
+    assert not batch.is_nodata.any()
+    assert np.isfinite(batch.values).all()
