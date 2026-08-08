@@ -14,29 +14,45 @@ from geomodeling.platform.presets import list_presets, load_preset
 CONFIG_DIR = Path("config")
 
 
-def test_resistivity_preset_preserves_legacy_facts():
+def test_resistivity_preset_declares_builtin_preset_scattered_identity():
+    """v0.8.0 Task 1：电阻率公开身份从 builtin_legacy 迁移为 builtin_preset。"""
     preset = load_preset("resistivity")
-    assert preset["source"] == "builtin_legacy"
+    assert preset["source"] == "builtin_preset"
+    assert preset["dimension"] == "3d"
+    assert preset["semantic_fields"] == {"x": "X", "y": "Y", "z": "Z", "value": "RHO"}
+    assert preset["coordinate_kind"] == "local_linear"
+    # RHO 单位待来源确认：诚实表述，不静默声明单位
+    assert preset["value_unit"] == "RHO 单位待来源确认"
 
     raw = yaml.safe_load((CONFIG_DIR / "default.yaml").read_text(encoding="utf-8"))
     expected = raw["expected"]
     facts = preset["facts"]
+    # 行数事实延续既有标准化合同（设计 §2）
     assert facts["standardized_rows"] == expected["standardized_rows"] == 17549
     assert facts["training_rows"] == expected["training_rows"] == 15827
     assert facts["validation_rows"] == expected["validation_rows"] == 1722
-    assert facts["formal_result"] == "RHO_KRIG_FINAL_20M_40"
-    assert facts["s3m_cache"] == "RHO_KRIG_FINAL_20M_40_VOL_S3M2"
-    # S3M 固定清单仍在仓库内（体元渲染契约锚点）
-    assert Path("config/s3m_cache_manifest.json").exists()
-    # 六级证据链等级完整
-    assert preset["evidence_levels"] == [
-        "model_succeeded",
-        "artifact_exported",
-        "iserver_published",
-        "service_metadata_verified",
-        "browser_loaded",
-        "manual_visual_checked",
-    ]
+
+    # 旧 S3M/legacy 成果不再作为当前产品身份出现（旧链退役见后续任务）
+    raw_text = (CONFIG_DIR / "presets" / "resistivity.json").read_text(encoding="utf-8")
+    assert "builtin_legacy" not in raw_text
+    assert "S3M" not in raw_text
+    assert "s3m" not in raw_text
+    assert "RHO_KRIG_FINAL" not in raw_text
+    assert "formal_result" not in raw_text
+    assert "evidence_levels" not in raw_text
+    # 绝不含本机绝对路径
+    assert ":\\" not in raw_text
+    assert "\\\\" not in raw_text
+
+    boundary_text = " ".join(preset["boundaries"])
+    # 局部工程坐标警告：未声明 EPSG、不跨案例叠加
+    assert "局部工程坐标" in boundary_text
+    assert "EPSG" in boundary_text
+    assert "跨案例" in boundary_text
+    # RHO 单位待确认 + 外部源不入库边界
+    assert "单位待来源确认" in boundary_text
+    assert "外部" in boundary_text
+    assert "不提交 Git" in boundary_text
 
 
 def test_microseismic_preset_uses_domain_adapter_and_matches_aggregated_columns():
