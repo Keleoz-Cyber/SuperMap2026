@@ -13,6 +13,9 @@
   ``tests/test_rendering_api.py`` / ``tests/test_case_workspace_api.py`` 锁定）；
 - Mock 层的旧导入用例（``web/e2e/supermap-native-volume.spec.ts``）改写为
   410 退役合同断言；
+- warm-cache 四缓存场景门（``web/e2e-live/warm-cache-upgrade-live.spec.ts``）
+  迁移到电阻率散点预置 candidate_result 链（GEOMODELING_RHO_SOURCE 跳过门
+  先于 describe；legacyGrid 合成网格夹具随唯一消费者迁移删除）；
 - browser-live CI 过滤口径不变（仅 platform-live.spec.ts），CI 不引入私有源
   环境变量——新 live 规格只作本机发布门；
 - 证据目录骨架 ``docs/evidence/v0.8.0-resistivity-dsi-like/README.md`` 存在且
@@ -31,6 +34,8 @@ LIVE_SPEC = Path("web/e2e-live/resistivity-scattered-live.spec.ts")
 RETIRED_LIVE_SPEC = Path("web/e2e-live/legacy-volume-live.spec.ts")
 MOCK_VOLUME_SPEC = Path("web/e2e/supermap-native-volume.spec.ts")
 EVIDENCE_README = Path("docs/evidence/v0.8.0-resistivity-dsi-like/README.md")
+WARM_CACHE_LIVE_SPEC = Path("web/e2e-live/warm-cache-upgrade-live.spec.ts")
+LEGACY_GRID_FIXTURE = Path("web/e2e-live/fixtures/legacyGrid.ts")
 
 MOCK_SPEC_MARKERS = (
     # 预置卡身份（无旧语样断言）
@@ -78,6 +83,23 @@ LIVE_SPEC_MARKERS = (
     "docs/evidence/v0.8.0-resistivity-dsi-like",
 )
 
+WARM_CACHE_SPEC_MARKERS = (
+    # 跳过门与预置 seed
+    "GEOMODELING_RHO_SOURCE",
+    "test.skip",
+    "seed-resistivity",
+    # candidate_result 身份链（工作台 → 官方成果 → 显式 POST 资产）
+    "candidate_result",
+    "/api/cases/resistivity/workspace",
+    "/api/results/",
+    "render-assets/netcdf",
+    # 端口环境变量与实测可 bind 默认值（Hyper-V 保留段 5141–5240 之外）
+    "GEOMODELING_WARM_CACHE_PORT",
+    "5278",
+    # 证据目录
+    "docs/evidence/v0.8.0-resistivity-dsi-like",
+)
+
 
 def _read(path: Path) -> str:
     assert path.is_file(), f"{path} 不存在"
@@ -103,6 +125,28 @@ def test_live_spec_has_source_skip_gate_isolation_and_render_gates():
 def test_legacy_volume_live_spec_is_retired():
     assert not RETIRED_LIVE_SPEC.exists(), (
         "旧 legacy 电阻率产品页门已随入口 410 退役删除，不得复活"
+    )
+
+
+def test_warm_cache_live_spec_uses_resistivity_preset_candidate_chain():
+    text = _read(WARM_CACHE_LIVE_SPEC)
+    missing = [marker for marker in WARM_CACHE_SPEC_MARKERS if marker not in text]
+    assert not missing, f"warm-cache live 规格缺少预置/candidate 链锚点：{missing}"
+    # 跳过门必须在任何测试声明之前生效（文件级 test.skip）
+    assert text.index("test.skip(") < text.index("test.describe("), (
+        "GEOMODELING_RHO_SOURCE 跳过门必须先于 test.describe 声明"
+    )
+    # 已 410 退役的 legacy 链不得回流（CLI 登记/合成网格夹具/legacy 资产路由）
+    assert "render_cli" not in text
+    assert "legacyGrid" not in text
+    assert "syntheticLegacyGridCsv" not in text
+    assert "/api/cases/resistivity/render-assets" not in text
+
+
+def test_legacy_grid_fixture_removed_with_last_consumer():
+    assert not LEGACY_GRID_FIXTURE.exists(), (
+        "legacyGrid 合成网格夹具的唯一消费者已迁移到预置 candidate 链，"
+        "文件必须删除，不得遗留死夹具"
     )
 
 
@@ -138,10 +182,20 @@ def test_evidence_readme_skeleton_exists_without_results():
     text = _read(EVIDENCE_README)
     for marker in ("GEOMODELING_RHO_SOURCE", "seed-resistivity", "run_id", "git_commit"):
         assert marker in text, f"证据 README 缺少约定锚点：{marker}"
-    # 骨架只含生成约定：不预登记任何运行结果目录
+    # 骨架提交只含生成约定：不得预登记任何运行结果目录。以 Git 跟踪口径判定
+    # （git ls-files）：本机真实运行产生的未提交输出不是「预登记」，其结果由
+    # 证据提交单独携带；一旦运行结果入库本断言即失败，防止骨架夹带结果。
+    import subprocess
+
+    tracked = subprocess.run(
+        ["git", "ls-files", "--", str(EVIDENCE_README.parent)],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
     runs = [
-        child
-        for child in EVIDENCE_README.parent.iterdir()
-        if child.is_dir() and child.name.startswith("run-")
+        entry
+        for entry in tracked.splitlines()
+        if any(part.startswith("run-") for part in entry.split("/"))
     ]
-    assert not runs, f"证据骨架不得预含运行结果目录：{[r.name for r in runs]}"
+    assert not runs, f"证据骨架不得预登记运行结果：{runs}"
