@@ -20,6 +20,16 @@
   环境变量——新 live 规格只作本机发布门；
 - 证据目录骨架 ``docs/evidence/v0.8.0-resistivity-dsi-like/README.md`` 存在且
   只含生成约定（结果由真实运行单独提交）。
+
+v0.8.0 第二批 Task 9 增量（统计与空间分析中心）：
+
+- Live E2E 新增 ``web/e2e-live/analysis-center-live.spec.ts``：微震/电阻率
+  双预置 seed + ``GEOMODELING_RHO_SOURCE`` 文件级跳过门（声明先于
+  describe）+ analysis-summary API 合同门 + 桌面/移动视觉门 + 空间分箱/
+  剖面轴/模型对比交互门；只作本机发布门，不进 CI browser-live 过滤；
+- 证据目录骨架 ``docs/evidence/v0.8.0-statistics-analysis/README.md`` 存在
+  且只含生成约定；一旦真实证据入库，run 目录身份 JSON 的 git_commit 必须
+  是当前 HEAD 的祖先（与电阻率证据同一祖先检查，共享同一辅助函数）。
 """
 
 from __future__ import annotations
@@ -36,6 +46,8 @@ MOCK_VOLUME_SPEC = Path("web/e2e/supermap-native-volume.spec.ts")
 EVIDENCE_README = Path("docs/evidence/v0.8.0-resistivity-dsi-like/README.md")
 WARM_CACHE_LIVE_SPEC = Path("web/e2e-live/warm-cache-upgrade-live.spec.ts")
 LEGACY_GRID_FIXTURE = Path("web/e2e-live/fixtures/legacyGrid.ts")
+ANALYSIS_LIVE_SPEC = Path("web/e2e-live/analysis-center-live.spec.ts")
+ANALYSIS_EVIDENCE_README = Path("docs/evidence/v0.8.0-statistics-analysis/README.md")
 
 MOCK_SPEC_MARKERS = (
     # 预置卡身份（无旧语样断言）
@@ -98,6 +110,35 @@ WARM_CACHE_SPEC_MARKERS = (
     "5278",
     # 证据目录
     "docs/evidence/v0.8.0-resistivity-dsi-like",
+)
+
+ANALYSIS_LIVE_SPEC_MARKERS = (
+    # 跳过门与隔离运行时（文件级 test.skip 先于 describe）
+    "GEOMODELING_RHO_SOURCE",
+    "test.skip",
+    "GEOMODELING_DATA_DIR",
+    # 双预置 seed（微震只读预置 + 电阻率外部私有源）
+    "seed-microseismic",
+    "seed-resistivity",
+    # analysis-summary API 合同门
+    "analysis-summary",
+    "analysis_profile",
+    "microseismic_velocity",
+    "17_549",
+    "1_911",
+    "source_sha256",
+    # 桌面/移动视觉门与交互门
+    "analysis-profile-badge",
+    "analysis-quality-badge",
+    "spatial-anomaly-legend",
+    "spatial-chart",
+    "model-candidate-row",
+    "axis=xy",
+    "1440",
+    "390",
+    "--use-angle=gl",
+    # 证据目录
+    "docs/evidence/v0.8.0-statistics-analysis",
 )
 
 
@@ -185,19 +226,19 @@ def test_browser_live_ci_filter_unchanged_and_free_of_private_source():
     )
 
 
-def test_evidence_readme_skeleton_and_committed_runs_identity():
-    text = _read(EVIDENCE_README)
-    for marker in ("GEOMODELING_RHO_SOURCE", "seed-resistivity", "run_id", "git_commit"):
-        assert marker in text, f"证据 README 缺少约定锚点：{marker}"
-    # 以 Git 跟踪口径判定（git ls-files）：本机未提交输出不算入库。骨架阶段
-    # 不得预登记任何 run-* 结果；一旦真实证据入库，每个 run 目录必须携带
-    # 记录 git_commit 的身份 JSON，且该提交必须是当前 HEAD 的祖先（或 HEAD
-    # 本身）——证据与代码身份一致，不得用外来/未来提交冒充。
+def _assert_committed_runs_have_ancestor_identity(evidence_dir: Path) -> None:
+    """以 Git 跟踪口径判定（git ls-files）：本机未提交输出不算入库。骨架阶段
+
+    不得预登记任何 run-* 结果；一旦真实证据入库，每个 run 目录必须携带
+    记录 git_commit 的身份 JSON，且该提交必须是当前 HEAD 的祖先（或 HEAD
+    本身）——证据与代码身份一致，不得用外来/未来提交冒充。
+    """
+
     import json
     import subprocess
 
     tracked = subprocess.run(
-        ["git", "ls-files", "--", str(EVIDENCE_README.parent)],
+        ["git", "ls-files", "--", str(evidence_dir)],
         check=True,
         capture_output=True,
         text=True,
@@ -226,3 +267,38 @@ def test_evidence_readme_skeleton_and_committed_runs_identity():
             check=False,
         ).returncode
         assert ancestor == 0, f"证据 git_commit 不是 HEAD 祖先：{run_dir} → {commit}"
+
+
+def test_evidence_readme_skeleton_and_committed_runs_identity():
+    text = _read(EVIDENCE_README)
+    for marker in ("GEOMODELING_RHO_SOURCE", "seed-resistivity", "run_id", "git_commit"):
+        assert marker in text, f"证据 README 缺少约定锚点：{marker}"
+    _assert_committed_runs_have_ancestor_identity(EVIDENCE_README.parent)
+
+
+def test_analysis_center_live_spec_has_dual_seed_skip_gate_and_visual_gates():
+    text = _read(ANALYSIS_LIVE_SPEC)
+    missing = [marker for marker in ANALYSIS_LIVE_SPEC_MARKERS if marker not in text]
+    assert not missing, f"分析中心 live 规格缺少双 seed/跳过门/视觉门锚点：{missing}"
+    # 跳过门必须在任何测试声明之前生效（文件级 test.skip）
+    assert text.index("test.skip(") < text.index("test.describe("), (
+        "GEOMODELING_RHO_SOURCE 跳过门必须先于 test.describe 声明"
+    )
+    # 与电阻率 live 同一纪律：新 live 规格只作本机发布门，不进 CI browser-live
+    whole = _read(CI)
+    assert "analysis-center-live" not in whole, (
+        "分析中心 live 规格只作本机发布门，不得进入 CI browser-live 过滤"
+    )
+
+
+def test_analysis_evidence_readme_skeleton_and_committed_runs_identity():
+    text = _read(ANALYSIS_EVIDENCE_README)
+    for marker in (
+        "GEOMODELING_RHO_SOURCE",
+        "seed-resistivity",
+        "seed-microseismic",
+        "run_id",
+        "git_commit",
+    ):
+        assert marker in text, f"分析证据 README 缺少约定锚点：{marker}"
+    _assert_committed_runs_have_ancestor_identity(ANALYSIS_EVIDENCE_README.parent)
