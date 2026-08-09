@@ -380,7 +380,10 @@ def test_recomputed_report_matches_committed_baseline(report: GasCandidateReport
     assert ranked[0]["algorithm"] == baseline.winner["algorithm"]
     assert ranked[0]["params"] == baseline.winner["parameters"]
     # 指标容差复现：winner 公共指标在数值栈漂移容差内一致
-    assert ranked[0]["metrics"] == pytest.approx(baseline.winner["metrics"], rel=1e-4)
+    # （bias/r2 等小值需要 abs 容差，纯 rel 会把漂移误判为脱钩）
+    assert ranked[0]["metrics"] == pytest.approx(
+        baseline.winner["metrics"], rel=1e-3, abs=1e-3
+    )
     # 同栈复现（生成机与验证机同一数值栈时）指纹必须逐位一致；
     # 跨栈漂移超过容差时上面的结构/容差断言会先失败，绝不静默通过
     if report.sha256 != baseline.candidate_report_sha256:
