@@ -35,7 +35,7 @@ RESISTIVITY_MAPPING = {
     "z": "Z",
     "value": "RHO",
     "value_name": "RHO",
-    "value_unit": "RHO 单位待来源确认",
+    "value_unit": "Ω·m",
     "coordinate_kind": "local_linear",
 }
 
@@ -70,7 +70,7 @@ def test_resistivity_profile_declares_log_distribution_and_depth_modules():
     assert profile.profile_id == "resistivity"
     assert {"distribution", "depth_slices", "model_comparison"} <= set(profile.modules)
 
-    # 真实预置 mapping（单位注记未确认）同样判定为电阻率，且无禁用理由
+    # 真实预置 mapping（单位 Ω·m，已确认）同样判定为电阻率，且无禁用理由
     real = resolve_analysis_profile({"mapping": RESISTIVITY_MAPPING})
     assert real.profile_id == "resistivity"
     assert real.specialized is True
@@ -238,7 +238,7 @@ def _valid_response_kwargs() -> dict:
         "case_id": "case-1",
         "analysis_profile": "resistivity",
         "profile_version": 1,
-        "variable": {"name": "RHO", "unit": "RHO 单位待来源确认"},
+        "variable": {"name": "RHO", "unit": "Ω·m"},
         "quality": {
             "row_count": 3,
             "valid_count": 3,
@@ -275,7 +275,7 @@ def test_analysis_summary_response_accepts_finite_skeleton():
     response = AnalysisSummaryResponse(**_valid_response_kwargs())
     dumped = response.model_dump()
     assert dumped["analysis_profile"] == "resistivity"
-    assert dumped["variable"] == {"name": "RHO", "unit": "RHO 单位待来源确认"}
+    assert dumped["variable"] == {"name": "RHO", "unit": "Ω·m"}
     assert dumped["provenance"]["calculation_version"] == CALCULATION_VERSION
 
 

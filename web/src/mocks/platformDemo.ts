@@ -368,7 +368,8 @@ const RHO_GRID_BOUNDS = [
   [-833.0047143, -19.5999],
 ]
 const RHO_GRID_RESOLUTION = [20, 20, 20]
-const RHO_UNIT_NOTE = 'RHO 单位待来源确认'
+// RHO 单位：Ω·m（v0.8.0 第三批用户权威确认，此前为“待来源确认”占位）
+const RHO_VALUE_UNIT = 'Ω·m'
 const RHO_MAPPING = {
   dimension: '3d',
   x: 'X',
@@ -376,7 +377,7 @@ const RHO_MAPPING = {
   z: 'Z',
   value: 'RHO',
   value_name: 'RHO',
-  value_unit: RHO_UNIT_NOTE,
+  value_unit: RHO_VALUE_UNIT,
   coordinate_kind: 'local_linear',
 }
 const RHO_DATASET_PROFILE = {
@@ -393,7 +394,7 @@ const RHO_PROVENANCE = {
   badge: '散点预置 · 官方普通克里金成果',
   data_form: '标准化散点 · 17,549 个节点',
   fields: ['X', 'Y', 'Z', 'RHO'],
-  value_unit: RHO_UNIT_NOTE,
+  value_unit: RHO_VALUE_UNIT,
   coordinate_kind: 'local_linear',
 }
 // DSI-like 合同默认参数（与后端 DSIParameters 默认值逐位一致）
@@ -839,7 +840,7 @@ function rhoAnalysisSummary(): AnalysisSummaryOut {
     case_id: 'resistivity',
     analysis_profile: 'resistivity',
     profile_version: 1,
-    variable: { name: 'RHO', unit: RHO_UNIT_NOTE },
+    variable: { name: 'RHO', unit: RHO_VALUE_UNIT },
     quality,
     statistics,
     modules: [
@@ -2113,7 +2114,7 @@ export async function installMockApi(page: Page): Promise<void> {
       dimension: '3d',
       grid_kind: 'regular',
       property_name: 'RHO',
-      units: RHO_UNIT_NOTE,
+      units: RHO_VALUE_UNIT,
       geolocation_status: 'display_anchor_only',
       display_transform: {
         contract: 'wgs84_display_anchor_v1',
@@ -2128,7 +2129,7 @@ export async function installMockApi(page: Page): Promise<void> {
       // 候选成果默认 linear + viridis（v0.7.0 第二批合同）
       render_profile: {
         property_name: 'RHO',
-        unit: RHO_UNIT_NOTE,
+        unit: RHO_VALUE_UNIT,
         default_scale: 'linear',
         default_palette: 'viridis',
         log_available: true,

@@ -4,7 +4,8 @@
 （v0.8.0 第三批起默认源；字节级冻结合同见 tests/test_example_data_contract.py），
 运行时仅登记其 SHA-256 指纹，绝不在受控文件中出现本机绝对路径。已核验源
 事实：表头恰好 ``X,Y,Z,RHO``、17,549 行、全部数值有限、``(X,Y,Z)`` 无重复、
-局部工程坐标（未声明 EPSG）；RHO 单位待来源确认（不静默声明单位、不做换算）。
+局部工程坐标（未声明 EPSG）；RHO 单位为 Ω·m（v0.8.0 第三批用户权威确认，
+不做任何换算）。
 
 加载器 fail-closed：缺失文件、表头/行数不符、非数值/非有限、重复 XYZ
 一律抛出 ``PRESET_SOURCE_INVALID``（409）。本模块绝不向公共层返回本机
@@ -65,8 +66,8 @@ class ResistivityPresetSource:
     row_count: int
     columns: tuple[str, ...]
     coordinate_kind: str = "local_linear"
-    # RHO 单位待来源确认：保持 None，不静默声明单位
-    value_unit: str | None = None
+    # RHO 单位 Ω·m（v0.8.0 第三批用户权威确认，绝不静默换算）
+    value_unit: str = "Ω·m"
 
 
 def load_resistivity_preset(path: Path) -> ResistivityPresetSource:
@@ -710,8 +711,10 @@ SEED_NOTE = (
     "config/presets/resistivity-official-baseline.json；用户实验不得改写本选择。"
 )
 
-#: RHO 单位待来源确认：诚实表述，绝不写 Ω·m 等未确认单位
-VALUE_UNIT_NOTE = "RHO 单位待来源确认"
+#: RHO 单位：Ω·m（v0.8.0 第三批用户权威确认；此前为"待来源确认"的诚实
+#: 占位。已 seed 的旧运行库 config_json 仍存旧文案，不在兼容范围，重新
+#: seed 即得新单位——seed 幂等链不改写既有成果，需全新运行库）
+VALUE_UNIT_NOTE = "Ω·m"
 #: 工作台 provenance 键（seed 写入 Case config_json，legacy_adapter 读取）；
 #: v0.8.0 Task 10：data_form 统一为设计 §5 口径（与预置描述卡同一文案），
 #: 并新增 fields 键（首页字段行逐字渲染）

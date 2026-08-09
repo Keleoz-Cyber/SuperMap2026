@@ -854,7 +854,7 @@ def test_dsi_like_candidate_uses_candidate_result_netcdf(tmp_path, monkeypatch):
             body = analysis.json()
             assert body["asset_identity"]["source_kind"] == "candidate_result"
             assert body["asset_identity"]["source_id"] == candidate_id
-            assert body["property"] == {"name": "RHO", "unit": "RHO 单位待来源确认"}
+            assert body["property"] == {"name": "RHO", "unit": "Ω·m"}
             assert body["statistics"]["valid_count"] > 0
 
         # 剖面 ZIP 导出（服务端权威重算；导出归属回链到 dsi_like 候选）

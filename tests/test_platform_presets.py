@@ -21,8 +21,8 @@ def test_resistivity_preset_declares_builtin_preset_scattered_identity():
     assert preset["dimension"] == "3d"
     assert preset["semantic_fields"] == {"x": "X", "y": "Y", "z": "Z", "value": "RHO"}
     assert preset["coordinate_kind"] == "local_linear"
-    # RHO 单位待来源确认：诚实表述，不静默声明单位
-    assert preset["value_unit"] == "RHO 单位待来源确认"
+    # RHO 单位已确认为 Ω·m（v0.8.0 第三批用户权威确认）
+    assert preset["value_unit"] == "Ω·m"
 
     raw = yaml.safe_load((CONFIG_DIR / "default.yaml").read_text(encoding="utf-8"))
     expected = raw["expected"]
@@ -49,8 +49,9 @@ def test_resistivity_preset_declares_builtin_preset_scattered_identity():
     assert "局部工程坐标" in boundary_text
     assert "EPSG" in boundary_text
     assert "跨案例" in boundary_text
-    # RHO 单位待确认 + example_data/ 内置源字节冻结合同边界
-    assert "单位待来源确认" in boundary_text
+    # RHO 单位 Ω·m + example_data/ 内置源字节冻结合同边界
+    assert "Ω·m" in boundary_text
+    assert "单位待来源确认" not in boundary_text
     assert "example_data/" in boundary_text
     assert "内置" in boundary_text
     assert "字节" in boundary_text

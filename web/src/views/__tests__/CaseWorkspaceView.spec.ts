@@ -422,7 +422,7 @@ const RESISTIVITY_PRESET_WS: CaseWorkspaceSummary = {
         z: 'Z',
         value: 'RHO',
         value_name: 'RHO',
-        value_unit: 'RHO 单位待来源确认',
+        value_unit: 'Ω·m',
         coordinate_kind: 'local_linear',
       },
       row_count: 17549,
@@ -433,7 +433,7 @@ const RESISTIVITY_PRESET_WS: CaseWorkspaceSummary = {
   provenance_summary: {
     badge: '散点预置 · 官方普通克里金成果',
     data_form: '标准化散点 · 17,549 个节点',
-    value_unit: 'RHO 单位待来源确认',
+    value_unit: 'Ω·m',
     coordinate_kind: 'local_linear',
   },
   // v0.8.0：预置工作台 DTO 携带 data_preparation（state=validated 摘要）
@@ -464,7 +464,7 @@ describe('CaseWorkspaceView 电阻率散点预置（v0.8.0）', () => {
     const text = wrapper.text()
     expect(text).toContain('标准化散点 · 17,549 个节点')
     expect(text).toContain('散点预置 · 官方普通克里金成果')
-    expect(text).toContain('RHO 单位待来源确认')
+    expect(text).toContain('Ω·m')
     expect(text).toContain('X/Y/Z -> RHO')
 
     // 操作一：查看官方成果直达

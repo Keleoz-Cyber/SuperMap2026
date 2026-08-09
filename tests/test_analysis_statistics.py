@@ -43,7 +43,7 @@ RESISTIVITY_MAPPING = {
     "z": "Z",
     "value": "RHO",
     "value_name": "RHO",
-    "value_unit": "RHO 单位待来源确认",
+    "value_unit": "Ω·m",
     "coordinate_kind": "local_linear",
 }
 

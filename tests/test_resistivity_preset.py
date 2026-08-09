@@ -80,8 +80,8 @@ def test_resistivity_source_identity_and_fingerprint(tmp_path: Path):
     assert EXPECTED_ROW_COUNT == 17_549
     # 局部工程坐标，未声明 EPSG
     assert source.coordinate_kind == "local_linear"
-    # RHO 单位待来源确认：不静默声明单位、不做静默换算
-    assert source.value_unit is None
+    # RHO 单位已确认为 Ω·m（v0.8.0 第三批用户权威确认）
+    assert source.value_unit == "Ω·m"
     # 只暴露摘要指纹，绝不暴露本机源路径
     assert source.sha256 == hashlib.sha256(path.read_bytes()).hexdigest()
     assert list(source.frame.columns) == list(REQUIRED_COLUMNS)

@@ -580,6 +580,6 @@ def test_seeded_resistivity_official_result_resolves_as_candidate_source(tmp_pat
     assert resolved.source_kind == "candidate_result"
     assert resolved.source_id == seeded.official_result.result_id
     assert resolved.property_name == "RHO"
-    assert resolved.units == "RHO 单位待来源确认"
+    assert resolved.units == "Ω·m"
     assert resolved.coordinate_kind == "local_linear"
     assert resolved.dimension == "3d"
