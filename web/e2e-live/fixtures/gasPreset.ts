@@ -19,7 +19,10 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
-const REPO_ROOT = path.resolve(HERE, '../..')
+// 夹具位于 e2e-live/fixtures/（比规格文件深一级）：仓库根需上溯三级；
+// 错误的仓库根会把 PYTHONPATH 指到 web/src，使 python 回落到可编辑安装的
+// 旧 worktree（其 preset_cli 没有 seed-gas 命令）。
+const REPO_ROOT = path.resolve(HERE, '../../..')
 
 export interface GasSeedRecord {
   case_id: string
