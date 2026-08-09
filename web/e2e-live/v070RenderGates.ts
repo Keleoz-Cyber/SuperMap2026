@@ -231,7 +231,7 @@ export async function analyzeVolumePixels(page: Page, shot: Buffer): Promise<Vol
 export function expectVolumeContent(
   metrics: VolumePixelMetrics,
   what: string,
-  opts: { minNonBg: number; minCoverage: number },
+  opts: { minNonBg: number; minCoverage: number; minComponentRatio?: number },
 ): void {
   expect(metrics.nonBg, `${what}：非背景体素不足（黑屏/仅覆盖物）`).toBeGreaterThan(opts.minNonBg)
   expect(metrics.coverage, `${what}：中央区域覆盖率不足（仅线框/碎屑不能通过）`).toBeGreaterThan(
@@ -241,7 +241,7 @@ export function expectVolumeContent(
   expect(
     metrics.componentRatio,
     `${what}：最大连通区占比不足（碎屑/细线不能通过）`,
-  ).toBeGreaterThanOrEqual(0.9)
+  ).toBeGreaterThanOrEqual(opts.minComponentRatio ?? 0.9)
 }
 
 // ---------------------------------------------------------------------------
@@ -659,6 +659,12 @@ export interface V070GateParams {
    * 书面记录纵横向比与实测值——不得用于掩盖线框/碎屑/黑屏。
    */
   sliceMinCoverage?: Partial<Record<'x' | 'y' | 'z', number>>
+  /**
+   * 等值面最大连通区占比下限（默认 0.9）。稀疏点集（如 28 柱瓦斯）
+   * 的等值面天然为多团块结构，0.9 单一连通假设不适用；调低时必须在
+   * 调用处书面记录数据稀疏性与实测值，且仍须拒绝无主导结构的纯碎屑。
+   */
+  contourMinComponentRatio?: number
 }
 
 export interface V070GateReport {
@@ -846,7 +852,11 @@ export async function runV070RenderGates(params: V070GateParams): Promise<V070Ga
   const contourWire = await measureWireAndBody(page, previous)
   expect(contourWire.wireCount, '等值面模式包围盒线框必须可见').toBeGreaterThan(200)
   const contourMetrics = await analyzeVolumePixels(page, previous)
-  expectVolumeContent(contourMetrics, '等值面', { minNonBg: 500, minCoverage: 0.03 })
+  expectVolumeContent(contourMetrics, '等值面', {
+    minNonBg: 500,
+    minCoverage: 0.03,
+    minComponentRatio: params.contourMinComponentRatio ?? 0.9,
+  })
   controlDiffs['contour'] = await countDiff(page, preContour, previous)
   expect(controlDiffs['contour'], '等值面与剖面之间必须有超过噪声的像素差异').toBeGreaterThan(
     pixelThreshold,

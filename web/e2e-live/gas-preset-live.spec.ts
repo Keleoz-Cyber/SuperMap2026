@@ -595,6 +595,10 @@ test.describe('v0.8.0 第三批：瓦斯预置官方成果真实 SDK live 门', 
       // 把真实渲染误判为不足。下限 0.01 仍拒绝纯线框/碎屑（实测 <0.005）
       // 与黑屏；Z 剖面保持 0.03；实际覆盖率随 gates.sliceGates 证据记录。
       sliceMinCoverage: { x: 0.01, y: 0.01 },
+      // 稀疏 28 柱数据的等值面天然为多团块（每柱一团）：实测最大连通区
+      // 占比约 0.83，0.9 单一连通假设不适用。0.5 下限仍拒绝无主导结构的
+      // 纯碎屑/细线；实际占比随 gates.contourMetrics 证据记录。
+      contourMinComponentRatio: 0.5,
     })
     record.gates = gates
 
