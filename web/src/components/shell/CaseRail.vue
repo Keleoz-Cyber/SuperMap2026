@@ -385,4 +385,39 @@ function dataFormOf(c: CaseSummary): string | null {
 .demo-download:hover {
   color: var(--s1-cyan-strong);
 }
+
+/* 手机档：案例轨收敛为横向紧凑选择条（场景与发现优先，切换入口保留），
+   新建/下载入口由全局头承担，避免长列表把三维顶出首屏 */
+@media (max-width: 480px) {
+  .case-rail {
+    flex-direction: row;
+    overflow-x: auto;
+    gap: var(--s1-space-2);
+    padding-bottom: 2px;
+  }
+
+  .rail-section {
+    flex-direction: row;
+    gap: var(--s1-space-2);
+  }
+
+  .rail-title {
+    display: none;
+  }
+
+  .rail-item {
+    min-width: 132px;
+    padding: var(--s1-space-2) var(--s1-space-3);
+  }
+
+  .rail-item .item-meta,
+  .rail-item .item-actions {
+    display: none;
+  }
+
+  .create-card,
+  .demo-download {
+    display: none;
+  }
+}
 </style>

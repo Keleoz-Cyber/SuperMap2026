@@ -352,6 +352,7 @@ onBeforeUnmount(clearShellContext)
     display: flex;
     flex-direction: column;
     padding: var(--s1-space-3);
+    gap: var(--s1-space-3);
   }
 
   .cc-findings {

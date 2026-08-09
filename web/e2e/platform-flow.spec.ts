@@ -503,8 +503,9 @@ test.describe('v0.7 生命周期与比较流程（mock API）', () => {
     await installMockApi(page)
 
     // Create case and trash it (following existing trash flow)
+    // v0.9.0：手机档自定义数据走全局头固定入口（案例轨为紧凑选择条）
     await page.goto('/')
-    await page.getByTestId('create-case-card').click()
+    await page.getByTestId('global-create-case').click()
     await page.getByTestId('case-name').fill('溢出测试')
     await page.getByTestId('case-file').setInputFiles({
       name: 'platform_demo_3d.csv',

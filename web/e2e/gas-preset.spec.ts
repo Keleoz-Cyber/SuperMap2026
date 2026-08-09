@@ -201,16 +201,19 @@ test.describe('v0.8.0 第三批瓦斯含量预置（mock API）', () => {
     await installMockApi(page)
     await installVolumeFrameMock(page)
 
-    // 首页：瓦斯卡完整可见且无横向溢出
+    // 首页：瓦斯卡完整可见且无横向溢出（v0.9.0：手机档案例轨为横向紧凑选择条，
+    // 点击 chip 选中，主操作在场景头部）
     await page.goto('/')
     const card = page.locator(GAS_CARD)
     await expect(card).toHaveCount(1)
-    await expect(card).toContainText('散点预置 · 官方基线成果')
+    await card.click()
+    await expect(page.getByTestId('command-center-scene')).toContainText('煤层瓦斯')
+    await expect(page.getByTestId('command-center-scene')).toContainText('ml/g')
     const homeScrollWidth = await page.evaluate(() => document.documentElement.scrollWidth)
     expect(homeScrollWidth, '首页 390×844 不得有页面级横向溢出').toBeLessThanOrEqual(390)
 
     // 工作台：数据摘要与官方成果命令可见
-    await card.getByTestId('enter-case-workspace').click()
+    await page.getByTestId('command-primary-action').click()
     await expect(page.getByTestId('case-workspace-header')).toContainText('煤层瓦斯')
     await expect(page.getByTestId('workspace-data')).toContainText('行数 58')
     await expect(page.getByTestId('open-official-result')).toBeVisible()

@@ -7,7 +7,7 @@ import re
 import tomllib
 from pathlib import Path
 
-EXPECTED = "0.8.1"
+EXPECTED = "0.9.0"
 
 
 def test_pyproject_version():
@@ -32,9 +32,10 @@ def test_web_package_and_lockfile_versions():
 def test_home_badge_uses_shared_web_version_source():
     version_ts = Path("web/src/version.ts").read_text(encoding="utf-8")
     assert "WEB_VERSION" in version_ts
-    home = Path("web/src/views/HomeView.vue").read_text(encoding="utf-8")
-    assert "WEB_VERSION" in home
-    assert not re.search(r"v0\.4\b[^.]", home), "首页徽标不得再硬编码版本号"
+    # v0.9.0 起版本徽标在全局应用头（AppShell/AppHeader），首页不再单独放置
+    header = Path("web/src/components/shell/AppHeader.vue").read_text(encoding="utf-8")
+    assert "WEB_VERSION" in header
+    assert not re.search(r"v0\.4\b[^.]", header), "版本徽标不得硬编码版本号"
 
 
 def test_mock_health_reports_web_version():
