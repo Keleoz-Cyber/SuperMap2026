@@ -31,12 +31,12 @@ describe('AppShell', () => {
     expect(wrapper.find('[data-test="shell-trash-link"]').exists()).toBe(true)
   })
 
-  it('keeps the presentation action disabled until the mode ships', () => {
+  it('presentation entry links to the presentation route', () => {
     const wrapper = mount(AppShell, {
       global: { stubs: { RouterView: true, RouterLink: { template: '<a><slot /></a>' } } },
     })
-    expect(
-      wrapper.get('[data-test="presentation-mode-entry"]').attributes('aria-disabled'),
-    ).toBe('true')
+    const entry = wrapper.get('[data-test="presentation-mode-entry"]')
+    expect(entry.attributes('aria-label')).toBe('进入答辩模式')
+    expect(entry.attributes('aria-disabled')).toBeUndefined()
   })
 })

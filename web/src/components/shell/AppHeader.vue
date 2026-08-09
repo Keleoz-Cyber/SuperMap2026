@@ -13,9 +13,6 @@ const props = defineProps<{
 
 const context = useShellContext()
 
-// Task 13 提供答辩模式路由后启用；当前保持禁用并明示
-const presentationEnabled = false
-
 void props
 </script>
 
@@ -58,18 +55,15 @@ void props
         <el-icon :size="15"><Upload /></el-icon>
         导入数据 / 新建建模
       </RouterLink>
-      <button
-        type="button"
+      <RouterLink
+        :to="{ name: 'presentation' }"
         class="action ghost"
         data-test="presentation-mode-entry"
         aria-label="进入答辩模式"
-        :aria-disabled="presentationEnabled ? 'false' : 'true'"
-        :disabled="!presentationEnabled"
-        title="答辩模式（v0.9 答辩章节巡航，随 Task 13 开放）"
       >
         <el-icon :size="15"><DataAnalysis /></el-icon>
         答辩模式
-      </button>
+      </RouterLink>
       <RouterLink :to="{ name: 'trash' }" class="action ghost" data-test="shell-trash-link">
         <el-icon :size="15"><Delete /></el-icon>
         回收站

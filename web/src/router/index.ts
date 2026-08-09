@@ -17,6 +17,12 @@ const router = createRouter({
   routes: [
     { path: '/', name: 'home', component: HomeView },
     { path: '/trash', name: 'trash', component: TrashView },
+    // v0.9.0：答辩模式（受控章节巡航，懒加载）
+    {
+      path: '/presentation',
+      name: 'presentation',
+      component: () => import('../views/PresentationView.vue'),
+    },
     // v0.7.0：统一案例工作台；/case/resistivity 保留为兼容别名（重定向）
     { path: '/case/resistivity', redirect: '/cases/resistivity' },
     { path: '/cases/:caseId', name: 'case-workspace', component: CaseWorkspaceView },
