@@ -1,6 +1,6 @@
 # Acceptance Notes
 
-适用对象：当前代码基线（v0.1.0 电阻率基线 + 微震 v0.2a 审计底座 + v0.3.1 iServer 纵向闭环 + v0.4 通用建模平台 + v0.5 微震第二案例建模闭环（已随 v0.5.0 发布）+ v0.6 专业建模增强（`feat/v0.6-professional-modeling` 分支）+ v0.6.1 NetCDF 原生体渲染（`feat/v0.6.1-netcdf-native-rendering` 分支）+ v0.7.0 案例生命周期、用户流程整改与空间结构分析（`feat/v0.7.0-lifecycle-professional-comparison` 分支））。
+适用对象：当前代码基线（v0.1.0 电阻率基线 + 微震 v0.2a 审计底座 + v0.3.1 iServer 纵向闭环 + v0.4 通用建模平台 + v0.5 微震第二案例建模闭环（已随 v0.5.0 发布）+ v0.6 专业建模增强（`feat/v0.6-professional-modeling` 分支）+ v0.6.1 NetCDF 原生体渲染（`feat/v0.6.1-netcdf-native-rendering` 分支）+ v0.7.0 案例生命周期、用户流程整改与空间结构分析（`feat/v0.7.0-lifecycle-professional-comparison` 分支）+ v0.8.0 电阻率散点迁移与 DSI-like（`feat/v0.8.0-resistivity-dsi-like` 分支）+ v0.8.0 统计与空间分析中心（`feat/v0.8.0-statistics-analysis-center` 分支）+ v0.8.0 第三批瓦斯预置案例（`feat/v0.8.0-gas-preset` 分支））。
 
 空间结构分析是普通克里金的可选建模依据，不适用于 IDW。每个成功物化的成果都有基础模型评估（RMSE/MAE/R2/Bias），增强证据按能力展开。旧 `/results/:id/professional` 路由重定向到 `/results/:id/evaluation`。
 
@@ -33,6 +33,21 @@ geomodeling verify-supermap -o outputs/release_verify
 当前基线（Task 23 后实测，本分支）：后端全量 `1153 passed`（便携 1124 / `local_data 29` 分层），前端 vitest `97 passed`，Playwright mock 冒烟 `4 passed`，Live E2E `3 passed`。测试数量只允许因真实新增测试而增加，任何减少或失败都必须调查。
 
 v0.6.1 当前基线（Task 14 后实测，`feat/v0.6.1-netcdf-native-rendering` 分支）：后端便携 `1274 passed`，前端 vitest `157 passed`，Mock E2E `5 passed`，Live E2E 真实 SDK 32^3/64^3 各 `1 passed` + 既有 `3 passed`。
+
+v0.8.0 第三批瓦斯预置案例验收（不依赖 iServer；seed 与便携测试不依赖任何外部私有源）：
+
+1. 数据合同与 seed 聚焦测试：
+
+```powershell
+python -m pytest tests/test_example_data_contract.py tests/test_gas_preset_contract.py tests/test_analysis_profiles.py tests/test_gas_preset_seed.py tests/test_platform_presets.py tests/test_gas_preset_baseline.py tests/test_gas_render_asset.py -q
+```
+
+   覆盖：三个 `example_data` CSV 存在性/字节 SHA-256/行数/表头/唯一 XYZ/全有限（字节身份由 `.gitattributes` 关闭文本规范化保证）；`gas_content` profile（CH4_content，ml/g，local_linear 米制）；seed 幂等/并发唯一/失败补偿；基线指纹 fail-closed（源、参数、折分或指标任一不符拒绝 seed）；网格 151×333×12 @[20,20,5] m（603,396 节点全有限、零 NoData）与渲染资产身份追溯到 candidate。
+2. seed 命令（内置 example_data 源，无外部私有源跳过门）：`python -m geomodeling.preset_cli seed-gas --data-dir <隔离数据目录>`；第二次调用幂等复用同一身份，并发调用只产生一条官方链。
+3. 官方基线：`config/presets/gas-official-baseline.json` winner `ordinary_kriging` spherical/neighbor=24（RMSE=8.298439、MAE=6.552100、R²=−0.109659、Bias=−0.068618，公共有效 58；58 点稀疏采样下 R² 为负，如实记为解释性估计）；DSI-like 条件评估通过仅作对照候选，不参与官方选择。
+4. NetCDF 与 API：`GET /api/cases/gas/workspace` 返回 validated 58 行数据版本与官方成果身份；analysis-summary/analysis-export 返回 `gas_content`/`ml/g` 与含量分布/Z 向分层/高低含量区域/梯度模块；前端 vitest、Mock E2E（`web/e2e/gas-preset.spec.ts`：首页三卡 → 工作台 → 成果页 → 分析中心 → 移动 390×844 无横向溢出）按基线通过。
+5. 真实 GPU live 门（本机发布门，不进 CI browser-live 过滤）：`npm --prefix web run test:e2e:live -- gas-preset-live.spec.ts`，隔离 `GEOMODELING_DATA_DIR`，内置源 seed（绝无 `GEOMODELING_RHO_SOURCE` 跳过门），覆盖首页/工作台/成果身份链、Volume/X/Y/Z Slice/Contour 五模式渲染门、普通刷新与持久化 profile 四缓存场景；证据目录 `docs/evidence/v0.8.0-batch-3-gas/`，入库 run 身份 JSON 的 `git_commit` 必须为 HEAD 祖先。真实 run 证据由后续单独提交补入，本文不预登记 run ID。
+6. 边界：瓦斯坐标为局部线性米制，不做 EPSG 配准与跨案例叠加；不输出「瓦斯危险/安全」规范结论；不接入 AI/iServer；v0.9 分析中心视觉重构不在本批。
 
 v0.6.1 NetCDF 原生体渲染验收（不依赖 iServer；live SDK 门为本地发布门）：
 
@@ -124,8 +139,7 @@ python -m uvicorn geomodeling.api.app:app --host 127.0.0.1 --port 8000
 ## 仓库外派生与人工验收证据
 
 - 微震：2,005条有限记录经3σ规则剔除80条（深度72、速度8），保留1,925条（L1/L2/L3 = 792/783/350）；候选表SHA-256为`4F7A0886B54BB1776E9D7CA98299F8F86E67897BA19236FB151C3FC9E2AE1513`，已在iDesktopX人工复现。**v0.5 起该对人工表作为黄金回归来源**：仓库代码从原始 DAT 重新生成并逐字节锁定两张表哈希，门禁不过即阻断。
-- 瓦斯：外部派生表含58条合格三维候选样本、28个位置，SHA-256为`FAB47D99926554255995BFB2D5FA299A389C14934D13B3F2D3BDB6E16EF5FC8F`；点图层能够显示，但`GAS_CH4_IDW_R1000_N12_P1`体元加入三维场景会触发iDesktopX原生崩溃。
-- 瓦斯证据只证明文件和人工试验存在，不证明当前仓库能够生成、验证、发布或在浏览器显示这些成果。
+- 瓦斯（历史，已被 v0.8.0 第三批取代）：外部派生表含58条合格三维候选样本、28个位置，SHA-256为`FAB47D99926554255995BFB2D5FA299A389C14934D13B3F2D3BDB6E16EF5FC8F`；点图层能够显示，但`GAS_CH4_IDW_R1000_N12_P1`体元加入三维场景会触发iDesktopX原生崩溃。该证据只证明仓库外文件和人工试验存在；瓦斯正式能力以 v0.8.0 第三批内置合同与官方基线为准（见上文验收章节与 [data/gas.md](data/gas.md)）。
 
 ## 未实现（当前 main）
 
