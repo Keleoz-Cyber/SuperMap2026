@@ -9,6 +9,9 @@ import type {
 } from '../api/types'
 import { algorithmLabel, parameterSummary } from '../utils/modelingLabels'
 import PageNavigation from '../components/navigation/PageNavigation.vue'
+import AsyncState from '../components/states/AsyncState.vue'
+import MetricComparisonChart from '../components/comparison/MetricComparisonChart.vue'
+import ParameterDiffTable from '../components/comparison/ParameterDiffTable.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -242,15 +245,15 @@ watch(datasetId, (next, prev) => {
       <p class="page-sub">数据集 <span class="mono">{{ datasetId }}</span></p>
     </header>
 
-    <el-result
+    <AsyncState
       v-if="loadError"
-      icon="error"
+      kind="error"
       title="候选目录加载失败"
-      :sub-title="loadError"
+      :impact="loadError"
+      next-action="返回案例工作台重新进入"
       data-test="load-error"
-      role="alert"
     />
-    <div v-else-if="loading" v-loading="true" class="page-loading" data-test="page-loading" />
+    <AsyncState v-else-if="loading" kind="loading" title="候选目录加载中" data-test="page-loading" />
 
     <main v-else class="comparison-main">
       <section v-if="rows.length === 0" class="empty-state" data-test="empty-catalog">
@@ -364,6 +367,11 @@ watch(datasetId, (next, prev) => {
             class="ranking-result"
             data-test="ranking-result"
           >
+            <MetricComparisonChart
+              :candidates="comparison.candidates"
+              :comparable="comparison.comparable"
+            />
+            <ParameterDiffTable :candidates="comparison.candidates" />
             <div class="ranking-scroll">
             <table class="ranking-table">
               <thead>

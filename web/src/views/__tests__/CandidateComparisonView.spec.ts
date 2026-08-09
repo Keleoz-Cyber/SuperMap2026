@@ -11,6 +11,25 @@ import type {
 } from '../../api/types'
 import CandidateComparisonView from '../CandidateComparisonView.vue'
 
+// v0.9.0：比较图在模块边界 mock echarts（jsdom 无 canvas 上下文；
+// 与 analysisPanels.spec.ts 同一模式）
+vi.mock('echarts/core', () => ({
+  init: vi.fn(() => ({
+    setOption: vi.fn(),
+    resize: vi.fn(),
+    dispose: vi.fn(),
+    on: vi.fn(),
+  })),
+  use: vi.fn(),
+}))
+vi.mock('echarts/charts', () => ({ BarChart: {} }))
+vi.mock('echarts/components', () => ({
+  GridComponent: {},
+  TooltipComponent: {},
+  LegendComponent: {},
+}))
+vi.mock('echarts/renderers', () => ({ CanvasRenderer: {} }))
+
 vi.mock('../../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../api/client')>()
   return {
