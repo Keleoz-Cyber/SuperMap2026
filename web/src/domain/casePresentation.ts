@@ -41,3 +41,23 @@ export const CASE_PRESENTATION: Record<CaseProfile, CasePresentation> = {
     forbiddenClaims: ['专业地质结论'],
   },
 }
+
+/**
+ * 演示 profile 解析：只依据数据字段（value_name/value_unit），绝不按 case_id。
+ * 规则与后端 analysis profile 判定同源：value_name 优先，单位不符不静默换算；
+ * 预置卡无 value_name 时按单位兜底；无法识别一律 generic_3d。
+ */
+export function resolveCaseProfile(
+  provenance: Record<string, unknown> | null | undefined,
+): CaseProfile {
+  if (!provenance) return 'generic_3d'
+  const name = typeof provenance.value_name === 'string' ? provenance.value_name : ''
+  const unit = typeof provenance.value_unit === 'string' ? provenance.value_unit : ''
+  if (name === 'RHO') return 'resistivity'
+  if (name === 'Vx' && unit === 'km/s') return 'microseismic_velocity'
+  if (/ch4|gas/i.test(name)) return 'gas_content'
+  if (unit === 'Ω·m') return 'resistivity'
+  if (unit === 'km/s') return 'microseismic_velocity'
+  if (unit === 'ml/g') return 'gas_content'
+  return 'generic_3d'
+}
