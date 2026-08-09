@@ -23,9 +23,20 @@ FormalSelection 锚点保护）。官方基线 JSON 由 Task 5 冻结真实数�
 模块只定义合同并 fail-closed 验证（schema、source_sha256 绑定、空间 5 折
 验证合同与 XY 柱数兼容性、winner 算法 ∈ {idw, ordinary_kriging} 且参数
 在允许矩阵内、有限指标、网格覆盖与节点数口径），缺失/不符一律
-``PRESET_BASELINE_INVALID``，绝不覆盖既有成果。官方候选评估与真实
-winner 冻结（Task 5）、网格与 NetCDF 资产专项（Task 6）在后续任务接入，
-本模块不预置任何未冻结数值。
+``PRESET_BASELINE_INVALID``，绝不覆盖既有成果。
+
+Task 5：``analyze_gas_candidates`` 在已验证源上执行官方候选矩阵（IDW
+3×3=9 组合 + 普通克里金 2×2=4 组合，共 13 候选）的空间折分评估——与
+电阻率同一生产合同（spatial_kfold folds=5 seed=20260723，3D 整 XY 柱
+分组）：逐折仅训练拟合、验证集预测，全部成功候选的公共有效掩膜交集复算
+指标，候选失败结构化记录（排名时自动排除），绝不静默通过。**官方 winner
+限定 ∈ {idw, ordinary_kriging}**（verify 已锁）。DSI-like 默认参数候选
+只是条件对照候选：交叉验证全部折成功、公共有效集非空、指标有限、全数据
+fit + 官方网格物化（网格节点预测全有限、包围盒外恒 NoData）全部门通过
+才以 ``evaluated`` 纳入报告，任一不满足即 ``excluded``（带稳定原因串），
+绝不静默通过或静默丢弃；即使指标最优也绝不参与官方选择。报告指纹经评审
+后冻结进 ``config/presets/gas-official-baseline.json``。网格与 NetCDF
+资产专项（Task 6）在后续任务接入。
 """
 
 from __future__ import annotations
@@ -313,6 +324,351 @@ def verify_official_baseline(source: GasPresetSource, baseline: OfficialBaseline
         lo, hi = float(bounds[idx][0]), float(bounds[idx][1])
         if lo > float(source.frame[col].min()) or hi < float(source.frame[col].max()):
             reject("grid_bounds_coverage")
+
+
+# ---------------------------------------------------------------------------
+# Task 5：官方候选分析（IDW 9 + 普通克里金 4）、DSI-like 条件评估与报告
+# ---------------------------------------------------------------------------
+
+from geomodeling.modeling.dsi_like import DSILikeInterpolator  # noqa: E402
+from geomodeling.modeling.grid import derive_grid  # noqa: E402
+from geomodeling.modeling.idw import IDWInterpolator  # noqa: E402
+from geomodeling.modeling.kriging import OrdinaryKrigingInterpolator  # noqa: E402
+from geomodeling.modeling.metrics import common_valid_mask, compute_metrics  # noqa: E402
+from geomodeling.modeling.splits import build_spatial_splits  # noqa: E402
+from geomodeling.platform.schemas import GridSpec, SpatialValidationSpec  # noqa: E402
+from geomodeling.platform.tables import dumps_canonical  # noqa: E402
+
+REPORT_SCHEMA = "v0.8.0-gas-candidate-report/v1"
+
+#: 官方规则网格分辨率：XY 20 m / Z 5 m 各向异性。真实源 XY 跨度约
+#: 3.0 km / 6.6 km，Z 跨度仅 54.6 m（相差两个数量级）；各向异性分辨率
+#: 保持 Z 向 12 节点可渲染，节点总数 151×333×12 = 603,396 ≤ max_cells
+OFFICIAL_GRID_RESOLUTION = (20.0, 20.0, 5.0)
+OFFICIAL_GRID_MAX_CELLS = 1_000_000
+
+#: DSI-like 条件对照候选使用默认参数（validate_parameters 的完整默认域）
+DSI_LIKE_REFERENCE_PARAMETERS: dict[str, Any] = {}
+
+
+def official_candidate_matrix() -> list[dict[str, Any]]:
+    """官方候选矩阵：IDW 9 组合 + 普通克里金 4 组合（确定性顺序，共 13）。
+
+    DSI-like 是条件对照候选，不在本矩阵——官方 winner 只能从本矩阵产生。
+    """
+
+    return [
+        {"algorithm": "idw", "parameters": params} for params in idw_candidate_matrix()
+    ] + [
+        {"algorithm": "ordinary_kriging", "parameters": params}
+        for params in kriging_candidate_matrix()
+    ]
+
+
+def official_grid(source: GasPresetSource) -> dict[str, Any]:
+    """官方规则网格：bounds 逐轴恰为源坐标范围，XY 20 m / Z 5 m 分辨率。
+
+    节点数口径与 ``verify_official_baseline`` 的 ``_grid_cells`` 一致
+    （``modeling.grid._axis_nodes`` 最近节点数规则）。
+    """
+
+    frame = source.frame
+    return {
+        "bounds": [
+            [float(frame["X"].min()), float(frame["X"].max())],
+            [float(frame["Y"].min()), float(frame["Y"].max())],
+            [float(frame["Z"].min()), float(frame["Z"].max())],
+        ],
+        "resolution": list(OFFICIAL_GRID_RESOLUTION),
+        "max_cells": OFFICIAL_GRID_MAX_CELLS,
+    }
+
+
+@dataclass(frozen=True)
+class GasCandidateReport:
+    """官方候选矩阵的空间折分评估报告（纯计算产物，不落库）。
+
+    ``dsi_like`` 块记录条件对照评估：``{"parameters", "status", "reason",
+    "metrics", "materialization"}``；status ∈ {evaluated, excluded}。
+    """
+
+    candidates: tuple[dict[str, Any], ...]
+    source_sha256: str
+    validation: dict[str, Any]
+    fold_validation_rows: tuple[int, ...]
+    common_valid_count: int
+    dsi_like: dict[str, Any]
+    sha256: str
+
+
+def _evaluate_dsi_like(
+    points: np.ndarray,
+    values: np.ndarray,
+    folds: list,
+    shared_mask: np.ndarray,
+    grid: dict[str, Any],
+) -> dict[str, Any]:
+    """DSI-like 条件评估（对照候选）：全部门通过才 ``evaluated`` 纳入报告。
+
+    门（任一不过即 ``excluded``，带稳定原因串，绝不静默通过或静默丢弃）：
+
+    1. 交叉验证全部折拟合/预测成功（失败异常类型名结构化记录）；
+    2. 公共有效集（13 候选共享掩膜 ∩ DSI-like 自身有效点）非空；
+    3. 复算指标 rmse/mae/r2/bias 全部有限；
+    4. 全数据 fit + 官方网格物化：网格节点预测全有限、包围盒外恒 NoData。
+    """
+
+    interpolator = DSILikeInterpolator()
+    validated = interpolator.validate_parameters(DSI_LIKE_REFERENCE_PARAMETERS, "3d")
+    parameters = validated.model_dump()
+
+    def excluded(reason: str) -> dict[str, Any]:
+        return {
+            "parameters": parameters,
+            "status": "excluded",
+            "reason": reason,
+            "metrics": None,
+            "materialization": None,
+        }
+
+    # 1. 交叉验证：逐折仅训练拟合、验证集预测
+    per_row: dict[int, tuple[float, bool]] = {}
+    try:
+        for fold in folds:
+            fitted = interpolator.fit(
+                points[fold.training_indices], values[fold.training_indices], validated
+            )
+            batch = fitted.predict(points[fold.validation_indices], cancel=lambda: False)
+            for pos, row_index in enumerate(fold.validation_indices):
+                per_row[int(row_index)] = (float(batch.values[pos]), bool(batch.is_nodata[pos]))
+    except Exception as exc:  # noqa: BLE001 - 失败结构化记录为 excluded，绝不中断
+        return excluded(f"cross_validation:{type(exc).__name__}")
+
+    n_rows = len(values)
+    preds = np.array([per_row[i][0] for i in range(n_rows)], dtype="float64")
+    nodata = np.array([per_row[i][1] for i in range(n_rows)], dtype="bool")
+
+    # 2. 公共有效集：与 13 候选共享掩膜求交（折训练包围盒外验证点恒 NoData，
+    #    属预期语义，覆盖率单列，绝不换取指标优势）
+    shared = shared_mask & ~nodata
+    if not shared.any():
+        return excluded("empty_common_valid")
+    summary = compute_metrics(values, preds, shared, is_nodata=nodata)
+    metrics = {
+        "rmse": summary.rmse,
+        "mae": summary.mae,
+        "r2": summary.r2,
+        "bias": summary.bias,
+        "coverage": summary.coverage,
+        "common_valid_count": summary.common_valid_count,
+    }
+    # 3. 指标有限性
+    if not all(np.isfinite(float(metrics[name])) for name in ("rmse", "mae", "r2", "bias")):
+        return excluded("non_finite_metrics")
+
+    # 4. 全数据 fit + 官方网格物化门
+    try:
+        full_fitted = interpolator.fit(points, values, validated)
+    except Exception as exc:  # noqa: BLE001 - 失败结构化记录为 excluded
+        return excluded(f"materialization_fit:{type(exc).__name__}")
+    grid_def = derive_grid(points, "3d", GridSpec.model_validate(grid))
+    axes = tuple(np.asarray(axis, dtype="float64") for axis in grid_def.axes)
+    shape = tuple(len(axis) for axis in axes)
+    meshes = np.meshgrid(*axes, indexing="ij")
+    nodes = np.column_stack([mesh.ravel() for mesh in meshes])
+    batch = full_fitted.predict(nodes, cancel=lambda: False)
+    finite_count = int(np.isfinite(batch.values).sum())
+    if batch.is_nodata.any() or finite_count != nodes.shape[0]:
+        return excluded("materialization_nodata")
+    # 包围盒外探针：六个面外侧各一点（跨度量级偏移），必须全部 NoData
+    lows = points.min(axis=0)
+    highs = points.max(axis=0)
+    spans = np.where(highs - lows > 0, highs - lows, 1.0)
+    center = (lows + highs) / 2.0
+    probes: list[np.ndarray] = []
+    for dim in range(3):
+        lo_probe = center.copy()
+        hi_probe = center.copy()
+        lo_probe[dim] = lows[dim] - spans[dim]
+        hi_probe[dim] = highs[dim] + spans[dim]
+        probes.extend([lo_probe, hi_probe])
+    outside = full_fitted.predict(np.asarray(probes, dtype="float64"), cancel=lambda: False)
+    if not outside.is_nodata.all():
+        return excluded("materialization_outside_leak")
+
+    return {
+        "parameters": parameters,
+        "status": "evaluated",
+        "reason": None,
+        "metrics": metrics,
+        "materialization": {
+            "grid_shape": list(shape),
+            "node_count": int(nodes.shape[0]),
+            "finite_node_count": finite_count,
+            "outside_nodata": True,
+        },
+    }
+
+
+def analyze_gas_candidates(source: GasPresetSource) -> GasCandidateReport:
+    """在已验证源上执行 13 候选官方矩阵的空间折分评估（纯计算，不落库）。
+
+    复用生产 IDW/普通克里金插值器与公共有效集指标合同：逐折仅训练集拟合、
+    验证集预测；全部成功候选的公共有效掩膜交集复算指标。候选失败记录结构化
+    error 并继续（排名时自动排除），绝不静默通过。DSI-like 默认参数候选经
+    ``_evaluate_dsi_like`` 条件评估后写入报告对照块；其 NoData 语义不稀释
+    13 候选的公共有效集。**官方 winner 限定 ∈ {idw, ordinary_kriging}**
+    （verify 已锁）；DSI-like 即使指标最优也只能作对照候选。
+    """
+
+    frame = source.frame.rename(columns={"X": "x", "Y": "y", "Z": "z", "CH4_content": "value"})
+    points = frame[["x", "y", "z"]].to_numpy(dtype="float64")
+    values = frame["value"].to_numpy(dtype="float64")
+    folds = build_spatial_splits(
+        points, "3d", SpatialValidationSpec.model_validate(VALIDATION_CONTRACT)
+    )
+    fold_validation_rows = tuple(int(len(fold.validation_indices)) for fold in folds)
+
+    interpolators = {"idw": IDWInterpolator(), "ordinary_kriging": OrdinaryKrigingInterpolator()}
+    matrix = official_candidate_matrix()
+    predictions_by_candidate: dict[str, dict[int, tuple[float, bool]]] = {}
+    errors: dict[str, str] = {}
+    for entry in matrix:
+        key = dumps_canonical(entry)
+        try:
+            interpolator = interpolators[entry["algorithm"]]
+            validated = interpolator.validate_parameters(entry["parameters"], "3d")
+            per_row: dict[int, tuple[float, bool]] = {}
+            for fold in folds:
+                fitted = interpolator.fit(
+                    points[fold.training_indices], values[fold.training_indices], validated
+                )
+                batch = fitted.predict(points[fold.validation_indices], cancel=lambda: False)
+                for pos, row_index in enumerate(fold.validation_indices):
+                    per_row[int(row_index)] = (
+                        float(batch.values[pos]),
+                        bool(batch.is_nodata[pos]),
+                    )
+            predictions_by_candidate[key] = per_row
+        except Exception as exc:  # noqa: BLE001 - 候选失败结构化记录，不中断矩阵
+            errors[key] = type(exc).__name__
+
+    # 公共有效掩膜：全部成功候选（IDW/普通克里金）的验证预测逐点求交
+    n_rows = len(frame)
+    succeeded = [k for k in predictions_by_candidate if k not in errors]
+    mask_input: dict[str, tuple[np.ndarray, np.ndarray]] = {}
+    for key in succeeded:
+        per_row = predictions_by_candidate[key]
+        preds = np.array([per_row[i][0] for i in range(n_rows)], dtype="float64")
+        nodata = np.array([per_row[i][1] for i in range(n_rows)], dtype="bool")
+        mask_input[key] = (preds, nodata)
+    shared_mask = common_valid_mask(mask_input)
+
+    candidates: list[dict[str, Any]] = []
+    for entry in matrix:
+        key = dumps_canonical(entry)
+        if key in errors:
+            candidates.append(
+                {
+                    "algorithm": entry["algorithm"],
+                    "params": entry["parameters"],
+                    "metrics": None,
+                    "error": errors[key],
+                }
+            )
+            continue
+        preds, nodata = mask_input[key]
+        summary = compute_metrics(values, preds, shared_mask, is_nodata=nodata)
+        metrics = {
+            "rmse": summary.rmse,
+            "mae": summary.mae,
+            "r2": summary.r2,
+            "bias": summary.bias,
+            "coverage": summary.coverage,
+            "common_valid_count": summary.common_valid_count,
+        }
+        candidates.append(
+            {
+                "algorithm": entry["algorithm"],
+                "params": entry["parameters"],
+                "metrics": metrics,
+                "error": None,
+            }
+        )
+
+    dsi_like = _evaluate_dsi_like(points, values, folds, shared_mask, official_grid(source))
+    payload = {
+        "schema": REPORT_SCHEMA,
+        "preset_version": PRESET_VERSION,
+        "source_sha256": source.sha256,
+        "validation": VALIDATION_CONTRACT,
+        "selection_rule": list(SELECTION_RULE),
+        "fold_validation_rows": list(fold_validation_rows),
+        "common_valid_count": int(shared_mask.sum()),
+        "candidates": candidates,
+        "dsi_like": dsi_like,
+    }
+    return GasCandidateReport(
+        candidates=tuple(candidates),
+        source_sha256=source.sha256,
+        validation=dict(VALIDATION_CONTRACT),
+        fold_validation_rows=fold_validation_rows,
+        common_valid_count=int(shared_mask.sum()),
+        dsi_like=dsi_like,
+        sha256=hashlib.sha256(dumps_canonical(payload).encode("utf-8")).hexdigest(),
+    )
+
+
+def report_to_json(report: GasCandidateReport) -> dict[str, Any]:
+    """报告落盘形态（canonical JSON 的字典源；sha 与该形态一致）。"""
+
+    return {
+        "schema": REPORT_SCHEMA,
+        "preset_version": PRESET_VERSION,
+        "source_sha256": report.source_sha256,
+        "validation": report.validation,
+        "selection_rule": list(SELECTION_RULE),
+        "fold_validation_rows": list(report.fold_validation_rows),
+        "common_valid_count": report.common_valid_count,
+        "candidates": list(report.candidates),
+        "dsi_like": report.dsi_like,
+        "sha256": report.sha256,
+    }
+
+
+def rank_gas_candidates(
+    candidates: list[dict[str, Any]] | tuple[dict[str, Any], ...],
+    *,
+    algorithm: str | None = None,
+):
+    """排名：仅有限公共指标候选参与；rmse→mae→r2→规范化参数字节序。
+
+    候选列表只含 IDW/普通克里金（DSI-like 为条件对照候选，不在此列），
+    排名首位即官方 winner；``algorithm`` 过滤仅用于分算法对照。
+    """
+
+    eligible = []
+    for entry in candidates:
+        if algorithm is not None and entry.get("algorithm") != algorithm:
+            continue
+        metrics = entry.get("metrics")
+        if not metrics:
+            continue
+        rmse = float(metrics.get("rmse", "nan"))
+        mae = float(metrics.get("mae", "nan"))
+        r2 = float(metrics.get("r2", "nan"))
+        if not (np.isfinite(rmse) and np.isfinite(mae) and np.isfinite(r2)):
+            continue
+        eligible.append(entry)
+    return sorted(
+        eligible,
+        key=lambda entry: (
+            float(entry["metrics"]["rmse"]),
+            float(entry["metrics"]["mae"]),
+            -float(entry["metrics"]["r2"]),
+            dumps_canonical(entry["params"]),
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------

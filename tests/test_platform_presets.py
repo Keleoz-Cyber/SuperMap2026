@@ -109,11 +109,16 @@ def test_gas_preset_declares_builtin_preset_scattered_identity():
     assert preset["value_unit"] == "ml/g"
 
     facts = preset["facts"]
-    # 行数事实与 example_data 字节冻结合同一致；训练/验证分区由 Task 5
-    # 真实候选评估冻结，本批只占位（null），绝不伪造未冻结数值
+    # 行数事实与 example_data 字节冻结合同一致；v0.8.0 第三批 Task 5 起填实
+    # 真实折分聚合（空间 5 折整 XY 柱分组，逐折验证行数总和恰为 58），绝不
+    # 伪造固定的"训练/验证行数"分割语义
     assert facts["standardized_rows"] == 58
-    assert facts["training_rows"] is None
-    assert facts["validation_rows"] is None
+    assert facts["xy_columns"] == 28
+    assert facts["validation_folds"] == 5
+    assert facts["fold_validation_rows"] == [12, 11, 11, 13, 11]
+    assert sum(facts["fold_validation_rows"]) == 58
+    assert "training_rows" not in facts
+    assert "validation_rows" not in facts
 
     # 绝不含本机绝对路径
     raw_text = (CONFIG_DIR / "presets" / "gas.json").read_text(encoding="utf-8")

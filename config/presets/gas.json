@@ -8,8 +8,9 @@
   "coordinate_kind": "local_linear",
   "facts": {
     "standardized_rows": 58,
-    "training_rows": null,
-    "validation_rows": null
+    "xy_columns": 28,
+    "validation_folds": 5,
+    "fold_validation_rows": [12, 11, 11, 13, 11]
   },
   "recommended_search": {
     "algorithm": "idw",
@@ -22,7 +23,7 @@
     "CH4_content 单位为 ml/g（已确认），不做静默换算",
     "标准化散点源 CSV 内置在仓库 example_data/瓦斯含量_合格样品.csv（字节级 SHA-256 冻结合同，任意平台检出字节一致）；运行时仅登记其 SHA-256 指纹",
     "内置只读预置：由 seed 建立只读数据版本与官方成果链，不经上传向导，用户候选不得顶替官方正式选择",
-    "训练/验证分区与官方基线由真实候选评估冻结（后续任务）：facts 中 training_rows/validation_rows 为 null 占位，绝不预填未冻结数值",
+    "官方基线已由真实候选评估冻结（config/presets/gas-official-baseline.json）：空间 5 折交叉验证按整根 XY 柱分组（28 柱，逐折验证行数见 facts.fold_validation_rows，总和 58），不设固定训练/验证分割，winner ∈ {idw, ordinary_kriging}，DSI-like 仅作条件对照候选",
     "不输出「瓦斯危险/安全」等安全规范结论：高/低含量区域阈值一律为分位统计的探索性口径并明示来源",
     "58 个合格样品、28 个 XY 采样位置的稀疏数据：插值与网格成果为稀疏采样下的解释性估计，交叉验证误差必须随成果明示"
   ]

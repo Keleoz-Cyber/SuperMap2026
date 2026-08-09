@@ -10,6 +10,11 @@
 与源逐行匹配后的溯源事实（仅计数 + 验证柱指纹）冻结进只读候选报告；
 报告指纹经评审后写入 ``config/presets/resistivity-official-baseline.json``。
 
+``analyze-gas``（v0.8.0 第三批 Task 5）：在内置瓦斯源上执行 13 候选官方
+矩阵（IDW 9 + 普通克里金 4）并条件评估 DSI-like 默认参数对照候选（全部
+门通过才 evaluated，任一不过 excluded 带原因）；报告指纹经评审后写入
+``config/presets/gas-official-baseline.json``。
+
 ``seed-resistivity``（v0.8.0 Task 2）：把电阻率标准化散点 CSV seed 为
 只读 ``builtin_preset`` 案例链；``--source`` 缺省为项目内
 ``example_data/地下电阻率节点_标准化.csv`` 内置源（v0.8.0 第三批起，
@@ -36,7 +41,18 @@ from geomodeling.platform.errors import PlatformError
 from geomodeling.platform.gas_preset import (
     DEFAULT_BASELINE_PATH as GAS_DEFAULT_BASELINE_PATH,
 )
-from geomodeling.platform.gas_preset import seed_gas_preset
+from geomodeling.platform.gas_preset import (
+    DEFAULT_PRESET_CSV as GAS_DEFAULT_PRESET_CSV,
+)
+from geomodeling.platform.gas_preset import (
+    analyze_gas_candidates,
+    load_gas_preset,
+    rank_gas_candidates,
+    seed_gas_preset,
+)
+from geomodeling.platform.gas_preset import (
+    report_to_json as gas_report_to_json,
+)
 from geomodeling.platform.microseismic_preset import (
     DEFAULT_PRESET_CSV,
     analyze_preset_candidates,
@@ -179,6 +195,72 @@ def analyze_resistivity(
                         if kriging_ranked
                         else None
                     ),
+                },
+                ensure_ascii=False,
+            )
+        )
+    except PlatformError as exc:
+        typer.echo(json.dumps(exc.public_payload(), ensure_ascii=False))
+        raise typer.Exit(code=1) from exc
+    except Exception as exc:  # noqa: BLE001 - 统一错误封套
+        payload = {"error": {"code": PRESET_CLI_UNEXPECTED_ERROR, "message": str(exc), "details": {}}}
+        typer.echo(json.dumps(payload, ensure_ascii=False))
+        raise typer.Exit(code=1) from exc
+
+
+@preset_app.command("analyze-gas")
+def analyze_gas(
+    output: Path = typer.Option(
+        ..., "--output", help="候选报告输出路径（canonical JSON；仅本地运行产物，绝不提交）"
+    ),
+    source: Path = typer.Option(
+        GAS_DEFAULT_PRESET_CSV,
+        "--source",
+        help="瓦斯含量合格样品 CSV（默认项目内 example_data/ 内置源；仅测试/审计显式覆盖）",
+    ),
+) -> None:
+    """执行 13 候选官方矩阵分析并写出只读候选报告（纯计算，不触碰运行时）。
+
+    IDW 9 组合 + 普通克里金 4 组合在空间 5 折（整 XY 柱分组）公共有效集上
+    复算指标；DSI-like 默认参数对照候选经条件评估（交叉验证/公共有效集/
+    指标有限/全数据 fit+网格物化全部门通过才 evaluated，否则 excluded 带
+    原因）。报告指纹经评审后冻结进 ``config/presets/gas-official-baseline.json``。
+    JSON 输出只含逻辑身份与 SHA-256，绝不输出绝对路径。
+    """
+
+    try:
+        preset_source = load_gas_preset(source)
+        report = analyze_gas_candidates(preset_source)
+        payload = gas_report_to_json(report)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(dumps_canonical(payload) + "\n", encoding="utf-8")
+        ranked = rank_gas_candidates(report.candidates)
+        succeeded: dict[str, int] = {}
+        for entry in report.candidates:
+            if entry["metrics"] is not None:
+                succeeded[entry["algorithm"]] = succeeded.get(entry["algorithm"], 0) + 1
+        typer.echo(
+            json.dumps(
+                {
+                    "source_sha256": report.source_sha256,
+                    "candidate_report_sha256": report.sha256,
+                    "candidate_count": len(report.candidates),
+                    "succeeded_by_algorithm": succeeded,
+                    "common_valid_count": report.common_valid_count,
+                    "fold_validation_rows": list(report.fold_validation_rows),
+                    "winner": (
+                        {
+                            "algorithm": ranked[0]["algorithm"],
+                            "parameters": ranked[0]["params"],
+                            "metrics": ranked[0]["metrics"],
+                        }
+                        if ranked
+                        else None
+                    ),
+                    "dsi_like": {
+                        "status": report.dsi_like["status"],
+                        "reason": report.dsi_like["reason"],
+                    },
                 },
                 ensure_ascii=False,
             )
