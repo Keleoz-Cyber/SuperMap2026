@@ -78,6 +78,10 @@ const store = usePresentationStore()
   border-bottom: 1px solid var(--s1-border-soft);
   background: var(--s1-surface-glass);
   backdrop-filter: blur(10px);
+  /* 答辩章节导航必须恒可见：内容滚动时吸顶在全局头下方 */
+  position: sticky;
+  top: 52px;
+  z-index: 40;
 }
 
 .overlay-top {
