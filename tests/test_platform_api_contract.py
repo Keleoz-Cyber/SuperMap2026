@@ -72,7 +72,11 @@ def test_cases_merges_legacy_card_and_upload_cases(tmp_path, monkeypatch):
     # v0.7.0：旧 DAT 微震卡由预置描述符取代；v0.3.1 其余卡片语义保留
     assert "microseismic" not in by_id
     assert by_id["builtin-microseismic-vx-1911"]["workspace_kind"] == "builtin_preset"
-    assert by_id["gas"]["status"] == "parked"
+    # v0.8.0 第三批 Task 4：legacy 瓦斯卡（最后一张 legacy 卡）同模式退役；
+    # 未 seed 运行库出预置描述卡，不再出现 parked/"暂缓" 文案
+    assert by_id["gas"]["status"] == "initialization_required"
+    assert by_id["gas"]["source_kind"] == "builtin_preset"
+    assert by_id["gas"]["workspace_kind"] == "builtin_preset"
     uploaded = by_id[case_id]
     assert uploaded["title"] == "集成上传案例"
     assert uploaded["source_kind"] == "upload"
@@ -269,13 +273,17 @@ def test_upload_card_featured_result_null_without_candidates(tmp_path, monkeypat
     assert card["featured_result"] is None
 
 
-def test_legacy_cards_carry_no_featured_result(tmp_path, monkeypatch):
-    """legacy 内置卡片不受 featured_result 扩展影响。"""
+def test_no_legacy_card_remains_after_gas_retirement(tmp_path, monkeypatch):
+    """v0.8.0 第三批 Task 4：legacy 瓦斯卡（最后一张）退役后首页无任何 legacy 卡。
+
+    ``legacy_case_cards`` 的过滤机制保留给未来可能的其它内置案例；若有，
+    它们仍不得携带 featured_result。
+    """
 
     app = make_integrated_app(tmp_path, monkeypatch)
     with TestClient(app) as client:
         body = client.get("/api/cases").json()
     legacy = [c for c in body["cases"] if c["source_kind"] == "builtin_legacy"]
-    assert legacy, "应至少有一张 legacy 卡片"
+    assert legacy == [], "gas 退役后首页/案例列表不再出现任何 builtin_legacy 卡"
     for card in legacy:
         assert card.get("featured_result") is None

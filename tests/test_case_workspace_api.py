@@ -1,7 +1,8 @@
 """v0.7.0 Batch 1 Task 4：统一案例工作台卡片/工作台 API 合同测试。
 
 三类身份：builtin_legacy（v0.3.1 既有内置卡；v0.8.0 Task 6 起电阻率卡退役，
-只剩 gas 等剩余卡）、builtin_preset（微震 CSV 预置 + 电阻率散点预置）、
+v0.8.0 第三批 Task 4 起瓦斯卡同模式退役，当前已无任何在册 legacy 卡）、
+builtin_preset（微震 CSV 预置 + 电阻率散点预置 + 瓦斯含量预置）、
 user_upload（用户上传）。未 seed 的预置卡在列表中保持可见但能力全 false，
 工作台返回类型化 PRESET_NOT_INITIALIZED；任何响应都不得泄漏本机绝对路径。
 """

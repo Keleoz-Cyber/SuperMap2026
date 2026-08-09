@@ -16,6 +16,11 @@
 字节冻结合同；仅测试/审计显式覆盖），官方基线 JSON 默认读受控路径
 ``config/presets/resistivity-official-baseline.json``（Task 5 冻结）。
 
+``seed-gas``（v0.8.0 第三批 Task 4）：把瓦斯含量合格样品 CSV seed 为只读
+``builtin_preset`` 案例链；``--source`` 缺省为项目内
+``example_data/瓦斯含量_合格样品.csv`` 内置源，官方基线 JSON 默认读受控路径
+``config/presets/gas-official-baseline.json``（Task 5 冻结，缺失 fail-closed）。
+
 独立入口：``python -m geomodeling.preset_cli <command> ...``。
 JSON 输出只含逻辑身份与 SHA-256，绝不输出绝对路径。
 """
@@ -28,6 +33,10 @@ from pathlib import Path
 import typer
 
 from geomodeling.platform.errors import PlatformError
+from geomodeling.platform.gas_preset import (
+    DEFAULT_BASELINE_PATH as GAS_DEFAULT_BASELINE_PATH,
+)
+from geomodeling.platform.gas_preset import seed_gas_preset
 from geomodeling.platform.microseismic_preset import (
     DEFAULT_PRESET_CSV,
     analyze_preset_candidates,
@@ -273,6 +282,68 @@ def seed_resistivity(
             record = seed_resistivity_preset(
                 runtime, source_path=source, baseline_path=baseline
             )
+        finally:
+            runtime.close()
+        typer.echo(
+            json.dumps(
+                {
+                    "case_id": record.case_id,
+                    "workspace_kind": record.workspace_kind,
+                    "dataset_version_id": record.dataset_version_id,
+                    "experiment_id": record.experiment_id,
+                    "run_id": record.run_id,
+                    "official_result": record.official_result.model_dump(mode="json"),
+                    "source_sha256": record.source_sha256,
+                    "baseline_sha256": record.baseline_sha256,
+                },
+                ensure_ascii=False,
+            )
+        )
+    except PlatformError as exc:
+        typer.echo(json.dumps(exc.public_payload(), ensure_ascii=False))
+        raise typer.Exit(code=1) from exc
+    except Exception as exc:  # noqa: BLE001 - 统一错误封套
+        payload = {"error": {"code": PRESET_CLI_UNEXPECTED_ERROR, "message": str(exc), "details": {}}}
+        typer.echo(json.dumps(payload, ensure_ascii=False))
+        raise typer.Exit(code=1) from exc
+
+
+@preset_app.command("seed-gas")
+def seed_gas(
+    source: Path = typer.Option(
+        None,
+        "--source",
+        help="瓦斯含量合格样品 CSV（默认项目内 example_data/ 内置源；仅测试/审计显式覆盖）",
+    ),
+    data_dir: Path = typer.Option(
+        None,
+        "--data-dir",
+        help="平台运行时数据目录（默认 GEOMODELING_DATA_DIR 或 var/geomodeling）",
+    ),
+    baseline: Path = typer.Option(
+        GAS_DEFAULT_BASELINE_PATH,
+        "--baseline",
+        help="评审冻结的官方基线 JSON（默认受控路径；Task 5 前不存在即 fail-closed）",
+    ),
+) -> None:
+    """经正常生命周期 seed 瓦斯含量只读预置成果（幂等；唯一生产 seed 入口）。
+
+    首建走完整 Case→DatasetVersion→Experiment→Run→CandidateResult→
+    materialize→FormalSelection 链；同身份同指纹已存在时只查询复用，
+    绝不重算或改写。缺源/源合同不符/基线缺失或不符全部 fail-closed。
+    """
+
+    from geomodeling.platform import PlatformRuntime
+    from geomodeling.platform.settings import PlatformSettings
+
+    try:
+        settings = (
+            PlatformSettings(data_dir=data_dir) if data_dir else PlatformSettings.resolve()
+        )
+        runtime = PlatformRuntime(settings=settings)
+        runtime.initialize()
+        try:
+            record = seed_gas_preset(runtime, source_path=source, baseline_path=baseline)
         finally:
             runtime.close()
         typer.echo(

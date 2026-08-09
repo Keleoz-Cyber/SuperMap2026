@@ -127,7 +127,10 @@ def test_cases_cards(tmp_path):
     # v0.8.0 Task 6：legacy 电阻率卡退役；未 seed 运行库出预置描述卡
     assert by_id["resistivity"]["status"] == "initialization_required"
     assert by_id["resistivity"]["workspace_kind"] == "builtin_preset"
-    assert by_id["gas"]["status"] == "parked"
+    # v0.8.0 第三批 Task 4：legacy 瓦斯卡（最后一张 legacy 卡）同模式退役；
+    # 未 seed 运行库出预置描述卡，首页不再出现 parked/"暂缓" 文案
+    assert by_id["gas"]["status"] == "initialization_required"
+    assert by_id["gas"]["workspace_kind"] == "builtin_preset"
     # v0.7.0：旧 DAT 微震卡由 builtin_preset 预置描述符取代（未 seed 时可见但能力全 false）
     assert "microseismic" not in by_id
     preset = by_id["builtin-microseismic-vx-1911"]
