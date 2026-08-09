@@ -855,3 +855,35 @@ describe('NativeVolumePanel v0.9 图表—三维联动', () => {
     wrapper.unmount()
   })
 })
+
+describe('NativeVolumePanel v0.9 联动挂起解析', () => {
+  it('volume 模式下 sliceRequest 先切模式挂起，轴元数据到达后解析为最近索引', async () => {
+    const api = makeApi({ fetchAsset: vi.fn().mockResolvedValue(ASSET) })
+    const wrapper = mountPanel(api)
+    await flushPromises()
+    const frame = wrapper.findComponent({ name: 'SuperMapVolumeFrame' })
+    frame.vm.$emit('ready')
+    frame.vm.$emit('rendered', {
+      sourceKind: 'candidate_result',
+      sourceId: 'r1',
+      gridSha256: 'g'.repeat(64),
+      netcdfSha256: 'n'.repeat(64),
+    })
+    await flushPromises()
+
+    // 仍在 volume 模式（axesMeta 未加载）：请求 y 区间 [12, 20]（中点 16 → 最近 20，index 2）
+    await wrapper.setProps({ sliceRequest: { axis: 'y', range: [12, 20], token: 1 } })
+    await flushPromises()
+    await flushPromises()
+    await flushPromises()
+
+    // 模式已切到 slice，且目标解析为 y/2（非 z 中位）
+    const state = lastAppliedState()
+    expect(state.mode).toBe('slice')
+    const analysis = wrapper.findComponent(SliceAnalysisPanel)
+    expect(analysis.exists()).toBe(true)
+    expect(analysis.props('target')).toEqual({ axis: 'y', index: 2 })
+    expect(wrapper.emitted('slice-request-failed')).toBeFalsy()
+    wrapper.unmount()
+  })
+})

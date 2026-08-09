@@ -347,6 +347,12 @@ watch(
 function onAxesMetaLoaded(axes: Record<SliceAxis, SliceAxisMeta>) {
   axesMeta.value = axes
   sliceTarget.value = { axis: 'z', index: Math.floor((axes.z.length - 1) / 2) }
+  // 挂起的外部切片请求（图表/发现联动先于轴元数据到达）：现在解析
+  const pending = pendingSliceRequest
+  pendingSliceRequest = null
+  if (pending) {
+    nextTick(() => resolveSliceRequest(pending))
+  }
 }
 
 // 滑块拖动 150ms 防抖；轴切换/步进/松手 commit 立即生效
@@ -383,45 +389,59 @@ function onAnalysisLoaded(response: SliceAnalysisResponse) {
 
 // v0.9.0 Task 12：外部切片请求（图表区间/发现定位）→ 最近坐标索引。
 // 仅解析目标索引；slice 载荷仍由权威剖面分析响应确立（app.js 硬要求）。
+// 轴元数据未就绪（尚未进入过 slice 模式）时先切模式并挂起请求，
+// 待元数据到达后再解析，绝不伪报定位成功。
+let pendingSliceRequest: { axis: SliceAxis; range: [number, number]; token: number } | null = null
+
+function resolveSliceRequest(req: { axis: SliceAxis; range: [number, number] }) {
+  const axes = axesMeta.value
+  if (!axes) {
+    emit('slice-request-failed', { reason: '渲染器尚未就绪，无法定位切片' })
+    return
+  }
+  const coords = axes[req.axis].coordinates
+  if (coords.length === 0) {
+    emit('slice-request-failed', { reason: '当前轴无可用坐标' })
+    return
+  }
+  const mid = (req.range[0] + req.range[1]) / 2
+  const lo = Math.min(coords[0], coords[coords.length - 1])
+  const hi = Math.max(coords[0], coords[coords.length - 1])
+  if (mid < lo || mid > hi) {
+    emit('slice-request-failed', { reason: '选择区间超出数据范围' })
+    return
+  }
+  let best = 0
+  let bestDist = Infinity
+  coords.forEach((c, i) => {
+    const d = Math.abs(c - mid)
+    if (d < bestDist) {
+      bestDist = d
+      best = i
+    }
+  })
+  clearSliceDebounce()
+  // 模式切换的 watch 会把目标重置为 z 中位；在下一拍写入请求目标
+  nextTick(() => {
+    sliceTarget.value = { axis: req.axis, index: best }
+  })
+}
+
 watch(
   () => props.sliceRequest,
   (req) => {
     if (!req) return
-    const axes = axesMeta.value
-    if (!axes) {
-      emit('slice-request-failed', { reason: '渲染器尚未就绪，无法定位切片' })
-      return
-    }
-    const coords = axes[req.axis].coordinates
-    if (coords.length === 0) {
-      emit('slice-request-failed', { reason: '当前轴无可用坐标' })
-      return
-    }
-    const mid = (req.range[0] + req.range[1]) / 2
-    const lo = Math.min(coords[0], coords[coords.length - 1])
-    const hi = Math.max(coords[0], coords[coords.length - 1])
-    if (mid < lo || mid > hi) {
-      emit('slice-request-failed', { reason: '选择区间超出数据范围' })
-      return
-    }
-    let best = 0
-    let bestDist = Infinity
-    coords.forEach((c, i) => {
-      const d = Math.abs(c - mid)
-      if (d < bestDist) {
-        bestDist = d
-        best = i
-      }
-    })
-    clearSliceDebounce()
     if (renderState.value.mode !== 'slice') {
+      pendingSliceRequest = req
       renderState.value = { ...renderState.value, mode: 'slice' }
       pushRenderState()
+      return
     }
-    // 模式切换的 watch 会把目标重置为 z 中位；在下一拍写入请求目标
-    nextTick(() => {
-      sliceTarget.value = { axis: req.axis, index: best }
-    })
+    if (!axesMeta.value) {
+      pendingSliceRequest = req
+      return
+    }
+    resolveSliceRequest(req)
   },
 )
 
