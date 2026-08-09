@@ -304,6 +304,8 @@ test.describe('v0.8.0 第三批：瓦斯预置官方成果真实 SDK live 门', 
   let fixtureAsset: GasAssetIdentity
 
   test.beforeAll(async () => {
+    // 603k 节点网格物化的 seed 实测约 145–200s，远超全局 120s hook 默认超时
+    test.setTimeout(600_000)
     dataDir = assertIsolatedDataDir()
     // 预置 seed（唯一生产入口；幂等；内置 example_data 源，无外部私有源依赖）
     seeded = seedGasPreset(dataDir)
