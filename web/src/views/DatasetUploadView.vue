@@ -86,10 +86,8 @@ async function submit() {
 
 <style scoped>
 .upload-page {
-  min-height: 100vh;
-  background: #0f141c;
-  color: #d5dde8;
-  padding: 16px 24px 40px;
+  min-height: 100%;
+  padding: var(--s1-space-4) var(--s1-space-6) var(--s1-space-8);
   max-width: 720px;
   margin: 0 auto;
 }
@@ -101,20 +99,21 @@ async function submit() {
 }
 .header-title h1 {
   margin: 0;
-  font-size: 20px;
+  font-size: var(--s1-font-2xl);
+  color: var(--s1-text-strong);
 }
 .header-sub {
   margin: 6px 0 0;
-  color: #93a1b3;
-  font-size: 13px;
+  color: var(--s1-text-dim);
+  font-size: var(--s1-font-md);
 }
 .mono {
   font-family: ui-monospace, monospace;
 }
 .upload-form {
-  background: #151c26;
-  border: 1px solid #263142;
-  border-radius: 8px;
+  background: var(--s1-surface-1);
+  border: 1px solid var(--s1-border);
+  border-radius: var(--s1-radius-md);
   padding: 22px;
   display: flex;
   flex-direction: column;
@@ -124,20 +123,20 @@ async function submit() {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  font-size: 13px;
-  color: #93a1b3;
+  font-size: var(--s1-font-md);
+  color: var(--s1-text-dim);
 }
 .gmp-file {
-  color: #d5dde8;
-  font-size: 13px;
+  color: var(--s1-text);
+  font-size: var(--s1-font-md);
 }
 .upload-error {
-  border: 1px solid #a43d3d;
-  background: rgba(164, 61, 61, 0.15);
-  color: #ef9a9a;
-  border-radius: 8px;
+  border: 1px solid rgba(224, 104, 94, 0.5);
+  background: rgba(224, 104, 94, 0.12);
+  color: var(--s1-error);
+  border-radius: var(--s1-radius-sm);
   padding: 10px 14px;
-  font-size: 13px;
+  font-size: var(--s1-font-md);
 }
 .upload-actions {
   display: flex;

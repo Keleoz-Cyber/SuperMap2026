@@ -17,10 +17,9 @@ import type {
   InspectionResult,
   QualityReport,
 } from '../api/types'
-import FileStep from '../components/upload/FileStep.vue'
-import MappingStep from '../components/upload/MappingStep.vue'
-import QualityStep from '../components/upload/QualityStep.vue'
+import DataIntakeWorkbench from '../components/upload/DataIntakeWorkbench.vue'
 import PageNavigation from '../components/navigation/PageNavigation.vue'
+import AsyncState from '../components/states/AsyncState.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -42,17 +41,6 @@ const conversion = ref<{ valid: number; invalid: number; total: number } | null>
 const showAbandonDialog = ref(false)
 const abandoning = ref(false)
 
-const showMapping = computed(
-  () =>
-    dataset.value !== null &&
-    (dataset.value.status === 'uploaded' || dataset.value.status === 'blocked'),
-)
-const showQuality = computed(
-  () =>
-    dataset.value !== null &&
-    (dataset.value.status === 'mapped' ||
-     (report.value !== null && dataset.value.status === 'validated')),
-)
 const showValidated = computed(
   () =>
     dataset.value !== null &&
@@ -193,28 +181,32 @@ function onStart() {
 
 <template>
   <div class="wizard-page">
-    <PageNavigation :case-id="caseId" current-label="数据准备向导" />
+    <PageNavigation :case-id="caseId" current-label="数据接入与准备" />
     <header class="wizard-header">
-      <h1>数据准备向导</h1>
+      <h1>数据接入与准备</h1>
       <p class="wizard-sub">
         案例 <span class="mono">{{ caseId }}</span> · 数据集
         <span class="mono">{{ datasetId }}</span>
       </p>
     </header>
 
-    <el-result v-if="loadError" icon="error" title="数据集加载失败" :sub-title="loadError" />
-    <div v-else-if="!dataset" v-loading="true" class="wizard-loading" />
+    <AsyncState
+      v-if="loadError"
+      kind="error"
+      title="数据集加载失败"
+      :impact="loadError"
+      next-action="返回案例工作台重新进入，或稍后重试"
+    />
+    <AsyncState v-else-if="!dataset" kind="loading" title="数据版本加载中" />
 
     <main v-else class="wizard-main">
       <div v-if="actionError" class="action-error" data-test="action-error">{{ actionError }}</div>
-
-      <FileStep :dataset="dataset" :inspection="inspection" @sheet-change="onSheetChange" />
 
       <div v-if="showValidated" data-test="wizard-step-validated">
         <el-result
           icon="success"
           title="数据准备完成"
-          sub-title="数据已通过质量校验，可以开始实验与专业诊断。"
+          sub-title="数据已通过质量校验，可以开始实验与空间结构分析。"
         >
           <template #extra>
             <el-button type="primary" data-test="enter-workspace" @click="onStart">
@@ -238,25 +230,21 @@ function onStart() {
         </el-result>
       </div>
 
-      <div v-else-if="showMapping" data-test="wizard-step-mapping">
-        <MappingStep
-          :inspection="inspection"
-          :submitting="submitting"
-          :conversion="conversion"
-          @submit="onMappingSubmit"
-        />
-      </div>
-
-      <div v-else-if="showQuality" data-test="wizard-step-quality">
-        <QualityStep
-          :report="report"
-          :validating="validating"
-          :confirming="confirming"
-          @validate="runValidate"
-          @confirm="onConfirmWarnings"
-          @start="onStart"
-        />
-      </div>
+      <DataIntakeWorkbench
+        v-else
+        :dataset="dataset"
+        :inspection="inspection"
+        :report="report"
+        :conversion="conversion"
+        :submitting="submitting"
+        :validating="validating"
+        :confirming="confirming"
+        @sheet-change="onSheetChange"
+        @submit-mapping="onMappingSubmit"
+        @validate="runValidate"
+        @confirm-warnings="onConfirmWarnings"
+        @start="onStart"
+      />
 
       <div v-if="canAbandon" class="abandon-section">
         <el-button

@@ -45,7 +45,7 @@ async function submit() {
   <div class="create-page">
     <header class="create-header">
       <h1>新建建模案例</h1>
-      <p>上传 CSV / XLSX 点数据，完成字段映射与质量校验后即可开始调参实验。</p>
+      <p>数据接入与准备：上传 CSV / XLSX 点数据，完成字段映射与质量校验后即可开始建模实验。</p>
     </header>
 
     <div class="create-form">
