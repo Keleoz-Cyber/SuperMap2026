@@ -590,6 +590,11 @@ test.describe('v0.8.0 第三批：瓦斯预置官方成果真实 SDK live 门', 
       logAvailable: true,
       // 官方基线网格真实各向异性体盒（按数据 bounds 计算）：不得切成方盒
       expectedSpansMetres: EXPECTED_SPANS_METRES,
+      // 本网格纵横向比约 1:120（Z 跨度 54.6m vs XY 跨度 2993/6639m）：
+      // X/Y 剖面是细带平面，中央投影覆盖率实测约 0.02–0.03，固定 0.03 会
+      // 把真实渲染误判为不足。下限 0.01 仍拒绝纯线框/碎屑（实测 <0.005）
+      // 与黑屏；Z 剖面保持 0.03；实际覆盖率随 gates.sliceGates 证据记录。
+      sliceMinCoverage: { x: 0.01, y: 0.01 },
     })
     record.gates = gates
 

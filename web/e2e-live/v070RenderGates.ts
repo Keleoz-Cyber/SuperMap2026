@@ -653,6 +653,12 @@ export interface V070GateParams {
   /** 导出剖面轴/索引；默认 z 中位 */
   exportAxis?: SliceAxisName
   exportIndex?: number
+  /**
+   * 逐轴剖面中央覆盖率下限（默认全 0.03）。仅允许在网格极度扁平
+   * （切片平面投影天然为细带）时按几何事实调低，且必须在调用处
+   * 书面记录纵横向比与实测值——不得用于掩盖线框/碎屑/黑屏。
+   */
+  sliceMinCoverage?: Partial<Record<'x' | 'y' | 'z', number>>
 }
 
 export interface V070GateReport {
@@ -810,7 +816,10 @@ export async function runV070RenderGates(params: V070GateParams): Promise<V070Ga
     expect(sliceWire.wireCount, `${axis} 剖面模式包围盒线框必须可见`).toBeGreaterThan(200)
     const shotQuarter = await shot()
     const quarterMetrics = await analyzeVolumePixels(page, shotQuarter)
-    expectVolumeContent(quarterMetrics, `${axis} 剖面`, { minNonBg: 500, minCoverage: 0.03 })
+    expectVolumeContent(quarterMetrics, `${axis} 剖面`, {
+      minNonBg: 500,
+      minCoverage: params.sliceMinCoverage?.[axis] ?? 0.03,
+    })
     saveShot(`slice-${axis}-q${quarter(axis)}`, shotQuarter)
 
     await setSliceIndex(page, threeQuarter(axis))
