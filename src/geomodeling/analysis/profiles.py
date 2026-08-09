@@ -18,6 +18,7 @@ __all__ = [
     "AnalysisModuleSpec",
     "AnalysisProfile",
     "GAS_VALUE_NAMES",
+    "GAS_VALUE_UNIT",
     "MICROSEISMIC_VALUE_NAME",
     "MICROSEISMIC_VALUE_UNIT",
     "PROFILE_GAS_CONTENT",
@@ -40,8 +41,12 @@ RESISTIVITY_VALUE_NAME = "RHO"
 MICROSEISMIC_VALUE_NAME = "Vx"
 # 微震 Vx 单位恒为 km/s，绝不静默换算；单位不符一律降级 generic
 MICROSEISMIC_VALUE_UNIT = "km/s"
-# 瓦斯字段合同待定（设计 §5.3）：先注册判定规则，数据合同到位后冻结
-GAS_VALUE_NAMES = frozenset({"ch4", "gas", "gas_content"})
+# 瓦斯字段合同（v0.8.0 第三批已冻结）：真实 mapping 的 value_name 为
+# "CH4_content"；判定大小写不敏感，兼容 CH4/gas/gas_content 历史写法
+GAS_VALUE_NAMES = frozenset({"ch4", "ch4_content", "gas", "gas_content"})
+# CH4_content 单位恒为 ml/g（用户权威确认，绝不静默换算）；注册表只声明
+# 单位合同，判定不以单位为降级条件（与电阻率同一纪律）
+GAS_VALUE_UNIT = "ml/g"
 
 _PROFILE_LABELS = {
     PROFILE_RESISTIVITY: "电阻率专业分析",
@@ -257,7 +262,13 @@ def _microseismic_specs() -> list[AnalysisModuleSpec]:
 
 
 def _gas_specs() -> list[AnalysisModuleSpec]:
-    """瓦斯 profile（设计 §5.3）：只承诺真实字段可支持的能力。"""
+    """瓦斯含量 profile（v0.8.0 第三批设计「瓦斯差异化分析」，已冻结）。
+
+    只承诺 58 点稀疏散点真实字段可支持的能力：含量分布、Z 向分层、
+    XY 高/低含量区域（分位统计口径）、空间梯度与剖面、已有候选指标对比。
+    阈值来源一律标为分位统计的探索性口径；除非另有权威阈值来源，绝不
+    输出「瓦斯危险/安全」等规范结论。
+    """
 
     return _base_specs() + [
         _spec(
@@ -265,28 +276,28 @@ def _gas_specs() -> list[AnalysisModuleSpec]:
             specialized=True,
             requires_3d=True,
             required_fields=["value"],
-            description="瓦斯含量分布",
-        ),
-        _spec(
-            "threshold_zones",
-            specialized=True,
-            requires_3d=True,
-            required_fields=["value"],
-            description="含量阈值区（阈值来源必须明示）",
+            description="CH4 含量（ml/g）分布、分位数与有效样本质量",
         ),
         _spec(
             "depth_slices",
             specialized=True,
             requires_3d=True,
             required_fields=["z", "value"],
-            description="含量深度变化",
+            description="Z 方向分层统计（层内均值、p75/p95、样本数）",
         ),
         _spec(
             "spatial_anomaly",
             specialized=True,
             requires_3d=True,
             required_fields=["x", "y", "z", "value"],
-            description="含量空间聚集",
+            description="XY 高/低含量区域（非空单元均值 p25/p75，探索性分位口径）",
+        ),
+        _spec(
+            "gradient",
+            specialized=True,
+            requires_3d=True,
+            required_fields=["x", "y", "z", "value"],
+            description="含量空间梯度与采样覆盖（仅有限值参与）",
         ),
         _spec(
             "profile_slices",
@@ -300,7 +311,7 @@ def _gas_specs() -> list[AnalysisModuleSpec]:
             specialized=False,
             requires_3d=False,
             required_fields=[],
-            description="已物化成果的模型指标对比（不重算）",
+            description="已物化成果的模型指标对比（仅展示实际存在的算法，不重算）",
         ),
     ]
 
@@ -333,7 +344,7 @@ def _unmet_requirements(
             unmet.append(f"value_unit={MICROSEISMIC_VALUE_UNIT}")
     elif profile_id == PROFILE_GAS_CONTENT:
         if value_name.lower() not in GAS_VALUE_NAMES:
-            unmet.append("value_name∈{CH4,gas,gas_content}")
+            unmet.append("value_name∈{CH4,CH4_content,gas,gas_content}")
     if not unmet and not is_3d:
         unmet.append("dimension=3d")
     return unmet
@@ -395,10 +406,13 @@ def resolve_analysis_profile(profile: Mapping[str, Any]) -> AnalysisProfile:
     判定输入仅限 ``mapping`` 的 ``value_name``/``value_unit``/字段名/
     ``dimension``：``value_name=="RHO"`` → 电阻率；``value_name=="Vx"`` 且
     ``value_unit=="km/s"`` → 微震速度；``value_name`` 指示瓦斯含量
-    （CH4/gas，合同待定仅注册）→ 瓦斯；其余 → ``generic_3d`` 并逐条给出
-    各专属 profile 的禁用理由。专属模块声明需要 3D，显式非 3D 的
-    ``dimension`` 一律降级 generic。真实 mapping 由 ``FieldMapping`` 合同
-    强制携带 ``dimension``；缺省按 3d 宽容处理，仅显式非 3d 触发降级。
+    （大小写不敏感 CH4/CH4_content/gas/gas_content，v0.8.0 第三批已冻结
+    合同，真实 mapping 为 ``CH4_content``/``ml/g``）→ 瓦斯；其余 →
+    ``generic_3d`` 并逐条给出各专属 profile 的禁用理由。专属模块声明需要
+    3D，显式非 3D 的 ``dimension`` 一律降级 generic。真实 mapping 由
+    ``FieldMapping`` 合同强制携带 ``dimension``；缺省按 3d 宽容处理，仅
+    显式非 3d 触发降级。瓦斯 profile 只输出可计算表述（高/低含量区域、
+    样本稀疏、交叉验证误差等），绝不输出安全/危险规范结论。
     """
 
     mapping = profile.get("mapping") if isinstance(profile, Mapping) else None

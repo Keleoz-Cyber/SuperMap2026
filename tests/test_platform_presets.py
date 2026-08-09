@@ -98,6 +98,56 @@ def test_resistivity_preset_search_grids_cover_three_algorithms_under_cap():
     assert preset["recommended_search"]["parameters"] == grids["ordinary_kriging"]
 
 
+def test_gas_preset_declares_builtin_preset_scattered_identity():
+    """v0.8.0 第三批 Task 3：瓦斯含量预置公开身份与已冻结源合同事实。"""
+    preset = load_preset("gas")
+    assert preset["source"] == "builtin_preset"
+    assert preset["dimension"] == "3d"
+    assert preset["semantic_fields"] == {"x": "X", "y": "Y", "z": "Z", "value": "CH4_content"}
+    assert preset["coordinate_kind"] == "local_linear"
+    # CH4_content 单位 ml/g（用户权威确认，不静默换算）
+    assert preset["value_unit"] == "ml/g"
+
+    facts = preset["facts"]
+    # 行数事实与 example_data 字节冻结合同一致；训练/验证分区由 Task 5
+    # 真实候选评估冻结，本批只占位（null），绝不伪造未冻结数值
+    assert facts["standardized_rows"] == 58
+    assert facts["training_rows"] is None
+    assert facts["validation_rows"] is None
+
+    # 绝不含本机绝对路径
+    raw_text = (CONFIG_DIR / "presets" / "gas.json").read_text(encoding="utf-8")
+    assert ":\\" not in raw_text
+    assert "\\\\" not in raw_text
+
+    boundary_text = " ".join(preset["boundaries"])
+    # 局部线性米制坐标警告：未声明 EPSG、不跨案例叠加
+    assert "局部" in boundary_text
+    assert "EPSG" in boundary_text
+    assert "跨案例" in boundary_text
+    # ml/g 单位 + example_data/ 内置源字节冻结合同边界
+    assert "ml/g" in boundary_text
+    assert "example_data/" in boundary_text
+    assert "内置" in boundary_text
+    assert "字节" in boundary_text
+    # 不输出安全/危险规范结论；58 点稀疏数据的解释口径
+    assert "安全" in boundary_text
+    assert "危险" in boundary_text
+    assert "58" in boundary_text
+
+
+def test_gas_preset_recommended_search_starts_with_idw_under_cap():
+    """v0.8.0 第三批 Task 3：推荐搜索以 IDW 起步，组合数 ≤50 硬上限。"""
+    preset = load_preset("gas")
+    search = preset["recommended_search"]
+    assert search["algorithm"] == "idw"
+    assert search["search_mode"] == "grid"
+    count = 1
+    for value in search["parameters"].values():
+        count *= len(value)
+    assert 1 <= count <= 50
+
+
 def test_microseismic_preset_uses_domain_adapter_and_matches_aggregated_columns():
     preset = load_preset("microseismic")
     assert preset["source"] == "domain_adapter"
