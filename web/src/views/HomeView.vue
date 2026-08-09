@@ -20,6 +20,7 @@ import {
   PLATFORM_DEMO_3D_DOWNLOAD_URL,
   trashCase,
 } from '../api/client'
+import AsyncState from '../components/states/AsyncState.vue'
 import { WEB_VERSION } from '../version'
 import type { CaseSummary } from '../api/types'
 import { formatDateTime } from '../utils/datetime'
@@ -188,11 +189,12 @@ function openCaseMenu(event: KeyboardEvent) {
 
     <main class="home-main">
       <div v-loading="loading" class="case-cards">
-        <el-result
+        <AsyncState
           v-if="loadError"
-          icon="error"
+          kind="error"
           title="案例列表加载失败"
-          :sub-title="loadError"
+          :impact="loadError"
+          next-action="检查服务状态后重试，或稍后在全局栏查看服务状态"
         />
         <div
           v-for="c in cases"

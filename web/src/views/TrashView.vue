@@ -4,6 +4,7 @@ import { ApiError, fetchTrashCases, purgeCase, restoreCase } from '../api/client
 import type { TrashCaseSummary } from '../api/types'
 import CasePurgeDialog from '../components/cases/CasePurgeDialog.vue'
 import PageNavigation from '../components/navigation/PageNavigation.vue'
+import AsyncState from '../components/states/AsyncState.vue'
 import { formatDateTime } from '../utils/datetime'
 
 const trashCases = ref<TrashCaseSummary[]>([])
@@ -77,12 +78,12 @@ onMounted(load)
 
     <div v-if="actionError" class="action-error" role="alert" data-test="action-error">{{ actionError }}</div>
 
-    <el-result
+    <AsyncState
       v-if="loadError"
-      icon="error"
+      kind="error"
       title="回收站加载失败"
-      :sub-title="loadError"
-      role="alert"
+      :impact="loadError"
+      next-action="返回首页或稍后重试"
     />
 
     <div v-else v-loading="loading" data-test="trash-list" class="trash-table-wrap">

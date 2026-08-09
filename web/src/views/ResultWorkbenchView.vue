@@ -28,6 +28,7 @@ import SlicePanel from '../components/results/SlicePanel.vue'
 import FormalSelectionPanel from '../components/results/FormalSelectionPanel.vue'
 import ExportPublicationPanel from '../components/results/ExportPublicationPanel.vue'
 import PageNavigation from '../components/navigation/PageNavigation.vue'
+import AsyncState from '../components/states/AsyncState.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -119,7 +120,13 @@ onMounted(async () => {
       :result-id="resultId"
       current-label="成果工作台"
     />
-    <el-result v-if="loadError" icon="error" title="成果加载失败" :sub-title="loadError" role="alert" />
+    <AsyncState
+      v-if="loadError"
+      kind="error"
+      title="成果加载失败"
+      :impact="loadError"
+      next-action="返回案例工作台或实验页重新进入"
+    />
 
     <template v-else-if="metadata">
       <header class="page-header">

@@ -6,6 +6,7 @@ import { ApiError, fetchCaseWorkspace, fetchProfessionalDiagnostics } from '../a
 import type { CaseWorkspaceSummary, ProfessionalDiagnosticListItem } from '../api/types'
 import DataPreparationPanel from '../components/cases/DataPreparationPanel.vue'
 import PageNavigation from '../components/navigation/PageNavigation.vue'
+import AsyncState from '../components/states/AsyncState.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -202,27 +203,32 @@ watch(caseId, (next, prev) => {
   <div class="case-workspace-page">
     <div v-if="notInitialized" class="workspace-state" data-test="workspace-not-initialized">
       <PageNavigation current-label="案例工作台" />
-      <el-result
-        icon="warning"
+      <AsyncState
+        kind="degraded"
         title="预置案例尚未初始化"
-        :sub-title="notInitializedMessage || '需由维护者执行文档化 seed 命令；初始化完成后官方普通克里金成果自动可用，无需任何用户操作。'"
-        role="alert"
+        :impact="notInitializedMessage || '官方数据与成果尚未登记到本运行库'"
+        next-action="需由维护者执行文档化 seed 命令；初始化完成后官方普通克里金成果自动可用，无需任何用户操作。"
       >
-        <template #extra>
+        <template #action>
           <el-button type="primary" data-test="back-home" @click="router.push('/')">
             返回首页
           </el-button>
         </template>
-      </el-result>
+      </AsyncState>
     </div>
 
     <div v-else-if="loadError" class="workspace-state" data-test="workspace-load-error">
       <PageNavigation current-label="案例工作台" />
-      <el-result icon="error" title="案例工作台加载失败" :sub-title="loadError" role="alert">
-        <template #extra>
+      <AsyncState
+        kind="error"
+        title="案例工作台加载失败"
+        :impact="loadError"
+        next-action="返回首页选择其他案例，或稍后重试"
+      >
+        <template #action>
           <el-button @click="router.push('/')">返回首页</el-button>
         </template>
-      </el-result>
+      </AsyncState>
     </div>
 
     <div v-else v-loading="loading">

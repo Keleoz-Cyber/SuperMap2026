@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ApiError, fetchAnalysisSummary } from '../api/client'
 import type { AnalysisModuleResult } from '../api/types'
 import PageNavigation from '../components/navigation/PageNavigation.vue'
+import AsyncState from '../components/states/AsyncState.vue'
 import AnalysisHeader from '../components/analysis/AnalysisHeader.vue'
 import QualitySummaryPanel from '../components/analysis/QualitySummaryPanel.vue'
 import DistributionPanel from '../components/analysis/DistributionPanel.vue'
@@ -229,15 +230,20 @@ watch(datasetId, (next, prev) => {
       current-label="统计与空间分析"
     />
 
-    <el-result
+    <AsyncState
       v-if="loadError"
-      icon="error"
+      kind="error"
       title="分析摘要加载失败"
-      :sub-title="loadError"
+      :impact="loadError"
+      next-action="返回案例工作台重新进入，或稍后重试"
       data-test="analysis-error"
-      role="alert"
     />
-    <div v-else-if="loading" v-loading="true" class="page-loading" data-test="analysis-loading" />
+    <AsyncState
+      v-else-if="loading"
+      kind="loading"
+      title="分析摘要加载中"
+      data-test="analysis-loading"
+    />
 
     <template v-else-if="summary">
       <AnalysisHeader :summary="summary" @export="openExport" />
