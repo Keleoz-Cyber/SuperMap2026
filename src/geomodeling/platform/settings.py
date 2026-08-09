@@ -13,12 +13,53 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from geomodeling.platform.errors import PRESET_SOURCE_INVALID, PlatformError
 from geomodeling.platform.render_contracts import DisplayAnchor
 
 ENV_DATA_DIR = "GEOMODELING_DATA_DIR"
 DEFAULT_DATA_DIR = "var/geomodeling"
 
 DB_FILENAME = "platform.sqlite3"
+
+# v0.8.0 第三批：三个官方案例的规范化源 CSV 随仓库内置，统一从
+# ``PROJECT_ROOT / "example_data"`` 解析（字节级冻结，见
+# tests/test_example_data_contract.py）。
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+EXAMPLE_DATA_DIRNAME = "example_data"
+
+
+def example_data_path(filename: str) -> Path:
+    """解析内置示例数据文件：``PROJECT_ROOT / "example_data" / filename``。
+
+    只接受纯文件名——拒绝空串、``.``/``..`` 与任何路径分隔符（``/``、``\\``），
+    防止目录穿越；文件不存在时抛出 ``PRESET_SOURCE_INVALID`` 类型化错误，
+    公开 details 不含本机绝对路径。
+
+    返回的绝对路径仅供后端 seed/合同校验内部使用，绝不写入任何 API DTO：
+    浏览器只接收逻辑来源（预置 ID / 相对路径）与内容 SHA-256。
+    """
+
+    if (
+        not filename
+        or filename in {".", ".."}
+        or "/" in filename
+        or "\\" in filename
+    ):
+        raise PlatformError(
+            PRESET_SOURCE_INVALID,
+            f"内置示例数据文件名非法：{filename!r}",
+            details={"reason": "filename_must_be_plain", "directory": EXAMPLE_DATA_DIRNAME},
+            http_status=409,
+        )
+    candidate = PROJECT_ROOT / EXAMPLE_DATA_DIRNAME / filename
+    if not candidate.is_file():
+        raise PlatformError(
+            PRESET_SOURCE_INVALID,
+            f"内置示例数据不存在：{EXAMPLE_DATA_DIRNAME}/{filename}",
+            details={"directory": EXAMPLE_DATA_DIRNAME, "filename": filename},
+            http_status=409,
+        )
+    return candidate
 
 # 上传硬上限：50 MiB、500,000 数据行。构造 PlatformSettings 时可覆盖，
 # inspection 响应会把实际生效值回传给前端展示。

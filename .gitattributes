@@ -2,5 +2,7 @@
 *.md text eol=lf
 *.json text eol=lf
 *.csv text eol=lf
+# 内置示例数据字节级冻结（纯 CRLF，部分含 BOM）：禁止 EOL 归一化，保证任意平台检出字节不变
+example_data/*.csv -text
 *.yml text eol=lf
 *.yaml text eol=lf
