@@ -156,6 +156,11 @@ test.afterAll(async ({ browser }) => {
   writer.writeJson(record)
 })
 
+// worker 进程被回收/拆分运行时，每个实例也保有自己场景的部分记录
+test.afterEach(() => {
+  if (record) writer.writeJson(record)
+})
+
 async function waitSceneRendered(page: Page, tag: string) {
   const phase = page.getByTestId('volume-phase')
   await expect(phase, `${tag}：相位必须到达已渲染`).toHaveText('已渲染', {

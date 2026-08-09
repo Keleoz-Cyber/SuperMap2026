@@ -83,6 +83,32 @@ function render() {
         result_id: props.resultId ?? undefined,
       })
     })
+    // 点击画布空白也定位最近分箱（真实浏览器里用户很难精确命中折线点）；
+    // zrender 层能力缺失（单测 mock）时自动退化为仅数据点点击
+    const zr = (chart as { getZr?: () => { on: (ev: string, cb: (e: { offsetX: number; offsetY: number }) => void) => void } }).getZr?.()
+    zr?.on('click', (e) => {
+      if (!chart) return
+      // 命中数据元素时由系列 click 处理，避免重复选择
+      if ((e as { target?: unknown }).target) return
+      let best: { entry: (typeof props.axes)[number]; bin: ProfileSliceSummary['bins'][number]; dist: number } | null = null
+      for (let s = 0; s < props.axes.length; s++) {
+        const entry = props.axes[s]
+        const converted = chart.convertFromPixel({ seriesIndex: s }, [e.offsetX, e.offsetY]) as [number, number] | null
+        if (!converted || !Number.isFinite(converted[0])) continue
+        for (const bin of entry.bins) {
+          const mid = (bin.lower + bin.upper) / 2
+          const dist = Math.abs(mid - converted[0])
+          if (!best || dist < best.dist) best = { entry, bin, dist }
+        }
+      }
+      if (!best) return
+      emit('select', {
+        axis: best.entry.axis,
+        range: [best.bin.lower, best.bin.upper],
+        dataset_id: props.datasetId,
+        result_id: props.resultId ?? undefined,
+      })
+    })
   }
   chart.setOption(buildOption(), true)
 }

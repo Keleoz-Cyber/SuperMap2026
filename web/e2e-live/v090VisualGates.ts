@@ -100,19 +100,28 @@ export function createV090Record(params: {
 
 export class V090EvidenceWriter {
   readonly dir: string
+  private created = false
 
   constructor(root: string, runId: string) {
     this.dir = path.join(root, runId)
-    mkdirSync(this.dir, { recursive: true })
+  }
+
+  private ensure(): void {
+    if (!this.created) {
+      mkdirSync(this.dir, { recursive: true })
+      this.created = true
+    }
   }
 
   async savePageShot(page: Page, tag: string): Promise<string> {
+    this.ensure()
     const file = path.join(this.dir, `${tag}-page.png`)
     await page.screenshot({ path: file })
     return file
   }
 
   async saveFrameShot(page: Page, tag: string): Promise<string> {
+    this.ensure()
     const file = path.join(this.dir, `${tag}-iframe.png`)
     const buffer = await page.getByTestId('volume-frame').screenshot()
     writeFileSync(file, buffer)
@@ -120,6 +129,7 @@ export class V090EvidenceWriter {
   }
 
   writeJson(record: V090EvidenceRecord): string {
+    this.ensure()
     const file = path.join(this.dir, 'v090-live-evidence.json')
     writeFileSync(file, JSON.stringify(record, null, 2))
     return file
