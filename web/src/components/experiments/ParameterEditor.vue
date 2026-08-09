@@ -27,6 +27,8 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{
   (e: 'submit', payload: ParameterSubmit): void
+  // v0.9.0：参数变化实时快照（与提交载荷同形），驱动候选摘要；不触发任何 API
+  (e: 'change', payload: ParameterSubmit): void
 }>()
 
 const algorithm = ref<Algorithm>('idw')
@@ -245,6 +247,28 @@ function submit() {
     grid: buildGrid(),
   })
 }
+
+// 参数快照：任何参数/验证/网格变化后向父级同步（仅内存事件，无 API 副作用）
+const payloadSnapshot = computed<ParameterSubmit>(() => ({
+  algorithm: algorithm.value,
+  search_mode: searchMode.value,
+  parameters: buildParameters(),
+  validation: {
+    method: 'spatial_kfold',
+    folds: folds.value,
+    seed: seed.value,
+    holdout_fraction: holdout.value,
+  },
+  grid: buildGrid(),
+}))
+
+watch(
+  payloadSnapshot,
+  (payload) => {
+    emit('change', payload)
+  },
+  { immediate: true, deep: true },
+)
 
 const AXES = ['x', 'y', 'z'] as const
 </script>

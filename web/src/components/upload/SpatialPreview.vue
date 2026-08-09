@@ -11,9 +11,19 @@ export interface SpatialMapping {
   value?: string | null
 }
 
+// 直接点输入（实验画布复用）：与 preview_rows+mapping 二选一
+export interface SpatialPointInput {
+  x: number
+  y: number
+  z?: number | null
+}
+
 const props = defineProps<{
-  inspection: InspectionResult | null
-  mapping: SpatialMapping | null
+  inspection?: InspectionResult | null
+  mapping?: SpatialMapping | null
+  points?: SpatialPointInput[] | null
+  // 直接点模式下的总行数说明（如抽稀前的全量行数）
+  totalRows?: number | null
 }>()
 
 interface PreviewPoint {
@@ -23,6 +33,15 @@ interface PreviewPoint {
 }
 
 const points = computed<PreviewPoint[]>(() => {
+  if (props.points && props.points.length > 0) {
+    return props.points
+      .filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y))
+      .map((p) => ({
+        x: p.x,
+        y: p.y,
+        z: typeof p.z === 'number' && Number.isFinite(p.z) ? p.z : null,
+      }))
+  }
   const mapping = props.mapping
   if (!mapping?.x || !mapping.y || !props.inspection) return []
   const rows = props.inspection.preview_rows ?? []
@@ -73,7 +92,7 @@ function fmt(v: number): string {
 <template>
   <section class="spatial-preview" data-test="spatial-preview-panel">
     <h4 class="preview-title">空间预览</h4>
-    <div v-if="!mapping || points.length === 0" class="preview-empty" data-test="spatial-preview-empty">
+    <div v-if="points.length === 0" class="preview-empty" data-test="spatial-preview-empty">
       <p>完成字段映射后，此处显示测点空间分布预览</p>
       <p class="empty-note">预览只使用映射列的有限数值，用于发现范围与疑似错位点。</p>
     </div>
@@ -99,7 +118,7 @@ function fmt(v: number): string {
       <div v-if="extent" class="preview-extent">
         <p>X ∈ [{{ fmt(extent.x[0]) }}, {{ fmt(extent.x[1]) }}] · Y ∈ [{{ fmt(extent.y[0]) }}, {{ fmt(extent.y[1]) }}]</p>
         <p v-if="extent.z" data-test="spatial-z-range">Z ∈ [{{ fmt(extent.z[0]) }}, {{ fmt(extent.z[1]) }}]</p>
-        <p class="extent-note">预览点 {{ points.length }} / {{ inspection?.row_count ?? '—' }} 行</p>
+        <p class="extent-note">预览点 {{ points.length }}<template v-if="totalRows !== null && totalRows !== undefined"> / 共 {{ totalRows }} 行</template><template v-else-if="inspection"> / {{ inspection.row_count }} 行</template></p>
       </div>
     </template>
   </section>
