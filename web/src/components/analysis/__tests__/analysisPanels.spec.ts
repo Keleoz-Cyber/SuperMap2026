@@ -933,3 +933,135 @@ describe('AnalysisExportPanel', () => {
     wrapper.unmount()
   })
 })
+
+
+// ---------------------------------------------------------------------------
+// v0.8.0 第三批 Task 8：瓦斯差异化面板（含量分布 / 高低含量区域 / 探索性
+// 分位口径 / ml/g 单位；绝无「危险/安全」等规范判断词）
+// ---------------------------------------------------------------------------
+
+const gasVariable: AnalysisVariable = { name: 'CH4_content', unit: 'ml/g' }
+
+function gasAnomalyModule(): AnalysisModuleResult {
+  const regions = ['low', 'normal', 'normal', 'high'] as const
+  const bins = []
+  for (let index = 0; index < 4; index += 1) {
+    const col = index % 2
+    const row = Math.floor(index / 2)
+    bins.push({
+      x_lower: col * 10,
+      x_upper: (col + 1) * 10,
+      y_lower: row * 10,
+      y_upper: (row + 1) * 10,
+      count: 2,
+      mean: 1 + index * 2,
+      region: regions[index],
+    })
+  }
+  return {
+    module_id: 'spatial_anomaly',
+    status: 'ok',
+    payload: {
+      grid_size: 2,
+      cell_count: 4,
+      bounds: { x: [0, 20], y: [0, 20] },
+      thresholds: {
+        high: 4.5,
+        low: 1.5,
+        source: 'cell_mean_quantiles_p25_p75',
+        method: '高值阈值=非空网格单元均值 p75、低值阈值=非空网格单元均值 p25',
+      },
+      non_empty_cell_count: 4,
+      high_cell_count: 1,
+      low_cell_count: 1,
+      high_point_count: 2,
+      low_point_count: 2,
+      high_volume_ratio: 0.25,
+      low_volume_ratio: 0.25,
+      bins,
+    },
+    message: null,
+  }
+}
+
+describe('DistributionPanel（gas_content 差异化）', () => {
+  it('瓦斯 profile：标题「含量分布」、轴带 ml/g 单位、摘要带单位且无规范判断词', async () => {
+    const wrapper = mount(DistributionPanel, {
+      props: { module: distributionModule(), variable: gasVariable, profile: 'gas_content' },
+      global: { plugins: [ElementPlus] },
+      attachTo: document.body,
+    })
+    await flushPromises()
+    expect(wrapper.find('h3').text()).toBe('含量分布')
+    const option = lastOption()
+    expect(option.xAxis.name).toContain('CH4_content')
+    expect(option.xAxis.name).toContain('ml/g')
+    const summary = wrapper.find('[data-test="distribution-summary"]')
+    expect(summary.text()).toContain('ml/g')
+    for (const term of ['危险', '安全', '爆炸', '突出']) {
+      expect(wrapper.text()).not.toContain(term)
+    }
+    wrapper.unmount()
+  })
+
+  it('瓦斯 profile disabled 模块显示解释性空状态，不初始化图表', () => {
+    const wrapper = mount(DistributionPanel, {
+      props: {
+        module: disabledModule('distribution'),
+        variable: gasVariable,
+        profile: 'gas_content',
+      },
+      global: { plugins: [ElementPlus] },
+    })
+    const empty = wrapper.find('[data-test="distribution-empty"]')
+    expect(empty.exists()).toBe(true)
+    expect(empty.text()).toContain('专属模块计算将在后续批次就位')
+    expect(chartInstances).toHaveLength(0)
+    wrapper.unmount()
+  })
+})
+
+describe('SpatialFeaturePanel（gas_content 高/低含量区域）', () => {
+  it('瓦斯 profile：高/低含量区域标题、图例、ml/g 与探索性分位口径', async () => {
+    const wrapper = mount(SpatialFeaturePanel, {
+      props: {
+        module: gasAnomalyModule(),
+        variable: gasVariable,
+        datasetId: 'ds-gas',
+        profile: 'gas_content',
+      },
+      global: { plugins: [ElementPlus] },
+      attachTo: document.body,
+    })
+    await flushPromises()
+    expect(wrapper.find('h3').text()).toBe('高/低含量区域')
+    const legend = wrapper.find('[data-test="spatial-anomaly-legend"]')
+    expect(legend.text()).toContain('高含量区域')
+    expect(legend.text()).toContain('低含量区域')
+    expect(legend.text()).toContain('ml/g')
+    const summary = wrapper.find('[data-test="spatial-summary"]')
+    expect(summary.text()).toContain('高含量区域')
+    expect(summary.text()).toContain('低含量区域')
+    expect(summary.text()).toContain('探索性分位口径')
+    const pieces = JSON.stringify(lastOption().visualMap)
+    expect(pieces).toContain('高含量区域')
+    expect(pieces).toContain('低含量区域')
+    for (const term of ['危险', '安全', '爆炸', '突出']) {
+      expect(wrapper.text()).not.toContain(term)
+    }
+    wrapper.unmount()
+  })
+})
+
+describe('ProfileAnalysisPanel（gas_content 轴单位）', () => {
+  it('瓦斯 profile：值轴标签带 ml/g', async () => {
+    const wrapper = mount(ProfileAnalysisPanel, {
+      props: { module: profileModule(), variable: gasVariable, datasetId: 'ds-gas' },
+      global: { plugins: [ElementPlus] },
+      attachTo: document.body,
+    })
+    await flushPromises()
+    expect(lastOption().yAxis[1].name).toContain('ml/g')
+    wrapper.unmount()
+  })
+})

@@ -24,6 +24,8 @@ import {
 // 必须 dispose。坐标范围来自后端分箱，绝不使用原始文件路径。
 // Task 6：spatial_anomaly 专属载荷（分位阈值高/低值区域）按 profile 渲染
 // 差异化标题/图例/单位与阈值来源；单位未确认时不生成地质语义结论。
+// v0.8.0 第三批 Task 8：瓦斯 profile 渲染「高/低含量区域」，阈值说明用
+// 「探索性分位口径」表述；绝不输出「危险/安全」等规范判断词。
 
 echartsUse([HeatmapChart, GridComponent, TooltipComponent, VisualMapComponent, CanvasRenderer])
 
@@ -51,8 +53,17 @@ const anomalyLabels = computed(() => {
   if (props.profile === 'resistivity') {
     return { title: '高/低阻区域', high: '高阻区域', low: '低阻区域' }
   }
+  if (props.profile === 'gas_content') {
+    return { title: '高/低含量区域', high: '高含量区域', low: '低含量区域' }
+  }
   return { title: '空间高/低值区域', high: '高值区域', low: '低值区域' }
 })
+
+// 阈值说明措辞：瓦斯分位阈值明确为「探索性分位口径」（非权威阈值来源，
+// 绝不引申规范结论），其余 profile 沿用「分位阈值口径」
+const thresholdWording = computed(() =>
+  props.profile === 'gas_content' ? '探索性分位口径' : '分位阈值口径',
+)
 
 const panelTitle = computed(() => (anomalyMode.value ? anomalyLabels.value.title : '空间分布'))
 
@@ -115,7 +126,7 @@ const summaryText = computed(() => {
     const lowRatio = summary.lowVolumeRatio !== null ? summary.lowVolumeRatio * 100 : null
     return (
       `${anomalyLabels.value.high}体积占比 ${formatNumber(highRatio)}% · ` +
-      `${anomalyLabels.value.low}体积占比 ${formatNumber(lowRatio)}%（按分位阈值口径）`
+      `${anomalyLabels.value.low}体积占比 ${formatNumber(lowRatio)}%（按${thresholdWording.value}）`
     )
   }
   const summary = spatial.value

@@ -478,6 +478,12 @@ const GAS_VALIDATION = { method: 'spatial_kfold', folds: 5, seed: 20260723 }
 // 确定性演示合成口径（无随机源），只驱动浏览器流程，绝不冒充真实计算结果或
 // 私有证据。方法文案与后端 _METHOD_* 常量逐字一致。
 const ANALYSIS_METHOD = {
+  quality:
+    '有效行口径：声明有效且属性值有限（与建模公共有效集一致），排除行计数保留；' +
+    '重复坐标按映射维度判定（超出首次出现的行数，仅统计有效行）',
+  statistics:
+    '有限值基础统计（count/min/max/mean/median/std(ddof=1) 与 p05–p95 分位数，' +
+    'NumPy 线性插值）；仅声明有效且有限的样本参与，count=1 时 std 为 null',
   distribution: '原始值等宽分箱（数据范围+固定 32 格），计数守恒',
   log10:
     '对数尺度分箱仅使用严格正值有限值（log10 变换后等宽 32 格）；' +
@@ -794,8 +800,16 @@ function microAnalysisSummary(): AnalysisSummaryOut {
     quality,
     statistics,
     modules: [
-      analysisModule('quality', { ...quality }),
-      analysisModule('statistics', { ...statistics }),
+      analysisModule('quality', {
+        ...quality,
+        method: ANALYSIS_METHOD.quality,
+        source_fields: { x: 'X_LOCAL_M', y: 'Y_LOCAL_M', z: 'Z_LOCAL_M', value: 'VX_KM_S' },
+      }),
+      analysisModule('statistics', {
+        ...statistics,
+        method: ANALYSIS_METHOD.statistics,
+        source_fields: { value: 'VX_KM_S' },
+      }),
       analysisModule('distribution', {
         bin_count: 32,
         bins: analysisHistogram(4.21, 6.83, weights32, 1911),
@@ -904,8 +918,16 @@ function rhoAnalysisSummary(): AnalysisSummaryOut {
     quality,
     statistics,
     modules: [
-      analysisModule('quality', { ...quality }),
-      analysisModule('statistics', { ...statistics }),
+      analysisModule('quality', {
+        ...quality,
+        method: ANALYSIS_METHOD.quality,
+        source_fields: { x: 'X', y: 'Y', z: 'Z', value: 'RHO' },
+      }),
+      analysisModule('statistics', {
+        ...statistics,
+        method: ANALYSIS_METHOD.statistics,
+        source_fields: { value: 'RHO' },
+      }),
       analysisModule('distribution', {
         bin_count: 32,
         bins: analysisHistogram(RHO_VALUE_RANGE[0], RHO_VALUE_RANGE[1], weights32, 17547),
@@ -1023,8 +1045,16 @@ function gasAnalysisSummary(): AnalysisSummaryOut {
     quality,
     statistics,
     modules: [
-      analysisModule('quality', { ...quality }),
-      analysisModule('statistics', { ...statistics }),
+      analysisModule('quality', {
+        ...quality,
+        method: ANALYSIS_METHOD.quality,
+        source_fields: { x: 'X', y: 'Y', z: 'Z', value: 'CH4_content' },
+      }),
+      analysisModule('statistics', {
+        ...statistics,
+        method: ANALYSIS_METHOD.statistics,
+        source_fields: { value: 'CH4_content' },
+      }),
       analysisModule('distribution', {
         bin_count: 32,
         bins: analysisHistogram(GAS_VALUE_RANGE[0], GAS_VALUE_RANGE[1], weights32, GAS_ROW_COUNT),
@@ -1130,8 +1160,16 @@ function genericAnalysisSummary(): AnalysisSummaryOut {
     quality,
     statistics,
     modules: [
-      analysisModule('quality', { ...quality }),
-      analysisModule('statistics', { ...statistics }),
+      analysisModule('quality', {
+        ...quality,
+        method: ANALYSIS_METHOD.quality,
+        source_fields: { x: 'x', y: 'y', z: 'z', value: 'rho' },
+      }),
+      analysisModule('statistics', {
+        ...statistics,
+        method: ANALYSIS_METHOD.statistics,
+        source_fields: { value: 'rho' },
+      }),
       analysisModule('distribution', {
         bin_count: 32,
         bins: analysisHistogram(67, 240, weights32, 144),

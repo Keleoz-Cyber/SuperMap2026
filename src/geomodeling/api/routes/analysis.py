@@ -104,7 +104,17 @@ _GENERIC_MODULES = frozenset(
 _SPECIALIZED_SKELETON_MESSAGE = "专属模块计算将在后续批次就位，本批仅提供能力声明"
 
 #: Task 6 专属模块计算方法文案（随 payload 出站；电阻率单位未确认，
-#: 文案只描述数值口径，绝不含水、矿、瓦斯通道等地质语义结论）
+#: 文案只描述数值口径，绝不含水、矿、瓦斯通道等地质语义结论）；
+#: v0.8.0 第三批 Task 8 起 quality/statistics 通用模块同样携带 method 与
+#: source_fields（gas 核心模块合同：payload 全部带计算方法与来源字段）
+_METHOD_QUALITY = (
+    "有效行口径：声明有效且属性值有限（与建模公共有效集一致），排除行计数保留；"
+    "重复坐标按映射维度判定（超出首次出现的行数，仅统计有效行）"
+)
+_METHOD_STATISTICS = (
+    "有限值基础统计（count/min/max/mean/median/std(ddof=1) 与 p05–p95 分位数，"
+    "NumPy 线性插值）；仅声明有效且有限的样本参与，count=1 时 std 为 null"
+)
 _METHOD_DISTRIBUTION = "原始值等宽分箱（数据范围+固定 32 格），计数守恒"
 _METHOD_LOG10_DISTRIBUTION = (
     "对数尺度分箱仅使用严格正值有限值（log10 变换后等宽 32 格）；"
@@ -363,8 +373,12 @@ def _build_modules(
             continue
         if module_id == "quality":
             payload = quality.model_dump(mode="json")
+            payload["method"] = _METHOD_QUALITY
+            payload["source_fields"] = _source_fields(mapping, "x", "y", "z", "value")
         elif module_id == "statistics":
             payload = numeric.model_dump(mode="json")
+            payload["method"] = _METHOD_STATISTICS
+            payload["source_fields"] = _source_fields(mapping, "value")
         elif module_id == "distribution":
             bins = histogram(valid_values)
             payload = {
