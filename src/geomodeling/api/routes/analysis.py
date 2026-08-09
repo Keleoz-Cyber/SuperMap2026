@@ -4,10 +4,10 @@
   组装 ``AnalysisSummaryResponse``——质量/统计/分布直方图/空间聚合/三轴
   剖面/模型对比 + provenance（source_sha256/dataset_version/generated_at/
   calculation_version）。通用模块（quality/statistics/distribution/
-  spatial_extent/profile_slices/model_comparison）与 Task 6 专属模块
-  （微震 axis_trends/gradient/spatial_anomaly，电阻率 log 分布/depth_slices/
-  spatial_anomaly）全部为真实有限计算，载荷带计算方法/来源字段/阈值来源；
-  瓦斯等未实现专属模块仍为 ``disabled`` 骨架。
+  spatial_extent/profile_slices/model_comparison）与专属模块（微震
+  axis_trends/gradient/spatial_anomaly，电阻率 log 分布/depth_slices/
+  spatial_anomaly，v0.8.0 第三批 Task 7 起瓦斯 depth_slices/spatial_anomaly/
+  gradient）全部为真实有限计算，载荷带计算方法/来源字段/阈值来源。
 - ``GET /api/datasets/{dataset_id}/analysis-export?format=json|csv``：
   同一响应组装后导出。json → application/json；csv → text/csv，头部
   provenance 注释行 + 稳定表头 + 轴身份列的明确行模式。两个导出都用
@@ -37,6 +37,7 @@ from fastapi import APIRouter, Depends, Query, Response
 from fastapi.responses import JSONResponse
 
 from geomodeling.analysis.profiles import (
+    PROFILE_GAS_CONTENT,
     PROFILE_MICROSEISMIC_VELOCITY,
     PROFILE_RESISTIVITY,
     AnalysisProfile,
@@ -88,8 +89,8 @@ ANALYSIS_EXPORT_FORMAT_INVALID = "ANALYSIS_EXPORT_FORMAT_INVALID"
 _EXPORT_FORMATS = ("json", "csv")
 #: 模型对比随记录出站的公共指标白名单（不重算；非有限值一律剔除）
 _PUBLIC_METRIC_KEYS = ("rmse", "mae", "r2", "bias")
-#: 本批就位的通用模块；Task 6 专属模块由 ``_specialized_payload`` 计算，
-#: 未实现的（profile, module）组合（如瓦斯）输出 disabled 骨架
+#: 本批就位的通用模块；专属模块由 ``_specialized_payload`` 计算，
+#: 未实现的（profile, module）组合输出 disabled 骨架
 _GENERIC_MODULES = frozenset(
     {
         "quality",
@@ -268,12 +269,12 @@ def _specialized_payload(
     frame: pd.DataFrame,
     mapping: dict[str, Any],
 ) -> dict[str, Any] | None:
-    """Task 6 专属模块真实有限计算（载荷带计算方法与来源字段）。
+    """专属模块真实有限计算（载荷带计算方法与来源字段）。
 
-    按 ``(profile_id, module_id)`` 派发；未实现的组合（瓦斯 profile 及
-    其他未接线模块）返回 None → 调用方输出 disabled 骨架，绝不伪造成功。
-    微震与电阻率的 ``spatial_anomaly`` 共用同一分位阈值机制，语义文案
-    由前端按 profile 渲染，载荷保持数值口径中性。
+    按 ``(profile_id, module_id)`` 派发；未实现的组合返回 None → 调用方
+    输出 disabled 骨架，绝不伪造成功。微震/电阻率/瓦斯的
+    ``spatial_anomaly`` 共用同一分位阈值机制，语义文案由前端按 profile
+    渲染，载荷保持数值口径中性。
     """
 
     if profile_id == PROFILE_MICROSEISMIC_VELOCITY:
@@ -305,6 +306,25 @@ def _specialized_payload(
         if module_id == "spatial_anomaly":
             payload = spatial_anomaly_summary(frame, mapping).model_dump(mode="json")
             payload["method"] = _METHOD_SPATIAL_ANOMALY
+            payload["source_fields"] = _source_fields(mapping, "x", "y", "value")
+            return payload
+    elif profile_id == PROFILE_GAS_CONTENT:
+        # v0.8.0 第三批 Task 7：瓦斯专属模块真实有限计算——与电阻率/微震复用
+        # 同一套确定性统计函数（Z 向分层、XY 单元均值分位异常、梯度差分），
+        # 语义文案由前端按 profile 渲染，载荷保持数值口径中性。
+        if module_id == "depth_slices":
+            payload = depth_slice_ratios(frame, mapping).model_dump(mode="json")
+            payload["method"] = _METHOD_DEPTH_SLICES
+            payload["source_fields"] = _source_fields(mapping, "z", "value")
+            return payload
+        if module_id == "spatial_anomaly":
+            payload = spatial_anomaly_summary(frame, mapping).model_dump(mode="json")
+            payload["method"] = _METHOD_SPATIAL_ANOMALY
+            payload["source_fields"] = _source_fields(mapping, "x", "y", "value")
+            return payload
+        if module_id == "gradient":
+            payload = gradient_summary(frame, mapping).model_dump(mode="json")
+            payload["method"] = _METHOD_GRADIENT
             payload["source_fields"] = _source_fields(mapping, "x", "y", "value")
             return payload
     return None

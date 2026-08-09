@@ -138,6 +138,24 @@ def test_cases_cards(tmp_path):
     assert preset["status"] == "initialization_required"
 
 
+def test_case_list_json_has_no_legacy_dat_parked_tokens(tmp_path):
+    """v0.8.0 第三批 Task 7：首页案例列表 JSON 无 parked/暂缓/DAT/legacy 字样。
+
+    gas 是最后一张退役的 legacy 卡：任何运行库状态下列表只剩 builtin_preset
+    与 user_upload 卡，序列化 JSON 绝不出现旧流程语样。
+    """
+
+    client = make_client(tmp_path)
+    response = client.get("/api/cases")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["cases"], "首页至少应有三张预置描述卡"
+    assert all(card["source_kind"] != "builtin_legacy" for card in body["cases"])
+    serialized = json.dumps(body, ensure_ascii=False)
+    for token in ("parked", "暂缓", "DAT", "legacy", "Legacy"):
+        assert token not in serialized, token
+
+
 def test_resistivity_detail_leaderboard_uses_metric_summaries(tmp_path):
     metrics_doc = {
         "summaries": {

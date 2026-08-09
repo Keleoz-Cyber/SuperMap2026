@@ -8,7 +8,6 @@ import {
   Connection,
   Cpu,
   Delete,
-  Lock,
   Monitor,
   MoreFilled,
   Odometer,
@@ -32,16 +31,9 @@ interface CaseMeta {
   badgeText: string
 }
 
-const CASE_META: Record<string, CaseMeta> = {
-  // v0.8.0：旧 legacy 电阻率卡类型化退役（后端绝不再产出），电阻率走
-  // builtin_preset 分支；此处只保留仍在产的 legacy 卡元数据
-  gas: {
-    icon: Lock,
-    enterable: false,
-    badgeType: 'info',
-    badgeText: '暂缓',
-  },
-}
+// v0.8.0 第三批 Task 7：旧 legacy 瓦斯卡（旧体元流程的占位卡）是最后一张
+// legacy 卡，已随预置退役；首页不再保留任何按 case_id 的 legacy 卡元数据，
+// builtin_legacy 一律走 FALLBACK_META 兜底（当前后端已绝不出产 legacy 卡）。
 
 const UPLOAD_META: CaseMeta = {
   icon: Cpu,
@@ -86,7 +78,7 @@ function meta(c: CaseSummary): CaseMeta {
       ),
     }
   }
-  return CASE_META[c.case_id] ?? { ...FALLBACK_META, badgeText: c.status }
+  return { ...FALLBACK_META, badgeText: c.status }
 }
 
 // v0.8.0：预置卡字段行逐字读 DTO provenance_summary.fields（如电阻率 X/Y/Z/RHO）；
@@ -189,7 +181,7 @@ function openCaseMenu(event: KeyboardEvent) {
           </router-link>
         </div>
         <p class="tagline">
-          上传点数据即可完成二维/三维插值建模、空间验证与成果导出；内置电阻率与微震预置案例可直接查看官方成果并新建实验。
+          上传点数据即可完成二维/三维插值建模、空间验证与成果导出；内置电阻率、微震与瓦斯预置案例可直接查看官方成果并新建实验。
         </p>
       </div>
     </header>
@@ -304,9 +296,6 @@ function openCaseMenu(event: KeyboardEvent) {
                 <el-icon style="margin-left: 4px"><ArrowRight /></el-icon>
               </el-button>
             </template>
-            <span v-else-if="c.case_id === 'gas'" class="enter-hint">
-              体元加载触发 iDesktopX 崩溃，暂缓接入
-            </span>
             <span v-else class="enter-hint">三维接入排期中</span>
           </div>
         </div>

@@ -17,7 +17,7 @@ import pytest
 from geomodeling.platform.microseismic_preset import PRESET_CASE_ID, TRACKED_CSV_SHA256
 
 
-def _make_client(tmp_path: Path, *, seed: bool):
+def _make_client(tmp_path: Path, *, seed: bool, seed_gas: bool = False):
     from fastapi.testclient import TestClient
 
     from geomodeling.api.app import create_app
@@ -47,6 +47,14 @@ def _make_client(tmp_path: Path, *, seed: bool):
         from geomodeling.platform.microseismic_preset import seed_microseismic_preset
 
         seed_microseismic_preset(runtime)
+    if seed_gas:
+        from geomodeling.platform.gas_preset import load_gas_preset, seed_gas_preset
+        from test_gas_preset_contract import write_gas_fixture
+        from test_gas_preset_seed import _fixture_baseline as _gas_fixture_baseline
+
+        source_path = write_gas_fixture(tmp_path / "gas-source.csv")
+        source = load_gas_preset(source_path)
+        seed_gas_preset(runtime, source_path=source_path, baseline=_gas_fixture_baseline(source))
     app.state.platform_runtime = runtime
     return TestClient(app)
 
@@ -56,6 +64,12 @@ def seeded_client(tmp_path_factory):
     runtime_dir = tmp_path_factory.mktemp("workspace-seeded")
     client = _make_client(runtime_dir, seed=True)
     return client
+
+
+@pytest.fixture(scope="module")
+def gas_client(tmp_path_factory):
+    runtime_dir = tmp_path_factory.mktemp("workspace-gas-seeded")
+    return _make_client(runtime_dir, seed=False, seed_gas=True)
 
 
 @pytest.fixture()
@@ -173,6 +187,73 @@ def test_no_runtime_state_produces_legacy_resistivity_card(fresh_client, seeded_
         serialized = json.dumps(card, ensure_ascii=False)
         assert "S3M" not in serialized
         assert ":\\" not in serialized
+
+
+# ---------------------------------------------------------------------------
+# v0.8.0 第三批 Task 7：瓦斯预置 seed 后首页卡与统一工作台合同
+# （seed 链生命周期本身见 test_gas_preset_seed；此处锁工作台 API 形态）
+# ---------------------------------------------------------------------------
+
+
+def test_seeded_gas_card_is_active_builtin_preset_with_full_capabilities(gas_client):
+    cards = _cards(gas_client)
+    gas_cards = [card for card in cards.values() if card["case_id"] == "gas"]
+    assert len(gas_cards) == 1, "seed 后 gas 只能出现一张统一 seed 卡"
+    card = gas_cards[0]
+    assert card["status"] == "active"
+    assert card["source_kind"] == "builtin_preset"
+    assert card["workspace_kind"] == "builtin_preset"
+    assert card["capabilities"] == {
+        "data_summary": True,
+        "experiments": True,
+        "official_result": True,
+        "native_volume": True,
+    }
+    assert card["official_result"]["materialized"] is True
+    assert card["official_result"]["url"].startswith("/results/")
+    assert card["featured_result"]["result_id"] == card["official_result"]["result_id"]
+
+
+def test_seeded_gas_workspace_has_validated_58_row_dataset_and_official_result(gas_client):
+    response = gas_client.get("/api/cases/gas/workspace")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["workspace_kind"] == "builtin_preset"
+    assert body["source_kind"] == "builtin_preset"
+    assert body["capabilities"] == {
+        "data_summary": True,
+        "experiments": True,
+        "official_result": True,
+        "native_volume": True,
+    }
+    # 数据版本：validated、58 行、X/Y/Z/CH4_content 映射、ml/g 单位
+    dataset = body["primary_dataset"]
+    assert dataset["status"] == "validated"
+    profile = dataset["profile"]
+    assert profile["row_count"] == 58
+    assert profile["valid_row_count"] == 58
+    mapping = profile["mapping"]
+    assert mapping["x"] == "X"
+    assert mapping["y"] == "Y"
+    assert mapping["z"] == "Z"
+    assert mapping["value"] == "CH4_content"
+    assert mapping["value_name"] == "CH4_content"
+    assert mapping["value_unit"] == "ml/g"
+    assert mapping["coordinate_kind"] == "local_linear"
+    # 官方成果与只读数据准备摘要
+    assert body["official_result"]["materialized"] is True
+    assert body["official_result"]["url"].startswith("/results/")
+    assert body["data_preparation"]["state"] == "validated"
+    assert body["data_preparation"]["next_action"]["step"] == "experiment"
+    assert body["data_preparation"]["next_action"]["url"] == "/#/cases/gas/experiments/new"
+    # provenance 由 seed 写入（DTO 驱动，非前端硬编码）
+    provenance = body["provenance_summary"]
+    assert provenance["fields"] == ["X", "Y", "Z", "CH4_content"]
+    assert provenance["value_unit"] == "ml/g"
+    assert provenance["badge"]
+    # 任何响应不得泄漏本机绝对路径
+    text = response.text
+    assert ":\\" not in text and "source_path" not in text and "standardized_path" not in text
 
 
 # ---------------------------------------------------------------------------

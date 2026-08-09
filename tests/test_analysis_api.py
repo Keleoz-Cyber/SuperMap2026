@@ -45,6 +45,8 @@ from geomodeling.platform.resistivity_preset import (
     load_resistivity_preset,
     seed_resistivity_preset,
 )
+from test_gas_preset_contract import write_gas_fixture
+from test_gas_preset_seed import _fixture_baseline as _gas_fixture_baseline
 from test_resistivity_preset import write_resistivity_fixture
 from test_resistivity_preset_seed import _fixture_baseline
 
@@ -90,6 +92,12 @@ def _make_client(tmp_path: Path, *, seed: str | None):
         seed_resistivity_preset(
             runtime, source_path=source_path, baseline=_fixture_baseline(source)
         )
+    elif seed == "gas":
+        from geomodeling.platform.gas_preset import load_gas_preset, seed_gas_preset
+
+        source_path = write_gas_fixture(tmp_path / "gas-source.csv")
+        source = load_gas_preset(source_path)
+        seed_gas_preset(runtime, source_path=source_path, baseline=_gas_fixture_baseline(source))
     app.state.platform_runtime = runtime
     client = TestClient(app)
     client.runtime_dir = str(tmp_path)  # 供路径泄漏扫描断言
@@ -104,6 +112,11 @@ def micro_client(tmp_path_factory):
 @pytest.fixture(scope="module")
 def rho_client(tmp_path_factory):
     return _make_client(tmp_path_factory.mktemp("analysis-rho"), seed="resistivity")
+
+
+@pytest.fixture(scope="module")
+def gas_client(tmp_path_factory):
+    return _make_client(tmp_path_factory.mktemp("analysis-gas"), seed="gas")
 
 
 @pytest.fixture()
@@ -392,6 +405,187 @@ def test_resistivity_payload_has_no_geological_semantic_conclusions(rho_client):
     text = response.text
     for term in ("含水", "水体", "矿体", "矿产", "瓦斯"):
         assert term not in text, term
+
+
+# ---------------------------------------------------------------------------
+# v0.8.0 第三批 Task 7：瓦斯含量预置 analysis-summary / analysis-export 合同
+# ---------------------------------------------------------------------------
+
+
+def test_gas_summary_returns_gas_profile_and_ok_modules(gas_client):
+    """瓦斯预置：gas_content profile、ml/g、58 行、专属模块全部真实 ok。"""
+
+    dataset_id = _primary_dataset_id(gas_client, "gas")
+    response = gas_client.get(f"/api/datasets/{dataset_id}/analysis-summary")
+    assert response.status_code == 200, response.text
+    body = response.json()
+
+    assert body["dataset_id"] == dataset_id
+    assert body["case_id"] == "gas"
+    assert body["analysis_profile"] == "gas_content"
+    assert body["profile_version"] == 1
+    assert body["variable"] == {"name": "CH4_content", "unit": "ml/g"}
+
+    quality = body["quality"]
+    assert quality["row_count"] == 58
+    assert quality["valid_count"] == 58
+    assert quality["invalid_count"] == 0
+    assert quality["duplicate_coordinate_count"] == 0
+    assert set(quality["bounds"]) == {"x", "y", "z"}
+
+    statistics = body["statistics"]
+    assert statistics["count"] == 58
+    assert statistics["min"] <= statistics["median"] <= statistics["max"]
+    assert statistics["quantiles"]["p50"] == statistics["median"]
+
+    modules = _modules(body)
+    assert set(modules) == {
+        "quality",
+        "statistics",
+        "distribution",
+        "depth_slices",
+        "spatial_anomaly",
+        "gradient",
+        "profile_slices",
+        "model_comparison",
+    }
+    # 通用模块与瓦斯专属模块全部就位（status == "ok"，绝无 disabled 骨架）
+    for module_id in (
+        "quality",
+        "statistics",
+        "distribution",
+        "depth_slices",
+        "spatial_anomaly",
+        "gradient",
+        "profile_slices",
+        "model_comparison",
+    ):
+        assert modules[module_id]["status"] == "ok", module_id
+
+    # distribution：原始值 32 分箱、计数守恒；log10 升级是电阻率专属，瓦斯不出现
+    distribution = modules["distribution"]["payload"]
+    assert distribution["method"]
+    assert distribution["source_fields"]["value"] == "CH4_content"
+    assert len(distribution["bins"]) == 32
+    assert sum(bin_["count"] for bin_ in distribution["bins"]) == 58
+    assert "log10" not in distribution
+
+    # depth_slices：Z 轴 16 层高/低含量占比，分位阈值来源明示；
+    # 58 点稀疏散点允许空层（count==0 → 占比为 None，绝不以 NaN 占位）
+    depth = modules["depth_slices"]["payload"]
+    assert depth["method"]
+    assert depth["source_fields"]["z"] == "Z"
+    assert depth["source_fields"]["value"] == "CH4_content"
+    assert depth["thresholds"]["source"]
+    assert "p75" in depth["thresholds"]["method"]
+    assert len(depth["slices"]) == 16
+    assert sum(slice_["count"] for slice_ in depth["slices"]) == 58
+    for slice_ in depth["slices"]:
+        if slice_["count"] == 0:
+            assert slice_["high_ratio"] is None and slice_["low_ratio"] is None
+        else:
+            assert 0.0 <= slice_["high_ratio"] <= 1.0
+            assert 0.0 <= slice_["low_ratio"] <= 1.0
+
+    # spatial_anomaly：XY 高/低含量区域（单元均值分位口径），区域标签与占比
+    anomaly = modules["spatial_anomaly"]["payload"]
+    assert anomaly["method"]
+    assert anomaly["thresholds"]["source"]
+    assert len(anomaly["bins"]) == 32 * 32
+    assert {bin_["region"] for bin_ in anomaly["bins"]} <= {
+        "high",
+        "low",
+        "normal",
+        "empty",
+    }
+    assert 0.0 <= anomaly["high_volume_ratio"] <= 1.0
+    assert 0.0 <= anomaly["low_volume_ratio"] <= 1.0
+
+    # gradient：相邻网格差分幅值有限统计。夹具 15 个 XY 位置过稀，无相邻
+    # 非空单元对 → count==0 且统计字段为 None（稀疏解释性空态，绝不 NaN）；
+    # 真实 28 柱源有 14 对（见 test_gas_render_asset 真实 seed 链口径）。
+    gradient = modules["gradient"]["payload"]
+    assert gradient["method"]
+    assert gradient["source_fields"]["value"] == "CH4_content"
+    assert gradient["pair_count"] > 0
+    assert gradient["count"] >= 0
+    assert gradient["pair_count"] == gradient["count"] + gradient["excluded_pair_count"]
+    if gradient["count"] == 0:
+        assert gradient["mean"] is None
+        assert gradient["p95"] is None
+        assert gradient["max"] is None
+    else:
+        assert np.isfinite(gradient["mean"])
+        assert np.isfinite(gradient["p95"])
+
+    # profile_slices：三轴剖面（Z 轴承载深度语义）
+    profile_slices = modules["profile_slices"]["payload"]
+    assert {axis["axis"] for axis in profile_slices["axes"]} == {"x", "y", "z"}
+
+    # model_comparison：seed 官方链唯一 succeeded 候选（夹具基线 winner idw）
+    candidates = modules["model_comparison"]["payload"]["candidates"]
+    assert len(candidates) == 1
+    official = candidates[0]
+    assert official["result_id"] == _official_result_id(gas_client, "gas")
+    assert official["algorithm"] == "idw"
+    assert official["materialized"] is True
+    assert official["formal_selection"] is True
+
+    provenance = body["provenance"]
+    assert len(provenance["source_sha256"]) == 64
+    assert provenance["dataset_version"] == 1
+    assert provenance["calculation_version"] == CALCULATION_VERSION
+
+
+def test_gas_export_json_and_csv(gas_client):
+    """瓦斯导出：json 安全文件名 + gas_content profile；csv provenance 注释 + 稳定表头。"""
+
+    dataset_id = _primary_dataset_id(gas_client, "gas")
+    response = gas_client.get(
+        f"/api/datasets/{dataset_id}/analysis-export", params={"format": "json"}
+    )
+    assert response.status_code == 200, response.text
+    assert response.headers["content-type"].startswith("application/json")
+    disposition = response.headers["content-disposition"]
+    assert "attachment" in disposition
+    assert f'filename="analysis-{dataset_id}-gas_content.json"' in disposition
+    body = response.json()
+    assert body["analysis_profile"] == "gas_content"
+    assert body["variable"]["unit"] == "ml/g"
+    assert body["statistics"]["count"] == 58
+
+    csv_response = gas_client.get(
+        f"/api/datasets/{dataset_id}/analysis-export", params={"format": "csv"}
+    )
+    assert csv_response.status_code == 200, csv_response.text
+    assert csv_response.headers["content-type"].startswith("text/csv")
+    assert f'filename="analysis-{dataset_id}-gas_content.csv"' in csv_response.headers[
+        "content-disposition"
+    ]
+    lines = csv_response.text.splitlines()
+    assert lines[0] == f"# dataset_id={dataset_id}"
+    assert lines[1] == "# case_id=gas"
+    assert lines[2] == "# analysis_profile=gas_content"
+    assert lines[7] == CSV_HEADER
+    assert any(row == "statistics,,,count,,,58" for row in lines)
+
+
+def test_gas_responses_never_leak_paths(gas_client):
+    """瓦斯响应绝不包含 standardized_path 字样或本机绝对路径。"""
+
+    dataset_id = _primary_dataset_id(gas_client, "gas")
+    runtime_dir = gas_client.runtime_dir
+    absolute_path_shapes = (":\\", ":/", "\\\\", "file://", "/home/", "/Users/")
+    for url in (
+        f"/api/datasets/{dataset_id}/analysis-summary",
+        f"/api/datasets/{dataset_id}/analysis-export?format=json",
+        f"/api/datasets/{dataset_id}/analysis-export?format=csv",
+    ):
+        text = gas_client.get(url).text
+        assert "standardized_path" not in text, url
+        assert runtime_dir not in text, url
+        for shape in absolute_path_shapes:
+            assert shape not in text, f"{url} 泄漏绝对路径形态 {shape!r}"
 
 
 # ---------------------------------------------------------------------------
