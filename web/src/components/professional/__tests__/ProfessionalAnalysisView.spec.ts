@@ -19,6 +19,25 @@ import * as client from '../../../api/client'
 import ProfessionalAnalysisView from '../../../views/ProfessionalAnalysisView.vue'
 import ResultWorkbenchView from '../../../views/ResultWorkbenchView.vue'
 
+// v0.9.0：成果工作台融合证据带后在模块边界 mock echarts（jsdom 无 canvas 上下文）
+vi.mock('echarts/core', () => ({
+  init: vi.fn(() => ({
+    setOption: vi.fn(),
+    resize: vi.fn(),
+    dispose: vi.fn(),
+    on: vi.fn(),
+  })),
+  use: vi.fn(),
+}))
+vi.mock('echarts/charts', () => ({ BarChart: {}, LineChart: {}, ScatterChart: {}, HeatmapChart: {} }))
+vi.mock('echarts/components', () => ({
+  GridComponent: {},
+  TooltipComponent: {},
+  LegendComponent: {},
+  VisualMapComponent: {},
+}))
+vi.mock('echarts/renderers', () => ({ CanvasRenderer: {} }))
+
 vi.mock('../../../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../api/client')>()
   return {

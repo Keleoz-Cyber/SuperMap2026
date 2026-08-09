@@ -14,8 +14,10 @@ import {
   materializeResult,
 } from '../api/client'
 import type {
+  AnalysisSummaryResponse,
   DatasetPoints,
   ExperimentRecord,
+  ResidualEvidence,
   ResultMetadata,
   ResultPreview,
 } from '../api/types'
@@ -29,6 +31,10 @@ import FormalSelectionPanel from '../components/results/FormalSelectionPanel.vue
 import ExportPublicationPanel from '../components/results/ExportPublicationPanel.vue'
 import PageNavigation from '../components/navigation/PageNavigation.vue'
 import AsyncState from '../components/states/AsyncState.vue'
+import ResultAnalysisWorkbench from '../components/results/ResultAnalysisWorkbench.vue'
+import { buildPresentationFindings, type PresentationFinding } from '../domain/findings'
+import { fetchAnalysisSummary, fetchResultResiduals } from '../api/client'
+import type { AnalysisSelection } from '../components/analysis/analysisTypes'
 
 const route = useRoute()
 const router = useRouter()
@@ -45,6 +51,19 @@ const preview = ref<ResultPreview | null>(null)
 const points = ref<DatasetPoints | null>(null)
 const loadError = ref<string | null>(null)
 const activeTab = ref<'field' | 'slices'>('field')
+
+// v0.9.0：分析摘要与残差证据（只读 GET；不可用不阻断成果页主链）
+const analysis = ref<AnalysisSummaryResponse | null>(null)
+const residuals = ref<ResidualEvidence | null>(null)
+
+const findings = computed<PresentationFinding[]>(() =>
+  analysis.value ? buildPresentationFindings(analysis.value) : [],
+)
+
+// 图表—三维联动由 Task 12 的选择控制器接管；此处保留事件透传锚点
+function onFindingLocate(_finding: PresentationFinding) {}
+function onEvidenceSelect(_selection: AnalysisSelection) {}
+function onSelectResult(_resultId: string) {}
 
 // ---------------------------------------------------------------------------
 // v0.6.1 NetCDF 原生体渲染：NativeVolumePanel 接线
@@ -94,6 +113,21 @@ onMounted(async () => {
       fetchDatasetPoints(exp.params.dataset_version_id).then((p) => {
         points.value = p
       }),
+      // 分析摘要只读：未验证/不可用时不产生结论，工作台显示真实空态
+      fetchAnalysisSummary(exp.params.dataset_version_id)
+        .then((s) => {
+          analysis.value = s
+        })
+        .catch(() => {
+          analysis.value = null
+        }),
+      fetchResultResiduals(resultId.value, 4)
+        .then((r) => {
+          residuals.value = r
+        })
+        .catch(() => {
+          residuals.value = null
+        }),
     ]
     if (meta.dimension === '3d') {
       activeTab.value = 'field'
@@ -147,42 +181,59 @@ onMounted(async () => {
         </button>
       </header>
 
-      <section class="panel">
-        <div v-if="metadata.dimension === '3d'" class="view-tabs">
-          <button
-            class="view-tab"
-            :class="{ active: activeTab === 'field' }"
-            data-test="tab-field"
-            @click="activeTab = 'field'"
-          >
-            完整场
-          </button>
-          <button
-            class="view-tab"
-            :class="{ active: activeTab === 'slices' }"
-            data-test="tab-slices"
-            @click="activeTab = 'slices'"
-          >
-            X / Y / Z 切片
-          </button>
-        </div>
+      <ResultAnalysisWorkbench
+        :findings="findings"
+        :summary="analysis"
+        :residuals="residuals"
+        :dataset-id="experiment?.params.dataset_version_id ?? null"
+        :result-id="resultId"
+        :evaluation="metadata.evaluation_summary ?? null"
+        @locate="onFindingLocate"
+        @select="onEvidenceSelect"
+        @select-result="onSelectResult"
+      >
+        <template #scene>
+          <section class="panel">
+            <div v-if="metadata.dimension === '3d'" class="view-tabs">
+              <button
+                class="view-tab"
+                :class="{ active: activeTab === 'field' }"
+                data-test="tab-field"
+                @click="activeTab = 'field'"
+              >
+                完整场
+              </button>
+              <button
+                class="view-tab"
+                :class="{ active: activeTab === 'slices' }"
+                data-test="tab-slices"
+                @click="activeTab = 'slices'"
+              >
+                X / Y / Z 切片
+              </button>
+            </div>
 
-        <NativeVolumePanel
-          v-if="metadata.dimension === '3d' && activeTab === 'field'"
-          :api="volumeApi"
-          :aux-points="gridSamplePoints"
-        />
-        <SlicePanel
-          v-else
-          :result-id="resultId"
-          :dimension="metadata.dimension"
-          :shape="metadata.shape"
-          :source-points="sourcePoints"
-        />
-      </section>
-
-      <FormalSelectionPanel v-if="experiment" :result-id="resultId" :case-id="experiment.case_id" />
-      <ExportPublicationPanel :result-id="resultId" />
+            <NativeVolumePanel
+              v-if="metadata.dimension === '3d' && activeTab === 'field'"
+              :api="volumeApi"
+              :aux-points="gridSamplePoints"
+            />
+            <SlicePanel
+              v-else
+              :result-id="resultId"
+              :dimension="metadata.dimension"
+              :shape="metadata.shape"
+              :source-points="sourcePoints"
+            />
+          </section>
+        </template>
+        <template #evaluation>
+          <FormalSelectionPanel v-if="experiment" :result-id="resultId" :case-id="experiment.case_id" />
+        </template>
+        <template #provenance>
+          <ExportPublicationPanel :result-id="resultId" />
+        </template>
+      </ResultAnalysisWorkbench>
     </template>
 
     <div v-else v-loading="true" class="page-loading" />
