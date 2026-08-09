@@ -12,8 +12,9 @@ import { analyzeVolumePixels, countDiff, type VolumePixelMetrics } from './v070R
  * 产物 + 真实 ECharts 渲染）。
  *
  * 真实链路：全新隔离 GEOMODELING_DATA_DIR → preset_cli 双 seed（微震只读
- * CSV 预置 seed-microseismic；电阻率 seed-resistivity --source
- * $GEOMODELING_RHO_SOURCE，外部私有 17,549 行标准化 CSV，绝不入库）→
+ * CSV 预置 seed-microseismic；电阻率 seed-resistivity——v0.8.0 第三批起
+ * --source 缺省为项目内 example_data/地下电阻率节点_标准化.csv 字节冻结
+ * 内置源，无外部私有源依赖，无需任何环境变量）→
  * workspace API 取两个案例的 primary_dataset.id 与官方成果 result_id →
  * GET analysis-summary 合同门（analysis_profile / quality.row_count /
  * 统计全部有限 / 专属模块 status=ok 且载荷带计算方法与阈值来源 /
@@ -26,22 +27,12 @@ import { analyzeVolumePixels, countDiff, type VolumePixelMetrics } from './v070R
  * 差分超 max(200, noise*3+50) 噪声阈值；模型对比点击候选 → 成果页）→
  * 390×844 移动视口无页面级横向溢出且图表非空 → 网络/控制台错误门。
  *
- * 跳过门（与 resistivity-scattered-live 对齐）：GEOMODELING_RHO_SOURCE 未
- * 设置时整个文件 test.skip —— CI browser-live 无该私有数据，必须干净跳过
- * 并输出原因；本机发布门需显式提供该变量指向真实外部 CSV。
- * GEOMODELING_DATA_DIR 缺失（且未跳过）时 beforeAll 直接失败，不静默跳过。
+ * GEOMODELING_DATA_DIR 缺失时 beforeAll 直接失败，不静默跳过。
  *
  * 证据写入 docs/evidence/v0.8.0-statistics-analysis/<run-id>/（仅真实运行
  * 时创建；提交前按目录 README 扫描绝对路径/凭据/私有源内容）。本门不加载
  * SDK 体渲染帧，SDK 身份以 web/dist 包 SHA-256 承载。
  */
-
-const RHO_SOURCE = process.env.GEOMODELING_RHO_SOURCE ?? ''
-test.skip(
-  !RHO_SOURCE,
-  'GEOMODELING_RHO_SOURCE 未设置：电阻率标准化散点 CSV 是外部私有源，' +
-    'CI browser-live 无此数据，本规格干净跳过；本机发布门请显式设置后运行',
-)
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = path.resolve(HERE, '../..')
@@ -387,10 +378,10 @@ test.describe('v0.8.0 第二批：统计与空间分析中心真实数据 live �
 
   test.beforeAll(async ({ request }) => {
     const dataDir = assertIsolatedDataDir()
-    // 双预置 seed（唯一生产入口；幂等；电阻率外部私有源经 --source 显式传入，
-    // 绝不入库；微震为只读受控 CSV 预置）
+    // 双预置 seed（唯一生产入口；幂等；电阻率 --source 缺省为项目内
+    // example_data 内置源；微震为只读受控 CSV 预置）
     const microSeed = runPresetCli(['seed-microseismic', '--data-dir', dataDir])
-    const rhoSeed = runPresetCli(['seed-resistivity', '--source', RHO_SOURCE, '--data-dir', dataDir])
+    const rhoSeed = runPresetCli(['seed-resistivity', '--data-dir', dataDir])
     cases.microseismic.seed = {
       case_id: microSeed.case_id,
       workspace_kind: microSeed.workspace_kind ?? null,
@@ -834,7 +825,7 @@ test.describe('v0.8.0 第二批：统计与空间分析中心真实数据 live �
       node: process.version,
       seed_commands: [
         'python -m geomodeling.preset_cli seed-microseismic --data-dir <isolated>',
-        'python -m geomodeling.preset_cli seed-resistivity --source <GEOMODELING_RHO_SOURCE> --data-dir <isolated>',
+        'python -m geomodeling.preset_cli seed-resistivity --data-dir <isolated>（example_data 内置源）',
       ],
     })
     writeEvidenceJson('identity.json', {

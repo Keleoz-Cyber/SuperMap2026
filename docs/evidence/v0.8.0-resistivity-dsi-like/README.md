@@ -10,15 +10,15 @@
   test:e2e:live -- e2e-live/resistivity-scattered-live.spec.ts`），每次运行写入
   `<run-id>/` 子目录（`run-YYYYMMDDTHHMMSSZ-<uuid8>`）。
 - 前置条件：
-  - `GEOMODELING_RHO_SOURCE` 指向外部私有的电阻率标准化散点 CSV
-    （`X,Y,Z,RHO`、17,549 行；该文件绝不入库，证据中只登记其 SHA-256）；
+  - 电阻率源为项目内 `example_data/地下电阻率节点_标准化.csv`（v0.8.0 第三批
+    起字节冻结内置源，`X,Y,Z,RHO`、17,549 行；证据中只登记其 SHA-256，
+    无需任何外部私有源或环境变量）；
   - `GEOMODELING_DATA_DIR` 指向全新隔离运行库（规格启动前经
-    `python -m geomodeling.preset_cli seed-resistivity --source
-    $GEOMODELING_RHO_SOURCE --data-dir <isolated>` 建立只读预置链）；
+    `python -m geomodeling.preset_cli seed-resistivity --data-dir <isolated>`
+    建立只读预置链，`--source` 缺省为内置源）；
   - `web/dist` 含真实 SuperMap3D SDK 与前端产物（真实 GPU，
     `--use-angle=gl`）。
-- `GEOMODELING_RHO_SOURCE` 未设置时整个规格 `test.skip`（CI browser-live 无
-  私有数据，干净跳过并输出原因），不产生任何证据目录。
+- 本规格无私有源跳过门；仅真实运行时产生证据目录。
 
 ## 目录约定
 
