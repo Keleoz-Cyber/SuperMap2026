@@ -1,0 +1,150 @@
+import { flushPromises, mount } from '@vue/test-utils'
+import { createMemoryHistory, createRouter } from 'vue-router'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import ElementPlus from 'element-plus'
+import * as client from '../../../api/client'
+import type { CaseSummary } from '../../../api/types'
+import AppShell from '../AppShell.vue'
+import HomeView from '../../../views/HomeView.vue'
+import PresentationOverlay from '../../presentation/PresentationOverlay.vue'
+import { resetPresentationStore, usePresentationStore } from '../../../stores/presentation'
+import { readFileSync } from 'node:fs'
+
+// vitest 的 CSS ?raw 导入会被裁剪为空串；样式规则断言直接读文件（vitest 以 web/ 为 cwd）
+const motionCss = String(readFileSync('src/styles/motion.css'))
+const tokensCss = String(readFileSync('src/styles/tokens.css'))
+
+// v0.9.0 Task 14：响应式/无障碍/动效合同（静态契约层；
+// 真实视口像素级门在 web/e2e/v090-responsive.spec.ts）。
+
+vi.mock('../../../api/client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../api/client')>()
+  return {
+    ...actual,
+    fetchHealth: vi.fn(),
+    fetchCases: vi.fn(),
+    fetchCaseWorkspace: vi.fn(),
+    fetchAnalysisSummary: vi.fn(),
+    fetchResultRenderCapability: vi.fn(),
+    fetchResultRenderAsset: vi.fn(),
+    createResultRenderAsset: vi.fn(),
+    trashCase: vi.fn(),
+  }
+})
+
+const PRESET: CaseSummary = {
+  case_id: 'gas',
+  title: '煤层瓦斯',
+  status: 'active',
+  workspace_kind: 'builtin_preset',
+  capabilities: { data_summary: true, experiments: true, official_result: true, native_volume: true },
+  official_result: { result_id: 'gas-r', url: '/results/gas-r', materialized: true },
+  provenance_summary: {
+    badge: '散点预置 · 官方基线成果',
+    data_form: '标准化散点 · 58 个合格样品',
+    fields: ['X', 'Y', 'Z', 'CH4_content'],
+    value_unit: 'ml/g',
+    coordinate_kind: 'local_linear',
+  },
+  links: { detail: null, publish_status: null },
+}
+
+async function mountHome() {
+  vi.mocked(client.fetchHealth).mockResolvedValue({
+    status: 'ok',
+    version: '0.9.0',
+    time: '2026-08-10T00:00:00+00:00',
+  })
+  vi.mocked(client.fetchCases).mockResolvedValue({ cases: [PRESET] })
+  vi.mocked(client.fetchCaseWorkspace).mockResolvedValue({
+    ...PRESET,
+    workspace_kind: 'builtin_preset',
+    capabilities: PRESET.capabilities!,
+    primary_dataset: null,
+    official_result: PRESET.official_result!,
+    provenance_summary: PRESET.provenance_summary!,
+    links: PRESET.links,
+  } as never)
+  vi.mocked(client.fetchResultRenderCapability).mockRejectedValue(new Error('skip'))
+  const stub = { template: '<div />' }
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/', name: 'home', component: HomeView },
+      { path: '/trash', name: 'trash', component: stub },
+      { path: '/cases/new', name: 'case-create', component: stub },
+      { path: '/cases/:caseId', name: 'case-workspace', component: stub },
+      { path: '/results/:resultId', name: 'result-workbench', component: stub },
+      { path: '/presentation', name: 'presentation', component: stub },
+    ],
+  })
+  await router.push('/')
+  const wrapper = mount(AppShell, {
+    global: { plugins: [router, ElementPlus] },
+    attachTo: document.body,
+  })
+  await flushPromises()
+  return wrapper
+}
+
+beforeEach(() => {
+  document.body.innerHTML = ''
+  vi.clearAllMocks()
+  resetPresentationStore()
+})
+
+describe('responsive & accessibility contracts', () => {
+  it('app shell exposes exactly one main landmark', async () => {
+    const wrapper = await mountHome()
+    expect(wrapper.findAll('main')).toHaveLength(1)
+    expect(wrapper.get('main').attributes('id')).toBe('main-content')
+    wrapper.unmount()
+  })
+
+  it('home shows exactly one primary action for the selected case', async () => {
+    const wrapper = await mountHome()
+    expect(wrapper.findAll('[data-primary-action="true"]')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('all header buttons/links have accessible names', async () => {
+    const wrapper = await mountHome()
+    const header = wrapper.get('header')
+    const controls = [
+      ...header.findAll('button'),
+      ...header.findAll('a'),
+    ]
+    expect(controls.length).toBeGreaterThan(0)
+    for (const el of controls) {
+      const name = el.text().trim() || el.attributes('aria-label') || el.attributes('title')
+      expect(name).toBeTruthy()
+    }
+    wrapper.unmount()
+  })
+
+  it('presentation controls are native buttons (keyboard reachable)', () => {
+    const store = usePresentationStore()
+    store.enter()
+    const wrapper = mount(PresentationOverlay, { global: { plugins: [ElementPlus] } })
+    for (const testId of ['presentation-prev', 'presentation-next', 'presentation-exit']) {
+      const el = wrapper.get(`[data-test="${testId}"]`)
+      expect(el.element.tagName).toBe('BUTTON')
+    }
+    wrapper.unmount()
+  })
+
+  it('reduced motion zeroes nonessential animation via tokens', () => {
+    expect(motionCss).toContain('prefers-reduced-motion: reduce')
+    expect(motionCss).toContain('animation-duration: 1ms !important')
+    expect(motionCss).toContain('transition-duration: 1ms !important')
+  })
+
+  it('design tokens define the four case accents and elevation levels', () => {
+    for (const accent of ['--s1-accent-gold', '--s1-accent-violet', '--s1-accent-jade', '--s1-accent-cyan']) {
+      expect(tokensCss).toContain(accent)
+    }
+    for (const level of ['--s1-elevation-1', '--s1-elevation-2', '--s1-elevation-3']) {
+      expect(tokensCss).toContain(level)
+    }
+  })
+})

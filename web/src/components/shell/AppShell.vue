@@ -39,7 +39,8 @@ onMounted(async () => {
 .app-main {
   flex: 1;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
+  /* 关键：保持块级布局。列向 flex 会让带 margin:auto 居中的页面按
+     min-content 撑宽（stretch 被 auto 边距禁用），造成移动端横向溢出 */
+  display: block;
 }
 </style>

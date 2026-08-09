@@ -192,8 +192,10 @@ test('3D 成果工作台：物化 + 原生体渲染 + 工具栏完整状态 + �
   expect(sliceExportPosts[0].contentType).toContain('multipart/form-data')
 
   // 正式选择/导出控件保留；专业分析对 IDW 成果禁用
+  // v0.9.0：导出与发布归入证据与溯源抽屉，先展开再断言
   await expect(page.getByTestId('model-evaluation-entry')).toBeVisible()
   await expect(page.getByTestId('selection-submit')).toBeVisible()
+  await page.getByTestId('provenance-toggle').click()
   await expect(page.getByTestId('export-button')).toBeVisible()
 
   // 切片 tab 保留既有行为

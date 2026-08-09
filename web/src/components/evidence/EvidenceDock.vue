@@ -98,7 +98,7 @@ function selectTab(tab: DockTab) {
     </header>
 
     <div v-show="expanded" class="dock-body">
-      <div v-show="activeTab === 'quality'" class="dock-pane" data-test="dock-pane-quality">
+      <div v-if="activeTab === 'quality'" class="dock-pane" data-test="dock-pane-quality">
         <QualityDonut
           v-if="quality"
           :valid="quality.valid_count"
@@ -108,7 +108,7 @@ function selectTab(tab: DockTab) {
         <AsyncState v-else kind="nodata" title="暂无质量数据" />
       </div>
 
-      <div v-show="activeTab === 'distribution'" class="dock-pane" data-test="dock-pane-distribution">
+      <div v-if="activeTab === 'distribution'" class="dock-pane" data-test="dock-pane-distribution">
         <AsyncState
           v-if="!distributionModule"
           kind="nodata"
@@ -130,7 +130,7 @@ function selectTab(tab: DockTab) {
         </div>
       </div>
 
-      <div v-show="activeTab === 'model'" class="dock-pane" data-test="dock-pane-model">
+      <div v-if="activeTab === 'model'" class="dock-pane" data-test="dock-pane-model">
         <AsyncState v-if="modelCandidates.length === 0" kind="nodata" title="暂无候选指标" />
         <ModelMetricBars
           v-else
@@ -140,7 +140,7 @@ function selectTab(tab: DockTab) {
         />
       </div>
 
-      <div v-show="activeTab === 'trends'" class="dock-pane" data-test="dock-pane-trends">
+      <div v-if="activeTab === 'trends'" class="dock-pane" data-test="dock-pane-trends">
         <AsyncState v-if="trendAxes.length === 0" kind="nodata" title="暂无趋势剖面数据" />
         <AxisTrendChart
           v-else
@@ -152,7 +152,7 @@ function selectTab(tab: DockTab) {
         />
       </div>
 
-      <div v-show="activeTab === 'residuals'" class="dock-pane" data-test="dock-pane-residuals">
+      <div v-if="activeTab === 'residuals'" class="dock-pane" data-test="dock-pane-residuals">
         <AsyncState v-if="!hasResiduals" kind="nodata" title="暂无残差证据" />
         <ResidualEvidenceChart
           v-else

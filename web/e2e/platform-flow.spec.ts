@@ -7,9 +7,10 @@ test.describe('v0.4 通用建模流程（mock API）', () => {
   test('案例创建 → 向导 → 实验 → 排行榜 → 成果切片 → 选择 → 导出', async ({ page }) => {
     await installMockApi(page)
 
-    // 首页 → 新建案例
+    // 首页 → 新建案例（v0.9.0：全局壳品牌与版本徽标）
     await page.goto('/')
-    await expect(page.getByText(/v\d+\.\d+\.\d+ 建模平台/)).toBeVisible()
+    await expect(page.getByTestId('shell-brand')).toContainText('GeoModelingPlatform')
+    await expect(page.getByTestId('shell-version')).toHaveText(/^v\d+\.\d+\.\d+$/)
     await page.getByTestId('create-case-card').click()
 
     // 创建案例 + 上传
@@ -59,6 +60,8 @@ test.describe('v0.4 通用建模流程（mock API）', () => {
     await expect(page.getByTestId('formal-selection-panel')).toContainText('公共验证 RMSE 最低')
 
     await expect(page.getByTestId('publication-status')).toContainText('未请求')
+    // v0.9.0：导出与发布归入证据与溯源抽屉，先展开再操作
+    await page.getByTestId('provenance-toggle').click()
     await page.getByTestId('export-button').click()
     await expect(page.getByTestId('export-file').first()).toContainText('manifest.json')
     await expect(page.getByTestId('publication-status')).toContainText('未请求')

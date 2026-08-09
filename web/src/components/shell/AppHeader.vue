@@ -245,4 +245,31 @@ void props
     display: none;
   }
 }
+
+@media (max-width: 640px) {
+  .app-header {
+    padding: 0 var(--s1-space-2);
+    gap: var(--s1-space-2);
+  }
+
+  .brand-text strong {
+    font-size: var(--s1-font-md);
+  }
+
+  /* 手机档：服务状态收敛为圆点，次级入口让位给主动作，避免横向溢出 */
+  .service-pill {
+    font-size: 0;
+    padding: 6px;
+    gap: 0;
+  }
+
+  .header-right .action.ghost {
+    display: none;
+  }
+
+  .action.primary {
+    padding: 6px 10px;
+    font-size: var(--s1-font-sm);
+  }
+}
 </style>

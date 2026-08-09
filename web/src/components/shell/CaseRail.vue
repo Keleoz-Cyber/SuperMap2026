@@ -53,6 +53,12 @@ function unitOf(c: CaseSummary): string | null {
   return typeof unit === 'string' ? unit : null
 }
 
+// 局部坐标如实标注（display_anchor_only，非真实地理配准）
+function coordinateOf(c: CaseSummary): string | null {
+  const kind = c.provenance_summary?.coordinate_kind
+  return typeof kind === 'string' ? kind : null
+}
+
 function dataFormOf(c: CaseSummary): string | null {
   const form = c.provenance_summary?.data_form
   return typeof form === 'string' ? form : null
@@ -81,9 +87,10 @@ function dataFormOf(c: CaseSummary): string | null {
           <span class="item-title">{{ c.title }}</span>
         </div>
         <div class="item-meta">
-          <span v-if="unitOf(c)" class="meta-chip">{{ presentationOf(c).variableLabel }} · {{ unitOf(c) }}</span>
+          <span v-if="unitOf(c)" class="meta-chip">{{ unitOf(c) }}</span>
           <span v-if="dataFormOf(c)" class="meta-line">{{ dataFormOf(c) }}</span>
           <span v-if="fieldsOf(c)" class="meta-line">字段 {{ fieldsOf(c) }}</span>
+          <span v-if="coordinateOf(c)" class="meta-line">坐标 {{ coordinateOf(c) }}</span>
           <span class="meta-badge">{{ badgeOf(c) }}</span>
         </div>
         <div class="item-actions" @click.stop>

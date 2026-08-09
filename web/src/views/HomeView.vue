@@ -256,7 +256,8 @@ onBeforeUnmount(clearShellContext)
 
 <style scoped>
 .command-center {
-  flex: 1;
+  /* AppShell 的 app-main 为块级且有确定高度（flex 拉伸），此处直接占满 */
+  height: 100%;
   display: flex;
   flex-direction: column;
   min-height: 0;
