@@ -395,7 +395,7 @@ export async function setSliceIndex(page: Page, target: number): Promise<void> {
   for (;;) {
     const current = await readSliceIndex(page)
     if (current === target) return
-    if (guard++ > 100) throw new Error(`setSliceIndex →${target} 超过步数上限（当前 ${current}）`)
+    if (guard++ > 500) throw new Error(`setSliceIndex →${target} 超过步数上限（当前 ${current}）`)
     const delta = target > current ? 1 : -1
     await page.getByTestId(delta > 0 ? 'slice-next' : 'slice-prev').click()
     await expect.poll(() => readSliceIndex(page), { timeout: 5_000 }).toBe(current + delta)
