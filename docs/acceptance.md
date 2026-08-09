@@ -1,6 +1,6 @@
 # Acceptance Notes
 
-适用对象：当前代码基线（v0.1.0 电阻率基线 + 微震 v0.2a 审计底座 + v0.3.1 iServer 纵向闭环 + v0.4 通用建模平台 + v0.5 微震第二案例建模闭环（已随 v0.5.0 发布）+ v0.6 专业建模增强（`feat/v0.6-professional-modeling` 分支）+ v0.6.1 NetCDF 原生体渲染（`feat/v0.6.1-netcdf-native-rendering` 分支）+ v0.7.0 案例生命周期、用户流程整改与空间结构分析（`feat/v0.7.0-lifecycle-professional-comparison` 分支）+ v0.8.0 电阻率散点迁移与 DSI-like（`feat/v0.8.0-resistivity-dsi-like` 分支）+ v0.8.0 统计与空间分析中心（`feat/v0.8.0-statistics-analysis-center` 分支）+ v0.8.0 第三批瓦斯预置案例（`feat/v0.8.0-gas-preset` 分支））。
+适用对象：当前代码基线（v0.1.0 电阻率基线 + 微震 v0.2a 审计底座 + v0.3.1 iServer 纵向闭环 + v0.4 通用建模平台 + v0.5 微震第二案例建模闭环（已随 v0.5.0 发布）+ v0.6 专业建模增强 + v0.6.1 NetCDF 原生体渲染 + v0.7.0 案例生命周期、用户流程整改与空间结构分析 + v0.8.0 电阻率散点迁移与 DSI-like + v0.8.1 统计与空间分析中心、第三批瓦斯预置案例）。
 
 空间结构分析是普通克里金的可选建模依据，不适用于 IDW。每个成功物化的成果都有基础模型评估（RMSE/MAE/R2/Bias），增强证据按能力展开。旧 `/results/:id/professional` 路由重定向到 `/results/:id/evaluation`。
 

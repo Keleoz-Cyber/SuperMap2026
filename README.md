@@ -151,7 +151,7 @@ geomodeling professional compare --help
 
 开始开发前按顺序阅读：`README.md` → [当前状态](docs/status/current-status.md) → [产品蓝图](docs/product-blueprint.md) → [SuperMap集成说明](docs/supermap-integration.md) → 对应案例数据文档。论文只作来源证据，不能覆盖这些已确认规则。
 
-发布基线：v0.5.0 已发布（tag `v0.5.0`，merge `d37eb94`），见 [v0.5 运行手册](docs/v0.5-microseismic-loop.md)；更早基线 v0.4.1（tag `v0.4.1`）与 v0.4.0（tag `v0.4.0`，merge `b95f12b`）已发布，v0.4.1 演示加固见 [运行手册](docs/v0.4.1-demo-runbook.md) 与 [通用建模契约](docs/v0.4-generic-modeling-loop.md)；v0.6 专业建模增强、v0.7.0 统一案例工作台、v0.8.0 电阻率散点迁移 + DSI-like、v0.8.0 统计与空间分析中心与 v0.8.0 第三批瓦斯预置案例为发布候选（本分支，tag/release 待批准；历史 `v0.7.0` tag 与 Release 不可变）。
+发布基线：v0.5.0 已发布（tag `v0.5.0`，merge `d37eb94`），见 [v0.5 运行手册](docs/v0.5-microseismic-loop.md)；更早基线 v0.4.1（tag `v0.4.1`）与 v0.4.0（tag `v0.4.0`，merge `b95f12b`）已发布，v0.4.1 演示加固见 [运行手册](docs/v0.4.1-demo-runbook.md) 与 [通用建模契约](docs/v0.4-generic-modeling-loop.md)；v0.6 专业建模增强、v0.7.0 统一案例工作台与 v0.8.0 电阻率散点迁移 + DSI-like 已发布；v0.8.1 纳入统计与空间分析中心及第三批瓦斯预置案例。历史 `v0.8.0` tag 保持不变。
 
 ## 原始资料保护
 
