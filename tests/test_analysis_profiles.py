@@ -13,6 +13,8 @@ from pydantic import ValidationError
 
 from geomodeling.analysis import resolve_analysis_profile
 from geomodeling.analysis.profiles import (
+    GAS_VALUE_NAMES,
+    GAS_VALUE_UNIT,
     PROFILE_GAS_CONTENT,
     PROFILE_GENERIC_3D,
     PROFILE_MICROSEISMIC_VELOCITY,
@@ -35,7 +37,7 @@ RESISTIVITY_MAPPING = {
     "z": "Z",
     "value": "RHO",
     "value_name": "RHO",
-    "value_unit": "RHO 单位待来源确认",
+    "value_unit": "Ω·m",
     "coordinate_kind": "local_linear",
 }
 
@@ -48,6 +50,18 @@ MICROSEISMIC_MAPPING = {
     "value": "VX_KM_S",
     "value_name": "Vx",
     "value_unit": "km/s",
+    "coordinate_kind": "local_linear",
+}
+
+# 真实数据形态事实：瓦斯预置 profile_json.mapping（v0.8.0 第三批已冻结合同）
+GAS_MAPPING = {
+    "dimension": "3d",
+    "x": "X",
+    "y": "Y",
+    "z": "Z",
+    "value": "CH4_content",
+    "value_name": "CH4_content",
+    "value_unit": "ml/g",
     "coordinate_kind": "local_linear",
 }
 
@@ -70,7 +84,7 @@ def test_resistivity_profile_declares_log_distribution_and_depth_modules():
     assert profile.profile_id == "resistivity"
     assert {"distribution", "depth_slices", "model_comparison"} <= set(profile.modules)
 
-    # 真实预置 mapping（单位注记未确认）同样判定为电阻率，且无禁用理由
+    # 真实预置 mapping（单位 Ω·m，已确认）同样判定为电阻率，且无禁用理由
     real = resolve_analysis_profile({"mapping": RESISTIVITY_MAPPING})
     assert real.profile_id == "resistivity"
     assert real.specialized is True
@@ -112,18 +126,91 @@ def test_microseismic_profile_requires_vx_name_and_km_s_unit():
     assert "km/s" in reason.reason
 
 
-def test_gas_content_profile_registered():
-    for value_name in ("CH4", "gas", "gas_content"):
+def test_gas_content_profile_formal_declaration():
+    """v0.8.0 第三批 Task 3：瓦斯 profile 从预注册骨架升级为正式声明。
+
+    判定集大小写不敏感（含真实 mapping 的 ``CH4_content``）；模块清单锁定为
+    quality/statistics + distribution/depth_slices/spatial_anomaly/gradient
+    + profile_slices/model_comparison（设计「瓦斯差异化分析」）；骨架期的
+    ``threshold_zones`` 由分位口径的 spatial_anomaly 取代，不再声明。
+    """
+
+    expected_modules = {
+        "quality",
+        "statistics",
+        "distribution",
+        "depth_slices",
+        "spatial_anomaly",
+        "gradient",
+        "profile_slices",
+        "model_comparison",
+    }
+    for value_name in ("CH4", "CH4_content", "ch4_content", "gas", "gas_content"):
         profile = resolve_analysis_profile(
             {"mapping": {"dimension": "3d", "value_name": value_name}}
         )
         assert profile.profile_id == "gas_content"
-        assert {
-            "distribution",
-            "threshold_zones",
-            "depth_slices",
-            "spatial_anomaly",
-        } <= set(profile.modules)
+        assert profile.specialized is True
+        assert set(profile.modules) == expected_modules
+        assert profile.disabled_reasons == []
+    assert "threshold_zones" not in expected_modules
+
+
+def test_gas_content_profile_hits_real_preset_mapping():
+    """真实预置 mapping（value_name="CH4_content"，单位 ml/g）命中 gas_content。"""
+
+    profile = resolve_analysis_profile({"mapping": GAS_MAPPING})
+    assert profile.profile_id == PROFILE_GAS_CONTENT
+    assert profile.specialized is True
+    assert profile.disabled_reasons == []
+
+
+def test_gas_content_value_unit_declared_ml_g():
+    """瓦斯含量单位合同：CH4_content 单位 ml/g（已确认，绝不静默换算）。"""
+
+    assert GAS_VALUE_UNIT == "ml/g"
+    assert GAS_VALUE_NAMES == frozenset({"ch4", "ch4_content", "gas", "gas_content"})
+    profile = resolve_analysis_profile({"mapping": GAS_MAPPING})
+    descriptions = " ".join(spec.description for spec in profile.module_specs)
+    assert "ml/g" in descriptions
+
+
+def test_gas_content_profile_never_outputs_safety_conclusions():
+    """模块声明只承诺可计算表述；任何描述不得输出安全/危险规范结论。"""
+
+    profile = resolve_analysis_profile({"mapping": GAS_MAPPING})
+    for spec in profile.module_specs:
+        assert "危险" not in spec.description
+        assert "安全" not in spec.description
+
+
+def test_gas_content_2d_mapping_degrades_to_generic():
+    profile = resolve_analysis_profile({"mapping": {**GAS_MAPPING, "dimension": "2d"}})
+    assert profile.profile_id == PROFILE_GENERIC_3D
+    reason = next(r for r in profile.disabled_reasons if r.profile_id == PROFILE_GAS_CONTENT)
+    assert "dimension=3d" in reason.missing
+
+
+def test_generic_profile_never_forges_gas_modules():
+    """generic 降级不伪造瓦斯专属模块，并逐条给出瓦斯未启用的原因。"""
+
+    profile = resolve_analysis_profile(
+        {"mapping": {"dimension": "3d", "value": "VALUE", "value_name": "UNKNOWN"}}
+    )
+    assert profile.profile_id == PROFILE_GENERIC_3D
+    gas_specialized = {
+        spec.module_id
+        for spec in resolve_analysis_profile({"mapping": GAS_MAPPING}).module_specs
+        if spec.specialized
+    }
+    assert gas_specialized  # 瓦斯确有专属模块可供伪造防护断言
+    # generic 一律为非专属声明；其 distribution 是通用直方图（specialized=False），
+    # 与瓦斯的专属 distribution 不同——伪造防护按既有约定排除该同名模块
+    assert all(not spec.specialized for spec in profile.module_specs)
+    assert not (gas_specialized - {"distribution"}) & set(profile.modules)
+    reason = next(r for r in profile.disabled_reasons if r.profile_id == PROFILE_GAS_CONTENT)
+    assert reason.missing
+    assert "CH4_content" in reason.missing[0]
 
 
 def test_2d_mapping_degrades_to_generic_with_3d_reason():
@@ -214,17 +301,18 @@ def test_task6_generic_profile_exposes_no_specialized_module():
     assert not SPECIALIZED_MODULE_IDS & set(profile.modules)
 
 
-def test_task6_gas_profile_stays_registered_skeleton_without_extra_modules():
-    """瓦斯 profile 注册但不额外实现（设计 §5.3）：声明在，无微震/电阻率模块。"""
+def test_task6_gas_profile_declares_formal_modules_without_foreign_modules():
+    """瓦斯 profile 正式声明（v0.8.0 第三批）：梯度/深度/空间异常在列，
+    微震的 axis_trends、电阻率的对数分布与骨架期 threshold_zones 均不出现。"""
 
-    profile = resolve_analysis_profile(
-        {"mapping": {"dimension": "3d", "value_name": "CH4"}}
-    )
+    profile = resolve_analysis_profile({"mapping": GAS_MAPPING})
     assert profile.profile_id == PROFILE_GAS_CONTENT
-    assert {"distribution", "threshold_zones", "depth_slices", "spatial_anomaly"} <= set(
+    assert {"distribution", "depth_slices", "gradient", "spatial_anomaly"} <= set(
         profile.modules
     )
-    assert not {"axis_trends", "gradient"} & set(profile.modules)
+    assert not {"axis_trends", "threshold_zones"} & set(profile.modules)
+    distribution = next(s for s in profile.module_specs if s.module_id == "distribution")
+    assert "对数" not in distribution.description
 
 
 # ---------------------------------------------------------------------------
@@ -238,7 +326,7 @@ def _valid_response_kwargs() -> dict:
         "case_id": "case-1",
         "analysis_profile": "resistivity",
         "profile_version": 1,
-        "variable": {"name": "RHO", "unit": "RHO 单位待来源确认"},
+        "variable": {"name": "RHO", "unit": "Ω·m"},
         "quality": {
             "row_count": 3,
             "valid_count": 3,
@@ -275,7 +363,7 @@ def test_analysis_summary_response_accepts_finite_skeleton():
     response = AnalysisSummaryResponse(**_valid_response_kwargs())
     dumped = response.model_dump()
     assert dumped["analysis_profile"] == "resistivity"
-    assert dumped["variable"] == {"name": "RHO", "unit": "RHO 单位待来源确认"}
+    assert dumped["variable"] == {"name": "RHO", "unit": "Ω·m"}
     assert dumped["provenance"]["calculation_version"] == CALCULATION_VERSION
 
 

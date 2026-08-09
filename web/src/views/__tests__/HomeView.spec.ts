@@ -217,7 +217,7 @@ const RESISTIVITY_PRESET_CARD: CaseSummary = {
     badge: '散点预置 · 官方普通克里金成果',
     data_form: '标准化散点 · 17,549 个节点',
     fields: ['X', 'Y', 'Z', 'RHO'],
-    value_unit: 'RHO 单位待来源确认',
+    value_unit: 'Ω·m',
     coordinate_kind: 'local_linear',
   },
   links: { detail: '/api/cases/resistivity', publish_status: null },
@@ -241,7 +241,7 @@ const RESISTIVITY_DESCRIPTOR_CARD: CaseSummary = {
     badge: '散点预置 · 官方普通克里金成果',
     data_form: '标准化散点 · 17,549 个节点',
     fields: ['X', 'Y', 'Z', 'RHO'],
-    value_unit: 'RHO 单位待来源确认',
+    value_unit: 'Ω·m',
     coordinate_kind: 'local_linear',
   },
   links: { detail: null, publish_status: null },
@@ -260,7 +260,7 @@ describe('HomeView v0.8.0 电阻率散点预置卡', () => {
     const text = wrapper.text()
     expect(text).toContain('散点预置 · 官方普通克里金成果')
     expect(text).toContain('标准化散点 · 17,549 个节点')
-    expect(text).toContain('RHO 单位待来源确认')
+    expect(text).toContain('Ω·m')
     // 已 seed 卡同样渲染字段行（设计 §5 统一口径，逐字来自 DTO fields 键）
     const rows = fieldRows(wrapper)
     expect(rows.length).toBe(1)
@@ -295,7 +295,7 @@ describe('HomeView v0.8.0 电阻率散点预置卡', () => {
     const text = wrapper.text()
     expect(text).toContain('标准化散点 · 17,549 个节点')
     expect(text).toContain('散点预置 · 官方普通克里金成果')
-    expect(text).toContain('RHO 单位待来源确认')
+    expect(text).toContain('Ω·m')
     const rows = fieldRows(wrapper)
     expect(rows.length).toBe(1)
     expect(rows[0].text()).toContain('X/Y/Z/RHO')
@@ -328,5 +328,118 @@ describe('HomeView v0.8.0 电阻率散点预置卡', () => {
     // 单元层锁定响应式规则存在；真实 390x844 无横向溢出断言沿用
     // web/e2e 的 Playwright 模式（setViewportSize + scrollWidth ≤ 390）。
     expect(homeViewSource).toContain('@media (max-width: 480px)')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// v0.8.0 第三批 Task 7：瓦斯预置卡（builtin_preset 统一形态，三案例同一组件）。
+// 卡片文案逐字来自后端 DTO provenance_summary；前端不按 case_id 硬编码分支；
+// 旧 legacy 瓦斯卡（"暂缓"文案）已退役，首页绝不出现暂缓/DAT/legacy 语样。
+// ---------------------------------------------------------------------------
+
+// 已 seed 的瓦斯预置卡（workspace_case_card 形态，与真实后端逐字段对齐）
+const GAS_PRESET_CARD: CaseSummary = {
+  case_id: 'gas',
+  title: '煤层瓦斯',
+  status: 'active',
+  source_kind: 'builtin_preset',
+  workspace_kind: 'builtin_preset',
+  capabilities: {
+    data_summary: true,
+    experiments: true,
+    official_result: true,
+    native_volume: true,
+  },
+  official_result: { result_id: 'gas-official-1', url: '/results/gas-official-1', materialized: true },
+  provenance_summary: {
+    badge: '散点预置 · 官方基线成果',
+    data_form: '标准化散点 · 58 个合格样品',
+    fields: ['X', 'Y', 'Z', 'CH4_content'],
+    value_unit: 'ml/g',
+    coordinate_kind: 'local_linear',
+  },
+  links: { detail: '/api/cases/gas', publish_status: null },
+}
+
+// 未 seed 的瓦斯预置描述卡（gas_preset_workspace_card 形态）
+const GAS_DESCRIPTOR_CARD: CaseSummary = {
+  case_id: 'gas',
+  title: '煤层瓦斯',
+  status: 'initialization_required',
+  source_kind: 'builtin_preset',
+  workspace_kind: 'builtin_preset',
+  capabilities: {
+    data_summary: false,
+    experiments: false,
+    official_result: false,
+    native_volume: false,
+  },
+  official_result: null,
+  provenance_summary: {
+    badge: '散点预置 · 官方基线成果',
+    data_form: '标准化散点 · 58 个合格样品',
+    fields: ['X', 'Y', 'Z', 'CH4_content'],
+    value_unit: 'ml/g',
+    coordinate_kind: 'local_linear',
+    coordinate_unit: 'm',
+  },
+  links: { detail: null, publish_status: null },
+}
+
+describe('HomeView v0.8.0 第三批瓦斯散点预置卡', () => {
+  it('已 seed 瓦斯预置卡：builtin_preset 徽标、X/Y/Z/CH4_content 字段行、ml/g、无暂缓/DAT/legacy 文案', async () => {
+    const { wrapper, router } = await mountHome([GAS_PRESET_CARD])
+
+    const text = wrapper.text()
+    expect(text).toContain('散点预置 · 官方基线成果')
+    expect(text).toContain('标准化散点 · 58 个合格样品')
+    expect(text).toContain('ml/g')
+    const rows = fieldRows(wrapper)
+    expect(rows.length).toBe(1)
+    expect(rows[0].text()).toContain('X/Y/Z/CH4_content')
+    // 旧 legacy 瓦斯卡与旧流程语样绝不出现
+    expect(text).not.toContain('暂缓')
+    expect(text).not.toContain('parked')
+    expect(text).not.toContain('DAT')
+    expect(text).not.toContain('legacy')
+    expect(text).not.toContain('Legacy')
+    expect(text).not.toMatch(/[A-Za-z]:\\/)
+
+    // 主命令：进入统一工作台；次命令：查看官方成果直达
+    await wrapper.find('[data-test="enter-case-workspace"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/cases/gas')
+
+    await router.push('/')
+    await flushPromises()
+    const official = wrapper.find('[data-test="open-official-result"]')
+    expect(official.exists()).toBe(true)
+    expect(official.text()).toContain('查看官方成果')
+    await official.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/results/gas-official-1')
+  })
+
+  it('未 seed 瓦斯描述卡：徽标与字段行来自 DTO，无官方成果直达', async () => {
+    const { wrapper } = await mountHome([GAS_DESCRIPTOR_CARD])
+
+    const text = wrapper.text()
+    expect(text).toContain('标准化散点 · 58 个合格样品')
+    expect(text).toContain('散点预置 · 官方基线成果')
+    expect(text).toContain('ml/g')
+    const rows = fieldRows(wrapper)
+    expect(rows.length).toBe(1)
+    expect(rows[0].text()).toContain('X/Y/Z/CH4_content')
+    expect(wrapper.find('[data-test="open-official-result"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="enter-case-workspace"]').exists()).toBe(true)
+  })
+
+  it('三案例统一组件：首页源码无 gas 专属分支与"暂缓"残留，tagline 覆盖瓦斯预置', () => {
+    // CASE_META 的 gas "暂缓"残留与 case_id === 'gas' 硬编码分支必须退役；
+    // profile/单位/徽标全由 DTO 驱动，绝不硬编码 case_id
+    expect(homeViewSource).not.toContain('暂缓')
+    expect(homeViewSource).not.toContain("case_id === 'gas'")
+    expect(homeViewSource).not.toMatch(/CASE_META[^`]*gas/)
+    expect(homeViewSource).toContain('瓦斯')
   })
 })

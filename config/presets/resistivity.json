@@ -4,7 +4,7 @@
   "source": "builtin_preset",
   "dimension": "3d",
   "semantic_fields": { "x": "X", "y": "Y", "z": "Z", "value": "RHO" },
-  "value_unit": "RHO 单位待来源确认",
+  "value_unit": "Ω·m",
   "coordinate_kind": "local_linear",
   "facts": {
     "standardized_rows": 17549,
@@ -37,8 +37,8 @@
   "demo_copy": "内置只读预置案例：17,549 个标准化散点（X/Y/Z/RHO）经源合同校验后 seed 为只读数据版本，直接进入统一案例工作台，不经上传向导。",
   "boundaries": [
     "局部工程坐标，未声明 EPSG，不做跨案例空间叠加",
-    "RHO 单位待来源确认，不静默声明单位、不做静默换算",
-    "标准化散点源 CSV 为项目外部私有文件，不提交 Git、不随仓库分发；运行时仅登记其 SHA-256 指纹",
+    "RHO 单位为 Ω·m（已确认），不做静默换算",
+    "标准化散点源 CSV 内置在仓库 example_data/地下电阻率节点_标准化.csv（字节级 SHA-256 冻结合同，任意平台检出字节一致）；运行时仅登记其 SHA-256 指纹",
     "内置只读预置：由 seed 建立只读数据版本与官方成果链，不经上传向导，用户候选不得顶替官方正式选择",
     "训练/验证沿用空间柱分区：15,827 / 1,722 行，交叉空间柱数为 0"
   ]

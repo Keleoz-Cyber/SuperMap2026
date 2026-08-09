@@ -43,7 +43,7 @@ RESISTIVITY_MAPPING = {
     "z": "Z",
     "value": "RHO",
     "value_name": "RHO",
-    "value_unit": "RHO 单位待来源确认",
+    "value_unit": "Ω·m",
     "coordinate_kind": "local_linear",
 }
 
@@ -709,3 +709,84 @@ def test_spatial_anomaly_degenerate_cell_means_mark_all_normal():
     assert summary.low_volume_ratio == 0.0
     regions = {item.region for item in summary.bins}
     assert regions == {"normal"}
+
+
+
+# ---------------------------------------------------------------------------
+# v0.8.0 第三批 Task 8：瓦斯形态帧（稀疏散点）阈值来源与空态合同
+# ---------------------------------------------------------------------------
+
+# 与 tests/test_analysis_profiles.py 一致的瓦斯真实 mapping 形态事实
+GAS_MAPPING = {
+    "dimension": "3d",
+    "x": "X",
+    "y": "Y",
+    "z": "Z",
+    "value": "CH4_content",
+    "value_name": "CH4_content",
+    "value_unit": "ml/g",
+    "coordinate_kind": "local_linear",
+}
+
+
+def _gas_sparse_frame() -> pd.DataFrame:
+    """瓦斯形态稀疏帧：4 个互不相邻的 XY 柱（网格化后无相邻非空单元对），
+    Z 值只落在 3 个深度（16 层分箱必产生空层），CH4 含量逐点递增。"""
+
+    return _standardized_frame(
+        [
+            (0.0, 0.0, 0.0, 1.0, True),
+            (0.0, 0.0, 1.0, 2.0, True),
+            (10.0, 0.0, 0.0, 3.0, True),
+            (10.0, 0.0, 1.0, 4.0, True),
+            (0.0, 10.0, 5.0, 5.0, True),
+            (10.0, 10.0, 5.0, 6.0, True),
+        ]
+    )
+
+
+def test_gas_depth_slices_sample_quantile_thresholds_and_empty_layers_null():
+    """瓦斯 depth_slices：阈值为样本级（有效值）分位统计；空层占比 null 且
+    序列化绝无 NaN/Infinity。"""
+
+    summary = depth_slice_ratios(_gas_sparse_frame(), GAS_MAPPING, bins=16)
+    assert summary.thresholds.source == "valid_value_quantiles_p25_p75"
+    assert "有效值" in summary.thresholds.method
+    empty = [slice_ for slice_ in summary.slices if slice_.count == 0]
+    assert empty, "Z 只含 3 个深度，16 层分箱必须产生空层"
+    for slice_ in empty:
+        assert slice_.high_ratio is None and slice_.low_ratio is None
+    _assert_json_finite(summary.model_dump_json())
+
+
+def test_gas_spatial_anomaly_cell_mean_thresholds_without_normative_wording():
+    """瓦斯 spatial_anomaly：阈值为非空单元均值 p25/p75 分位统计；来源与
+    方法文案只含可计算表述，绝无「危险/安全/爆炸/突出」规范判断词。"""
+
+    summary = spatial_anomaly_summary(_gas_sparse_frame(), GAS_MAPPING)
+    assert summary.thresholds.source == "cell_mean_quantiles_p25_p75"
+    assert "单元均值" in summary.thresholds.method
+    for term in ("危险", "安全", "爆炸", "突出"):
+        assert term not in summary.thresholds.source
+        assert term not in summary.thresholds.method
+    # 4 个非空单元均值 1.5/3.5/5/6：最高柱为高含量区域、最低柱为低含量区域
+    non_empty = sorted(
+        (cell.mean, cell.region) for cell in summary.bins if cell.count > 0
+    )
+    assert len(non_empty) == 4
+    assert non_empty[0][1] == "low"
+    assert non_empty[-1][1] == "high"
+    assert summary.high_cell_count == 1
+    assert summary.low_cell_count == 1
+    _assert_json_finite(summary.model_dump_json())
+
+
+def test_gas_sparse_frame_gradient_null_stats_and_finite_json():
+    """瓦斯稀疏帧梯度：无相邻非空单元对 → count=0 且统计字段 null（解释性
+    空态，绝不以 NaN 或 0 伪造），排除对计数保留且守恒。"""
+
+    summary = gradient_summary(_gas_sparse_frame(), GAS_MAPPING)
+    assert summary.count == 0
+    assert summary.mean is None and summary.p95 is None and summary.max is None
+    assert summary.excluded_pair_count == summary.pair_count > 0
+    _assert_json_finite(summary.model_dump_json())

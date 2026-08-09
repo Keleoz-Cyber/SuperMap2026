@@ -1,0 +1,30 @@
+{
+  "run_id": "run-20260809T105908Z-cc49446f",
+  "git_commit": "05c4a420b4e186e8e25afcf6a6fcf500e0ca361f",
+  "sdk_sha256": "d69dadab01fc452a79f1fa88a46aced3cf29885df7bf4febbd6f24ce5b578120",
+  "sdk_version": "12.1.0",
+  "browser": {
+    "name": "chromium",
+    "version": "149.0.7827.55"
+  },
+  "gpu_renderer": "ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 4070 Laptop GPU/PCIe/SSE2, OpenGL 4.5.0)",
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "device_pixel_ratio": 1,
+  "results": {
+    "resistivity": {
+      "case_id": "resistivity",
+      "official_result_id": "d9604ecd-c3be-443f-9894-38a9986f3e7a",
+      "dsi_result_id": "0535080d-fa5c-42e7-b438-10f51b7a7647",
+      "grid_sha256": "3030ee36c4362d9e24458e16ed0389a1a9bcaac54248bb70f280e7af343ef780",
+      "netcdf_sha256": "0a702dae7044918b6dca9a3c998b640f35ef9003de2424feb2e88ec29a976085",
+      "asset_id": "nc-5556d99d2ddb757012da82f8fb17c976"
+    }
+  },
+  "created_at": "2026-08-09T10:59:46.662Z",
+  "platform": "win32/x64",
+  "node": "v24.13.1",
+  "seed_command": "python -m geomodeling.preset_cli seed-resistivity --data-dir <isolated>（example_data 内置源）"
+}

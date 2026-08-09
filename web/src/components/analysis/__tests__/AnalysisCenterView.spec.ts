@@ -395,3 +395,122 @@ describe('AnalysisCenterView（A+B 壳）', () => {
     expect(analysisViewSource).toContain('@media (max-width: 600px)')
   })
 })
+
+
+// ---------------------------------------------------------------------------
+// v0.8.0 第三批 Task 8：瓦斯差异化导航——gas 模块标签补全，ok 但暂无面板
+// 的专属模块不生成占位导航入口
+// ---------------------------------------------------------------------------
+
+function gasAnomalyModule(): AnalysisModuleResult {
+  const bins = []
+  for (let row = 0; row < 4; row += 1) {
+    for (let col = 0; col < 4; col += 1) {
+      const count = (row * 4 + col) % 3
+      bins.push({
+        x_lower: col * 10,
+        x_upper: (col + 1) * 10,
+        y_lower: row * 20,
+        y_upper: (row + 1) * 20,
+        count,
+        mean: count ? 2 + (row * 4 + col) * 0.1 : null,
+        region: count === 0 ? 'empty' : (row + col) % 2 === 0 ? 'high' : 'normal',
+      })
+    }
+  }
+  return {
+    module_id: 'spatial_anomaly',
+    status: 'ok',
+    payload: {
+      grid_size: 4,
+      cell_count: 16,
+      bounds: { x: [0, 40], y: [0, 80] },
+      thresholds: {
+        high: 3.2,
+        low: 2.0,
+        source: 'cell_mean_quantiles_p25_p75',
+        method: '高值阈值=非空网格单元均值 p75、低值阈值=非空网格单元均值 p25',
+      },
+      non_empty_cell_count: 10,
+      high_cell_count: 4,
+      low_cell_count: 2,
+      high_point_count: 6,
+      low_point_count: 3,
+      high_volume_ratio: 0.4,
+      low_volume_ratio: 0.2,
+      bins,
+    },
+    message: null,
+  }
+}
+
+// 瓦斯完整壳夹具：通用模块 + spatial_anomaly/depth_slices/gradient ok（后两者
+// ok 但暂无面板，不得生成占位导航入口）
+function gasSummary(): AnalysisSummaryResponse {
+  const base = summaryOf('gas_content')
+  base.variable = { name: 'CH4_content', unit: 'ml/g' }
+  const modules: AnalysisModuleResult[] = [
+    { module_id: 'quality', status: 'ok', payload: {}, message: null },
+    { module_id: 'statistics', status: 'ok', payload: {}, message: null },
+    { module_id: 'distribution', status: 'ok', payload: { bin_count: 0, bins: [] }, message: null },
+    gasAnomalyModule(),
+    { module_id: 'profile_slices', status: 'ok', payload: { axes: [] }, message: null },
+    comparisonModule([MATERIALIZED_CANDIDATE]),
+    {
+      module_id: 'depth_slices',
+      status: 'ok',
+      payload: {
+        thresholds: {
+          high: 18.9,
+          low: 3.2,
+          source: 'valid_value_quantiles_p25_p75',
+          method: '高值阈值=有效值 p75、低值阈值=有效值 p25',
+        },
+        slice_count: 16,
+        slices: [],
+      },
+      message: null,
+    },
+    {
+      module_id: 'gradient',
+      status: 'ok',
+      payload: {
+        grid_size: 16,
+        pair_count: 480,
+        excluded_pair_count: 452,
+        count: 28,
+        mean: 4.87,
+        p95: 11.92,
+        max: 17.35,
+      },
+      message: null,
+    },
+  ]
+  return { ...base, modules }
+}
+
+describe('AnalysisCenterView（gas_content 差异化导航）', () => {
+  it('gas 模块标签补全；ok 但暂无面板的专属模块无占位入口；无规范判断词', async () => {
+    vi.mocked(client.fetchAnalysisSummary).mockResolvedValue(gasSummary())
+    const { wrapper } = await mountAnalysisCenter('/datasets/ds-1/analysis')
+
+    expect(wrapper.find('[data-test="analysis-profile-badge"]').text()).toContain('瓦斯含量')
+    // gas 差异化模块标签
+    expect(wrapper.find('[data-test="module-nav-item-distribution"]').text()).toContain('含量分布')
+    expect(wrapper.find('[data-test="module-nav-item-spatial_anomaly"]').text()).toContain(
+      '含量区域',
+    )
+    expect(wrapper.find('[data-test="module-nav-item-profile_slices"]').exists()).toBe(true)
+    // ok 但暂无面板的专属模块（depth_slices/gradient）不生成占位导航入口
+    expect(wrapper.find('[data-test="module-nav-item-depth_slices"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="module-nav-item-gradient"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('速度梯度')
+    // 默认主焦点为 spatial_anomaly（gas 无 spatial_extent），面板为差异化标题
+    expect(wrapper.find('[data-test="spatial-feature-panel"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('高/低含量区域')
+    for (const term of ['危险', '安全', '爆炸', '突出']) {
+      expect(wrapper.text()).not.toContain(term)
+    }
+    wrapper.unmount()
+  })
+})

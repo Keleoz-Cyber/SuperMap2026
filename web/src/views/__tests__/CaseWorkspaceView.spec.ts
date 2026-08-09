@@ -422,7 +422,7 @@ const RESISTIVITY_PRESET_WS: CaseWorkspaceSummary = {
         z: 'Z',
         value: 'RHO',
         value_name: 'RHO',
-        value_unit: 'RHO 单位待来源确认',
+        value_unit: 'Ω·m',
         coordinate_kind: 'local_linear',
       },
       row_count: 17549,
@@ -433,7 +433,7 @@ const RESISTIVITY_PRESET_WS: CaseWorkspaceSummary = {
   provenance_summary: {
     badge: '散点预置 · 官方普通克里金成果',
     data_form: '标准化散点 · 17,549 个节点',
-    value_unit: 'RHO 单位待来源确认',
+    value_unit: 'Ω·m',
     coordinate_kind: 'local_linear',
   },
   // v0.8.0：预置工作台 DTO 携带 data_preparation（state=validated 摘要）
@@ -464,7 +464,7 @@ describe('CaseWorkspaceView 电阻率散点预置（v0.8.0）', () => {
     const text = wrapper.text()
     expect(text).toContain('标准化散点 · 17,549 个节点')
     expect(text).toContain('散点预置 · 官方普通克里金成果')
-    expect(text).toContain('RHO 单位待来源确认')
+    expect(text).toContain('Ω·m')
     expect(text).toContain('X/Y/Z -> RHO')
 
     // 操作一：查看官方成果直达
@@ -629,6 +629,7 @@ describe('CaseWorkspaceView 统计与空间分析入口（v0.8.0 第二批）', 
   it.each([
     { path: `/cases/${PRESET_ID}`, makeWs: () => workspaceOf('builtin_preset'), datasetId: 'ds-1' },
     { path: '/cases/resistivity', makeWs: () => RESISTIVITY_PRESET_WS, datasetId: 'ds-rho-1' },
+    { path: '/cases/gas', makeWs: () => GAS_PRESET_WS, datasetId: 'ds-gas-1' },
   ])('预置案例（$path）：validated 预置数据同样出现分析中心入口', async ({ path, makeWs, datasetId }) => {
     vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(makeWs())
     const { wrapper } = await mountWorkspace(path)
@@ -637,6 +638,133 @@ describe('CaseWorkspaceView 统计与空间分析入口（v0.8.0 第二批）', 
     expect(entries.length).toBe(1)
     expect(entries[0].text()).toContain('统计与空间分析')
     expect(entries[0].attributes('href')).toBe(`/datasets/${datasetId}/analysis`)
+    wrapper.unmount()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// v0.8.0 第三批 Task 7：瓦斯散点预置的统一工作台语义。文案全部来自后端 DTO
+// （provenance_summary / primary_dataset / data_preparation），前端不按
+// case_id 硬编码瓦斯分支；旧 legacy 瓦斯卡（"暂缓"文案）语样不得出现。
+// ---------------------------------------------------------------------------
+
+const GAS_PRESET_WS: CaseWorkspaceSummary = {
+  case_id: 'gas',
+  title: '煤层瓦斯',
+  status: 'active',
+  workspace_kind: 'builtin_preset',
+  capabilities: {
+    data_summary: true,
+    experiments: true,
+    official_result: true,
+    native_volume: true,
+  },
+  primary_dataset: {
+    id: 'ds-gas-1',
+    case_id: 'gas',
+    version: 1,
+    status: 'validated',
+    created_at: '2026-08-09T00:00:00+00:00',
+    profile: {
+      mapping: {
+        dimension: '3d',
+        x: 'X',
+        y: 'Y',
+        z: 'Z',
+        value: 'CH4_content',
+        value_name: 'CH4_content',
+        value_unit: 'ml/g',
+        coordinate_kind: 'local_linear',
+      },
+      row_count: 58,
+      valid_row_count: 58,
+    },
+  } as unknown as CaseWorkspaceSummary['primary_dataset'],
+  official_result: { result_id: 'gas-official-1', url: '/results/gas-official-1', materialized: true },
+  provenance_summary: {
+    badge: '散点预置 · 官方基线成果',
+    data_form: '标准化散点 · 58 个合格样品',
+    fields: ['X', 'Y', 'Z', 'CH4_content'],
+    value_unit: 'ml/g',
+    coordinate_kind: 'local_linear',
+  },
+  data_preparation: {
+    state: 'validated',
+    dataset_id: null,
+    latest_validated_dataset_id: 'ds-gas-1',
+    next_action: {
+      step: 'experiment',
+      label: '新建实验',
+      url: '/#/cases/gas/experiments/new',
+    },
+    error: null,
+  },
+  validated_datasets: [],
+  abandoned_datasets: [],
+  recent_experiments: [],
+  recent_results: [],
+  links: { detail: '/api/cases/gas', publish_status: null },
+}
+
+describe('CaseWorkspaceView 瓦斯散点预置（v0.8.0 第三批）', () => {
+  it('瓦斯 builtin_preset 工作台：统一文案与操作，无暂缓/DAT/legacy 可见语样', async () => {
+    vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(GAS_PRESET_WS)
+    const { wrapper, router } = await mountWorkspace('/cases/gas')
+
+    // 统一预置文案（逐字来自 DTO provenance_summary / primary_dataset）
+    const text = wrapper.text()
+    expect(text).toContain('标准化散点 · 58 个合格样品')
+    expect(text).toContain('散点预置 · 官方基线成果')
+    expect(text).toContain('ml/g')
+    expect(text).toContain('X/Y/Z -> CH4_content')
+    expect(text).toContain('行数 58')
+
+    // 操作一：查看官方成果直达
+    await wrapper.find('[data-test="open-official-result"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/results/gas-official-1')
+
+    // 操作二：新建实验进入统一实验创建页（携带预置数据版本）
+    await router.push('/cases/gas')
+    await flushPromises()
+    await wrapper.find('[data-test="new-experiment"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/cases/gas/experiments/new')
+    expect(router.currentRoute.value.query.dataset).toBe('ds-gas-1')
+
+    // 分析中心入口对 gas validated dataset 出现
+    const entries = wrapper.findAll('[data-test="analysis-center-entry"]')
+    expect(entries.length).toBe(1)
+    expect(entries[0].attributes('href')).toBe('/datasets/ds-gas-1/analysis')
+
+    // 旧 legacy 瓦斯卡与旧流程语样均不可见
+    expect(text).not.toContain('暂缓')
+    expect(text).not.toContain('parked')
+    expect(text).not.toContain('DAT')
+    expect(text).not.toContain('legacy')
+    expect(text).not.toContain('Legacy')
+
+    // 预置案例无上传恢复状态机：不渲染数据准备面板与上传入口
+    expect(wrapper.find('[data-test="data-preparation-panel"]').exists()).toBe(false)
+    expect(text).not.toContain('上传数据')
+
+    // 渲染文本不得携带本机绝对路径
+    expect(text).not.toMatch(/[A-Za-z]:\\/)
+    wrapper.unmount()
+  })
+
+  it('瓦斯 PRESET_NOT_INITIALIZED：展示后端消息，不出现微震/电阻率硬编码文案', async () => {
+    const { ApiError } = await import('../../api/client')
+    vi.mocked(client.fetchCaseWorkspace).mockRejectedValue(
+      new ApiError('PRESET_NOT_INITIALIZED', '瓦斯预置案例尚未初始化：需由维护者执行文档化 seed 命令', 409),
+    )
+    const { wrapper } = await mountWorkspace('/cases/gas')
+
+    expect(wrapper.find('[data-test="workspace-not-initialized"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('瓦斯预置案例尚未初始化')
+    expect(wrapper.text()).not.toContain('微震')
+    expect(wrapper.text()).not.toContain('电阻率')
+    expect(wrapper.text()).not.toContain('上传')
     wrapper.unmount()
   })
 })

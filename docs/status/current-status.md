@@ -1,6 +1,6 @@
 # 当前开发状态
 
-> 更新时间：2026-08-08（v0.8.0 统计与空间分析中心分支更新）。本文是开发人员和开发 Agent 判断“现在做到哪一步”的唯一状态入口。数据细节见 [电阻率](../data/resistivity.md)、[微震](../data/microseismic.md)、[瓦斯](../data/gas.md) 和 [数据契约](../data/contracts.md)；目标产品见 [产品蓝图](../product-blueprint.md)。
+> 更新时间：2026-08-09（v0.8.0 第三批瓦斯预置案例分支更新）。本文是开发人员和开发 Agent 判断“现在做到哪一步”的唯一状态入口。数据细节见 [电阻率](../data/resistivity.md)、[微震](../data/microseismic.md)、[瓦斯](../data/gas.md) 和 [数据契约](../data/contracts.md)；目标产品见 [产品蓝图](../product-blueprint.md)。
 
 ## 1. 状态分层
 
@@ -12,6 +12,13 @@
 
 ## 2. 当前代码已实现
 
+- **v0.8.0 瓦斯预置案例与三案例数据内置化 · 第三批（`feat/v0.8.0-gas-preset` 分支，发布候选）**：
+  - 数据合同：三个官方案例标准化散点源统一内置 `example_data/` 并字节级冻结（`.gitattributes` 对 `example_data/*.csv` 关闭文本规范化，任意平台检出字节一致）：电阻率 17,549 行 `X,Y,Z,RHO`（Ω·m，`04c5914d…`）、微震 1,911 行（km/s，CRLF+BOM，`4011de85…`）、瓦斯 58 行 `X,Y,Z,CH4_content`（ml/g，CRLF+BOM，`f7d6f03d…`；28 个 XY 采样位置，Z∈[121.0375,175.656]，CH4∈[0.05,34.3]）；合同校验 fail-closed，三个 seed CLI（`seed-resistivity`/`seed-microseismic`/`seed-gas`）默认源均为内置 example_data，无外部私有源依赖，DTO 只输出逻辑来源与哈希。
+  - 基线身份：`config/presets/gas.json`（preset_version `gas-ch4-58/v1`）+ `config/presets/gas-official-baseline.json`：13 候选（IDW 9 + 普通克里金 4）经 spatial_kfold 5 折（seed=20260723，28 根整 XY 柱分组，逐折验证行数 [12,11,11,13,11]，公共有效 58）评审冻结 winner `ordinary_kriging` spherical/neighbor=24（RMSE=8.298439、MAE=6.552100、R²=−0.109659、Bias=−0.068618——58 点稀疏采样下 R² 为负，如实呈现为解释性估计）；DSI-like 默认参数条件评估四道门全过（公共有效 46/58、coverage 0.793103、物化全有限、包围盒外恒 NoData），仅作对照候选，绝不参与官方选择（winner ∈ {idw, ordinary_kriging} 合同锁定）。
+  - 网格与成果链：规则网格 151×333×12 @[20,20,5] m（603,396 节点，bounds 来自瓦斯数据，值全有限、零 NoData）；`seed-gas` 经统一 `Case → DatasetVersion → Experiment → Run → CandidateResult → materialize → FormalSelection` 链登记官方成果（确定性身份、幂等复用、并发唯一、失败补偿），官方成果走 NetCDF 原生体渲染资产链，资产可追溯到 candidate。
+  - 分析模块：`gas_content` profile 正式启用（CH4_content，ml/g）：含量分布/分位数与有效样本质量、Z 向分层统计、XY 高/低含量区域（非空单元均值 p25/p75 探索性分位口径并明示来源）、空间梯度与采样覆盖、候选模型指标对比；不输出「瓦斯危险/安全」等规范结论。
+  - 边界：瓦斯坐标为局部线性米制，不做 EPSG 地理配准、不做跨案例叠加；不接入 AI/iServer；v0.9 分析中心视觉重构与 C 类结论看板仍不做；旧 legacy 瓦斯卡（“暂缓”）退役，首页三预置卡统一 `builtin_preset`。
+  - 测试基线：第三批专项便携测试（example_data 合同、瓦斯 profile/seed 生命周期、基线冻结、渲染资产、API/工作台、Mock E2E）随 Task 1–8 全部通过；真实 GPU live 门规格 `web/e2e-live/gas-preset-live.spec.ts` 已入库（内置源、无跳过门、只作本机发布门），真实 run 证据由后续单独提交补入 `docs/evidence/v0.8.0-batch-3-gas/`，本文不预登记 run ID。
 - **v0.8.0 统计与空间分析中心 · 第二批（`feat/v0.8.0-statistics-analysis-center` 分支，发布候选）**：
   - 新后端包 `geomodeling.analysis`：`profiles.py` profile 注册表与判定、`statistics.py` 有限统计基元、`schemas.py` 响应模型。profile 判定只读取数据版本 `profile_json.mapping` 的 `value_name`/`value_unit`/`dimension`，绝不使用 case_id：`value_name=="RHO"` → `resistivity`；`value_name=="Vx"` 且 `value_unit=="km/s"`（单位不符不静默换算）→ `microseismic_velocity`；`value_name∈{CH4,gas,gas_content}` → `gas_content`（仅注册，数据合同到位后接入）；其余或显式非 3D 一律降级 `generic_3d`，并逐条给出各专属 profile 未启用的 `disabled_reasons`（缺失项 + 展示文案），不静默显示看似完整的专业面板。
   - 只读 API：`GET /api/datasets/{id}/analysis-summary` 与 `GET /api/datasets/{id}/analysis-export?format=json|csv`；门禁顺序 404 `DATASET_NOT_FOUND` → 410 `CASE_TRASHED` → 409 `DATASET_NOT_VALIDATED`；空公共有效集 fail-closed 409 `ANALYSIS_EMPTY_COMMON_VALID`。响应携带 `dataset_id`/`profile_version`/`variable`/`quality`/`statistics`/`modules`/`provenance`（`source_sha256`、`dataset_version`、`generated_at`、`calculation_version=analysis.v1`）；CSV 导出为 7 行 `# k=v` 注释头 + 稳定表头 `section,axis,bin_index,metric,lower,upper,value`；导出文件名 `analysis-{dataset_id}-{profile}.{json,csv}`；公开载荷绝不包含本机绝对路径。
@@ -20,14 +27,14 @@
   - 真实数据验收：run-20260808T202639Z-d04fa748（`git_commit=62099e8`、RTX 4070、桌面 1440×900 与移动 390×844）——电阻率与微震 profile 的 API 合同、空间图/分布图像素门、XY 分箱/剖面轴/模型对比交互 diff、移动端无横向溢出全部通过；证据目录 `docs/evidence/v0.8.0-statistics-analysis/`（代码与证据分开提交）。
   - 边界：瓦斯 `gas_content` profile 仅注册，本批不伪造瓦斯数据与专业结论；C 类结论看板（发现/证据/三维定位/可打印答辩页）为 v0.9.0 预留、本批明确未实现；统计结果是案例解释辅助，不作为自动发布的地质结论。
 - **v0.8.0 电阻率散点迁移与 DSI-like（`feat/v0.8.0-resistivity-dsi-like` 分支，发布候选）**：
-  - 电阻率从只读 `builtin_legacy` 迁移为统一 `builtin_preset` 散点预置（案例 ID `resistivity` 不变）：外部标准化 CSV（17,549 行 `X,Y,Z,RHO`）绝不入库，运行时登记 SHA-256 指纹（`04c5914d…`）；`preset_cli seed-resistivity` 唯一生产入口，合同校验 fail-closed；预置数据版本只读，官方正式选择用户不可改写。
+  - 电阻率从只读 `builtin_legacy` 迁移为统一 `builtin_preset` 散点预置（案例 ID `resistivity` 不变）：标准化 CSV（17,549 行 `X,Y,Z,RHO`）内置在 `example_data/地下电阻率节点_标准化.csv`（v0.8.0 第三批起；字节级 SHA-256 冻结合同 `04c5914d…`），运行时登记 SHA-256 指纹；`preset_cli seed-resistivity` 唯一生产入口，合同校验 fail-closed；预置数据版本只读，官方正式选择用户不可改写。
   - 官方基线冻结 `config/presets/resistivity-official-baseline.json`：winner `ordinary_kriging` exponential/neighbor=24（RMSE=6.454476、MAE=3.251899、R²=0.923093、Bias=-0.095026，公共有效集 17,547；生产 `spatial_kfold` 5 折 seed=20260723），网格 7×23×42 @20 m；IDW 与 DSI-like 候选只追溯不参与官方选择；遗留训练/验证分区（15,827/1,722 行、264/29 柱、零重叠）作为源溯源事实写入 profile。
   - 新算法 **DSI-like 离散平滑插值**：IDW 初始场 + 稀疏图拉普拉斯邻域平滑趋势层 + 原始观测坐标的 IDW 残差精确化层（参数 `init_power/neighbor_connectivity/smoothing_strength/max_iterations`，收敛容差 1e-4）；硬约束门要求全部训练坐标复算误差 ≤1e-8，稀疏求解耗尽预算未收敛则候选失败且不可物化；**不等同 GOCAD DSI**，页面如实展示免责声明，绝不回退为“看起来成功”的 IDW/点云。
   - 三算法（IDW/普通 Kriging/DSI-like）统一 `CandidateResult → materialize → NetCDF → RenderAsset` 链；首页卡（“标准化散点 · 17,549 个节点” + 字段行 X/Y/Z/RHO）、案例工作台、参数编辑器、成果页五模式渲染全复用统一组件。
   - 旧 S3M/legacy 退役：五个 legacy 渲染端点 410 `LEGACY_RESISTIVITY_RETIRED`；旧 legacy 电阻率卡、旧三维工作台页（`RhoCaseView`）与其专用面板/客户端函数全部移除；旧资产只读保留待单独清理任务；未 seed 运行库出预置描述卡（能力全 false）。
   - 测试基线（Task 10 后实测，本分支）：后端便携 `1584 passed`、前端 vitest `287 passed`、Mock E2E `19 passed`、type-check/build 干净；真实 SDK live 门证据见 `docs/evidence/v0.8.0-resistivity-dsi-like/`。
 - **v0.7.0 统一案例工作台 · 第一批（`feat/v0.7.0-unified-case-workspace` 分支，发布候选）**：
-  - 微震 **CSV 预置**案例：受控入库 `data/presets/microseismic/microseismic-vx-1911.csv`（LF 归一化字节 SHA-256 `ea3917c2…`，溯源原始文件 `微震局部三维点_3Sigma_去重均值_1911.csv`；1,911 行、XYZ 唯一、全有限、局部测线坐标、Vx=km/s），合同校验 fail-closed（`PRESET_SOURCE_INVALID`）。
+  - 微震 **CSV 预置**案例：受控 CSV 内置 `example_data/微震局部三维点_3Sigma_去重均值_1911.csv`（v0.8.0 第三批起默认源即原始标准化文件本身：纯 CRLF + UTF-8 BOM 字节 SHA-256 `4011de85…`；v0.7.0 时代 LF 归一化入库副本 `data/presets/microseismic/microseismic-vx-1911.csv`（`ea3917c2…`）已删除——同一逻辑数据，字节身份统一回原始形态；1,911 行、XYZ 唯一、全有限、局部测线坐标、Vx=km/s），合同校验 fail-closed（`PRESET_SOURCE_INVALID`）。
   - 官方**普通克里金**基线：`python -m geomodeling.preset_cli analyze-microseismic` 执行固定 27 成员候选矩阵（spherical/exponential/gaussian × 12/24/36 邻域 × z_scale 0.5/1/2，固定种子 20260723 空间 5 折，公共有效集 1,910/1,911）；评审冻结 `config/presets/microseismic-official-baseline.json`——winner `exponential/neighbor=12/z_scale=2.0`，RMSE=0.268062、MAE=0.212624、R²=0.844559、Bias=0.053333（z_scale 为距离实验参数，不代表已确认地质各向异性）；源/报告指纹不符或选择不可复算即 `PRESET_BASELINE_INVALID`，绝不覆盖既有成果。
   - `seed-microseismic`（唯一生产 seed 入口）经正常 `Case → DatasetVersion → Experiment → Run → CandidateResult → materialize → FormalSelection` 链登记官方成果：确定性 UUID5 身份、幂等复用、并发无双选择、失败补偿无半成品；官方成果按 v0.6.1 候选成果链显式创建 **NetCDF** 原生体渲染资产（网格 35×47×82=134,890 单元，变量 `Vx`，`display_anchor_only` 显示锚点，非真实地理配准）。
   - 统一案例工作台：电阻率（`builtin_legacy`）、微震预置（**`builtin_preset`**）、用户上传（`user_upload`）同一 `workspace_kind`/`capabilities`/primary_dataset/official_result DTO 与 `/#/cases/:caseId` 工作台壳；`/case/resistivity` 兼容重定向；首页全部由 DTO 驱动，无 case_id 分支。未 seed 时预置卡可见但能力全 false，工作台返回类型化 `PRESET_NOT_INITIALIZED`。
@@ -66,7 +73,7 @@
 - **v0.4.1 演示加固（`feat/v0.4.1-demo-hardening` 分支，发布候选）**：页面导航死路消除（PageNavigation，加载失败页同样可返回首页）；唯一权威演示数据 `demo/platform_demo_3d.csv`（SHA-256 固定）+ 下载端点；`geomodeling demo-check` 启动前检查（阻断/警告分级）；`scripts/start_demo.ps1` 安全启动脚本；真实 FastAPI+SQLite Live E2E（CI `browser-live`）；答辩运行手册 `docs/v0.4.1-demo-runbook.md`。
   - 候选测试基线（2026-07-25，本分支）：后端 `420 passed`、前端 vitest `43 passed`、Mock E2E `2 passed`、Live E2E `1 passed`、`local_data 23 passed`（哈希不变）。
   - 真实 Windows 彩排（2026-07-25，全新 `var/demo_v041`）：路线 A 全流程走通（IDW 与克里金各 1/1 成功，公共有效 144，导出 ZIP 七文件 1,331 行）；路线 B iServer 在线六级证据链全 `ok=True`（含 browser_report）；iServer 关闭后路线 B 如实降级、路线 A 不受影响；杀进程重启后案例/实验/成果全部恢复。截图与登记：`docs/evidence/v0.4.1/`。
-- 当前仓库瓦斯保持暂缓。
+- 瓦斯案例在 v0.7.0 及之前保持暂缓；v0.8.0 第三批起转为内置 `builtin_preset` 正式案例（见本节顶部条目）。
 - **v0.5 微震第二案例建模闭环（已发布，v0.5.0）**：2026-07-26 自 merge commit `d37eb94` 发布 annotated tag `v0.5.0`；微震从“外部派生”移入代码化。
   - 派生内核：22 个正式 DAT → 2,006 源记录（823/819/364）→ 2,005 有限（822/819/364，W8 `1.#QNAN0` 唯一无效）→ 已确认局部三维（W16 原点、X 沿 L3 向 W24、Y 沿 L2 向 W20、`local_engineering_m` 非 EPSG；`depth_m=WL/2(km)×1000` 向下为正、`z_local_m=-depth_m`；规则版本 `microseismic_local_3d_v0.2b_confirmed_2026-07-20`，适配器 0.5.0）→ 一次全局 3σ（样本标准差 `ddof=1`、两遍顺序累加）剔除 80（深度 72、速度 8）→ 1,925 候选（792/783/350）→ 三 float 完全相等分组、算术平均聚合（13 冲突组/27 组内记录/坍缩 14，组内最大极差 0.913554 km/s）→ 1,911 唯一建模节点。
   - 黄金门禁：accepted/rejected 两张 canonical CSV（UTF-8 BOM + CRLF）SHA-256 逐字节锁定（`4f7a0886…ae1513` / `3752b2f6…872b1`），计数、分层、剔除原因、冲突组一并核对；任一检查失败即阻断导入，`downstream_gates` 全部保持 blocked。
@@ -103,7 +110,7 @@
 |---|---|---|
 | 电阻率 | 已在iDesktopX复现完整体元、水平薄切片和阈值过滤；`WorkSpace.smwu` 已发布 iServer 三服务（人工 UI 步骤） | 垂直切片未正式验证；原生等值面失败；RHO单位和绝对EPSG未知；体元在三维服务中仅 ImageFileLayer，S3M 体渲染待缓存 |
 | 微震 | 人工派生表（1,925候选/80剔除）已转为 v0.5 黄金回归来源：代码从原始 DAT 重新生成并逐字节锁定哈希；iDesktopX 人工复现保留为来源证据 | 绝对地理配准仍未知，不得跨案例叠加；iServer 自动发布保持 `manual_required` |
-| 瓦斯 | 已生成58条合格三维候选样本（28个位置），三维点可在平面场景显示，并生成过IDW体元 | 体元加入三维场景会导致iDesktopX原生崩溃，当前暂缓作为正式演示案例 |
+| 瓦斯 | v0.8.0 第三批起已代码化为内置预置案例（58 行字节冻结合同 + 官方基线 + NetCDF 渲染链，见顶部条目）；仓库外人工派生表与 iDesktopX 体元实验仅作历史来源证据 | 历史外部表（`FAB47D99…`）与内置 example_data 合同是两套来源，不得混用；iDesktopX 崩溃证据不反推插值数值错误 |
 
 微震派生事实（现为黄金回归锁定口径）：
 
@@ -112,7 +119,7 @@
 - W8的`1.#QNAN0`在3σ之前已从2,006条源记录中排除，不填0、不插补；
 - 局部坐标、深度和单位规则见[微震文档](../data/microseismic.md)。
 
-瓦斯派生事实：
+瓦斯历史外部派生事实（v0.8.0 第三批之前的仓库外证据，仅来源追溯，与内置 example_data 合同无关）：
 
 - 当前工程坐标约定：西安1980、6°分带、第20带、中央经线117°，带号坐标按EPSG:2334工作；
 - 三维候选文件：`煤层瓦斯三维插值点_合格58.csv`，58条、28个位置；
@@ -143,7 +150,7 @@
 
 **v0.3 已打通该闭环**（运行证据见 [v0.3 运行说明](../v0.3-iserver-loop.md)）：iServer 启动与许可验证、`WorkSpace.smwu` 三服务发布、FastAPI 实时证据链接口、浏览器 iClient3D 三维场景与浏览器加载回执。遗留边界：体元真体渲染（S3M 缓存）、垂直切片 Web 验证、workspaces REST 程序化发布。
 
-完成纵向闭环后，再依次加入通用CSV/XLSX上传、字段映射、IDW/Kriging计算、手动调参、网格搜索和空间验证。微震是第二个正式案例；瓦斯保留接口和数据证据，待平台主干完成后再处理体元兼容问题。
+完成纵向闭环后，再依次加入通用CSV/XLSX上传、字段映射、IDW/Kriging计算、手动调参、网格搜索和空间验证。微震是第二个正式案例；瓦斯为第三个正式案例，已随 v0.8.0 第三批接入内置预置链（历史 iDesktopX 体元兼容问题仅属仓库外证据，不再阻塞）。
 
 ## 6. 明确未实现
 
@@ -151,7 +158,7 @@
 - 通用CSV/XLSX上传的字段映射外扩展与数据版本管理；
 - 微震绝对地理配准与跨案例空间叠加（需共同控制点证据）；
 - iServer 程序化发布（REST workspaces POST，ISSUE-V03-01）、S3M 体元缓存发布与体渲染、垂直切片 Web 验证；
-- 瓦斯体元稳定显示、原生等值面、真实 GOCAD DSI 后端（v0.8.0 的 DSI-like 为工程近似，不宣称等同 GOCAD DSI）；
+- 仓库外 iDesktopX 瓦斯体元稳定显示（历史崩溃问题；平台内浏览器 NetCDF 体渲染已由 v0.8.0 第三批承载）、原生等值面、真实 GOCAD DSI 后端（v0.8.0 的 DSI-like 为工程近似，不宣称等同 GOCAD DSI）；
 - 自动成矿概率、储量或地质结论。
 
 ## 7. 给开发 Agent 的判定规则

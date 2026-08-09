@@ -1,0 +1,86 @@
+{
+  "schema": "v0.8.0-gas-official-baseline/v1",
+  "preset_version": "gas-ch4-58/v1",
+  "source_sha256": "f7d6f03d280dd0d6db45e5e6a09b47747cc4831669e4163a63b791f913a4f09d",
+  "standardized_rows": 58,
+  "candidate_report_sha256": "b364acd8480d972b99e8d628e69cf2dcf14cdac74e316a4c4ff0a6b18a2f3d85",
+  "validation": {
+    "folds": 5,
+    "method": "spatial_kfold",
+    "seed": 20260723
+  },
+  "selection_rule": [
+    "rmse_asc",
+    "mae_asc",
+    "r2_desc",
+    "canonical_params_asc"
+  ],
+  "winner": {
+    "algorithm": "ordinary_kriging",
+    "parameters": {
+      "neighbor_count": 24,
+      "variogram_model": "spherical"
+    },
+    "metrics": {
+      "bias": -0.06861830980794803,
+      "common_valid_count": 58,
+      "coverage": 1.0,
+      "mae": 6.5520999158389035,
+      "r2": -0.1096587550635868,
+      "rmse": 8.298439144388727
+    }
+  },
+  "grid": {
+    "bounds": [
+      [
+        1023.802,
+        4016.788
+      ],
+      [
+        1049.716,
+        7688.731
+      ],
+      [
+        121.0375,
+        175.656
+      ]
+    ],
+    "resolution": [
+      20.0,
+      20.0,
+      5.0
+    ],
+    "max_cells": 1000000
+  },
+  "dsi_like": {
+    "status": "evaluated",
+    "reason": null,
+    "parameters": {
+      "convergence_tolerance": 0.0001,
+      "hard_constraints": true,
+      "init_power": 2.0,
+      "max_iterations": 25,
+      "neighbor_connectivity": 6,
+      "smoothing_strength": 0.5
+    },
+    "metrics": {
+      "bias": -0.2833050337068254,
+      "common_valid_count": 46,
+      "coverage": 0.7931034482758621,
+      "mae": 6.402848370602302,
+      "r2": -0.3403039722844996,
+      "rmse": 7.991884253301628
+    },
+    "materialization": {
+      "finite_node_count": 603396,
+      "grid_shape": [
+        151,
+        333,
+        12
+      ],
+      "node_count": 603396,
+      "outside_nodata": true
+    }
+  },
+  "selection_reason": "2026-08-09 真实内置源（58 行、28 个 XY 柱）复算冻结：13 候选（IDW 9 + 普通克里金 4）在空间 5 折（spatial_kfold，seed 20260723，3D 整 XY 柱分组；逐折验证行数 [12, 11, 11, 13, 11]，总和 58）逐折仅训练拟合，公共有效集 58 点复算指标；按 SELECTION_RULE（rmse→mae→r2→规范化参数）winner 为 ordinary_kriging {variogram_model: spherical, neighbor_count: 24}（rmse 8.298439、mae 6.552100、r2 -0.109659、bias -0.068618；58 点稀疏采样下 r2 为负，如实呈现为解释性估计）。DSI-like 默认参数对照候选四道条件门全过（evaluated：交叉验证公共有效 46/58、coverage 0.793103、指标有限，官方网格 151×333×12=603,396 节点物化全有限、包围盒外恒 NoData）；其 rmse 7.991884 低于 winner 但指标口径为 46 点有效子集，且 winner ∈ {idw, ordinary_kriging} 合同已锁——DSI-like 仅作对照，绝不参与官方选择。"
+}

@@ -1,9 +1,14 @@
 """v0.7.0 Batch 1：微震速度 CSV 预置源合同。
 
-受控 CSV（``data/presets/microseismic/microseismic-vx-1911.csv``）是用户指定
-标准化文件的原字节拷贝：9 列表头含 SAMPLE_IDS/POINT_ID/LINE_ID/N_MERGED
-溯源列与 DEPTH_M 参照列；建模只使用 4 个建模列
-``X_LOCAL_M/Y_LOCAL_M/Z_LOCAL_M/VX_KM_S``（Vx 单位恒为 km/s，绝不静默换算）。
+受控 CSV 内置在仓库 ``example_data/微震局部三维点_3Sigma_去重均值_1911.csv``
+（v0.8.0 第三批起默认源统一解析到项目内 ``example_data/``；字节级冻结合同见
+tests/test_example_data_contract.py）。该文件即用户指定标准化文件本身
+（纯 CRLF + UTF-8 BOM 形态，``example_data/*.csv`` 关闭 EOL 归一化）：
+9 列表头含 SAMPLE_IDS/POINT_ID/LINE_ID/N_MERGED 溯源列与 DEPTH_M 参照列；
+建模只使用 4 个建模列 ``X_LOCAL_M/Y_LOCAL_M/Z_LOCAL_M/VX_KM_S``
+（Vx 单位恒为 km/s，绝不静默换算）。v0.7.0 时代的 LF 归一化入库副本
+（``data/presets/microseismic/microseismic-vx-1911.csv``）已随默认源切换
+删除——同一逻辑数据，字节身份统一回原始 CRLF+BOM 形态。
 
 加载器 fail-closed：完整表头、1911 行、全部数值列有限、XYZ 唯一；任何
 不匹配抛出 ``PRESET_SOURCE_INVALID``。本模块绝不向公共层返回本机源路径。
@@ -23,6 +28,7 @@ from geomodeling.platform.errors import (
     PRESET_SOURCE_INVALID,
     PlatformError,
 )
+from geomodeling.platform.settings import example_data_path
 
 PRESET_CASE_ID = "builtin-microseismic-vx-1911"
 PRESET_VERSION = "microseismic-vx-1911/v1"
@@ -48,18 +54,24 @@ _NUMERIC_COLUMNS = ("X_LOCAL_M", "Y_LOCAL_M", "DEPTH_M", "Z_LOCAL_M", "VX_KM_S",
 
 EXPECTED_ROW_COUNT = 1911
 
-DEFAULT_PRESET_CSV = Path("data/presets/microseismic/microseismic-vx-1911.csv")
+#: 内置默认源（v0.8.0 第三批：项目内 example_data/ 字节冻结合同；
+#: 解析器拒绝目录穿越，缺失即 PRESET_SOURCE_INVALID）
+DEFAULT_PRESET_CSV = example_data_path("微震局部三维点_3Sigma_去重均值_1911.csv")
 
-#: 入库受控字节身份（.gitattributes `*.csv text eol=lf` 归一化后的 LF 形态；
-#: 与仓库既有黄金 CSV 合同同一口径，任何平台检出字节一致）
-TRACKED_CSV_SHA256 = "ea3917c2ee228953f39122fc52b864d802de9c9835f07a57c4c88585a501e510"
-TRACKED_CSV_BYTES = 108_938
+#: 内置受控字节身份：原始标准化文件本身（纯 CRLF + UTF-8 BOM 形态，
+#: ``example_data/*.csv -text`` 关闭 EOL 归一化，任何平台检出字节一致）。
+#: 身份迁移注记：v0.7.0 时代入库副本为 .gitattributes 归一化后的 LF 形态
+#: （sha256 ea3917c2…、108,938 字节），逐行数据与本文件相同；v0.8.0 第三批
+#: 删除该副本，字节身份统一回原始 CRLF+BOM 形态（同一逻辑数据）。
+TRACKED_CSV_SHA256 = "4011de85e1fa7e49999fc5ae66a73e00a59dbec372a417ae0728d0a338c7765e"
+TRACKED_CSV_BYTES = 110_850
 
-#: 溯源：用户指定原始标准化文件的身份（原始 CRLF 字节形态；仅作审计记录，
-#: 运行时绝不读取该路径）
+#: 溯源审计常量：用户指定原始标准化文件的身份。v0.8.0 第三批起该文件本身
+#: 即内置默认源，故 ORIGINAL_SOURCE_* 与 TRACKED_CSV_* 同值（保留本组常量
+#: 仅为审计可读性与既有断言语义；新代码请直接使用 TRACKED_CSV_*）。
 ORIGINAL_SOURCE_NAME = "微震局部三维点_3Sigma_去重均值_1911.csv"
-ORIGINAL_SOURCE_SHA256 = "4011de85e1fa7e49999fc5ae66a73e00a59dbec372a417ae0728d0a338c7765e"
-ORIGINAL_SOURCE_BYTES = 110_850
+ORIGINAL_SOURCE_SHA256 = TRACKED_CSV_SHA256
+ORIGINAL_SOURCE_BYTES = TRACKED_CSV_BYTES
 
 
 def _sha256(path: Path) -> str:

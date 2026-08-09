@@ -23,16 +23,15 @@ import {
  * 消息双向静默丢弃 → 永久黑屏。修复：iframe URL 携带帧运行时内容哈希
  *（?v=）与 SDK 钉住哈希（?sdk=），升级即换 URL。
  *
- * 真实链路：隔离 GEOMODELING_DATA_DIR → preset_cli seed-resistivity --source
- * $GEOMODELING_RHO_SOURCE（外部私有 17,549 行标准化 CSV，绝不入库，官方基线
- * 默认读受控路径 config/presets/resistivity-official-baseline.json）→ 自管
+ * 真实链路：隔离 GEOMODELING_DATA_DIR → preset_cli seed-resistivity（v0.8.0
+ * 第三批起 --source 缺省为项目内 example_data/地下电阻率节点_标准化.csv
+ * 字节冻结内置源，无外部私有源依赖，无需任何环境变量；官方基线默认读受控
+ * 路径 config/presets/resistivity-official-baseline.json）→ 自管
  * uvicorn → GET /api/cases/resistivity/workspace 取官方成果 → 显式 POST
  * /api/results/<官方候选>/render-assets/netcdf（201 首建/200 幂等）→ 成果
  * 工作台页（/#/results/<id>）真实渲染。
  *
- * 跳过门（与 resistivity-scattered-live 对齐）：GEOMODELING_RHO_SOURCE 未设置
- * 时整文件 test.skip —— CI browser-live 无私有源，必须干净跳过并输出原因。
- * GEOMODELING_DATA_DIR 缺失（且未跳过）时 beforeAll 直接失败，不静默跳过。
+ * GEOMODELING_DATA_DIR 缺失时 beforeAll 直接失败，不静默跳过。
  *
  * 本规格在同一持久化 profile 上覆盖四种缓存场景（真实 RTX GPU）：
  *   1. fresh context：全新 profile 首访；
@@ -54,13 +53,6 @@ import {
  * 证据写入 docs/evidence/v0.8.0-resistivity-dsi-like/<run-id>-warm-cache/
  * （仅真实运行时创建；提交前按目录 README 扫描绝对路径/凭据/私有源内容）。
  */
-
-const RHO_SOURCE = process.env.GEOMODELING_RHO_SOURCE ?? ''
-test.skip(
-  !RHO_SOURCE,
-  'GEOMODELING_RHO_SOURCE 未设置：电阻率标准化散点 CSV 是外部私有源，' +
-    'CI browser-live 无此数据，本规格干净跳过；本机发布门请显式设置后运行',
-)
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = path.resolve(HERE, '../..')
@@ -206,15 +198,7 @@ test.describe('v0.8.0：电阻率散点预置四缓存场景真实 GPU 门', () 
     // 预置 seed（唯一生产入口；幂等；外部私有源经 --source 显式传入，绝不入库）
     const stdout = execFileSync(
       process.env.PYTHON ?? 'python',
-      [
-        '-m',
-        'geomodeling.preset_cli',
-        'seed-resistivity',
-        '--source',
-        RHO_SOURCE,
-        '--data-dir',
-        dataDir,
-      ],
+      ['-m', 'geomodeling.preset_cli', 'seed-resistivity', '--data-dir', dataDir],
       {
         cwd: REPO_ROOT,
         encoding: 'utf8',

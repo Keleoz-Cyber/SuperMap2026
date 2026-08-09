@@ -54,7 +54,24 @@ export const MODULE_LABELS: Record<string, string> = {
   gradient: '速度梯度',
   spatial_anomaly: '空间异常',
   depth_slices: '深度切片',
-  threshold_zones: '阈值分区',
+}
+
+/** 瓦斯 profile 差异化模块标签（v0.8.0 第三批 Task 8）；未列出的模块沿用
+ *  ``MODULE_LABELS``。措辞只含可计算表述，绝无「危险/安全」规范判断词 */
+export const GAS_MODULE_LABELS: Record<string, string> = {
+  distribution: '含量分布',
+  depth_slices: '深度分层',
+  spatial_anomaly: '含量区域',
+  gradient: '含量梯度',
+}
+
+/** 模块标签解析：gas_content 用差异化措辞，其余 profile 沿用通用标签 */
+export function moduleLabel(profile: string, moduleId: string): string {
+  if (profile === 'gas_content') {
+    const label = GAS_MODULE_LABELS[moduleId]
+    if (label) return label
+  }
+  return MODULE_LABELS[moduleId] ?? moduleId
 }
 
 const numberFormatter = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 3 })

@@ -300,8 +300,8 @@ def test_seed_resistivity_creates_read_only_preset_chain(runtime, source_path: P
         assert mapping["value"] == "RHO"
         assert mapping["value_name"] == "RHO"
         assert mapping["coordinate_kind"] == "local_linear"
-        # RHO 单位待来源确认：诚实表述，绝不写未确认单位
-        assert mapping["value_unit"] == "RHO 单位待来源确认"
+        # RHO 单位已确认为 Ω·m（v0.8.0 第三批用户权威确认）
+        assert mapping["value_unit"] == "Ω·m"
         # 设计 §2：分区溯源事实（计数 + 指纹）写入数据版本 profile
         partition = profile["partition"]
         assert partition["training_rows"] == 15_827
@@ -341,7 +341,7 @@ def test_seed_resistivity_creates_read_only_preset_chain(runtime, source_path: P
     # v0.8.0 Task 10：data_form 与描述卡统一为设计 §5 口径，并写 fields 键
     assert config["data_form"] == "标准化散点 · 17,549 个节点"
     assert config["fields"] == ["X", "Y", "Z", "RHO"]
-    assert config["value_unit"] == "RHO 单位待来源确认"
+    assert config["value_unit"] == "Ω·m"
     assert config["coordinate_kind"] == "local_linear"
     assert config["badge"] == "散点预置 · 官方普通克里金成果"
 
@@ -616,7 +616,7 @@ def test_seeded_resistivity_appears_once_as_builtin_preset_card(seeded_client):
     assert provenance["preset_version"] == PRESET_VERSION
     assert provenance["data_form"] == "标准化散点 · 17,549 个节点"
     assert provenance["fields"] == ["X", "Y", "Z", "RHO"]
-    assert provenance["value_unit"] == "RHO 单位待来源确认"
+    assert provenance["value_unit"] == "Ω·m"
     assert provenance["coordinate_kind"] == "local_linear"
     assert provenance["badge"] == "散点预置 · 官方普通克里金成果"
 
@@ -647,7 +647,7 @@ def test_unseeded_runtime_shows_resistivity_preset_descriptor_card(fresh_client)
     assert provenance["data_form"] == "标准化散点 · 17,549 个节点"
     assert provenance["fields"] == ["X", "Y", "Z", "RHO"]
     assert provenance["coordinate_kind"] == "local_linear"
-    assert provenance["value_unit"] == "RHO 单位待来源确认"
+    assert provenance["value_unit"] == "Ω·m"
     serialized = json.dumps(card, ensure_ascii=False)
     assert "S3M" not in serialized
     assert ":\\" not in serialized
@@ -705,7 +705,7 @@ def test_resistivity_workspace_is_builtin_preset(seeded_client):
     assert provenance["preset_version"] == PRESET_VERSION
     assert provenance["data_form"] == "标准化散点 · 17,549 个节点"
     assert provenance["fields"] == ["X", "Y", "Z", "RHO"]
-    assert provenance["value_unit"] == "RHO 单位待来源确认"
+    assert provenance["value_unit"] == "Ω·m"
     assert provenance["coordinate_kind"] == "local_linear"
     assert provenance["badge"] == "散点预置 · 官方普通克里金成果"
     # 不再落回 legacy 卡字段

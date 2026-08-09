@@ -35,7 +35,7 @@ test.describe('v0.8.0 电阻率散点预置与 DSI-like（mock API）', () => {
     await expect(card).toContainText('标准化散点 · 17,549 个节点')
     await expect(card).toContainText('散点预置 · 官方普通克里金成果')
     await expect(card).toContainText('X/Y/Z/RHO')
-    await expect(card).toContainText('RHO 单位待来源确认')
+    await expect(card).toContainText('Ω·m')
     await expect(card).not.toContainText('S3M')
     await expect(card).not.toContainText('DAT')
     await expect(card).not.toContainText('legacy')

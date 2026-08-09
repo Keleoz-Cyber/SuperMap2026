@@ -78,6 +78,10 @@ from geomodeling.platform.legacy_adapter import (
     workspace_case_card,
 )
 from geomodeling.platform.microseismic_preset import PRESET_CASE_ID, PRESET_VERSION
+from geomodeling.platform.gas_preset import (
+    PRESET_CASE_ID as GAS_PRESET_CASE_ID,
+    PRESET_VERSION as GAS_PRESET_VERSION,
+)
 from geomodeling.platform.resistivity_preset import (
     PRESET_CASE_ID as RESISTIVITY_PRESET_CASE_ID,
     PRESET_VERSION as RESISTIVITY_PRESET_VERSION,
@@ -215,7 +219,8 @@ def create_app() -> FastAPI:
         未知案例 404；响应只含相对链接与脱敏元数据。
         v0.8.0 Task 6：电阻率由 ``builtin_preset`` 预置唯一承载——非预置的
         同 id 持久化行（如剖面导出 FK 支撑行）不再落回 legacy 工作台，按
-        未初始化处理。
+        未初始化处理。v0.8.0 第三批 Task 4：瓦斯同口径（最后一张 legacy 卡
+        退役，工作台不再落回 builtin_legacy 卡字段）。
         """
 
         for card in legacy_case_cards():
@@ -236,10 +241,10 @@ def create_app() -> FastAPI:
                 if record is not None:
                     config = record.config if isinstance(record.config, dict) else {}
                     if (
-                        case_id == RESISTIVITY_PRESET_CASE_ID
+                        case_id in (RESISTIVITY_PRESET_CASE_ID, GAS_PRESET_CASE_ID)
                         and config.get("workspace_kind") != PRESET_WORKSPACE_KIND
                     ):
-                        # 非预置的 resistivity 行不是工作台来源：按未初始化处理
+                        # 非预置的 resistivity/gas 行不是工作台来源：按未初始化处理
                         record = None
                 if record is not None:
                     featured = featured_result_for_case(session, record.id)
@@ -322,6 +327,13 @@ def create_app() -> FastAPI:
                 PRESET_NOT_INITIALIZED,
                 "电阻率预置案例尚未初始化：需由维护者执行文档化 seed 命令",
                 {"preset_version": RESISTIVITY_PRESET_VERSION},
+                http_status=409,
+            )
+        if case_id == GAS_PRESET_CASE_ID:
+            raise PlatformError(
+                PRESET_NOT_INITIALIZED,
+                "瓦斯预置案例尚未初始化：需由维护者执行文档化 seed 命令",
+                {"preset_version": GAS_PRESET_VERSION},
                 http_status=409,
             )
         raise PlatformError(CASE_NOT_FOUND, "案例不存在", {"case_id": case_id}, http_status=404)

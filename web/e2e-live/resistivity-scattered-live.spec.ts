@@ -17,8 +17,9 @@ import {
  * v0.8.0 Task 9：电阻率标准化散点预置 + DSI-like 的真实 SDK live 门（协议 v2）。
  *
  * 真实链路：全新隔离 GEOMODELING_DATA_DIR → preset_cli seed-resistivity
- * --source $GEOMODELING_RHO_SOURCE（外部私有 17,549 行标准化 CSV，绝不入库，
- * 官方基线默认读受控路径 config/presets/resistivity-official-baseline.json）→
+ * （v0.8.0 第三批起：--source 缺省为项目内 example_data/地下电阻率节点_
+ * 标准化.csv 字节冻结内置源，无外部私有源依赖，无需任何环境变量；官方
+ * 基线默认读受控路径 config/presets/resistivity-official-baseline.json）→
  * API 身份链（workspace/能力/官方成果）→ 旧 legacy/S3M 入口 410 退役确认 →
  * 产品页统一工作台 → 页内新建 DSI-like 用户实验（免责声明可见）→ 真实运行
  * 到成功候选 → 成果页显式 POST 资产 → SuperMap3D iframe rendered →
@@ -26,21 +27,11 @@ import {
  * 中央区域像素判据，黑屏/旧 app.js/仅 Logo/背景单色/协议超时一律判失败）→
  * 普通刷新场景 → 协议/网络/控制台错误门。
  *
- * 跳过门（与 CI browser-live 对齐）：GEOMODELING_RHO_SOURCE 未设置时整个文件
- * test.skip —— CI 无该私有数据，必须干净跳过并输出原因；本机发布门需显式
- * 提供该变量指向真实外部 CSV。GEOMODELING_DATA_DIR 缺失（且未跳过）时
- * beforeAll 直接失败，不静默跳过。
+ * GEOMODELING_DATA_DIR 缺失时 beforeAll 直接失败，不静默跳过。
  *
  * 证据写入 docs/evidence/v0.8.0-resistivity-dsi-like/<run-id>/（仅真实运行
  * 时创建；提交前按目录 README 扫描绝对路径/凭据/私有源内容）。
  */
-
-const RHO_SOURCE = process.env.GEOMODELING_RHO_SOURCE ?? ''
-test.skip(
-  !RHO_SOURCE,
-  'GEOMODELING_RHO_SOURCE 未设置：电阻率标准化散点 CSV 是外部私有源，' +
-    'CI browser-live 无此数据，本规格干净跳过；本机发布门请显式设置后运行',
-)
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = path.resolve(HERE, '../..')
@@ -165,18 +156,10 @@ test.describe('v0.8.0：电阻率散点预置 + DSI-like 真实 SDK live 门', (
 
   test.beforeAll(() => {
     const dataDir = assertIsolatedDataDir()
-    // 预置 seed（唯一生产入口；幂等；外部私有源经 --source 显式传入，绝不入库）
+    // 预置 seed（唯一生产入口；幂等；--source 缺省为项目内 example_data 内置源）
     const stdout = execFileSync(
       process.env.PYTHON ?? 'python',
-      [
-        '-m',
-        'geomodeling.preset_cli',
-        'seed-resistivity',
-        '--source',
-        RHO_SOURCE,
-        '--data-dir',
-        dataDir,
-      ],
+      ['-m', 'geomodeling.preset_cli', 'seed-resistivity', '--data-dir', dataDir],
       { cwd: REPO_ROOT, encoding: 'utf8', timeout: 600_000 },
     )
     const seeded = JSON.parse(stdout.trim().split('\n').pop()!)
@@ -576,7 +559,7 @@ test.describe('v0.8.0：电阻率散点预置 + DSI-like 真实 SDK live 门', (
       platform: `${process.platform}/${process.arch}`,
       node: process.version,
       seed_command:
-        'python -m geomodeling.preset_cli seed-resistivity --source <GEOMODELING_RHO_SOURCE> --data-dir <isolated>',
+        'python -m geomodeling.preset_cli seed-resistivity --data-dir <isolated>（example_data 内置源）',
     })
     writeEvidenceJson('identity.json', {
       resistivity: record.identity,

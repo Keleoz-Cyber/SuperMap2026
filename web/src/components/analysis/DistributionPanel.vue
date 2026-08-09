@@ -12,6 +12,7 @@ import { distributionBinsOf, formatNumber, log10DistributionOf } from './analysi
 // 数/值域/峰值分箱）；disabled/error/空分箱一律解释性空状态，绝不渲染空
 // 图表。Task 6：电阻率 profile 携带 log10 载荷时切换为对数尺度分箱
 // （仅严格正值，排除计数显式提示）；无 log10 载荷回退原始分箱并说明。
+// v0.8.0 第三批 Task 8：瓦斯 profile 差异化标题「含量分布」（单位 ml/g）。
 // 卸载必须 dispose。
 
 echartsUse([BarChart, GridComponent, TooltipComponent, CanvasRenderer])
@@ -23,6 +24,10 @@ const props = defineProps<{
 }>()
 
 const bins = computed(() => distributionBinsOf(props.module))
+// 差异化标题：瓦斯为「含量分布」，其余 profile 沿用通用「属性值分布」
+const panelTitle = computed(() =>
+  props.profile === 'gas_content' ? '含量分布' : '属性值分布',
+)
 const log10 = computed(() =>
   props.profile === 'resistivity' ? log10DistributionOf(props.module) : null,
 )
@@ -141,7 +146,7 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="panel distribution-panel" data-test="distribution-panel">
-    <h3>属性值分布</h3>
+    <h3>{{ panelTitle }}</h3>
     <p v-if="logNote" class="log-note" data-test="distribution-log-note">{{ logNote }}</p>
     <template v-if="usable">
       <div ref="host" class="chart" data-test="distribution-chart" />

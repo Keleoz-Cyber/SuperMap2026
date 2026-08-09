@@ -1,0 +1,206 @@
+{
+  "run_id": "run-20260809T105947Z-1ec84dab",
+  "git_commit": "05c4a420b4e186e8e25afcf6a6fcf500e0ca361f",
+  "sdk_sha256": "d69dadab01fc452a79f1fa88a46aced3cf29885df7bf4febbd6f24ce5b578120",
+  "sdk_version": "12.1.0",
+  "browser": {
+    "name": "chromium",
+    "version": "149.0.7827.55"
+  },
+  "gpu_renderer": "ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 4070 Laptop GPU/PCIe/SSE2, OpenGL 4.5.0)",
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "device_pixel_ratio": 1,
+  "results": {
+    "32": {
+      "candidate_id": "ff940ffc-078f-524f-bdba-b453b4cb84ca",
+      "case_id": "3da11535-5cc0-5a73-8628-be8ac2e2c924",
+      "dataset_version_id": "b642a68b-d144-5ce6-8a2c-deb23bec7261",
+      "experiment_id": "1f2c03f1-0072-5b34-810a-f9f9649a0b7a",
+      "run_id": "a55b1d58-e8ef-59b2-b99b-eb2d0d5e02af",
+      "grid_sha256": "172fb54decffa0e31c4460c20c9747e70a34e3321b6cd80c40125bc2b319aa8c",
+      "netcdf_sha256": "f5dbef652ec0a73d7333091cdd7967b9ef0d182a134d4121fc4c170955239492",
+      "asset_id": "nc-7cf00c6de12028fd870bcf32745e4d00"
+    },
+    "64": {
+      "candidate_id": "223806eb-5cc2-5ca3-aa13-212e4aaab31c",
+      "case_id": "48a2390c-3959-516f-998d-f0ce5a3b9650",
+      "dataset_version_id": "c1ebf14f-dc15-58ad-9676-a0bbda74ecf4",
+      "experiment_id": "69ce5d69-54e1-5c4f-8681-66b59552dfcb",
+      "run_id": "e85d76ac-f247-5b62-85f3-5a660eb7f1d3",
+      "grid_sha256": "f2f0d4dad8f10a0de22cabc11b7e3f361918f54e06ada8d9d9cdc4be873bbb03",
+      "netcdf_sha256": "17dc705f601dd32380e780638cc2ce979d7df48541352bdb0bba62bd8c13be62",
+      "asset_id": "nc-0c13c6b5176878ed2f83fcb1d68c8b2e"
+    }
+  },
+  "per_size": {
+    "32": {
+      "noise_diff": 0,
+      "pixel_threshold": 200,
+      "base_metrics": {
+        "nonBg": 138593,
+        "total": 153468,
+        "coverage": 0.9030742565225324,
+        "colorStd": 61.87,
+        "largestComponent": 137807,
+        "componentRatio": 0.9943287179006155
+      },
+      "geometry": {
+        "spansMetres": [
+          499.9999999988934,
+          500.00000000006156,
+          500
+        ],
+        "cameraSpanMetres": 500.00000000006156,
+        "invariantAcrossModes": true
+      },
+      "slice_mode_metrics": {
+        "nonBg": 96780,
+        "total": 153468,
+        "coverage": 0.6306200641176011,
+        "colorStd": 52.14,
+        "largestComponent": 96695,
+        "componentRatio": 0.9991217193635048
+      },
+      "contour_metrics": {
+        "nonBg": 28426,
+        "total": 153468,
+        "coverage": 0.18522428128339458,
+        "colorStd": 67.49,
+        "largestComponent": 28340,
+        "componentRatio": 0.9969746007176529
+      },
+      "control_diffs": {
+        "contour": 118837,
+        "palette-turbo": 204463,
+        "filter": 205815,
+        "opacity": 78268,
+        "lighting-off": 69537,
+        "gradient-off": 96182,
+        "bounding-box-off": 8113
+      },
+      "slice_gates": {
+        "x": {
+          "quarterIndex": 7,
+          "threeQuarterIndex": 23,
+          "quarterNonBg": 36313,
+          "quarterCoverage": 0.23661610237964917,
+          "quarterColorStd": 69.98,
+          "diff": 96126
+        },
+        "y": {
+          "quarterIndex": 7,
+          "threeQuarterIndex": 23,
+          "quarterNonBg": 61720,
+          "quarterCoverage": 0.402168530247348,
+          "quarterColorStd": 54.93,
+          "diff": 119770
+        },
+        "z": {
+          "quarterIndex": 7,
+          "threeQuarterIndex": 23,
+          "quarterNonBg": 75726,
+          "quarterCoverage": 0.493431855500821,
+          "quarterColorStd": 54.76,
+          "diff": 102020
+        }
+      },
+      "stats_invariant": true,
+      "unsettled_commands": [],
+      "gates": {
+        "base_non_bg_min": 2000,
+        "mode_non_bg_min": 500,
+        "coverage_min": "volume 0.15 / modes 0.03（中央区域，去 Logo/罗盘）",
+        "color_std_min": 5,
+        "component_ratio_min": 0.9,
+        "response_over_noise": "max(200, noise*3+50)",
+        "control_over_noise": "max(80, noise*2+20)"
+      }
+    },
+    "64": {
+      "noise_diff": 0,
+      "pixel_threshold": 200,
+      "base_metrics": {
+        "nonBg": 139995,
+        "total": 153468,
+        "coverage": 0.9122097114707952,
+        "colorStd": 52.72,
+        "largestComponent": 139181,
+        "componentRatio": 0.9941855066252366
+      },
+      "geometry": {
+        "spansMetres": [
+          499.9999999988934,
+          500.00000000006156,
+          500
+        ],
+        "cameraSpanMetres": 500.00000000006156,
+        "invariantAcrossModes": true
+      },
+      "slice_mode_metrics": {
+        "nonBg": 97356,
+        "total": 153468,
+        "coverage": 0.6343732895457034,
+        "colorStd": 45.15,
+        "largestComponent": 97271,
+        "componentRatio": 0.9991269156497802
+      },
+      "contour_metrics": {
+        "nonBg": 29020,
+        "total": 153468,
+        "coverage": 0.18909479500612505,
+        "colorStd": 67.09,
+        "largestComponent": 28932,
+        "componentRatio": 0.9969676085458304
+      },
+      "control_diffs": {
+        "contour": 118865,
+        "palette-turbo": 210755,
+        "filter": 211293,
+        "opacity": 87502,
+        "lighting-off": 81946,
+        "gradient-off": 101999,
+        "bounding-box-off": 8068
+      },
+      "slice_gates": {
+        "x": {
+          "quarterIndex": 15,
+          "threeQuarterIndex": 47,
+          "quarterNonBg": 36961,
+          "quarterCoverage": 0.24083848098626423,
+          "quarterColorStd": 67.88,
+          "diff": 96809
+        },
+        "y": {
+          "quarterIndex": 15,
+          "threeQuarterIndex": 47,
+          "quarterNonBg": 62361,
+          "quarterCoverage": 0.4063452967393854,
+          "quarterColorStd": 52.07,
+          "diff": 118599
+        },
+        "z": {
+          "quarterIndex": 15,
+          "threeQuarterIndex": 47,
+          "quarterNonBg": 76752,
+          "quarterCoverage": 0.5001172882946282,
+          "quarterColorStd": 48.34,
+          "diff": 98984
+        }
+      },
+      "stats_invariant": true,
+      "unsettled_commands": [],
+      "gates": {
+        "base_non_bg_min": 2000,
+        "mode_non_bg_min": 500,
+        "coverage_min": "volume 0.15 / modes 0.03（中央区域，去 Logo/罗盘）",
+        "color_std_min": 5,
+        "component_ratio_min": 0.9,
+        "response_over_noise": "max(200, noise*3+50)",
+        "control_over_noise": "max(80, noise*2+20)"
+      }
+    }
+  }
+}

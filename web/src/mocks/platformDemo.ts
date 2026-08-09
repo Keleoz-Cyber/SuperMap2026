@@ -368,7 +368,8 @@ const RHO_GRID_BOUNDS = [
   [-833.0047143, -19.5999],
 ]
 const RHO_GRID_RESOLUTION = [20, 20, 20]
-const RHO_UNIT_NOTE = 'RHO 单位待来源确认'
+// RHO 单位：Ω·m（v0.8.0 第三批用户权威确认，此前为“待来源确认”占位）
+const RHO_VALUE_UNIT = 'Ω·m'
 const RHO_MAPPING = {
   dimension: '3d',
   x: 'X',
@@ -376,7 +377,7 @@ const RHO_MAPPING = {
   z: 'Z',
   value: 'RHO',
   value_name: 'RHO',
-  value_unit: RHO_UNIT_NOTE,
+  value_unit: RHO_VALUE_UNIT,
   coordinate_kind: 'local_linear',
 }
 const RHO_DATASET_PROFILE = {
@@ -393,7 +394,7 @@ const RHO_PROVENANCE = {
   badge: '散点预置 · 官方普通克里金成果',
   data_form: '标准化散点 · 17,549 个节点',
   fields: ['X', 'Y', 'Z', 'RHO'],
-  value_unit: RHO_UNIT_NOTE,
+  value_unit: RHO_VALUE_UNIT,
   coordinate_kind: 'local_linear',
 }
 // DSI-like 合同默认参数（与后端 DSIParameters 默认值逐位一致）
@@ -407,16 +408,82 @@ const RHO_DSI_PARAMETERS = {
 }
 const RHO_VALIDATION = { method: 'spatial_kfold', folds: 5, seed: 20260723, holdout_fraction: 0.2 }
 
+// ---------------------------------------------------------------- v0.8.0 第三批：瓦斯散点预置
+// 预置形态（58 行/字段/网格/值域）来自入库公开合同（config/presets/gas.json
+// 与 gas-official-baseline.json 的已核验事实：X/Y/Z/CH4_content、ml/g、
+// 局部线性米制坐标、官方网格 151×333×12、CH4_content∈[0.05, 34.3]、
+// winner ordinary_kriging spherical/24 及其空间 5 折指标）；统计/分布等
+// 分析数值为本文件按固定算术公式生成的确定性演示合成口径（无随机源），
+// 只驱动浏览器流程，绝不冒充真实计算结果或私有证据。
+const GAS_SHA = 'f0'.repeat(32)
+const GAS_GRID_SHA = 'f1'.repeat(32)
+const GAS_NC_SHA = 'f2'.repeat(32)
+const GAS_DATASET_ID = 'ds-gas'
+const GAS_OFFICIAL_EXPERIMENT_ID = 'exp-gas-official'
+const GAS_OFFICIAL_RUN_ID = 'run-gas-official'
+const GAS_OFFICIAL_RESULT_ID = 'cand-gas-official'
+const GAS_ROW_COUNT = 58
+const GAS_VALUE_RANGE: [number, number] = [0.05, 34.3]
+const GAS_GRID_SHAPE = [151, 333, 12]
+const GAS_GRID_CELL_COUNT = 603_396
+const GAS_GRID_BOUNDS = [
+  [1023.802, 4016.788],
+  [1049.716, 7688.731],
+  [121.0375, 175.656],
+]
+const GAS_GRID_RESOLUTION = [20, 20, 5]
+// CH4_content 单位：ml/g（v0.8.0 第三批用户权威确认，绝不静默换算）
+const GAS_VALUE_UNIT = 'ml/g'
+const GAS_MAPPING = {
+  dimension: '3d',
+  x: 'X',
+  y: 'Y',
+  z: 'Z',
+  value: 'CH4_content',
+  value_name: 'CH4_content',
+  value_unit: GAS_VALUE_UNIT,
+  coordinate_kind: 'local_linear',
+}
+const GAS_DATASET_PROFILE = {
+  source_kind: 'builtin_preset',
+  dimension: '3d',
+  mapping: GAS_MAPPING,
+  row_count: GAS_ROW_COUNT,
+  valid_row_count: GAS_ROW_COUNT,
+  invalid_row_count: 0,
+}
+const GAS_PROVENANCE = {
+  preset_version: 'gas-ch4-58/v1',
+  source_sha256: GAS_SHA,
+  badge: '散点预置 · 官方基线成果',
+  data_form: '标准化散点 · 58 个合格样品',
+  fields: ['X', 'Y', 'Z', 'CH4_content'],
+  value_unit: GAS_VALUE_UNIT,
+  coordinate_kind: 'local_linear',
+}
+// 官方基线指标：config/presets/gas-official-baseline.json 入库公开事实
+// （58 点稀疏采样下 r2 为负，如实呈现为解释性估计）
+const GAS_OFFICIAL_METRICS = { rmse: 8.298439, mae: 6.5521, r2: -0.109659, bias: -0.068618 }
+const GAS_OFFICIAL_PARAMETERS = { variogram_model: 'spherical', neighbor_count: 24 }
+const GAS_VALIDATION = { method: 'spatial_kfold', folds: 5, seed: 20260723 }
+
 // ---------------------------------------------------------------- v0.8.0 第二批：统计与空间分析中心
 // analysis-summary / analysis-export mock 与真实后端合同逐字段对齐
 // （src/geomodeling/api/routes/analysis.py + analysis/schemas.py）：quality/
 // statistics/quantiles/32 分箱 distribution/profile_axes 三轴/model_comparison
 // 候选/modules 状态数组/provenance；微震含 axis_trends/gradient/spatial_anomaly
-// ok，电阻率含 log10/depth_slices/spatial_anomaly ok，generic_3d 只含通用模块
+// ok，电阻率含 log10/depth_slices/spatial_anomaly ok，v0.8.0 第三批起瓦斯含
+// depth_slices/spatial_anomaly/gradient ok，generic_3d 只含通用模块
 // 且模块清单与 profiles.py 注册表顺序一致。数值为本文件按固定算术公式生成的
 // 确定性演示合成口径（无随机源），只驱动浏览器流程，绝不冒充真实计算结果或
 // 私有证据。方法文案与后端 _METHOD_* 常量逐字一致。
 const ANALYSIS_METHOD = {
+  quality:
+    '有效行口径：声明有效且属性值有限（与建模公共有效集一致），排除行计数保留；' +
+    '重复坐标按映射维度判定（超出首次出现的行数，仅统计有效行）',
+  statistics:
+    '有限值基础统计（count/min/max/mean/median/std(ddof=1) 与 p05–p95 分位数，' +
+    'NumPy 线性插值）；仅声明有效且有限的样本参与，count=1 时 std 为 null',
   distribution: '原始值等宽分箱（数据范围+固定 32 格），计数守恒',
   log10:
     '对数尺度分箱仅使用严格正值有限值（log10 变换后等宽 32 格）；' +
@@ -733,8 +800,16 @@ function microAnalysisSummary(): AnalysisSummaryOut {
     quality,
     statistics,
     modules: [
-      analysisModule('quality', { ...quality }),
-      analysisModule('statistics', { ...statistics }),
+      analysisModule('quality', {
+        ...quality,
+        method: ANALYSIS_METHOD.quality,
+        source_fields: { x: 'X_LOCAL_M', y: 'Y_LOCAL_M', z: 'Z_LOCAL_M', value: 'VX_KM_S' },
+      }),
+      analysisModule('statistics', {
+        ...statistics,
+        method: ANALYSIS_METHOD.statistics,
+        source_fields: { value: 'VX_KM_S' },
+      }),
       analysisModule('distribution', {
         bin_count: 32,
         bins: analysisHistogram(4.21, 6.83, weights32, 1911),
@@ -839,12 +914,20 @@ function rhoAnalysisSummary(): AnalysisSummaryOut {
     case_id: 'resistivity',
     analysis_profile: 'resistivity',
     profile_version: 1,
-    variable: { name: 'RHO', unit: RHO_UNIT_NOTE },
+    variable: { name: 'RHO', unit: RHO_VALUE_UNIT },
     quality,
     statistics,
     modules: [
-      analysisModule('quality', { ...quality }),
-      analysisModule('statistics', { ...statistics }),
+      analysisModule('quality', {
+        ...quality,
+        method: ANALYSIS_METHOD.quality,
+        source_fields: { x: 'X', y: 'Y', z: 'Z', value: 'RHO' },
+      }),
+      analysisModule('statistics', {
+        ...statistics,
+        method: ANALYSIS_METHOD.statistics,
+        source_fields: { value: 'RHO' },
+      }),
       analysisModule('distribution', {
         bin_count: 32,
         bins: analysisHistogram(RHO_VALUE_RANGE[0], RHO_VALUE_RANGE[1], weights32, 17547),
@@ -917,6 +1000,132 @@ function rhoAnalysisSummary(): AnalysisSummaryOut {
   }
 }
 
+// ---- 瓦斯预置（ds-gas）：depth_slices/spatial_anomaly/gradient ok ----
+// 模块清单与 profiles.py 的 _gas_specs 注册表顺序一致；统计/分布数值为
+// 本文件确定性演示合成口径（无随机源），绝不冒充真实 58 行计算结果。
+const GAS_ANALYSIS_BOUNDS: Record<AnalysisAxisId, [number, number]> = {
+  x: [GAS_GRID_BOUNDS[0][0], GAS_GRID_BOUNDS[0][1]],
+  y: [GAS_GRID_BOUNDS[1][0], GAS_GRID_BOUNDS[1][1]],
+  z: [GAS_GRID_BOUNDS[2][0], GAS_GRID_BOUNDS[2][1]],
+}
+const GAS_ANALYSIS_THRESHOLDS = { high: 18.9, low: 3.2 }
+
+function gasAnalysisSummary(): AnalysisSummaryOut {
+  const weights32 = analysisWeights(3, 9)
+  const { bins: anomalyBins, ...anomalySummary } = analysisAnomalyGrid(
+    GAS_ANALYSIS_BOUNDS.x[0],
+    GAS_ANALYSIS_BOUNDS.x[1],
+    GAS_ANALYSIS_BOUNDS.y[0],
+    GAS_ANALYSIS_BOUNDS.y[1],
+    GAS_ANALYSIS_THRESHOLDS.low,
+    GAS_ANALYSIS_THRESHOLDS.high,
+  )
+  const statistics = {
+    count: GAS_ROW_COUNT,
+    min: GAS_VALUE_RANGE[0],
+    max: GAS_VALUE_RANGE[1],
+    mean: 12.41,
+    median: 9.8,
+    std: 8.63,
+    quantiles: { p05: 0.62, p25: 3.2, p50: 9.8, p75: 18.9, p95: 29.74 },
+  }
+  const quality = {
+    row_count: GAS_ROW_COUNT,
+    valid_count: GAS_ROW_COUNT,
+    invalid_count: 0,
+    duplicate_coordinate_count: 0,
+    bounds: GAS_ANALYSIS_BOUNDS,
+  }
+  return {
+    dataset_id: GAS_DATASET_ID,
+    case_id: 'gas',
+    analysis_profile: 'gas_content',
+    profile_version: 1,
+    variable: { name: 'CH4_content', unit: GAS_VALUE_UNIT },
+    quality,
+    statistics,
+    modules: [
+      analysisModule('quality', {
+        ...quality,
+        method: ANALYSIS_METHOD.quality,
+        source_fields: { x: 'X', y: 'Y', z: 'Z', value: 'CH4_content' },
+      }),
+      analysisModule('statistics', {
+        ...statistics,
+        method: ANALYSIS_METHOD.statistics,
+        source_fields: { value: 'CH4_content' },
+      }),
+      analysisModule('distribution', {
+        bin_count: 32,
+        bins: analysisHistogram(GAS_VALUE_RANGE[0], GAS_VALUE_RANGE[1], weights32, GAS_ROW_COUNT),
+        method: ANALYSIS_METHOD.distribution,
+        source_fields: { value: 'CH4_content' },
+      }),
+      analysisModule('depth_slices', {
+        thresholds: {
+          high: GAS_ANALYSIS_THRESHOLDS.high,
+          low: GAS_ANALYSIS_THRESHOLDS.low,
+          source: ANALYSIS_METHOD.thresholdSource,
+          method: ANALYSIS_METHOD.thresholdMethod,
+        },
+        slice_count: 16,
+        slices: analysisDepthSlices(GAS_ANALYSIS_BOUNDS.z[0], GAS_ANALYSIS_BOUNDS.z[1], GAS_ROW_COUNT),
+        method: ANALYSIS_METHOD.depthSlices,
+        source_fields: { z: 'Z', value: 'CH4_content' },
+      }),
+      analysisModule('spatial_anomaly', {
+        grid_size: 32,
+        cell_count: 32 * 32,
+        bounds: { x: GAS_ANALYSIS_BOUNDS.x, y: GAS_ANALYSIS_BOUNDS.y },
+        thresholds: {
+          high: GAS_ANALYSIS_THRESHOLDS.high,
+          low: GAS_ANALYSIS_THRESHOLDS.low,
+          source: ANALYSIS_METHOD.thresholdSource,
+          method: ANALYSIS_METHOD.thresholdMethod,
+        },
+        ...anomalySummary,
+        bins: anomalyBins,
+        method: ANALYSIS_METHOD.spatialAnomaly,
+        source_fields: { x: 'X', y: 'Y', value: 'CH4_content' },
+      }),
+      analysisModule('gradient', {
+        grid_size: 16,
+        pair_count: 480,
+        excluded_pair_count: 452,
+        count: 28,
+        mean: 4.87,
+        p95: 11.92,
+        max: 17.35,
+        method: ANALYSIS_METHOD.gradient,
+        source_fields: { x: 'X', y: 'Y', value: 'CH4_content' },
+      }),
+      analysisModule('profile_slices', {
+        axes: analysisProfileAxes(GAS_ANALYSIS_BOUNDS, 10.5, weights32),
+      }),
+      analysisModule('model_comparison', {
+        candidates: [
+          {
+            result_id: GAS_OFFICIAL_RESULT_ID,
+            algorithm: 'ordinary_kriging',
+            parameters: GAS_OFFICIAL_PARAMETERS,
+            // 官方基线指标：config/presets/gas-official-baseline.json 入库公开事实
+            metrics: GAS_OFFICIAL_METRICS,
+            materialized: true,
+            formal_selection: true,
+            result_url: `/results/${GAS_OFFICIAL_RESULT_ID}`,
+          },
+        ],
+      }),
+    ],
+    provenance: {
+      source_sha256: GAS_SHA,
+      dataset_version: 1,
+      generated_at: T,
+      calculation_version: 'analysis.v1',
+    },
+  }
+}
+
 // ---- 通用上传（ds-e2e）：generic_3d 只含通用模块，无专属模块 ----
 const GENERIC_ANALYSIS_BOUNDS: Record<AnalysisAxisId, [number, number]> = {
   x: [-50, 50],
@@ -951,8 +1160,16 @@ function genericAnalysisSummary(): AnalysisSummaryOut {
     quality,
     statistics,
     modules: [
-      analysisModule('quality', { ...quality }),
-      analysisModule('statistics', { ...statistics }),
+      analysisModule('quality', {
+        ...quality,
+        method: ANALYSIS_METHOD.quality,
+        source_fields: { x: 'x', y: 'y', z: 'z', value: 'rho' },
+      }),
+      analysisModule('statistics', {
+        ...statistics,
+        method: ANALYSIS_METHOD.statistics,
+        source_fields: { value: 'rho' },
+      }),
       analysisModule('distribution', {
         bin_count: 32,
         bins: analysisHistogram(67, 240, weights32, 144),
@@ -982,6 +1199,7 @@ function genericAnalysisSummary(): AnalysisSummaryOut {
 function analysisSummaryFor(datasetId: string): AnalysisSummaryOut {
   if (datasetId === 'ds-preset') return microAnalysisSummary()
   if (datasetId === RHO_DATASET_ID) return rhoAnalysisSummary()
+  if (datasetId === GAS_DATASET_ID) return gasAnalysisSummary()
   return genericAnalysisSummary()
 }
 
@@ -1180,6 +1398,56 @@ export async function installMockApi(page: Page): Promise<void> {
         recent_experiments: [],
         recent_results: [],
         links: { detail: '/api/cases/resistivity', publish_status: null },
+      })
+    }
+    // v0.8.0 第三批：瓦斯统一工作台 DTO（builtin_preset 只读散点预置；形态与
+    // 电阻率/微震预置逐字段一致，内容来自入库公开合同；旧 legacy "暂缓" 卡已退役）
+    if (path === '/cases/gas/workspace' && method === 'GET') {
+      return json(route, {
+        case_id: 'gas',
+        title: '煤层瓦斯',
+        case_type: 'generic',
+        status: 'active',
+        source_kind: 'builtin_preset',
+        workspace_kind: 'builtin_preset',
+        created_at: T,
+        updated_at: T,
+        capabilities: {
+          data_summary: true,
+          experiments: true,
+          official_result: true,
+          native_volume: true,
+        },
+        primary_dataset: {
+          id: GAS_DATASET_ID,
+          case_id: 'gas',
+          version: 1,
+          status: 'validated',
+          created_at: T,
+          profile: GAS_DATASET_PROFILE,
+        },
+        official_result: {
+          result_id: GAS_OFFICIAL_RESULT_ID,
+          url: `/results/${GAS_OFFICIAL_RESULT_ID}`,
+          materialized: true,
+        },
+        provenance_summary: GAS_PROVENANCE,
+        data_preparation: {
+          state: 'validated',
+          dataset_id: null,
+          latest_validated_dataset_id: GAS_DATASET_ID,
+          next_action: {
+            step: 'experiment',
+            label: '新建实验',
+            url: '/#/cases/gas/experiments/new',
+          },
+          error: null,
+        },
+        validated_datasets: [],
+        abandoned_datasets: [],
+        recent_experiments: [],
+        recent_results: [],
+        links: { detail: '/api/cases/gas', publish_status: null },
       })
     }
     if (path === '/cases/case-e2e/workspace' && method === 'GET') {
@@ -1415,6 +1683,43 @@ export async function installMockApi(page: Page): Promise<void> {
             },
             provenance_summary: RHO_PROVENANCE,
             links: { detail: '/api/cases/resistivity', publish_status: null },
+          },
+          {
+            // v0.8.0 第三批：瓦斯散点预置卡（builtin_preset；官方成果直达 cand-gas-official 夹具）
+            case_id: 'gas',
+            title: '煤层瓦斯',
+            case_type: 'generic',
+            status: 'active',
+            source_kind: 'builtin_preset',
+            workspace_kind: 'builtin_preset',
+            created_at: T,
+            updated_at: T,
+            capabilities: {
+              data_summary: true,
+              experiments: true,
+              official_result: true,
+              native_volume: true,
+            },
+            primary_dataset: {
+              id: GAS_DATASET_ID,
+              case_id: 'gas',
+              version: 1,
+              status: 'validated',
+              created_at: T,
+              profile: GAS_DATASET_PROFILE,
+            },
+            official_result: {
+              result_id: GAS_OFFICIAL_RESULT_ID,
+              url: `/results/${GAS_OFFICIAL_RESULT_ID}`,
+              materialized: true,
+            },
+            featured_result: {
+              result_id: GAS_OFFICIAL_RESULT_ID,
+              url: `/results/${GAS_OFFICIAL_RESULT_ID}`,
+              materialized: true,
+            },
+            provenance_summary: GAS_PROVENANCE,
+            links: { detail: '/api/cases/gas', publish_status: null },
           },
           {
             // v0.7.0：微震 CSV 预置卡（builtin_preset；官方成果直达 cand-1 夹具）
@@ -2113,7 +2418,7 @@ export async function installMockApi(page: Page): Promise<void> {
       dimension: '3d',
       grid_kind: 'regular',
       property_name: 'RHO',
-      units: RHO_UNIT_NOTE,
+      units: RHO_VALUE_UNIT,
       geolocation_status: 'display_anchor_only',
       display_transform: {
         contract: 'wgs84_display_anchor_v1',
@@ -2128,7 +2433,7 @@ export async function installMockApi(page: Page): Promise<void> {
       // 候选成果默认 linear + viridis（v0.7.0 第二批合同）
       render_profile: {
         property_name: 'RHO',
-        unit: RHO_UNIT_NOTE,
+        unit: RHO_VALUE_UNIT,
         default_scale: 'linear',
         default_palette: 'viridis',
         log_available: true,
@@ -2254,6 +2559,201 @@ export async function installMockApi(page: Page): Promise<void> {
     }
     if (path === `/results/${RHO_OFFICIAL_RESULT_ID}/render-assets/netcdf` && method === 'POST') {
       return json(route, rhoRenderAsset(RHO_OFFICIAL_RESULT_ID, `nc-${'d6'.repeat(16)}`), 201)
+    }
+    // ------------------------------------------- v0.8.0 第三批：瓦斯预置数据/成果链
+    // 网格/值域/官方指标为入库公开合同事实（gas-official-baseline.json）；
+    // 与电阻率同一形态：官方成果 seed 即物化（GET 恒 200），NetCDF 资产懒创建
+    // （GET 404 → 显式 POST 201 ready），绝不隐式变异。
+    const gasResultMetadata = () => ({
+      result_id: GAS_OFFICIAL_RESULT_ID,
+      run_id: GAS_OFFICIAL_RUN_ID,
+      experiment_id: GAS_OFFICIAL_EXPERIMENT_ID,
+      dataset_version_id: GAS_DATASET_ID,
+      algorithm: 'ordinary_kriging',
+      parameters: GAS_OFFICIAL_PARAMETERS,
+      dimension: '3d',
+      shape: GAS_GRID_SHAPE,
+      cell_count: GAS_GRID_CELL_COUNT,
+      bounds: GAS_GRID_BOUNDS,
+      resolution: GAS_GRID_RESOLUTION,
+      value_range: GAS_VALUE_RANGE,
+      nodata_count: 0,
+      grid_sha256: GAS_GRID_SHA,
+      source_sha256: GAS_SHA,
+      standardized_sha256: GAS_SHA,
+      fingerprint: 'fp-gas-official-1',
+      validation: { folds: 5 },
+      created_at: T,
+      professional_analysis_supported: false,
+      evaluation_summary: {
+        common_valid_count: 58,
+        candidate_valid_count: 58,
+        candidate_nodata_count: 0,
+        total_count: 58,
+        coverage: 1.0,
+        ...GAS_OFFICIAL_METRICS,
+        enhanced_evidence_available: false,
+      },
+    })
+    if (path === '/cases/gas/datasets' && method === 'GET') {
+      return json(route, {
+        datasets: [
+          {
+            id: GAS_DATASET_ID,
+            case_id: 'gas',
+            version: 1,
+            status: 'validated',
+            created_at: T,
+          },
+        ],
+      })
+    }
+    if (path === `/datasets/${GAS_DATASET_ID}` && method === 'GET') {
+      return json(route, {
+        id: GAS_DATASET_ID,
+        case_id: 'gas',
+        version: 1,
+        status: 'validated',
+        profile: GAS_DATASET_PROFILE,
+        created_at: T,
+      })
+    }
+    if (path === `/datasets/${GAS_DATASET_ID}/points` && method === 'GET') {
+      return json(route, {
+        dataset_id: GAS_DATASET_ID,
+        dimension: '3d',
+        count: 3,
+        served: 3,
+        decimate: 1,
+        x: [1100.5, 1250.25, 1400.0],
+        y: [1300.75, 2500.5, 3700.25],
+        z: [130.2, 145.5, 160.8],
+        values: [2.4, 11.6, 21.9],
+        value_range: [2.4, 21.9],
+        value_name: 'CH4_content',
+        source_sha256: GAS_SHA,
+      })
+    }
+    if (path === '/cases/gas/formal-selections' && method === 'GET') {
+      // 只读预置：官方正式选择由 seed 写入，用户候选不得顶替
+      return json(route, {
+        case_id: 'gas',
+        selections: [
+          {
+            id: 'sel-gas-official',
+            case_id: 'gas',
+            candidate_result_id: GAS_OFFICIAL_RESULT_ID,
+            selected_by: 'preset-seed',
+            note: '官方插值基线（v0.8.0 第三批瓦斯含量预置，mock 夹具）',
+            created_at: T,
+          },
+        ],
+      })
+    }
+    if (path === `/experiments/${GAS_OFFICIAL_EXPERIMENT_ID}` && method === 'GET') {
+      return json(route, {
+        id: GAS_OFFICIAL_EXPERIMENT_ID,
+        case_id: 'gas',
+        name: '官方插值基线',
+        params: {
+          case_id: 'gas',
+          name: '官方插值基线',
+          algorithm: 'ordinary_kriging',
+          dataset_version_id: GAS_DATASET_ID,
+          search_mode: 'manual',
+          parameters: GAS_OFFICIAL_PARAMETERS,
+          validation: GAS_VALIDATION,
+          grid: { bounds: GAS_GRID_BOUNDS, resolution: GAS_GRID_RESOLUTION, max_cells: 1000000 },
+        },
+        created_at: T,
+        updated_at: T,
+      })
+    }
+    if (path === `/results/${GAS_OFFICIAL_RESULT_ID}` && method === 'GET') {
+      return json(route, gasResultMetadata())
+    }
+    if (path === `/results/${GAS_OFFICIAL_RESULT_ID}/materialize` && method === 'POST') {
+      return json(route, gasResultMetadata())
+    }
+    if (path === `/results/${GAS_OFFICIAL_RESULT_ID}/preview` && method === 'GET') {
+      return json(route, {
+        result_id: GAS_OFFICIAL_RESULT_ID,
+        dimension: '3d',
+        original_cell_count: GAS_GRID_CELL_COUNT,
+        served_cell_count: 2,
+        stride: 1,
+        x: [1023.802, 1043.802],
+        y: [1049.716, 1069.716],
+        z: [121.0375, 126.0375],
+        values: [1.8, 7.4],
+        is_nodata: [false, false],
+        value_range: [1.8, 7.4],
+      })
+    }
+    if (path === `/results/${GAS_OFFICIAL_RESULT_ID}/slices` && method === 'GET') {
+      const axis = url.searchParams.get('axis') ?? 'z'
+      const coordinate = axis === 'x' ? 1023.802 : axis === 'y' ? 1049.716 : 121.0375
+      return json(route, sliceBody(axis, coordinate, GAS_OFFICIAL_RESULT_ID))
+    }
+    if (path === `/results/${GAS_OFFICIAL_RESULT_ID}/render-capability` && method === 'GET') {
+      return json(route, {
+        source_kind: 'candidate_result',
+        source_id: GAS_OFFICIAL_RESULT_ID,
+        supported: true,
+        reason_code: null,
+        reason: null,
+        dimension: '3d',
+        grid_kind: 'regular',
+        property_name: 'CH4_content',
+        units: GAS_VALUE_UNIT,
+        geolocation_status: 'display_anchor_only',
+        display_transform: {
+          contract: 'wgs84_display_anchor_v1',
+          origin_x: 1023.802,
+          origin_y: 1049.716,
+          anchor_longitude: 120,
+          anchor_latitude: 30,
+          anchor_height: 0,
+          metres_per_degree_lon: 96486.3,
+          metres_per_degree_lat: 110852.4,
+        },
+        // 候选成果默认 linear + viridis（v0.7.0 第二批合同）
+        render_profile: {
+          property_name: 'CH4_content',
+          unit: GAS_VALUE_UNIT,
+          default_scale: 'linear',
+          default_palette: 'viridis',
+          log_available: true,
+          value_range: GAS_VALUE_RANGE,
+          filter_range: GAS_VALUE_RANGE,
+          lighting: true,
+          gradient_opacity: true,
+          bounding_box: true,
+          opacity: 1,
+        },
+      })
+    }
+    if (path === `/results/${GAS_OFFICIAL_RESULT_ID}/render-assets/netcdf` && method === 'GET') {
+      return json(
+        route,
+        { error: { code: 'RENDER_ASSET_NOT_FOUND', message: '该渲染源尚未创建渲染资产', details: {} } },
+        404,
+      )
+    }
+    if (path === `/results/${GAS_OFFICIAL_RESULT_ID}/render-assets/netcdf` && method === 'POST') {
+      const assetId = `nc-${'f3'.repeat(16)}`
+      return json(route, {
+        id: assetId,
+        source_kind: 'candidate_result',
+        source_id: GAS_OFFICIAL_RESULT_ID,
+        renderer: 'supermap_voxelgrid_netcdf',
+        status: 'ready',
+        grid_sha256: GAS_GRID_SHA,
+        netcdf_sha256: GAS_NC_SHA,
+        manifest_url: `/api/render-assets/${assetId}/manifest`,
+        netcdf_url: `/api/render-assets/${assetId}/volume.nc`,
+        error: null,
+      }, 201)
     }
     // ---------------------------------------------------------------- v0.6.1 NetCDF 原生体渲染
     // 物化是唯一显式变异（POST）；能力/资产状态一律纯 GET，绝不隐式 POST。
@@ -3055,6 +3555,7 @@ export async function installMockApi(page: Page): Promise<void> {
     if (
       (path === '/datasets/ds-preset/analysis-summary' ||
         path === '/datasets/ds-rho/analysis-summary' ||
+        path === `/datasets/${GAS_DATASET_ID}/analysis-summary` ||
         path === '/datasets/ds-e2e/analysis-summary') &&
       method === 'GET'
     ) {
@@ -3075,7 +3576,7 @@ export async function installMockApi(page: Page): Promise<void> {
       }
       return json(route, analysisSummaryFor(datasetId))
     }
-    const analysisExportMatch = /^\/datasets\/(ds-preset|ds-rho|ds-e2e)\/analysis-export$/.exec(
+    const analysisExportMatch = /^\/datasets\/(ds-preset|ds-rho|ds-gas|ds-e2e)\/analysis-export$/.exec(
       path,
     )
     if (analysisExportMatch && method === 'GET') {

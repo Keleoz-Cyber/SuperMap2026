@@ -127,12 +127,33 @@ def test_cases_cards(tmp_path):
     # v0.8.0 Task 6：legacy 电阻率卡退役；未 seed 运行库出预置描述卡
     assert by_id["resistivity"]["status"] == "initialization_required"
     assert by_id["resistivity"]["workspace_kind"] == "builtin_preset"
-    assert by_id["gas"]["status"] == "parked"
+    # v0.8.0 第三批 Task 4：legacy 瓦斯卡（最后一张 legacy 卡）同模式退役；
+    # 未 seed 运行库出预置描述卡，首页不再出现 parked/"暂缓" 文案
+    assert by_id["gas"]["status"] == "initialization_required"
+    assert by_id["gas"]["workspace_kind"] == "builtin_preset"
     # v0.7.0：旧 DAT 微震卡由 builtin_preset 预置描述符取代（未 seed 时可见但能力全 false）
     assert "microseismic" not in by_id
     preset = by_id["builtin-microseismic-vx-1911"]
     assert preset["workspace_kind"] == "builtin_preset"
     assert preset["status"] == "initialization_required"
+
+
+def test_case_list_json_has_no_legacy_dat_parked_tokens(tmp_path):
+    """v0.8.0 第三批 Task 7：首页案例列表 JSON 无 parked/暂缓/DAT/legacy 字样。
+
+    gas 是最后一张退役的 legacy 卡：任何运行库状态下列表只剩 builtin_preset
+    与 user_upload 卡，序列化 JSON 绝不出现旧流程语样。
+    """
+
+    client = make_client(tmp_path)
+    response = client.get("/api/cases")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["cases"], "首页至少应有三张预置描述卡"
+    assert all(card["source_kind"] != "builtin_legacy" for card in body["cases"])
+    serialized = json.dumps(body, ensure_ascii=False)
+    for token in ("parked", "暂缓", "DAT", "legacy", "Legacy"):
+        assert token not in serialized, token
 
 
 def test_resistivity_detail_leaderboard_uses_metric_summaries(tmp_path):

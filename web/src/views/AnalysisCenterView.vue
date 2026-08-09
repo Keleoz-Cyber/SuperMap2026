@@ -13,17 +13,19 @@ import ProfileAnalysisPanel from '../components/analysis/ProfileAnalysisPanel.vu
 import AnalysisExportPanel from '../components/analysis/AnalysisExportPanel.vue'
 import {
   comparisonCandidatesOf,
-  MODULE_LABELS,
+  moduleLabel,
   type AnalysisSelection,
 } from '../components/analysis/analysisTypes'
 
 // v0.8.0 第二批 Task 5：统计与空间分析中心 A+B 工作台壳（设计 §7）。
 // 顶栏 AnalysisHeader；左侧窄栏模块导航（选中态 + disabled 标记）；中央
-// 主区单焦点（默认空间视图：generic 为 spatial_extent，微震/电阻率为
+// 主区单焦点（默认空间视图：generic 为 spatial_extent，微震/电阻率/瓦斯为
 // spatial_anomaly 专属空间异常，可切换分布/剖面）；右栏 QualitySummary +
 // ModelComparison；底部可折叠（剖面统计 + 导出/溯源）。数据获取沿用单调
 // 请求守卫与三态；模块可见性由后端 modules.status 驱动（disabled/error
 // → 解释性空状态，绝不渲染空图表）；generic_3d 显示降级原因说明（§5.4）。
+// v0.8.0 第三批 Task 8：瓦斯模块用差异化标签（moduleLabel），ok 但暂无
+// 面板的专属模块（axis_trends/gradient/depth_slices）不生成占位导航入口。
 // 空间/剖面选择 → 有物化成果时
 // router.push /results/{id}（带 axis/range/dataset 查询参数），否则非阻
 // 断解释提示。响应式：<900px 右栏折到主区下方，<600px 左导航横向滚动。
@@ -51,7 +53,7 @@ function describeError(e: unknown): string {
 // profiles.py 注册表一致，按 profile id 静态说明，绝不按案例 ID 分支）
 const GENERIC_FALLBACK_TEXT =
   '当前数据按 generic_3d 通用 profile 分析：未满足专业分析字段要求' +
-  '（微震速度需变量 Vx 且单位 km/s；电阻率需变量名 RHO；瓦斯含量字段合同待定）。' +
+  '（微震速度需变量 Vx 且单位 km/s；电阻率需变量名 RHO；瓦斯含量需变量名 CH4_content 且单位 ml/g）。' +
   '页面仅展示数据质量、基础统计、分布、空间范围、剖面与已有模型指标，不展示专业专属模块。'
 
 // ---------------------------------------------------------------------------
@@ -61,10 +63,10 @@ const GENERIC_FALLBACK_TEXT =
 
 const RIGHTBAR_MODULE_IDS = new Set(['quality', 'statistics', 'model_comparison'])
 // 主区可承载的模块（顺序即导航优先级）：spatial_extent/spatial_anomaly 由
-// SpatialFeaturePanel 承载（Task 6：spatial_anomaly 为微震/电阻率的默认空间
-// 视图——这两个 profile 无 spatial_extent），distribution/profile_slices 各
-// 有专属面板；其余专属模块（axis_trends/gradient/depth_slices）暂无面板，
-// 选中后展示解释性状态而非空图表
+// SpatialFeaturePanel 承载（Task 6 起 spatial_anomaly 为专属 profile 的默认
+// 空间视图——这些 profile 无 spatial_extent），distribution/profile_slices
+// 各有专属面板；其余专属模块（axis_trends/gradient/depth_slices）暂无面板，
+// ok 状态不生成占位导航入口（Task 8），disabled 状态保留导航并标记不可用
 const PRIMARY_MODULE_ORDER = ['spatial_extent', 'spatial_anomaly', 'distribution', 'profile_slices']
 
 interface NavItem {
@@ -74,8 +76,12 @@ interface NavItem {
 }
 
 const navItems = computed<NavItem[]>(() => {
+  const profile = summary.value?.analysis_profile ?? 'generic_3d'
   const modules = (summary.value?.modules ?? []).filter(
-    (module) => !RIGHTBAR_MODULE_IDS.has(module.module_id),
+    (module) =>
+      !RIGHTBAR_MODULE_IDS.has(module.module_id) &&
+      // ok 但暂无面板的专属模块不生成占位入口；disabled/error 保留解释性入口
+      (module.status !== 'ok' || PRIMARY_MODULE_ORDER.includes(module.module_id)),
   )
   const orderOf = (id: string) => {
     const index = PRIMARY_MODULE_ORDER.indexOf(id)
@@ -86,7 +92,7 @@ const navItems = computed<NavItem[]>(() => {
     .sort((a, b) => orderOf(a.module_id) - orderOf(b.module_id))
     .map((module) => ({
       module,
-      label: MODULE_LABELS[module.module_id] ?? module.module_id,
+      label: moduleLabel(profile, module.module_id),
       usable:
         module.status === 'ok' && PRIMARY_MODULE_ORDER.includes(module.module_id),
     }))

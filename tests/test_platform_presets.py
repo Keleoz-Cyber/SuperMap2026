@@ -21,8 +21,8 @@ def test_resistivity_preset_declares_builtin_preset_scattered_identity():
     assert preset["dimension"] == "3d"
     assert preset["semantic_fields"] == {"x": "X", "y": "Y", "z": "Z", "value": "RHO"}
     assert preset["coordinate_kind"] == "local_linear"
-    # RHO 单位待来源确认：诚实表述，不静默声明单位
-    assert preset["value_unit"] == "RHO 单位待来源确认"
+    # RHO 单位已确认为 Ω·m（v0.8.0 第三批用户权威确认）
+    assert preset["value_unit"] == "Ω·m"
 
     raw = yaml.safe_load((CONFIG_DIR / "default.yaml").read_text(encoding="utf-8"))
     expected = raw["expected"]
@@ -49,10 +49,12 @@ def test_resistivity_preset_declares_builtin_preset_scattered_identity():
     assert "局部工程坐标" in boundary_text
     assert "EPSG" in boundary_text
     assert "跨案例" in boundary_text
-    # RHO 单位待确认 + 外部源不入库边界
-    assert "单位待来源确认" in boundary_text
-    assert "外部" in boundary_text
-    assert "不提交 Git" in boundary_text
+    # RHO 单位 Ω·m + example_data/ 内置源字节冻结合同边界
+    assert "Ω·m" in boundary_text
+    assert "单位待来源确认" not in boundary_text
+    assert "example_data/" in boundary_text
+    assert "内置" in boundary_text
+    assert "字节" in boundary_text
 
 
 def test_resistivity_preset_default_grid_is_20m_xyz_within_cell_cap():
@@ -94,6 +96,61 @@ def test_resistivity_preset_search_grids_cover_three_algorithms_under_cap():
     assert preset["recommended_search"]["algorithm"] == "ordinary_kriging"
     assert preset["recommended_search"]["search_mode"] == "grid"
     assert preset["recommended_search"]["parameters"] == grids["ordinary_kriging"]
+
+
+def test_gas_preset_declares_builtin_preset_scattered_identity():
+    """v0.8.0 第三批 Task 3：瓦斯含量预置公开身份与已冻结源合同事实。"""
+    preset = load_preset("gas")
+    assert preset["source"] == "builtin_preset"
+    assert preset["dimension"] == "3d"
+    assert preset["semantic_fields"] == {"x": "X", "y": "Y", "z": "Z", "value": "CH4_content"}
+    assert preset["coordinate_kind"] == "local_linear"
+    # CH4_content 单位 ml/g（用户权威确认，不静默换算）
+    assert preset["value_unit"] == "ml/g"
+
+    facts = preset["facts"]
+    # 行数事实与 example_data 字节冻结合同一致；v0.8.0 第三批 Task 5 起填实
+    # 真实折分聚合（空间 5 折整 XY 柱分组，逐折验证行数总和恰为 58），绝不
+    # 伪造固定的"训练/验证行数"分割语义
+    assert facts["standardized_rows"] == 58
+    assert facts["xy_columns"] == 28
+    assert facts["validation_folds"] == 5
+    assert facts["fold_validation_rows"] == [12, 11, 11, 13, 11]
+    assert sum(facts["fold_validation_rows"]) == 58
+    assert "training_rows" not in facts
+    assert "validation_rows" not in facts
+
+    # 绝不含本机绝对路径
+    raw_text = (CONFIG_DIR / "presets" / "gas.json").read_text(encoding="utf-8")
+    assert ":\\" not in raw_text
+    assert "\\\\" not in raw_text
+
+    boundary_text = " ".join(preset["boundaries"])
+    # 局部线性米制坐标警告：未声明 EPSG、不跨案例叠加
+    assert "局部" in boundary_text
+    assert "EPSG" in boundary_text
+    assert "跨案例" in boundary_text
+    # ml/g 单位 + example_data/ 内置源字节冻结合同边界
+    assert "ml/g" in boundary_text
+    assert "example_data/" in boundary_text
+    assert "内置" in boundary_text
+    assert "字节" in boundary_text
+    # 不输出安全/危险规范结论；58 点稀疏数据的解释口径
+    assert "安全" in boundary_text
+    assert "危险" in boundary_text
+    assert "58" in boundary_text
+
+
+def test_gas_preset_recommended_search_starts_with_idw_under_cap():
+    """v0.8.0 第三批 Task 3：推荐搜索以 IDW 起步，组合数 ≤50 硬上限。"""
+    preset = load_preset("gas")
+    search = preset["recommended_search"]
+    assert search["algorithm"] == "idw"
+    assert search["search_mode"] == "grid"
+    count = 1
+    for value in search["parameters"].values():
+        count *= len(value)
+    assert 1 <= count <= 50
 
 
 def test_microseismic_preset_uses_domain_adapter_and_matches_aggregated_columns():

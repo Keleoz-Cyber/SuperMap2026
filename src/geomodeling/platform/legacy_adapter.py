@@ -14,12 +14,27 @@ legacy 卡 → ``builtin_legacy``；持久化 Case 的 ``config_json.workspace_k
 v0.8.0 Task 6：legacy 电阻率卡类型化退役——无论是否 seed 都绝不再产出；
 未 seed 的运行库改出电阻率预置描述卡（可见但能力全 false，provenance
 取 ``resistivity_preset`` 模块常量的入库基线事实，绝不读外部文件）。
+
+v0.8.0 第三批 Task 4：legacy 瓦斯卡（case_service 的 ``gas`` 卡，"暂缓"
+文案）同模式类型化退役——gas 是最后一张 legacy 卡，此后首页/案例列表
+不再出现任何 ``builtin_legacy`` 卡；未 seed 运行库出瓦斯预置描述卡
+（provenance 取 ``gas_preset`` 模块常量），seed 后由统一 seed 卡承载。
+``legacy_case_cards`` 的过滤机制本身保留，给未来可能的其它内置案例留位。
 """
 
 from __future__ import annotations
 
 from typing import Any, Iterable, Mapping
 
+from geomodeling.platform.gas_preset import (
+    COORDINATE_UNIT as GAS_COORDINATE_UNIT,
+    DATA_FORM as GAS_DATA_FORM,
+    GAS_VALUE_UNIT,
+    PRESET_BADGE as GAS_PRESET_BADGE,
+    PRESET_CASE_ID as GAS_PRESET_CASE_ID,
+    PRESET_VERSION as GAS_PRESET_VERSION,
+    REQUIRED_COLUMNS as GAS_REQUIRED_COLUMNS,
+)
 from geomodeling.platform.microseismic_preset import (
     PRESET_CASE_ID,
     PRESET_VERSION,
@@ -49,6 +64,12 @@ LEGACY_MICROSEISMIC_CARD_ID = "microseismic"
 #: seed 都绝不再产出 legacy 卡；未 seed 运行库出预置描述卡，seed 后由统一
 #: seed 卡承载（同微震取代模式）。
 LEGACY_RESISTIVITY_CARD_ID = "resistivity"
+
+#: 旧体元流程的 legacy 瓦斯卡 ID（"暂缓"文案）。v0.8.0 第三批 Task 4 起
+#: 类型化退役：gas 是最后一张 legacy 卡，此后首页不再出现任何
+#: ``builtin_legacy`` 卡；未 seed 运行库出预置描述卡，seed 后由统一
+#: seed 卡承载（同微震/电阻率取代模式）。
+LEGACY_GAS_CARD_ID = "gas"
 
 #: 预置卡 provenance 兜底常量：微震 seed 尚未写 data_form/value_unit 等键时
 #: 保持 v0.7.0 既有文案，绝不回归；新预置（电阻率）由 seed 写入自己的键。
@@ -82,8 +103,9 @@ def _capabilities(
 def _legacy_workspace_fields(card: Mapping[str, Any]) -> dict[str, Any]:
     """legacy 卡的工作台字段：只读摘要，无实验/官方成果/原生体渲染能力。
 
-    v0.8.0 Task 6：电阻率 legacy 卡退役后，本函数只服务剩余 legacy 卡
-    （gas），native_volume 一律 False。
+    v0.8.0 第三批 Task 4：瓦斯卡退役后当前已无任何在册 legacy 卡；本函数
+    与 ``legacy_case_cards`` 的过滤机制保留，服务未来可能的其它内置案例，
+    native_volume 一律 False。
     """
 
     return {
@@ -167,6 +189,42 @@ def resistivity_preset_workspace_card() -> dict[str, Any]:
     }
 
 
+def gas_preset_workspace_card() -> dict[str, Any]:
+    """未 seed 瓦斯预置案例的不可变描述符（v0.8.0 第三批 Task 4）。
+
+    与微震/电阻率预置描述符同模式：可见但能力全 false。provenance 取
+    ``gas_preset`` 模块常量（入库基线事实：标准化散点 58 个合格样品、
+    X/Y/Z/CH4_content 字段、ml/g 单位、局部线性米制坐标），绝不读外部
+    文件、绝不含绝对路径与"暂缓"文案。
+    """
+
+    return {
+        "case_id": GAS_PRESET_CASE_ID,
+        "title": "煤层瓦斯",
+        "case_type": "generic",
+        "status": "initialization_required",
+        "source_kind": "builtin_preset",
+        "workspace_kind": PRESET_WORKSPACE_KIND,
+        "capabilities": _capabilities(
+            data_summary=False, experiments=False, official_result=False, native_volume=False
+        ),
+        "primary_dataset": None,
+        "official_result": None,
+        "featured_result": None,
+        "provenance_summary": {
+            "preset_version": GAS_PRESET_VERSION,
+            "source_sha256": None,  # 源 SHA 由 seed 写入 config_json；描述卡不读外部文件
+            "data_form": GAS_DATA_FORM,
+            "fields": list(GAS_REQUIRED_COLUMNS),
+            "value_unit": GAS_VALUE_UNIT,
+            "coordinate_kind": "local_linear",
+            "coordinate_unit": GAS_COORDINATE_UNIT,
+            "badge": GAS_PRESET_BADGE,
+        },
+        "links": {"detail": None, "publish_status": None},
+    }
+
+
 def workspace_case_card(
     record: CaseRecord,
     *,
@@ -203,6 +261,12 @@ def workspace_case_card(
             else:
                 provenance["data_form"] = _RESISTIVITY_PROVENANCE_FALLBACK["data_form"]
                 provenance["fields"] = list(_RESISTIVITY_PROVENANCE_FALLBACK["fields"])
+        else:
+            # v0.8.0 第三批 Task 4（瓦斯等新预置）：seed 写入的 fields 键直接
+            # 透传；无 fields 键的早期预置 seed（微震）不加键，逐位不变。
+            fields = config.get("fields")
+            if isinstance(fields, list) and fields:
+                provenance["fields"] = list(fields)
     elif primary_dataset is not None:
         mapping = (primary_dataset.get("profile") or {}).get("mapping") or {}
         provenance = {
@@ -240,11 +304,18 @@ def legacy_case_cards() -> list[dict[str, Any]]:
     v0.8.0 Task 6：旧 S3M 流程的 legacy 电阻率卡类型化退役，同样不再
     列出（未 seed 出预置描述卡、seed 后由统一 seed 卡承载，见
     ``merged_case_cards``）。
+    v0.8.0 第三批 Task 4：旧体元流程的 legacy 瓦斯卡（"暂缓"文案）同模式
+    退役——gas 是最后一张 legacy 卡，本函数当前恒返回空列表；过滤机制
+    保留，给未来可能的其它内置案例留位。
     """
 
     from geomodeling.api import case_service  # 避免 platform → api 的模块级反向依赖
 
-    excluded = {LEGACY_MICROSEISMIC_CARD_ID, LEGACY_RESISTIVITY_CARD_ID}
+    excluded = {
+        LEGACY_MICROSEISMIC_CARD_ID,
+        LEGACY_RESISTIVITY_CARD_ID,
+        LEGACY_GAS_CARD_ID,
+    }
     cards: list[dict[str, Any]] = []
     for card in case_service.list_cases():
         if card.get("case_id") in excluded:
@@ -282,6 +353,8 @@ def merged_case_cards(
     # v0.8.0 Task 6：电阻率 legacy 卡无论是否 seed 都退役。已 seed 为
     # builtin_preset 的持久化案例（电阻率/微震）由统一 seed 卡承载；未 seed
     # 的电阻率出预置描述卡（微震同款 initialization_required 模式）。
+    # v0.8.0 第三批 Task 4：瓦斯同模式退役（最后一张 legacy 卡）；未 seed 的
+    # 瓦斯出预置描述卡，seed 后由统一 seed 卡承载。
     seeded_preset_ids = {
         record.id
         for record in persisted
@@ -294,6 +367,8 @@ def merged_case_cards(
         cards.append(preset_workspace_card())
     if RESISTIVITY_PRESET_CASE_ID not in seeded_preset_ids:
         cards.append(resistivity_preset_workspace_card())
+    if GAS_PRESET_CASE_ID not in seeded_preset_ids:
+        cards.append(gas_preset_workspace_card())
     cards += [
         upload_case_card(
             record,
@@ -304,7 +379,9 @@ def merged_case_cards(
         # builtin 身份由适配器卡片唯一承载；数据库中同 id 的行（如剖面导出的
         # FK 支撑行）只是运行记录，绝不能再生成一张上传卡。v0.8.0：非预置的
         # resistivity 行同样不再出卡（预置描述卡/seed 卡唯一承载该 ID）。
+        # v0.8.0 第三批 Task 4：非预置的 gas 行同口径不再出卡。
         if record.id not in builtin_ids
         and (record.id != RESISTIVITY_PRESET_CASE_ID or record.id in seeded_preset_ids)
+        and (record.id != GAS_PRESET_CASE_ID or record.id in seeded_preset_ids)
     ]
     return cards
