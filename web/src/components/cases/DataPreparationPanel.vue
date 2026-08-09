@@ -6,6 +6,8 @@ import type { DataPreparationSummary } from '../../api/types'
 const props = defineProps<{
   preparation: DataPreparationSummary | null
   caseId: string
+  // v0.9.0：数据准备是页面唯一主动作时由父级声明，按钮携带主操作标记
+  primary?: boolean
 }>()
 
 const router = useRouter()
@@ -64,6 +66,7 @@ function fallbackUrl(): string | null {
           v-if="step === 'upload'"
           type="primary"
           data-test="prep-action-upload"
+          :data-primary-action="primary ? 'true' : undefined"
           @click="navigate"
         >
           上传数据
@@ -72,9 +75,10 @@ function fallbackUrl(): string | null {
           v-else-if="step === 'mapping' || step === 'quality_review'"
           type="primary"
           data-test="prep-action-continue"
+          :data-primary-action="primary ? 'true' : undefined"
           @click="navigate"
         >
-          继续
+          继续数据准备
         </el-button>
       </div>
     </template>

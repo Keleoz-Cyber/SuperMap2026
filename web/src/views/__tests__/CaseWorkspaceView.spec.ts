@@ -768,3 +768,77 @@ describe('CaseWorkspaceView 瓦斯散点预置（v0.8.0 第三批）', () => {
     wrapper.unmount()
   })
 })
+
+// ---------------------------------------------------------------------------
+// v0.9.0 Task 6：四业务阶段导航与每状态唯一主动作
+// ---------------------------------------------------------------------------
+
+describe('CaseWorkspaceView v0.9 阶段导航与唯一主动作', () => {
+  it('四个业务阶段标签齐全：数据概览/建模实验/成果分析/证据与报告', async () => {
+    vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(workspaceOf('builtin_preset'))
+    const { wrapper } = await mountWorkspace(`/cases/${PRESET_ID}`)
+    expect(wrapper.get('[data-test="stage-nav-data"]').text()).toContain('数据概览')
+    expect(wrapper.get('[data-test="stage-nav-experiments"]').text()).toContain('建模实验')
+    expect(wrapper.get('[data-test="stage-nav-results"]').text()).toContain('成果分析')
+    expect(wrapper.get('[data-test="stage-nav-evidence"]').text()).toContain('证据与报告')
+    wrapper.unmount()
+  })
+
+  it('官方就绪（预置）：唯一主动作是查看官方成果', async () => {
+    vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(workspaceOf('builtin_preset'))
+    const { wrapper } = await mountWorkspace(`/cases/${PRESET_ID}`)
+    const primaries = wrapper.findAll('[data-primary-action="true"]')
+    expect(primaries).toHaveLength(1)
+    expect(primaries[0].attributes('data-test')).toBe('open-official-result')
+    wrapper.unmount()
+  })
+
+  it('用户案例数据准备中：唯一主动作在数据准备面板', async () => {
+    const ws = workspaceOf('user_upload')
+    ws.data_preparation = {
+      state: 'needs_mapping',
+      dataset_id: 'ds-1',
+      latest_validated_dataset_id: null,
+      next_action: { step: 'mapping', label: '继续映射', url: '/cases/up-1/datasets/ds-1/prepare' },
+      error: null,
+    }
+    vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(ws)
+    const { wrapper } = await mountWorkspace('/cases/up-1')
+    const primaries = wrapper.findAll('[data-primary-action="true"]')
+    expect(primaries).toHaveLength(1)
+    expect(primaries[0].attributes('data-test')).toBe('prep-action-continue')
+    expect(primaries[0].text()).toContain('继续数据准备')
+    wrapper.unmount()
+  })
+
+  it('用户案例就绪：唯一主动作是新建实验', async () => {
+    vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(workspaceOf('user_upload'))
+    const { wrapper } = await mountWorkspace('/cases/up-1')
+    const primaries = wrapper.findAll('[data-primary-action="true"]')
+    expect(primaries).toHaveLength(1)
+    expect(primaries[0].attributes('data-test')).toBe('new-experiment')
+    wrapper.unmount()
+  })
+
+  it('加载失败：唯一主动作是返回首页', async () => {
+    vi.mocked(client.fetchCaseWorkspace).mockRejectedValue(new Error('boom'))
+    const { wrapper } = await mountWorkspace('/cases/up-1')
+    const primaries = wrapper.findAll('[data-primary-action="true"]')
+    expect(primaries).toHaveLength(1)
+    expect(primaries[0].text()).toContain('返回首页')
+    wrapper.unmount()
+  })
+
+  it('禁用阶段保留可见并说明原因，不静默消失', async () => {
+    // 预置案例无成果（官方成果能力关闭）→ 成果分析阶段禁用且带原因
+    const ws = workspaceOf('builtin_preset')
+    ws.official_result = null
+    ws.capabilities.official_result = false
+    vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(ws)
+    const { wrapper } = await mountWorkspace(`/cases/${PRESET_ID}`)
+    const results = wrapper.get('[data-test="stage-nav-results"]')
+    expect(results.attributes('disabled')).toBeDefined()
+    expect(results.text()).toContain('暂无成果')
+    wrapper.unmount()
+  })
+})
