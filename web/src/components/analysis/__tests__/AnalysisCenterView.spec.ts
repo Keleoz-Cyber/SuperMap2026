@@ -1,0 +1,397 @@
+import { flushPromises, mount } from '@vue/test-utils'
+import { createMemoryHistory, createRouter } from 'vue-router'
+import { describe, expect, it, vi } from 'vitest'
+import ElementPlus from 'element-plus'
+import * as client from '../../../api/client'
+import type { AnalysisModuleResult, AnalysisSummaryResponse } from '../../../api/types'
+import AnalysisCenterView from '../../../views/AnalysisCenterView.vue'
+import analysisViewSource from '../../../views/AnalysisCenterView.vue?raw'
+import SpatialFeaturePanel from '../SpatialFeaturePanel.vue'
+
+// v0.8.0 第二批 Task 4：分析中心视图三态（加载中 / 成功 profile 徽标 /
+// 类型化错误）。Task 5 扩展：A+B 壳布局、generic 降级可见性、profile 专属
+// 模块 disabled 解释态、单位显示、导出命令、空间分箱选择 → 成果导航与
+// 无物化成果非阻断提示、响应式媒体查询源断言（与 CaseWorkspaceView.spec 同
+// 一 ?raw 模式；jsdom 无布局）。ECharts 在模块边界 mock（同 SliceHeatmap）。
+
+const chartInstances: { dispose: ReturnType<typeof vi.fn> }[] = []
+
+vi.mock('echarts/core', () => ({
+  init: vi.fn(() => {
+    const instance = {
+      setOption: vi.fn(),
+      resize: vi.fn(),
+      dispose: vi.fn(),
+      on: vi.fn(),
+    }
+    chartInstances.push(instance)
+    return instance
+  }),
+  use: vi.fn(),
+}))
+vi.mock('echarts/charts', () => ({ BarChart: {}, HeatmapChart: {}, LineChart: {} }))
+vi.mock('echarts/components', () => ({
+  GridComponent: {},
+  TooltipComponent: {},
+  VisualMapComponent: {},
+  LegendComponent: {},
+}))
+vi.mock('echarts/renderers', () => ({ CanvasRenderer: {} }))
+
+vi.mock('../../../api/client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../api/client')>()
+  return { ...actual, fetchAnalysisSummary: vi.fn() }
+})
+
+function summaryOf(profile: AnalysisSummaryResponse['analysis_profile']): AnalysisSummaryResponse {
+  return {
+    dataset_id: 'ds-1',
+    case_id: 'case-1',
+    analysis_profile: profile,
+    profile_version: 1,
+    variable: { name: 'Vx', unit: 'km/s' },
+    quality: {
+      row_count: 1911,
+      valid_count: 1900,
+      invalid_count: 11,
+      duplicate_coordinate_count: 0,
+      bounds: null,
+    },
+    statistics: {
+      count: 1900,
+      min: 1.2,
+      max: 5.6,
+      mean: 3.4,
+      median: 3.3,
+      std: 0.8,
+      quantiles: { p05: 1.8, p25: 2.9, p50: 3.3, p75: 3.9, p95: 4.8 },
+    },
+    modules: [
+      { module_id: 'distribution', status: 'ok', payload: {}, message: null },
+      {
+        module_id: 'velocity_trend',
+        status: 'disabled',
+        payload: {},
+        message: '专属模块计算将在后续批次就位，本批仅提供能力声明',
+      },
+    ],
+    provenance: {
+      source_sha256: 'a'.repeat(64),
+      dataset_version: 1,
+      generated_at: '2026-08-09T00:00:00+00:00',
+      calculation_version: 'analysis.v1',
+    },
+  }
+}
+
+function spatialModule(): AnalysisModuleResult {
+  const bins = []
+  for (let row = 0; row < 4; row += 1) {
+    for (let col = 0; col < 4; col += 1) {
+      const count = (row * 4 + col) % 3
+      bins.push({
+        x_lower: col * 10,
+        x_upper: (col + 1) * 10,
+        y_lower: row * 20,
+        y_upper: (row + 1) * 20,
+        count,
+        mean: count ? 2 + (row * 4 + col) * 0.1 : null,
+      })
+    }
+  }
+  return {
+    module_id: 'spatial_extent',
+    status: 'ok',
+    payload: { grid_size: 4, cell_count: 16, bounds: { x: [0, 40], y: [0, 80] }, bins },
+    message: null,
+  }
+}
+
+function comparisonModule(candidates: Record<string, unknown>[]): AnalysisModuleResult {
+  return {
+    module_id: 'model_comparison',
+    status: 'ok',
+    payload: { candidates },
+    message: null,
+  }
+}
+
+const MATERIALIZED_CANDIDATE = {
+  result_id: 'cand-1',
+  algorithm: 'ordinary_kriging',
+  parameters: { variogram_model: 'spherical', neighbor_count: 16 },
+  metrics: { rmse: 1.21, mae: 0.92, r2: 0.93, bias: 0.04 },
+  materialized: true,
+  formal_selection: true,
+  result_url: '/results/cand-1',
+}
+
+// 完整 A+B 壳夹具：通用模块全部 ok + 微震专属 axis_trends disabled 骨架
+function fullSummary(
+  profile: AnalysisSummaryResponse['analysis_profile'],
+  candidates: Record<string, unknown>[] = [MATERIALIZED_CANDIDATE],
+): AnalysisSummaryResponse {
+  const base = summaryOf(profile)
+  const modules: AnalysisModuleResult[] = [
+    { module_id: 'quality', status: 'ok', payload: {}, message: null },
+    { module_id: 'statistics', status: 'ok', payload: {}, message: null },
+    { module_id: 'distribution', status: 'ok', payload: { bin_count: 0, bins: [] }, message: null },
+    spatialModule(),
+    { module_id: 'profile_slices', status: 'ok', payload: { axes: [] }, message: null },
+    comparisonModule(candidates),
+  ]
+  if (profile === 'microseismic_velocity') {
+    modules.push({
+      module_id: 'axis_trends',
+      status: 'disabled',
+      payload: {},
+      message: '专属模块计算将在后续批次就位，本批仅提供能力声明',
+    })
+  }
+  return { ...base, modules }
+}
+
+async function mountAnalysisCenter(path: string) {
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      {
+        path: '/datasets/:datasetId/analysis',
+        name: 'analysis-center',
+        component: AnalysisCenterView,
+      },
+      { path: '/', name: 'home', component: { template: '<div />' } },
+      { path: '/cases/:caseId', name: 'case-workspace', component: { template: '<div />' } },
+      { path: '/results/:resultId', name: 'result-workbench', component: { template: '<div />' } },
+    ],
+  })
+  router.push(path)
+  await router.isReady()
+  const wrapper = mount(AnalysisCenterView, {
+    global: {
+      plugins: [router, ElementPlus],
+    },
+  })
+  await flushPromises()
+  return { wrapper, router }
+}
+
+describe('AnalysisCenterView（三态）', () => {
+  it('加载中显示加载状态，完成后隐藏', async () => {
+    let resolveFetch: (value: AnalysisSummaryResponse) => void = () => {}
+    vi.mocked(client.fetchAnalysisSummary).mockImplementation(
+      () =>
+        new Promise<AnalysisSummaryResponse>((resolve) => {
+          resolveFetch = resolve
+        }),
+    )
+    const { wrapper } = await mountAnalysisCenter('/datasets/ds-1/analysis')
+    expect(wrapper.find('[data-test="analysis-loading"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="analysis-profile-badge"]').exists()).toBe(false)
+
+    resolveFetch(summaryOf('microseismic_velocity'))
+    await flushPromises()
+    expect(wrapper.find('[data-test="analysis-loading"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('成功：显示案例身份与 profile 徽标', async () => {
+    vi.mocked(client.fetchAnalysisSummary).mockResolvedValue(summaryOf('microseismic_velocity'))
+    const { wrapper } = await mountAnalysisCenter('/datasets/ds-1/analysis')
+
+    expect(client.fetchAnalysisSummary).toHaveBeenCalledWith('ds-1')
+    const badge = wrapper.find('[data-test="analysis-profile-badge"]')
+    expect(badge.exists()).toBe(true)
+    expect(badge.text()).toContain('微震速度')
+    expect(wrapper.text()).toContain('ds-1')
+    expect(wrapper.text()).toContain('case-1')
+    const variable = wrapper.find('[data-test="analysis-variable"]')
+    expect(variable.text()).toContain('Vx')
+    expect(variable.text()).toContain('km/s')
+    expect(wrapper.find('[data-test="analysis-error"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('类型化错误：ApiError 显示错误码与消息，绝不渲染空徽标', async () => {
+    const { ApiError } = await import('../../../api/client')
+    vi.mocked(client.fetchAnalysisSummary).mockRejectedValue(
+      new ApiError('DATASET_NOT_VALIDATED', '数据版本尚未通过验证，分析摘要不可用', 409),
+    )
+    const { wrapper } = await mountAnalysisCenter('/datasets/ds-1/analysis')
+
+    const error = wrapper.find('[data-test="analysis-error"]')
+    expect(error.exists()).toBe(true)
+    expect(error.text()).toContain('DATASET_NOT_VALIDATED')
+    expect(error.text()).toContain('数据版本尚未通过验证')
+    expect(wrapper.find('[data-test="analysis-profile-badge"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="analysis-loading"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('summary 未就绪（加载中/加载失败）不渲染导出命令', async () => {
+    let resolveFetch: (value: AnalysisSummaryResponse) => void = () => {}
+    vi.mocked(client.fetchAnalysisSummary).mockImplementation(
+      () =>
+        new Promise<AnalysisSummaryResponse>((resolve) => {
+          resolveFetch = resolve
+        }),
+    )
+    const { wrapper } = await mountAnalysisCenter('/datasets/ds-1/analysis')
+    expect(wrapper.find('[data-test="analysis-loading"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="analysis-export-panel"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="export-command-json"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="export-command-csv"]').exists()).toBe(false)
+
+    resolveFetch(summaryOf('microseismic_velocity'))
+    await flushPromises()
+    expect(wrapper.find('[data-test="export-command-json"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="export-command-csv"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+})
+
+describe('AnalysisCenterView（A+B 壳）', () => {
+  it('布局骨架：模块导航 / 中央主区 / 右侧信息栏 / 底部可折叠区', async () => {
+    vi.mocked(client.fetchAnalysisSummary).mockResolvedValue(fullSummary('microseismic_velocity'))
+    const { wrapper } = await mountAnalysisCenter('/datasets/ds-1/analysis')
+
+    expect(wrapper.find('[data-test="analysis-header"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="module-nav"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="primary-area"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="side-area"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="lower-area"]').exists()).toBe(true)
+    // 默认主焦点为空间视图
+    expect(wrapper.find('[data-test="spatial-feature-panel"]').exists()).toBe(true)
+    // 右栏：质量摘要 + 模型对比
+    expect(wrapper.find('[data-test="quality-summary-panel"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="model-comparison-panel"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('generic 降级可见性：通用三维徽标，导航只含通用模块', async () => {
+    vi.mocked(client.fetchAnalysisSummary).mockResolvedValue(fullSummary('generic_3d'))
+    const { wrapper } = await mountAnalysisCenter('/datasets/ds-1/analysis')
+
+    expect(wrapper.find('[data-test="analysis-profile-badge"]').text()).toContain('通用三维')
+    expect(wrapper.find('[data-test="module-nav-item-distribution"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="module-nav-item-spatial_extent"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="module-nav-item-axis_trends"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('profile 专属模块 disabled：导航标记不可用，选中后显示解释而非空图', async () => {
+    vi.mocked(client.fetchAnalysisSummary).mockResolvedValue(fullSummary('microseismic_velocity'))
+    const { wrapper } = await mountAnalysisCenter('/datasets/ds-1/analysis')
+
+    const navItem = wrapper.find('[data-test="module-nav-item-axis_trends"]')
+    expect(navItem.exists()).toBe(true)
+    expect(navItem.text()).toContain('不可用')
+    await navItem.trigger('click')
+    await flushPromises()
+    const disabled = wrapper.find('[data-test="module-disabled-state"]')
+    expect(disabled.exists()).toBe(true)
+    expect(disabled.text()).toContain('专属模块计算将在后续批次就位')
+    // 不显示空图表
+    expect(wrapper.find('[data-test="spatial-feature-panel"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="distribution-panel"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('单位显示：头部与右栏统计均带变量单位与样本数', async () => {
+    vi.mocked(client.fetchAnalysisSummary).mockResolvedValue(fullSummary('microseismic_velocity'))
+    const { wrapper } = await mountAnalysisCenter('/datasets/ds-1/analysis')
+
+    expect(wrapper.find('[data-test="analysis-variable"]').text()).toContain('km/s')
+    const numeric = wrapper.find('[data-test="numeric-summary"]')
+    expect(numeric.text()).toContain('km/s')
+    expect(numeric.text()).toContain('样本数')
+    expect(numeric.text()).toContain('1,900')
+    wrapper.unmount()
+  })
+
+  it('导出命令存在，底部渲染 provenance 溯源', async () => {
+    vi.mocked(client.fetchAnalysisSummary).mockResolvedValue(fullSummary('microseismic_velocity'))
+    const { wrapper } = await mountAnalysisCenter('/datasets/ds-1/analysis')
+
+    expect(wrapper.find('[data-test="analysis-export-command"]').exists()).toBe(true)
+    const prov = wrapper.find('[data-test="export-provenance"]')
+    expect(prov.exists()).toBe(true)
+    expect(prov.text()).toContain('analysis.v1')
+    wrapper.unmount()
+  })
+
+  it('顶栏导出入口联动底部导出面板：点击后导出折叠项展开', async () => {
+    vi.mocked(client.fetchAnalysisSummary).mockResolvedValue(fullSummary('microseismic_velocity'))
+    const { wrapper } = await mountAnalysisCenter('/datasets/ds-1/analysis')
+
+    const exportHeader = () =>
+      wrapper
+        .findAll('.el-collapse-item__header')
+        .find((header) => header.text().includes('导出与数据溯源'))
+    expect(exportHeader()?.classes()).not.toContain('is-active')
+    await wrapper.find('[data-test="analysis-export-command"]').trigger('click')
+    await flushPromises()
+    expect(exportHeader()?.classes()).toContain('is-active')
+    expect(wrapper.find('[data-test="export-command-json"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="export-command-csv"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('空间分箱选择：有物化成果时导航到 /results/{id} 并带轴/区间/数据集查询参数', async () => {
+    vi.mocked(client.fetchAnalysisSummary).mockResolvedValue(fullSummary('microseismic_velocity'))
+    const { wrapper, router } = await mountAnalysisCenter('/datasets/ds-1/analysis')
+
+    const panel = wrapper.findComponent(SpatialFeaturePanel)
+    expect(panel.exists()).toBe(true)
+    panel.vm.$emit('select', {
+      axis: 'xy',
+      x_range: [10, 20],
+      y_range: [40, 60],
+      dataset_id: 'ds-1',
+      result_id: 'cand-1',
+    })
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/results/cand-1')
+    expect(router.currentRoute.value.query.axis).toBe('xy')
+    expect(router.currentRoute.value.query.x_range).toBe('10..20')
+    expect(router.currentRoute.value.query.y_range).toBe('40..60')
+    expect(router.currentRoute.value.query.dataset).toBe('ds-1')
+    wrapper.unmount()
+  })
+
+  it('空间分箱选择：无物化成果时显示非阻断解释，不导航', async () => {
+    vi.mocked(client.fetchAnalysisSummary).mockResolvedValue(
+      fullSummary('microseismic_velocity', []),
+    )
+    const { wrapper, router } = await mountAnalysisCenter('/datasets/ds-1/analysis')
+
+    const panel = wrapper.findComponent(SpatialFeaturePanel)
+    panel.vm.$emit('select', {
+      axis: 'xy',
+      x_range: [10, 20],
+      y_range: [40, 60],
+      dataset_id: 'ds-1',
+    })
+    await flushPromises()
+    const hint = wrapper.find('[data-test="analysis-selection-hint"]')
+    expect(hint.exists()).toBe(true)
+    expect(hint.text()).toContain('物化成果')
+    expect(router.currentRoute.value.path).toBe('/datasets/ds-1/analysis')
+    wrapper.unmount()
+  })
+
+  it('模型对比行点击导航到成果页', async () => {
+    vi.mocked(client.fetchAnalysisSummary).mockResolvedValue(fullSummary('microseismic_velocity'))
+    const { wrapper, router } = await mountAnalysisCenter('/datasets/ds-1/analysis')
+
+    await wrapper.find('[data-test="model-candidate-row"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/results/cand-1')
+    wrapper.unmount()
+  })
+
+  it('响应式结构：存在 <900px 与 <600px 媒体查询（jsdom 无布局，源断言）', () => {
+    expect(analysisViewSource).toContain('@media (max-width: 900px)')
+    expect(analysisViewSource).toContain('@media (max-width: 600px)')
+  })
+})

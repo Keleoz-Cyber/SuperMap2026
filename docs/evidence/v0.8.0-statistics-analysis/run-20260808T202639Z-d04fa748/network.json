@@ -1,0 +1,216 @@
+{
+  "run_id": "run-20260808T202639Z-d04fa748",
+  "git_commit": "62099e8c40f018c2cafaf17d74bbcfc146302490",
+  "sdk_sha256": "d69dadab01fc452a79f1fa88a46aced3cf29885df7bf4febbd6f24ce5b578120",
+  "sdk_version": null,
+  "browser": {
+    "name": "chromium",
+    "version": "149.0.7827.55"
+  },
+  "gpu_renderer": "ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 4070 Laptop GPU/PCIe/SSE2, OpenGL 4.5.0)",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "mobile_viewport": {
+    "width": 390,
+    "height": 844
+  },
+  "device_pixel_ratio": 1,
+  "results": {
+    "resistivity": {
+      "case_id": "resistivity",
+      "dataset_version_id": "8c283725-2d7d-5f8b-9c62-2431613d0ec2",
+      "official_result_id": "5717dd61-f62d-435c-a8cf-e33e475e9eb8",
+      "source_sha256": "04c5914d992f397f7dcec3b0d1a6069a9ddeb4a214e5c7de121f37c861cec167",
+      "analysis_profile": "resistivity"
+    },
+    "microseismic": {
+      "case_id": "builtin-microseismic-vx-1911",
+      "dataset_version_id": "d25d3cf9-55a1-55e8-9c92-999a7e9c2477",
+      "official_result_id": "152eecfc-b9a3-4aa2-ad3a-99bac88c1e1f",
+      "source_sha256": "ea3917c2ee228953f39122fc52b864d802de9c9835f07a57c4c88585a501e510",
+      "analysis_profile": "microseismic_velocity"
+    }
+  },
+  "resistivity": {
+    "requests": [
+      {
+        "method": "GET",
+        "path": "/",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/assets/index-Wst9UPyH.css",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/assets/vendor-0yqLpFNh.js",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/assets/element-Dc_uPHmg.js",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/assets/index-Ba1tFFsk.js",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/api/cases/resistivity/workspace",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/assets/AnalysisCenterView-DxgnggIW.css",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/assets/AnalysisCenterView-BaRZtkXW.js",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/api/datasets/8c283725-2d7d-5f8b-9c62-2431613d0ec2/analysis-summary",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/api/results/5717dd61-f62d-435c-a8cf-e33e475e9eb8/materialize",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/api/experiments/253cf9d6-1007-5e8d-ad41-1cc1094a50bd",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/api/results/5717dd61-f62d-435c-a8cf-e33e475e9eb8/render-capability",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/api/results/5717dd61-f62d-435c-a8cf-e33e475e9eb8/render-assets/netcdf",
+        "status": 404
+      },
+      {
+        "method": "GET",
+        "path": "/api/cases/resistivity/formal-selections",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/api/datasets/8c283725-2d7d-5f8b-9c62-2431613d0ec2/points",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/api/results/5717dd61-f62d-435c-a8cf-e33e475e9eb8/preview",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/api/datasets/8c283725-2d7d-5f8b-9c62-2431613d0ec2/analysis-summary",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/api/results/5717dd61-f62d-435c-a8cf-e33e475e9eb8/materialize",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/api/experiments/253cf9d6-1007-5e8d-ad41-1cc1094a50bd",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/api/cases/resistivity/formal-selections",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/api/results/5717dd61-f62d-435c-a8cf-e33e475e9eb8/render-capability",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/api/results/5717dd61-f62d-435c-a8cf-e33e475e9eb8/preview",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/api/datasets/8c283725-2d7d-5f8b-9c62-2431613d0ec2/points",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/api/results/5717dd61-f62d-435c-a8cf-e33e475e9eb8/render-assets/netcdf",
+        "status": 404
+      },
+      {
+        "method": "GET",
+        "path": "/api/datasets/8c283725-2d7d-5f8b-9c62-2431613d0ec2/analysis-summary",
+        "status": 200
+      }
+    ],
+    "failures": []
+  },
+  "microseismic": {
+    "requests": [
+      {
+        "method": "GET",
+        "path": "/",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/assets/index-Wst9UPyH.css",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/assets/vendor-0yqLpFNh.js",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/assets/element-Dc_uPHmg.js",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/assets/index-Ba1tFFsk.js",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/api/cases/builtin-microseismic-vx-1911/workspace",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/assets/AnalysisCenterView-DxgnggIW.css",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/assets/AnalysisCenterView-BaRZtkXW.js",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/api/datasets/d25d3cf9-55a1-55e8-9c92-999a7e9c2477/analysis-summary",
+        "status": 200
+      }
+    ],
+    "failures": []
+  }
+}

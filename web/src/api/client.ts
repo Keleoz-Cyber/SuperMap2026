@@ -1,5 +1,8 @@
 import type {
+  AnalysisExportDownload,
+  AnalysisExportFormat,
   AnalysisJobRecord,
+  AnalysisSummaryResponse,
   AnomalyExtractionAccepted,
   AnomalyExtractionPayload,
   AnomalyExtractionRecord,
@@ -427,3 +430,34 @@ export const fetchComparisonCandidates = (datasetId: string) =>
 
 export const compareCandidates = (ids: string[]) =>
   postJson<MultiCandidateComparison>('/candidate-comparisons', { candidate_result_ids: ids })
+
+// ---------------------------------------------------------------------------
+// v0.8.0 batch 2: statistics & spatial analysis center (read-only)
+// ---------------------------------------------------------------------------
+
+export function fetchAnalysisSummary(datasetId: string): Promise<AnalysisSummaryResponse> {
+  return getJson<AnalysisSummaryResponse>(`/datasets/${datasetId}/analysis-summary`)
+}
+
+// 从 Content-Disposition 解析服务端安全文件名；缺失时回退到逻辑生成名
+function parseDispositionFilename(header: string | null): string | null {
+  if (!header) return null
+  const match = /filename="?([^";]+)"?/i.exec(header)
+  return match?.[1] ?? null
+}
+
+// 导出走浏览器下载语义：返回 blob 与服务端安全文件名，由调用方触发保存；
+// 错误与 JSON 接口共用同一 ApiError 封套解析
+export async function downloadAnalysisExport(
+  datasetId: string,
+  format: AnalysisExportFormat,
+): Promise<AnalysisExportDownload> {
+  const resp = await fetch(`${BASE}/datasets/${datasetId}/analysis-export?format=${format}`)
+  if (!resp.ok) {
+    throw await parseError(resp)
+  }
+  const filename =
+    parseDispositionFilename(resp.headers.get('Content-Disposition')) ??
+    `analysis-${datasetId}.${format}`
+  return { blob: await resp.blob(), filename }
+}

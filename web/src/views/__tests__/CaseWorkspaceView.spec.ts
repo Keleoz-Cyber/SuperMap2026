@@ -69,6 +69,11 @@ async function mountWorkspace(path: string) {
         name: 'candidate-comparison',
         component: { template: '<div />' },
       },
+      {
+        path: '/datasets/:datasetId/analysis',
+        name: 'analysis-center',
+        component: { template: '<div />' },
+      },
     ],
   })
   router.push(path)
@@ -577,5 +582,61 @@ describe('CaseWorkspaceView 电阻率散点预置（v0.8.0）', () => {
     // 单元层锁定响应式规则存在；真实 390x844 无横向溢出断言沿用
     // web/e2e 的 Playwright 模式（setViewportSize + scrollWidth ≤ 390）。
     expect(workspaceViewSource).toContain('@media (max-width: 480px)')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// v0.8.0 第二批 Task 4：统计与空间分析中心入口。已验证数据版本旁出现唯一
+// RouterLink 入口；未验证数据版本不出现入口并显示类型化原因；入口绝不与
+// 「新建实验」等既有命令重复。
+// ---------------------------------------------------------------------------
+
+describe('CaseWorkspaceView 统计与空间分析入口（v0.8.0 第二批）', () => {
+  it('validated 数据版本：出现唯一入口且链接指向分析中心', async () => {
+    const ws = workspaceOf('user_upload')
+    vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(ws)
+    const { wrapper, router } = await mountWorkspace('/cases/up-1')
+
+    const entries = wrapper.findAll('[data-test="analysis-center-entry"]')
+    expect(entries.length).toBe(1)
+    expect(entries[0].text()).toContain('统计与空间分析')
+    expect(entries[0].attributes('href')).toBe('/datasets/ds-1/analysis')
+    expect(wrapper.find('[data-test="analysis-center-unavailable"]').exists()).toBe(false)
+
+    await entries[0].trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.name).toBe('analysis-center')
+    expect(router.currentRoute.value.params.datasetId).toBe('ds-1')
+
+    // 入口不与「新建实验」等既有命令重复
+    expect(wrapper.findAll('[data-test="new-experiment"]').length).toBe(1)
+    wrapper.unmount()
+  })
+
+  it('未验证数据版本：不出现入口并说明原因', async () => {
+    const ws = workspaceOf('user_upload')
+    if (ws.primary_dataset) ws.primary_dataset.status = 'mapped'
+    vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(ws)
+    const { wrapper } = await mountWorkspace('/cases/up-1')
+
+    expect(wrapper.find('[data-test="analysis-center-entry"]').exists()).toBe(false)
+    const reason = wrapper.find('[data-test="analysis-center-unavailable"]')
+    expect(reason.exists()).toBe(true)
+    expect(reason.text()).toContain('验证')
+    wrapper.unmount()
+  })
+
+  it.each([
+    { path: `/cases/${PRESET_ID}`, makeWs: () => workspaceOf('builtin_preset'), datasetId: 'ds-1' },
+    { path: '/cases/resistivity', makeWs: () => RESISTIVITY_PRESET_WS, datasetId: 'ds-rho-1' },
+  ])('预置案例（$path）：validated 预置数据同样出现分析中心入口', async ({ path, makeWs, datasetId }) => {
+    vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(makeWs())
+    const { wrapper } = await mountWorkspace(path)
+
+    const entries = wrapper.findAll('[data-test="analysis-center-entry"]')
+    expect(entries.length).toBe(1)
+    expect(entries[0].text()).toContain('统计与空间分析')
+    expect(entries[0].attributes('href')).toBe(`/datasets/${datasetId}/analysis`)
+    wrapper.unmount()
   })
 })

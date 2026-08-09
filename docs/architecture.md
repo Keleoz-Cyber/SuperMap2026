@@ -191,6 +191,24 @@ v0.4 routers (`cases`, `datasets`, `experiments`, `runs`, `results`) registered 
 - iframe 协议 v2（`renderProtocol.ts` + `supermap-volume-frame/app.js`）：`gmp-supermap-volume/v2` 用单调递增 `revision` 的完整渲染状态（mode/filter/opacity/colorTransferFunction/lighting/gradientOpacity/boundingBox + 可选 slice/contourValue）取代 v1 逐控件命令；过期 revision 忽略；slice 模式必须携带权威 slice 载荷（axis/index/coordinate/relativePosition 只能来自 slice-analysis 响应），缺失即硬校验失败；`FRAME_READY` 上报含 `singleAxisSlice` 的 `FrameCapabilities`；单轴切片以负坐标（sliceCoordinate = -1）隐藏两个非活动轴——这是 SuperMap3D 12.1 的真实 GPU 实测技术（`docs/evidence/v0.7.0-single-axis-probe/`），不是文档化 API 承诺。
 - `web/`：`NativeVolumePanel` 编排 revision 状态；`VolumeRenderToolbar`（常驻模式/色带/标度/滤波/不透明度/光照/渐变透明度/包围盒，受控色带/标度与剖面热力图共享）；`OrthogonalSliceControls`（轴选择/前后层/整数滑块，change 150ms 防抖、commit 立即）；`SliceAnalysisPanel` + `SliceHeatmap`（ECharts 热力图、统计、ZIP 下载）。3D slice 状态只来自权威剖面响应。no fallback：能力失败、哈希不符、协议错误、SDK 缺失都只显示显式错误，不存在任何回退渲染器或点云回退。
 
+### 统计与空间分析中心（implemented in v0.8.0 batch 2）
+
+- `geomodeling.analysis` 包：`profiles.py` 为 profile 领域注册表与判定（`resolve_analysis_profile`，冻结 pydantic 模型只声明「可展示什么」与所需 mapping 角色字段，不含统计结果）；`statistics.py` 为有限统计基元（非有限值绝不入统计）；`schemas.py` 为 API 响应模型。分析中心完全只读：从已验证数据版本的样本与已物化成果元数据计算摘要，不写数据库、不物化新资产、不重跑插值。
+- profile 注册表与判定规则：判定输入仅限 `profile_json.mapping` 的 `value_name`/`value_unit`/`dimension`，绝不使用 case_id；前端按 profile 声明渲染模块，不写案例条件分支。
+
+  | profile | 判定规则 | 专属模块 |
+  | --- | --- | --- |
+  | `microseismic_velocity` | `value_name=="Vx"` 且 `value_unit=="km/s"`（单位不符一律降级，不静默换算）+ 3D | `axis_trends`、`gradient`、`spatial_anomaly` |
+  | `resistivity` | `value_name=="RHO"` + 3D | `distribution.log10`、`depth_slices`、`spatial_anomaly` |
+  | `gas_content` | `value_name∈{CH4,gas,gas_content}` + 3D（仅注册，数据合同到位后接入） | 本批不实现 |
+  | `generic_3d` | 不满足上述规则或显式非 3D | 质量、基础统计、分布、空间范围、通用剖面、模型指标 + `disabled_reasons` |
+
+  所有 profile 共享 `quality`/`statistics` 基础模块与 `profile_slices`/`model_comparison` 通用模块（模型对比只展示实际存在且已物化的算法指标，不重算）。空间异常阈值口径为非空单元均值的 p75/p25（`cell_mean_quantiles_p25_p75`，致密采样下样本级阈值会被单元均值平滑，`62099e8` 自样本级口径修复并附回归测试）；电阻率 `depth_slices` 保持样本级 `valid_value_quantiles_p25_p75` 口径。
+- 只读 API（`api/routes/analysis`）：`GET /api/datasets/{id}/analysis-summary` 与 `GET /api/datasets/{id}/analysis-export?format=json|csv`，全部 GET 纯查询。门禁顺序 404 `DATASET_NOT_FOUND` → 410 `CASE_TRASHED` → 409 `DATASET_NOT_VALIDATED`；空公共有效集 fail-closed 409 `ANALYSIS_EMPTY_COMMON_VALID`，绝不返回 null 堆叠的伪成功面板。响应携带 `variable`/`quality`/`statistics`/`modules` 与 `provenance`（`source_sha256`、`dataset_version`、`generated_at`、`calculation_version=analysis.v1`）；CSV 导出为 7 行 `# k=v` 注释头 + 稳定表头 `section,axis,bin_index,metric,lower,upper,value`，文件名 `analysis-{dataset_id}-{profile}.{json,csv}`；公开载荷绝不包含本机绝对路径。
+- 前端（`web/`）：`AnalysisCenterView`（路由 `/datasets/:datasetId/analysis`）采用 A+B 布局——顶栏案例身份/数据版本/变量单位/质量徽标/导出、左侧模块导航、中央单焦点主视图（空间/分布/剖面切换）、右栏质量统计+模型对比、底部可折叠剖面与导出；案例工作台（`CaseWorkspaceView`）已验证数据版本旁为唯一入口。空间分箱与剖面区间点击携带 `axis`/`x_range`/`y_range`/`dataset` query 导航成果页；ECharts 组件全部在卸载时 dispose；移动端 390×844 无横向溢出（900px 断点右栏折下、600px 断点导航横滚）。
+- 与渲染链的关系：分析中心不重算、不修改 NetCDF 渲染资产与剖面 API（`slice-analysis` 合同不变），只通过带筛选 query 的路由跳转让用户在成果页（Volume/Slice/Contour）复核统计项对应的空间范围；模型对比只读取已物化成果的登记指标。
+- 降级语义：`generic_3d` 附逐条 `disabled_reasons`（机器可读缺失项 + 展示文案），前端显示解释性空状态，绝不显示空图或看似完整的专业面板；`gas_content` 仅注册不伪造瓦斯数据；C 类结论看板（发现/证据/三维定位/可打印答辩页）为 v0.9.0 预留，本批未实现。
+
 ### Demo hardening (implemented in v0.4.1)
 
 - `demo_assets` + `api/routes/demo`: the single authoritative public demo CSV (`demo/platform_demo_3d.csv`) with a frozen SHA-256 contract (fail-closed on missing/modified asset) and a sanitized download endpoint.

@@ -49,6 +49,7 @@ from geomodeling.api.deps import (
     get_settings,
 )
 from geomodeling.api.routes import (
+    analysis,
     cases,
     datasets,
     demo,
@@ -387,6 +388,9 @@ def create_app() -> FastAPI:
     app.include_router(demo.router)
     app.include_router(cases.router)
     app.include_router(datasets.router)
+    # v0.8.0 第二批只读分析摘要/导出：/api/datasets/{id}/analysis-* 精确
+    # 后缀路径，与 datasets 路由同前缀互不遮蔽；纯查询 GET，绝不变异
+    app.include_router(analysis.router)
     app.include_router(experiments.router)
     app.include_router(runs.router)
     app.include_router(results.router)

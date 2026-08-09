@@ -201,7 +201,8 @@ describe('CandidateComparisonView', () => {
     expect(wrapper.text()).toContain('同一数据版本和验证方法下比较不同实验结果')
     expect(wrapper.text()).toContain('IDW（反距离加权）')
     expect(wrapper.text()).toContain('普通克里金')
-    expect(wrapper.text()).toContain('dsi_like')
+    expect(wrapper.text()).toContain('DSI-like 离散平滑插值')
+    expect(wrapper.text()).not.toContain('dsi_like')
     wrapper.unmount()
   })
 

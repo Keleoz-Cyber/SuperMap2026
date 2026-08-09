@@ -1,6 +1,7 @@
 const ALGORITHMS: Record<string, string> = {
   idw: 'IDW（反距离加权）',
   ordinary_kriging: '普通克里金',
+  dsi_like: 'DSI-like 离散平滑插值',
 }
 
 export function algorithmLabel(id: string): string {
