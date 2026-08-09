@@ -1,0 +1,343 @@
+{
+  "run_id": "run-20260809T105534Z-95ed60e3",
+  "git_commit": "05c4a420b4e186e8e25afcf6a6fcf500e0ca361f",
+  "sdk_sha256": "d69dadab01fc452a79f1fa88a46aced3cf29885df7bf4febbd6f24ce5b578120",
+  "sdk_version": null,
+  "browser": {
+    "name": "chromium",
+    "version": "149.0.7827.55"
+  },
+  "gpu_renderer": "ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 4070 Laptop GPU/PCIe/SSE2, OpenGL 4.5.0)",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "mobile_viewport": {
+    "width": 390,
+    "height": 844
+  },
+  "device_pixel_ratio": 1,
+  "results": {
+    "resistivity": {
+      "case_id": "resistivity",
+      "dataset_version_id": "8c283725-2d7d-5f8b-9c62-2431613d0ec2",
+      "official_result_id": "d9604ecd-c3be-443f-9894-38a9986f3e7a",
+      "source_sha256": "04c5914d992f397f7dcec3b0d1a6069a9ddeb4a214e5c7de121f37c861cec167",
+      "analysis_profile": "resistivity"
+    },
+    "microseismic": {
+      "case_id": "builtin-microseismic-vx-1911",
+      "dataset_version_id": "d25d3cf9-55a1-55e8-9c92-999a7e9c2477",
+      "official_result_id": "163ac3de-e248-4399-9411-d8d6e0eb5624",
+      "source_sha256": "4011de85e1fa7e49999fc5ae66a73e00a59dbec372a417ae0728d0a338c7765e",
+      "analysis_profile": "microseismic_velocity"
+    }
+  },
+  "resistivity": {
+    "dataset_id": "8c283725-2d7d-5f8b-9c62-2431613d0ec2",
+    "case_id": "resistivity",
+    "analysis_profile": "resistivity",
+    "profile_version": 1,
+    "variable": {
+      "name": "RHO",
+      "unit": "Ω·m"
+    },
+    "quality": {
+      "row_count": 17549,
+      "valid_count": 17549,
+      "invalid_count": 0,
+      "duplicate_coordinate_count": 0,
+      "bounds": {
+        "x": [
+          -160,
+          -40
+        ],
+        "y": [
+          220,
+          660
+        ],
+        "z": [
+          -833.0047143,
+          -19.5999
+        ]
+      }
+    },
+    "statistics": {
+      "count": 17549,
+      "min": 1.032113,
+      "max": 149.984,
+      "mean": 39.51175709470625,
+      "median": 33.54847,
+      "std": 23.279165388911025,
+      "quantiles": {
+        "p05": 11.967908,
+        "p25": 18.13487,
+        "p50": 33.54847,
+        "p75": 60.26341,
+        "p95": 76.570668
+      }
+    },
+    "modules": [
+      {
+        "module_id": "quality",
+        "status": "ok",
+        "method": "有效行口径：声明有效且属性值有限（与建模公共有效集一致），排除行计数保留；重复坐标按映射维度判定（超出首次出现的行数，仅统计有效行）",
+        "source_fields": {
+          "x": "X",
+          "y": "Y",
+          "z": "Z",
+          "value": "RHO"
+        },
+        "thresholds": null,
+        "message": null
+      },
+      {
+        "module_id": "statistics",
+        "status": "ok",
+        "method": "有限值基础统计（count/min/max/mean/median/std(ddof=1) 与 p05–p95 分位数，NumPy 线性插值）；仅声明有效且有限的样本参与，count=1 时 std 为 null",
+        "source_fields": {
+          "value": "RHO"
+        },
+        "thresholds": null,
+        "message": null
+      },
+      {
+        "module_id": "distribution",
+        "status": "ok",
+        "method": "原始值等宽分箱（数据范围+固定 32 格），计数守恒",
+        "source_fields": {
+          "value": "RHO"
+        },
+        "thresholds": null,
+        "message": null
+      },
+      {
+        "module_id": "spatial_anomaly",
+        "status": "ok",
+        "method": "XY 平面 32×32 网格单元均值与非空单元均值 p75/p25 分位阈值比较划分高/低值区域（致密采样下样本级阈值会被单元均值平滑掉，区域口径基于单元均值分布）；体积占比=区域样本计数/有效样本总数（样本计数口径）；阈值来源见 thresholds",
+        "source_fields": {
+          "x": "X",
+          "y": "Y",
+          "value": "RHO"
+        },
+        "thresholds": {
+          "high": 41.31838933333333,
+          "low": 38.418232291666676,
+          "source": "cell_mean_quantiles_p25_p75",
+          "method": "高值阈值=非空网格单元均值 p75、低值阈值=非空网格单元均值 p25（NumPy 线性插值分位数）；阈值由单元均值分位数产生，非人工输入"
+        },
+        "message": null
+      },
+      {
+        "module_id": "depth_slices",
+        "status": "ok",
+        "method": "Z 轴等宽 16 层（数据范围+固定层数）；层高值占比=层内 value≥p75 样本数/层样本数，低值占比=层内 value≤p25 样本数/层样本数（体积占比以样本计数为口径）；空层为 null；阈值来源见 thresholds",
+        "source_fields": {
+          "z": "Z",
+          "value": "RHO"
+        },
+        "thresholds": {
+          "high": 60.26341,
+          "low": 18.13487,
+          "source": "valid_value_quantiles_p25_p75",
+          "method": "高值阈值=有效值 p75、低值阈值=有效值 p25（NumPy 线性插值分位数）；阈值由数据分位数产生，非人工输入"
+        },
+        "message": null
+      },
+      {
+        "module_id": "profile_slices",
+        "status": "ok",
+        "method": null,
+        "source_fields": null,
+        "thresholds": null,
+        "message": null
+      },
+      {
+        "module_id": "model_comparison",
+        "status": "ok",
+        "method": null,
+        "source_fields": null,
+        "thresholds": null,
+        "message": null
+      }
+    ],
+    "candidates": [
+      {
+        "result_id": "d9604ecd-c3be-443f-9894-38a9986f3e7a",
+        "algorithm": "ordinary_kriging",
+        "metrics": {
+          "rmse": 6.468624706230003,
+          "mae": 3.254933792606336,
+          "r2": 0.9227828360067315,
+          "bias": -0.09814332095220975
+        },
+        "materialized": true,
+        "formal_selection": true
+      }
+    ],
+    "provenance": {
+      "source_sha256": "04c5914d992f397f7dcec3b0d1a6069a9ddeb4a214e5c7de121f37c861cec167",
+      "dataset_version": 1,
+      "generated_at": "2026-08-09T10:55:45.864628+00:00",
+      "calculation_version": "analysis.v1"
+    }
+  },
+  "microseismic": {
+    "dataset_id": "d25d3cf9-55a1-55e8-9c92-999a7e9c2477",
+    "case_id": "builtin-microseismic-vx-1911",
+    "analysis_profile": "microseismic_velocity",
+    "profile_version": 1,
+    "variable": {
+      "name": "Vx",
+      "unit": "km/s"
+    },
+    "quality": {
+      "row_count": 1911,
+      "valid_count": 1911,
+      "invalid_count": 0,
+      "duplicate_coordinate_count": 0,
+      "bounds": {
+        "x": [
+          -750,
+          960
+        ],
+        "y": [
+          -995,
+          1310
+        ],
+        "z": [
+          -4086.538,
+          -37.5
+        ]
+      }
+    },
+    "statistics": {
+      "count": 1911,
+      "min": 0.15,
+      "max": 3.134339,
+      "mean": 0.8356490357577185,
+      "median": 0.6,
+      "std": 0.6799191255912642,
+      "quantiles": {
+        "p05": 0.2,
+        "p25": 0.35,
+        "p50": 0.6,
+        "p75": 1.0591255,
+        "p95": 2.4045825
+      }
+    },
+    "modules": [
+      {
+        "module_id": "quality",
+        "status": "ok",
+        "method": "有效行口径：声明有效且属性值有限（与建模公共有效集一致），排除行计数保留；重复坐标按映射维度判定（超出首次出现的行数，仅统计有效行）",
+        "source_fields": {
+          "x": "X_LOCAL_M",
+          "y": "Y_LOCAL_M",
+          "z": "Z_LOCAL_M",
+          "value": "VX_KM_S"
+        },
+        "thresholds": null,
+        "message": null
+      },
+      {
+        "module_id": "statistics",
+        "status": "ok",
+        "method": "有限值基础统计（count/min/max/mean/median/std(ddof=1) 与 p05–p95 分位数，NumPy 线性插值）；仅声明有效且有限的样本参与，count=1 时 std 为 null",
+        "source_fields": {
+          "value": "VX_KM_S"
+        },
+        "thresholds": null,
+        "message": null
+      },
+      {
+        "module_id": "distribution",
+        "status": "ok",
+        "method": "原始值等宽分箱（数据范围+固定 32 格），计数守恒",
+        "source_fields": {
+          "value": "VX_KM_S"
+        },
+        "thresholds": null,
+        "message": null
+      },
+      {
+        "module_id": "axis_trends",
+        "status": "ok",
+        "method": "X/Y/Z 逐轴等宽分箱（数据范围+固定 32 格），逐格 count/mean/median，空格为 null；与剖面统计同一确定性口径",
+        "source_fields": {
+          "x": "X_LOCAL_M",
+          "y": "Y_LOCAL_M",
+          "z": "Z_LOCAL_M",
+          "value": "VX_KM_S"
+        },
+        "thresholds": null,
+        "message": null
+      },
+      {
+        "module_id": "gradient",
+        "status": "ok",
+        "method": "XY 平面 16×16 网格单元均值 → 相邻（X/Y 向）非空单元差分幅值 |Δmean| 的有限统计（count/mean/p95/max）；任一侧为空格的相邻对排除且计数保留；仅用有限值",
+        "source_fields": {
+          "x": "X_LOCAL_M",
+          "y": "Y_LOCAL_M",
+          "value": "VX_KM_S"
+        },
+        "thresholds": null,
+        "message": null
+      },
+      {
+        "module_id": "spatial_anomaly",
+        "status": "ok",
+        "method": "XY 平面 32×32 网格单元均值与非空单元均值 p75/p25 分位阈值比较划分高/低值区域（致密采样下样本级阈值会被单元均值平滑掉，区域口径基于单元均值分布）；体积占比=区域样本计数/有效样本总数（样本计数口径）；阈值来源见 thresholds",
+        "source_fields": {
+          "x": "X_LOCAL_M",
+          "y": "Y_LOCAL_M",
+          "value": "VX_KM_S"
+        },
+        "thresholds": {
+          "high": 0.8861927471264357,
+          "low": 0.7906794406779667,
+          "source": "cell_mean_quantiles_p25_p75",
+          "method": "高值阈值=非空网格单元均值 p75、低值阈值=非空网格单元均值 p25（NumPy 线性插值分位数）；阈值由单元均值分位数产生，非人工输入"
+        },
+        "message": null
+      },
+      {
+        "module_id": "profile_slices",
+        "status": "ok",
+        "method": null,
+        "source_fields": null,
+        "thresholds": null,
+        "message": null
+      },
+      {
+        "module_id": "model_comparison",
+        "status": "ok",
+        "method": null,
+        "source_fields": null,
+        "thresholds": null,
+        "message": null
+      }
+    ],
+    "candidates": [
+      {
+        "result_id": "163ac3de-e248-4399-9411-d8d6e0eb5624",
+        "algorithm": "ordinary_kriging",
+        "metrics": {
+          "rmse": 0.26826092589268974,
+          "mae": 0.21278721948784854,
+          "r2": 0.8442501479446578,
+          "bias": 0.053030366196279405
+        },
+        "materialized": true,
+        "formal_selection": true
+      }
+    ],
+    "provenance": {
+      "source_sha256": "4011de85e1fa7e49999fc5ae66a73e00a59dbec372a417ae0728d0a338c7765e",
+      "dataset_version": 1,
+      "generated_at": "2026-08-09T10:55:52.098076+00:00",
+      "calculation_version": "analysis.v1"
+    }
+  }
+}

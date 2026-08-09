@@ -1,0 +1,82 @@
+{
+  "run_id": "run-20260809T105534Z-95ed60e3",
+  "git_commit": "05c4a420b4e186e8e25afcf6a6fcf500e0ca361f",
+  "sdk_sha256": "d69dadab01fc452a79f1fa88a46aced3cf29885df7bf4febbd6f24ce5b578120",
+  "sdk_version": null,
+  "browser": {
+    "name": "chromium",
+    "version": "149.0.7827.55"
+  },
+  "gpu_renderer": "ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 4070 Laptop GPU/PCIe/SSE2, OpenGL 4.5.0)",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "mobile_viewport": {
+    "width": 390,
+    "height": 844
+  },
+  "device_pixel_ratio": 1,
+  "results": {
+    "resistivity": {
+      "case_id": "resistivity",
+      "dataset_version_id": "8c283725-2d7d-5f8b-9c62-2431613d0ec2",
+      "official_result_id": "d9604ecd-c3be-443f-9894-38a9986f3e7a",
+      "source_sha256": "04c5914d992f397f7dcec3b0d1a6069a9ddeb4a214e5c7de121f37c861cec167",
+      "analysis_profile": "resistivity"
+    },
+    "microseismic": {
+      "case_id": "builtin-microseismic-vx-1911",
+      "dataset_version_id": "d25d3cf9-55a1-55e8-9c92-999a7e9c2477",
+      "official_result_id": "163ac3de-e248-4399-9411-d8d6e0eb5624",
+      "source_sha256": "4011de85e1fa7e49999fc5ae66a73e00a59dbec372a417ae0728d0a338c7765e",
+      "analysis_profile": "microseismic_velocity"
+    }
+  },
+  "resistivity": {
+    "case_id": "resistivity",
+    "dataset_version_id": "8c283725-2d7d-5f8b-9c62-2431613d0ec2",
+    "official_result_id": "d9604ecd-c3be-443f-9894-38a9986f3e7a",
+    "row_count": 17549,
+    "analysis_profile": "resistivity",
+    "calculation_version": "analysis.v1",
+    "dataset_version": 1,
+    "source_sha256": "04c5914d992f397f7dcec3b0d1a6069a9ddeb4a214e5c7de121f37c861cec167"
+  },
+  "microseismic": {
+    "case_id": "builtin-microseismic-vx-1911",
+    "dataset_version_id": "d25d3cf9-55a1-55e8-9c92-999a7e9c2477",
+    "official_result_id": "163ac3de-e248-4399-9411-d8d6e0eb5624",
+    "row_count": 1911,
+    "analysis_profile": "microseismic_velocity",
+    "calculation_version": "analysis.v1",
+    "dataset_version": 1,
+    "source_sha256": "4011de85e1fa7e49999fc5ae66a73e00a59dbec372a417ae0728d0a338c7765e"
+  },
+  "seed": {
+    "resistivity": {
+      "case_id": "resistivity",
+      "workspace_kind": "builtin_preset",
+      "dataset_version_id": "8c283725-2d7d-5f8b-9c62-2431613d0ec2",
+      "experiment_id": "253cf9d6-1007-5e8d-ad41-1cc1094a50bd",
+      "run_id": "63077623-460d-5e04-aa86-a3344d2524bb",
+      "official_result_id": "d9604ecd-c3be-443f-9894-38a9986f3e7a",
+      "official_url": "/results/d9604ecd-c3be-443f-9894-38a9986f3e7a",
+      "materialized": true,
+      "source_sha256": "04c5914d992f397f7dcec3b0d1a6069a9ddeb4a214e5c7de121f37c861cec167",
+      "baseline_sha256": "0243d2117eb275293fccf36072284602110dd939ce45b606a11ce5ee255ad603"
+    },
+    "microseismic": {
+      "case_id": "builtin-microseismic-vx-1911",
+      "workspace_kind": "builtin_preset",
+      "dataset_version_id": "d25d3cf9-55a1-55e8-9c92-999a7e9c2477",
+      "experiment_id": "f2399db7-8470-5175-8948-6e7596ee80d5",
+      "run_id": "4ecd4794-fa9f-54d7-b746-3302ab8420ac",
+      "official_result_id": "163ac3de-e248-4399-9411-d8d6e0eb5624",
+      "official_url": "/results/163ac3de-e248-4399-9411-d8d6e0eb5624",
+      "materialized": true,
+      "source_sha256": "4011de85e1fa7e49999fc5ae66a73e00a59dbec372a417ae0728d0a338c7765e",
+      "baseline_sha256": "a5cfde499eec610f7d461932a1a4b37e23aa65983a280820277dbb679555c7ee"
+    }
+  }
+}
