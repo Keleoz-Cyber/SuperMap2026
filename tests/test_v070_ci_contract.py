@@ -30,6 +30,23 @@ v0.8.0 第二批 Task 9 增量（统计与空间分析中心）：
 - 证据目录骨架 ``docs/evidence/v0.8.0-statistics-analysis/README.md`` 存在
   且只含生成约定；一旦真实证据入库，run 目录身份 JSON 的 git_commit 必须
   是当前 HEAD 的祖先（与电阻率证据同一祖先检查，共享同一辅助函数）。
+
+v0.8.0 第三批 Task 9 增量（瓦斯预置案例）：
+
+- Live E2E 新增 ``web/e2e-live/gas-preset-live.spec.ts`` 与夹具
+  ``web/e2e-live/fixtures/gasPreset.ts``：隔离运行时 + ``seed-gas`` 内置
+  example_data 源 seed（绝无外部私有源跳过门——文件级 ``test.skip`` 与
+  ``GEOMODELING_RHO_SOURCE`` 一律不得出现）+ 显式 POST 资产 ready +
+  首页/工作台/成果页身份链 + runV070RenderGates 五模式渲染门（体盒跨度按
+  真实 bounds）+ 普通刷新 + 持久化 profile 四缓存场景（自管 5278 端口）；
+  只作本机发布门，不进 CI browser-live 过滤；
+- Mock E2E 新增 ``web/e2e/gas-preset.spec.ts``：首页三案例卡（gas active
+  + builtin_preset，无暂缓/DAT/legacy 文案）→ gas 工作台（validated
+  58 行/官方成果）→ 成果页（算法/NetCDF 面板/X/Y/Z 控件）→ 分析中心
+  （gas_content/ml/g/含量分布/高低含量区域）→ 390×844 无横向溢出；
+- 证据目录骨架 ``docs/evidence/v0.8.0-batch-3-gas/README.md`` 存在且只含
+  生成约定；一旦真实证据入库，git_commit 祖先检查与既有证据目录同一辅助
+  函数。
 """
 
 from __future__ import annotations
@@ -48,6 +65,10 @@ WARM_CACHE_LIVE_SPEC = Path("web/e2e-live/warm-cache-upgrade-live.spec.ts")
 LEGACY_GRID_FIXTURE = Path("web/e2e-live/fixtures/legacyGrid.ts")
 ANALYSIS_LIVE_SPEC = Path("web/e2e-live/analysis-center-live.spec.ts")
 ANALYSIS_EVIDENCE_README = Path("docs/evidence/v0.8.0-statistics-analysis/README.md")
+GAS_LIVE_SPEC = Path("web/e2e-live/gas-preset-live.spec.ts")
+GAS_LIVE_FIXTURE = Path("web/e2e-live/fixtures/gasPreset.ts")
+GAS_MOCK_SPEC = Path("web/e2e/gas-preset.spec.ts")
+GAS_EVIDENCE_README = Path("docs/evidence/v0.8.0-batch-3-gas/README.md")
 
 MOCK_SPEC_MARKERS = (
     # 预置卡身份（无旧语样断言）
@@ -139,6 +160,71 @@ ANALYSIS_LIVE_SPEC_MARKERS = (
     "--use-angle=gl",
     # 证据目录
     "docs/evidence/v0.8.0-statistics-analysis",
+)
+
+GAS_LIVE_SPEC_MARKERS = (
+    # 隔离运行时与内置源 seed 夹具（无外部私有源跳过门）
+    "GEOMODELING_DATA_DIR",
+    "seed-gas",
+    "gasPreset",
+    "ensureGasRenderAsset",
+    # API 身份链（candidate_result / CH4_content / ml/g / 官方网格合同）
+    "builtin_preset",
+    "candidate_result",
+    "CH4_content",
+    "ml/g",
+    "ordinary_kriging",
+    "151, 333, 12",
+    # 五模式渲染门与体盒几何（按真实 bounds 计算跨度）
+    "runV070RenderGates",
+    "2992.986",
+    "--use-angle=gl",
+    # 普通刷新与持久化 profile 四缓存场景（自管端口）
+    "page.reload",
+    "launchPersistentContext",
+    "GEOMODELING_WARM_CACHE_PORT",
+    "5278",
+    # 证据目录
+    "docs/evidence/v0.8.0-batch-3-gas",
+)
+
+GAS_FIXTURE_MARKERS = (
+    # seed-gas 进程夹具（唯一生产入口；PYTHONPATH 钉住仓库 src）
+    "seed-gas",
+    "--data-dir",
+    "PYTHONPATH",
+    # 官方成果身份解析与显式 POST 资产 ready
+    "official_result",
+    "render-assets/netcdf",
+    "ready",
+)
+
+GAS_MOCK_SPEC_MARKERS = (
+    # 首页三案例卡（gas active + builtin_preset，无暂缓/DAT/legacy 文案）
+    "煤层瓦斯",
+    "散点预置 · 官方基线成果",
+    "标准化散点 · 58 个合格样品",
+    "X/Y/Z/CH4_content",
+    # gas 统一工作台（validated 58 行/官方成果已物化）
+    "case-workspace-header",
+    "行数 58",
+    "open-official-result",
+    # 官方成果页（算法/网格/NetCDF 面板/X/Y/Z 控件）
+    "cand-gas-official",
+    "ordinary_kriging",
+    "151×333×12",
+    "native-volume-panel",
+    "axis-x",
+    "axis-y",
+    "axis-z",
+    # 分析中心（gas_content/ml/g/含量分布/高低含量区域）
+    "analysis-center-entry",
+    "瓦斯含量",
+    "ml/g",
+    "含量分布",
+    "高/低含量区域",
+    # 移动视口
+    "390",
 )
 
 
@@ -302,3 +388,40 @@ def test_analysis_evidence_readme_skeleton_and_committed_runs_identity():
     ):
         assert marker in text, f"分析证据 README 缺少约定锚点：{marker}"
     _assert_committed_runs_have_ancestor_identity(ANALYSIS_EVIDENCE_README.parent)
+
+
+def test_gas_preset_live_spec_has_seed_chain_render_gates_and_cache_scenarios():
+    text = _read(GAS_LIVE_SPEC)
+    missing = [marker for marker in GAS_LIVE_SPEC_MARKERS if marker not in text]
+    assert not missing, f"瓦斯 live 规格缺少 seed/身份链/渲染门/缓存场景锚点：{missing}"
+    # 内置 example_data 源：绝无外部私有源跳过门（与电阻率/分析中心 live 相反向合同）
+    assert "GEOMODELING_RHO_SOURCE" not in text, (
+        "瓦斯 live 规格使用内置 example_data 源，不得引用外部私有源环境变量"
+    )
+    assert "test.skip(" not in text, "瓦斯 live 规格无需任何跳过门"
+    # 与既有 live 规格同一纪律：只作本机发布门，不进 CI browser-live 过滤
+    whole = _read(CI)
+    assert "gas-preset-live" not in whole, (
+        "瓦斯 live 规格只作本机发布门，不得进入 CI browser-live 过滤"
+    )
+
+
+def test_gas_preset_fixture_uses_bundled_source_seed_cli():
+    text = _read(GAS_LIVE_FIXTURE)
+    missing = [marker for marker in GAS_FIXTURE_MARKERS if marker not in text]
+    assert not missing, f"瓦斯 live 夹具缺少 seed-gas/资产锚点：{missing}"
+    # 内置源：夹具不得引入外部私有源环境变量
+    assert "GEOMODELING_RHO_SOURCE" not in text
+
+
+def test_gas_mock_e2e_spec_covers_preset_workspace_result_analysis_flow():
+    text = _read(GAS_MOCK_SPEC)
+    missing = [marker for marker in GAS_MOCK_SPEC_MARKERS if marker not in text]
+    assert not missing, f"瓦斯 Mock E2E 规格缺少首页/工作台/成果/分析中心锚点：{missing}"
+
+
+def test_gas_evidence_readme_skeleton_and_committed_runs_identity():
+    text = _read(GAS_EVIDENCE_README)
+    for marker in ("seed-gas", "run_id", "git_commit"):
+        assert marker in text, f"瓦斯证据 README 缺少约定锚点：{marker}"
+    _assert_committed_runs_have_ancestor_identity(GAS_EVIDENCE_README.parent)
