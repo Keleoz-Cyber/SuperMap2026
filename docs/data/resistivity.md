@@ -12,7 +12,7 @@
 
 ## 2. 散点源合同
 
-电阻率源为项目外部的标准化 CSV（逻辑身份 `地下电阻率节点_标准化.csv`）。**源文件不入库、不提交 Git**；运行时只登记其 SHA-256 指纹，CI 使用脱敏夹具，不依赖本机数据。
+电阻率源内置在仓库 `example_data/地下电阻率节点_标准化.csv`（v0.8.0 第三批起；此前为项目外部私有文件）。**字节级 SHA-256 冻结合同**（`example_data/*.csv` 关闭 EOL 归一化，任意平台检出字节一致）；运行时只登记其 SHA-256 指纹，CI 使用脱敏夹具，不依赖本机数据。
 
 | 项目 | 合同 |
 |---|---|
@@ -97,9 +97,9 @@ profile 只登记计数与验证柱身份指纹（64 位 SHA-256），坐标清�
 
 ```powershell
 python -m pip install -e ".[api,test]"
-# 预置 seed（需要外部标准化源 CSV；基线默认读 config/presets/resistivity-official-baseline.json）
-python -m geomodeling.preset_cli seed-resistivity --source <标准化源CSV路径>
+# 预置 seed（默认读项目内 example_data/ 内置源；基线默认读 config/presets/resistivity-official-baseline.json）
+python -m geomodeling.preset_cli seed-resistivity
 python -m pytest -q -m "not local_data"
 ```
 
-预期：seed 输出只含逻辑身份（案例/数据版本/实验/运行/官方成果 ID 与指纹），首页电阻率卡为“标准化散点 · 17,549 个节点”的 `builtin_preset` 预置卡，便携测试不依赖外部源（脱敏夹具承载合同）。
+预期：seed 输出只含逻辑身份（案例/数据版本/实验/运行/官方成果 ID 与指纹），首页电阻率卡为“标准化散点 · 17,549 个节点”的 `builtin_preset` 预置卡，便携测试不依赖外部源（脱敏夹具承载合同；`--source` 仅在测试/审计时显式覆盖默认内置源）。

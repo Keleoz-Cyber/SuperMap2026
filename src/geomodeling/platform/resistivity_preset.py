@@ -1,16 +1,16 @@
 """v0.8.0 电阻率散点预置：源合同（Task 1）+ 只读 seed 链（Task 2）。
 
-电阻率标准化 CSV 是项目外部的私有文件（逻辑身份
-``地下电阻率节点_标准化.csv``），绝不提交 Git、绝不在受控文件中出现
-本机绝对路径；运行时仅登记其 SHA-256 指纹。已核验源事实：表头恰好
-``X,Y,Z,RHO``、17,549 行、全部数值有限、``(X,Y,Z)`` 无重复、局部工程
-坐标（未声明 EPSG）；RHO 单位待来源确认（不静默声明单位、不做换算）。
+电阻率标准化 CSV 内置在仓库 ``example_data/地下电阻率节点_标准化.csv``
+（v0.8.0 第三批起默认源；字节级冻结合同见 tests/test_example_data_contract.py），
+运行时仅登记其 SHA-256 指纹，绝不在受控文件中出现本机绝对路径。已核验源
+事实：表头恰好 ``X,Y,Z,RHO``、17,549 行、全部数值有限、``(X,Y,Z)`` 无重复、
+局部工程坐标（未声明 EPSG）；RHO 单位待来源确认（不静默声明单位、不做换算）。
 
 加载器 fail-closed：缺失文件、表头/行数不符、非数值/非有限、重复 XYZ
 一律抛出 ``PRESET_SOURCE_INVALID``（409）。本模块绝不向公共层返回本机
 源路径（错误 details 不含 Path 对象或绝对路径文本）。
 
-Task 2：``seed_resistivity_preset`` 经正常生命周期把外部源 seed 为只读
+Task 2：``seed_resistivity_preset`` 经正常生命周期把内置源 seed 为只读
 ``builtin_preset`` 案例链（Case→DatasetVersion→Experiment→Run→
 CandidateResult→materialize→FormalSelection），结构与纪律同微震预置
 （确定性 uuid5 主键、线程锁 + 唯一约束幂等、失败补偿删行删目录）。
@@ -38,8 +38,13 @@ import numpy as np
 import pandas as pd
 
 from geomodeling.platform.errors import PRESET_SOURCE_INVALID, PlatformError
+from geomodeling.platform.settings import example_data_path
 
 PRESET_CASE_ID = "resistivity"
+
+#: 内置默认源（v0.8.0 第三批：项目内 example_data/ 字节冻结合同；
+#: 解析器拒绝目录穿越，缺失即 PRESET_SOURCE_INVALID）
+DEFAULT_PRESET_CSV = example_data_path("地下电阻率节点_标准化.csv")
 
 #: 标准化散点表头合同（恰好 4 列，顺序固定）
 REQUIRED_COLUMNS = ("X", "Y", "Z", "RHO")
@@ -798,19 +803,22 @@ def find_matching_preset_seed(
 
 def seed_resistivity_preset(
     runtime,
-    source_path: Path,
+    source_path: Path | None = None,
     *,
     baseline_path: Path | None = None,
     baseline: OfficialBaseline | None = None,
 ) -> PresetSeedRecord:
     """幂等 seed：同指纹完整链直接复用；否则经正常生命周期全链创建。
 
-    ``source_path`` 是外部私有源 CSV（必填，无仓库默认）。基线可注入：
+    ``source_path`` 缺省为项目内 ``example_data/`` 内置源（``DEFAULT_PRESET_CSV``，
+    字节冻结合同）；仅在测试/审计时显式注入同合同夹具。基线可注入：
     ``baseline`` 对象优先，其次 ``baseline_path``，均未给出时读
     ``DEFAULT_BASELINE_PATH``（Task 5 前不存在，缺失即 fail-closed）。
     无论注入方式，``verify_official_baseline`` 都强制执行。
     """
 
+    if source_path is None:
+        source_path = DEFAULT_PRESET_CSV
     with _SEED_LOCK:
         source = load_resistivity_preset(source_path)
         if baseline is None:
@@ -825,7 +833,7 @@ def seed_resistivity_preset(
 def _stage_source_csv(
     runtime, dataset_id: str, source: ResistivityPresetSource, source_path: Path
 ) -> Path:
-    """外部源 CSV 原子复制进运行时（临时文件 + 回读校验 + os.replace）。"""
+    """受控源 CSV 原子复制进运行时（临时文件 + 回读校验 + os.replace）。"""
 
     target = runtime.settings.upload_source(PRESET_CASE_ID, dataset_id, "csv")
     target.parent.mkdir(parents=True, exist_ok=True)

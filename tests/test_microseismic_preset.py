@@ -1,8 +1,13 @@
 """v0.7.0 Batch 1：微震 CSV 预置源合同测试（Task 1）。
 
-受控 CSV 是用户指定标准化文件的原字节拷贝（9 列表头，含 SAMPLE_IDS 等
-溯源列）；加载器钉死完整表头、1911 行、有限数值与唯一 XYZ，并向公共
-层只暴露 4 个建模列与摘要指纹，绝不返回本机源路径。
+受控 CSV 内置在仓库 ``example_data/微震局部三维点_3Sigma_去重均值_1911.csv``
+（v0.8.0 第三批起默认源即用户指定原始标准化文件本身：纯 CRLF + UTF-8 BOM
+形态，``example_data/*.csv`` 关闭 EOL 归一化，字节级冻结合同见
+tests/test_example_data_contract.py）。9 列表头含 SAMPLE_IDS 等溯源列；
+加载器钉死完整表头、1911 行、有限数值与唯一 XYZ，并向公共层只暴露 4 个
+建模列与摘要指纹，绝不返回本机源路径。v0.7.0 时代的 LF 归一化入库副本
+（``data/presets/microseismic/microseismic-vx-1911.csv``，sha256
+ea3917c2…）已随默认源切换删除——同一逻辑数据，字节身份统一回原始形态。
 """
 
 from __future__ import annotations
@@ -16,6 +21,7 @@ import pytest
 
 from geomodeling.platform.errors import PRESET_SOURCE_INVALID, PlatformError
 from geomodeling.platform.microseismic_preset import (
+    DEFAULT_PRESET_CSV,
     ORIGINAL_SOURCE_NAME,
     ORIGINAL_SOURCE_SHA256,
     PRESET_CASE_ID,
@@ -26,9 +32,15 @@ from geomodeling.platform.microseismic_preset import (
     TRACKED_CSV_SHA256,
     load_microseismic_preset,
 )
+from geomodeling.platform.settings import example_data_path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-TRACKED_CSV = REPO_ROOT / "data" / "presets" / "microseismic" / "microseismic-vx-1911.csv"
+#: v0.8.0 第三批：默认源即项目内 example_data/ 内置原始文件（CRLF+BOM 形态）
+TRACKED_CSV = example_data_path(ORIGINAL_SOURCE_NAME)
+#: 已删除的 v0.7.0 LF 归一化入库副本路径（默认源切换后冗余，绝不复活）
+RETIRED_TRACKED_CSV = (
+    REPO_ROOT / "data" / "presets" / "microseismic" / "microseismic-vx-1911.csv"
+)
 
 
 @pytest.fixture()
@@ -38,14 +50,26 @@ def preset_csv() -> Path:
 
 def test_tracked_csv_is_byte_identified_and_never_outside_repo(preset_csv: Path):
     assert preset_csv.is_file()
-    # .gitattributes `*.csv text eol=lf`：任何平台检出均为 LF 字节
+    # example_data/*.csv 关闭 EOL 归一化：原始 CRLF + UTF-8 BOM 字节任何平台检出不变
     digest = hashlib.sha256(preset_csv.read_bytes()).hexdigest()
     assert digest == TRACKED_CSV_SHA256
     assert preset_csv.stat().st_size == TRACKED_CSV_BYTES
     assert preset_csv.resolve().is_relative_to(REPO_ROOT)
-    # 溯源记录：用户指定原始文件（CRLF 形态）身份随模块保存
+    assert preset_csv.read_bytes().startswith(b"\xef\xbb\xbf")
+    # 身份迁移：内置默认源即用户指定原始文件（CRLF+BOM 形态），
+    # 审计常量与受控身份同值（同一逻辑数据，字节形态统一回原始 CRLF）
     assert ORIGINAL_SOURCE_SHA256 == "4011de85e1fa7e49999fc5ae66a73e00a59dbec372a417ae0728d0a338c7765e"
+    assert ORIGINAL_SOURCE_SHA256 == TRACKED_CSV_SHA256
     assert ORIGINAL_SOURCE_NAME.endswith("_1911.csv")
+    assert preset_csv.name == ORIGINAL_SOURCE_NAME
+
+
+def test_default_preset_csv_resolves_to_bundled_example_data():
+    """默认源只解析到项目内 example_data/；旧 data/presets 副本已删除。"""
+    assert DEFAULT_PRESET_CSV == TRACKED_CSV
+    assert DEFAULT_PRESET_CSV.parent.name == "example_data"
+    assert DEFAULT_PRESET_CSV.resolve().is_relative_to(REPO_ROOT)
+    assert not RETIRED_TRACKED_CSV.exists()
 
 
 def test_load_preset_requires_1911_unique_finite_vx_rows(preset_csv: Path):

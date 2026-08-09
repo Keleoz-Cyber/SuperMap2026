@@ -10,9 +10,10 @@
 与源逐行匹配后的溯源事实（仅计数 + 验证柱指纹）冻结进只读候选报告；
 报告指纹经评审后写入 ``config/presets/resistivity-official-baseline.json``。
 
-``seed-resistivity``（v0.8.0 Task 2）：把外部电阻率标准化散点 CSV seed 为
-只读 ``builtin_preset`` 案例链；``--source`` 必填无仓库默认（外部私有源，
-如 ``$env:GEOMODELING_RHO_SOURCE``），官方基线 JSON 默认读受控路径
+``seed-resistivity``（v0.8.0 Task 2）：把电阻率标准化散点 CSV seed 为
+只读 ``builtin_preset`` 案例链；``--source`` 缺省为项目内
+``example_data/地下电阻率节点_标准化.csv`` 内置源（v0.8.0 第三批起，
+字节冻结合同；仅测试/审计显式覆盖），官方基线 JSON 默认读受控路径
 ``config/presets/resistivity-official-baseline.json``（Task 5 冻结）。
 
 独立入口：``python -m geomodeling.preset_cli <command> ...``。
@@ -237,9 +238,9 @@ def seed_microseismic(
 @preset_app.command("seed-resistivity")
 def seed_resistivity(
     source: Path = typer.Option(
-        ...,
+        None,
         "--source",
-        help="电阻率标准化散点 CSV（外部私有源；必填，无仓库默认，如 $env:GEOMODELING_RHO_SOURCE）",
+        help="电阻率标准化散点 CSV（默认项目内 example_data/ 内置源；仅测试/审计显式覆盖）",
     ),
     data_dir: Path = typer.Option(
         None,

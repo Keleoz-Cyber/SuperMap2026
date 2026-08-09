@@ -1,9 +1,10 @@
 """v0.8.0 Task 1：电阻率散点预置源合同测试。
 
-电阻率标准化 CSV 是项目外部的私有文件，绝不提交 Git、绝不在受控文件中
-出现本机绝对路径；运行时只登记其 SHA-256 指纹。便携测试使用确定性合成
-夹具（``write_resistivity_fixture``：表头恰为 ``X,Y,Z,RHO``、唯一
-``(X,Y,Z)``、全部有限、无随机源）；真实 17,549 行源核验标记
+电阻率标准化 CSV 内置在仓库 ``example_data/地下电阻率节点_标准化.csv``
+（v0.8.0 第三批起默认源；字节级冻结合同见 tests/test_example_data_contract.py），
+运行时只登记其 SHA-256 指纹，绝不在受控文件中出现本机绝对路径。便携测试
+使用确定性合成夹具（``write_resistivity_fixture``：表头恰为 ``X,Y,Z,RHO``、
+唯一 ``(X,Y,Z)``、全部有限、无随机源）；真实 17,549 行源核验标记
 ``local_data``，仅从 ``GEOMODELING_RHO_SOURCE`` 环境变量取路径，未设置
 即跳过。
 """
@@ -11,6 +12,7 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import os
 from pathlib import Path, PurePath
 
@@ -20,12 +22,15 @@ import pytest
 
 from geomodeling.platform.errors import PRESET_SOURCE_INVALID, PlatformError
 from geomodeling.platform.resistivity_preset import (
+    DEFAULT_PRESET_CSV,
     EXPECTED_ROW_COUNT,
     PRESET_CASE_ID,
     REQUIRED_COLUMNS,
     ResistivityPresetSource,
     load_resistivity_preset,
+    seed_resistivity_preset,
 )
+from geomodeling.platform.settings import example_data_path
 
 RHO_SOURCE_ENV = "GEOMODELING_RHO_SOURCE"
 
@@ -88,6 +93,20 @@ def test_load_rejects_missing_file(tmp_path: Path):
         load_resistivity_preset(tmp_path / "missing.csv")
     assert excinfo.value.code == PRESET_SOURCE_INVALID
     assert excinfo.value.http_status == 409
+
+
+def test_default_preset_csv_resolves_to_bundled_example_data():
+    """v0.8.0 第三批：默认源只解析到项目内 example_data/ 字节冻结内置源。"""
+
+    assert DEFAULT_PRESET_CSV == example_data_path("地下电阻率节点_标准化.csv")
+    assert DEFAULT_PRESET_CSV.parent.name == "example_data"
+    # 内置源身份与基线冻结合同一致（04c5914d…，见基线 JSON source_sha256）
+    source = load_resistivity_preset(DEFAULT_PRESET_CSV)
+    assert source.row_count == 17_549
+    assert source.sha256 == "04c5914d992f397f7dcec3b0d1a6069a9ddeb4a214e5c7de121f37c861cec167"
+    # seed 不再要求外部源路径：source_path 缺省即内置默认源
+    signature = inspect.signature(seed_resistivity_preset)
+    assert signature.parameters["source_path"].default is None
 
 
 def test_load_rejects_wrong_header(tmp_path: Path):

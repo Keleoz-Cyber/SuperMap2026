@@ -49,10 +49,11 @@ def test_resistivity_preset_declares_builtin_preset_scattered_identity():
     assert "局部工程坐标" in boundary_text
     assert "EPSG" in boundary_text
     assert "跨案例" in boundary_text
-    # RHO 单位待确认 + 外部源不入库边界
+    # RHO 单位待确认 + example_data/ 内置源字节冻结合同边界
     assert "单位待来源确认" in boundary_text
-    assert "外部" in boundary_text
-    assert "不提交 Git" in boundary_text
+    assert "example_data/" in boundary_text
+    assert "内置" in boundary_text
+    assert "字节" in boundary_text
 
 
 def test_resistivity_preset_default_grid_is_20m_xyz_within_cell_cap():
