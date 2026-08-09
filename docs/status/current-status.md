@@ -1,6 +1,6 @@
 # 当前开发状态
 
-> 更新时间：2026-08-09（v0.8.1 发布收尾，合并 PR #16/#17）。本文是开发人员和开发 Agent 判断“现在做到哪一步”的唯一状态入口。数据细节见 [电阻率](../data/resistivity.md)、[微震](../data/microseismic.md)、[瓦斯](../data/gas.md) 和 [数据契约](../data/contracts.md)；目标产品见 [产品蓝图](../product-blueprint.md)。
+> 更新时间：2026-08-10（v0.9.0 视觉产品重构实施完成，发布候选待合并）。本文是开发人员和开发 Agent 判断“现在做到哪一步”的唯一状态入口。数据细节见 [电阻率](../data/resistivity.md)、[微震](../data/microseismic.md)、[瓦斯](../data/gas.md) 和 [数据契约](../data/contracts.md)；目标产品见 [产品蓝图](../product-blueprint.md)。
 
 ## 1. 状态分层
 
@@ -11,6 +11,16 @@
 3. **目标能力**：产品蓝图要求实现，当前还没有代码和运行证据。
 
 ## 2. 当前代码已实现
+
+- **v0.9.0 答辩级视觉产品与全流程体验重构（`feat/v0.9.0-visual-product` 分支，发布候选）**：全站按「深地极光」设计系统重构，真实浏览器截图为验收门。设计与验收口径：[设计规格](../superpowers/specs/2026-08-10-v0.9.0-visual-product-redesign-design.md)、[实施计划](../superpowers/plans/2026-08-10-v0.9.0-visual-product-redesign.md)。
+  - 全局壳与视觉系统：`AppShell/AppHeader`（品牌、案例上下文、服务状态、全局「导入数据 / 新建建模」、答辩模式、回收站）+ S1 token（墨绿黑画布、青结构色、核心金、四案例辅助色）+ 动效 token（含 `prefers-reduced-motion`）+ `AsyncState` 六类统一状态 + `CaseStageNav` 四阶段导航；版本徽标移至全局头（`test_version_consistency` 同步更新）。
+  - 首页综合指挥舱：案例轨 + 中央三维主舞台（官方/主打成果 NetCDF 原生体渲染，统一 RenderAsset 链）+ 关键发现（`domain/findings.ts` 确定性选择器：质量/正式模型/空间异常/profile 结论，全部带溯源、可信状态、限制，空间异常与分层结论带三维定位）+ 底部证据带；切换案例整体联动（变量/单位/辅助色/三维/发现/图表），无成果显示解释性空态。
+  - 案例工作台：四业务阶段（数据概览/建模实验/成果分析/证据与报告）+ 每状态唯一主动作；数据接入改为同屏工作台（四阶段 + 文件预览 + 空间预览 + 映射诊断 + 质量组成）；调参实验室四区布局 + `RunPipeline` 真实流水线（粗进度恒标「阶段估计」）；模型比较证据面（分轴指标图 + 参数差异表 + fail-closed 不兼容态）。
+  - 成果与分析融合：三维主视图 + 发现 + 混合证据坞（质量/分布/模型指标/趋势/残差，懒挂载 + dispose）+ 评估摘要 + 溯源抽屉；**图表—三维双向联动**（趋势点击驱动切片、切片反向切证据标签、渲染器不支持的能力显示类型化通知、身份切换旧选择立即失效）；`AnalysisCenterView`/`ProfessionalAnalysisView` 深链保持可用。
+  - 答辩模式：六章节固定巡航（总览/电阻率/微震/瓦斯/自定义数据/创新与边界），键盘导航，案例章节真实场景只读复用，降级章节显式可导航。
+  - 响应式/无障碍：四档视口零横向溢出像素级门（手机档案例轨横向紧凑选择条）、单一 main 地标、可访问名称、唯一主动作合同。
+  - 边界：数据哈希/模型身份/单位/局部坐标与 `display_anchor_only` 语义不变；无新地质结论、无假图、无点云回退；`local_data` 与官方基线合同不变。
+  - 测试基线（本分支实测）：后端便携 `1809 passed`（版本收口后 `test_version_consistency` 6/6 通过），前端 vitest `446 passed`，type-check/build 干净，Mock E2E `40 passed`，真实 SDK live 门 `4 passed`（证据 `docs/evidence/v0.9.0/`，git_commit 为测试代码提交祖先）。
 
 - **v0.8.1 瓦斯预置案例与三案例数据内置化 · 第三批（已合并 main）**：
   - 数据合同：三个官方案例标准化散点源统一内置 `example_data/` 并字节级冻结（`.gitattributes` 对 `example_data/*.csv` 关闭文本规范化，任意平台检出字节一致）：电阻率 17,549 行 `X,Y,Z,RHO`（Ω·m，`04c5914d…`）、微震 1,911 行（km/s，CRLF+BOM，`4011de85…`）、瓦斯 58 行 `X,Y,Z,CH4_content`（ml/g，CRLF+BOM，`f7d6f03d…`；28 个 XY 采样位置，Z∈[121.0375,175.656]，CH4∈[0.05,34.3]）；合同校验 fail-closed，三个 seed CLI（`seed-resistivity`/`seed-microseismic`/`seed-gas`）默认源均为内置 example_data，无外部私有源依赖，DTO 只输出逻辑来源与哈希。
