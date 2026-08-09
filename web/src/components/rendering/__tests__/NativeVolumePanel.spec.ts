@@ -805,3 +805,53 @@ describe('渲染资产 API 客户端（POST/GET 纪律）', () => {
     expect(calls[0].init?.method).toBe('POST')
   })
 })
+
+describe('NativeVolumePanel v0.9 图表—三维联动', () => {
+  async function emitRenderedNow(wrapper: ReturnType<typeof mount>) {
+    await flushPromises()
+    const frame = wrapper.findComponent({ name: 'SuperMapVolumeFrame' })
+    frame.vm.$emit('ready')
+    frame.vm.$emit('rendered', {
+      sourceKind: 'candidate_result',
+      sourceId: 'r1',
+      gridSha256: 'g'.repeat(64),
+      netcdfSha256: 'n'.repeat(64),
+    })
+    await flushPromises()
+  }
+
+  it('sliceRequest 解析为最近坐标索引并驱动权威切片流程', async () => {
+    const api = makeApi({ fetchAsset: vi.fn().mockResolvedValue(ASSET) })
+    const wrapper = mountPanel(api)
+    await emitRenderedNow(wrapper)
+
+    // 进入 slice 模式（z 中位引导完成，axesMeta 就绪）
+    await wrapper.find('[data-test="mode-slice"] input').setValue(true)
+    await flushPromises()
+
+    // 图表区间 [60,100] → 中点 80 → x 最近坐标 100（index 1）
+    await wrapper.setProps({ sliceRequest: { axis: 'x', range: [60, 100], token: 1 } })
+    await flushPromises()
+    await flushPromises()
+
+    const analysis = wrapper.findComponent(SliceAnalysisPanel)
+    expect(analysis.props('target')).toEqual({ axis: 'x', index: 1 })
+    wrapper.unmount()
+  })
+
+  it('区间越界时发出 slice-request-failed，绝不伪报定位成功', async () => {
+    const api = makeApi({ fetchAsset: vi.fn().mockResolvedValue(ASSET) })
+    const wrapper = mountPanel(api)
+    await emitRenderedNow(wrapper)
+    await wrapper.find('[data-test="mode-slice"] input').setValue(true)
+    await flushPromises()
+
+    await wrapper.setProps({ sliceRequest: { axis: 'x', range: [500, 600], token: 1 } })
+    await flushPromises()
+
+    const failed = wrapper.emitted('slice-request-failed')
+    expect(failed).toBeTruthy()
+    expect((failed?.[0] as Array<{ reason: string }>)[0].reason).toContain('超出数据范围')
+    wrapper.unmount()
+  })
+})

@@ -27,7 +27,8 @@ const emit = defineEmits<{
 
 type DockTab = 'quality' | 'distribution' | 'model' | 'trends' | 'residuals'
 
-const activeTab = ref<DockTab>('quality')
+// v-model:active-tab：三维侧联动（如切片移动）可驱动证据带切到对应标签
+const activeTab = defineModel<DockTab>('activeTab', { default: 'quality' })
 const expanded = ref(true)
 
 function moduleOf(id: string) {

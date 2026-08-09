@@ -21,6 +21,8 @@ const props = defineProps<{
   datasetId: string | null
   resultId: string
   evaluation: ResultEvaluationSummary | null
+  // 图表—三维联动的类型化能力通知（如 XY 区域过滤不受支持）
+  selectionNotice?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -28,6 +30,12 @@ const emit = defineEmits<{
   (e: 'select', selection: AnalysisSelection): void
   (e: 'select-result', resultId: string): void
 }>()
+
+// 三维→证据带反向联动：视图经 v-model:dock-tab 切换当前证据标签
+const dockTabModel = defineModel<'quality' | 'distribution' | 'model' | 'trends' | 'residuals'>(
+  'dockTab',
+  { default: 'quality' },
+)
 
 const provenanceOpen = ref(false)
 
@@ -47,6 +55,9 @@ void props
 
 <template>
   <div class="result-workbench" data-test="result-analysis-workbench">
+    <p v-if="selectionNotice" class="selection-notice" data-test="selection-notice" role="status">
+      {{ selectionNotice }}
+    </p>
     <div class="workbench-grid">
       <div class="workbench-scene" data-test="result-scene">
         <slot name="scene" />
@@ -77,6 +88,7 @@ void props
 
     <div class="workbench-dock" data-test="result-evidence-dock">
       <EvidenceDock
+        v-model:active-tab="dockTabModel"
         :summary="summary"
         :residuals="residuals"
         :dataset-id="datasetId ?? ''"
@@ -108,6 +120,16 @@ void props
   display: flex;
   flex-direction: column;
   gap: var(--s1-space-4);
+}
+
+.selection-notice {
+  margin: 0;
+  font-size: var(--s1-font-sm);
+  color: var(--s1-warning);
+  border: 1px solid rgba(217, 168, 78, 0.4);
+  border-radius: var(--s1-radius-sm);
+  background: rgba(217, 168, 78, 0.08);
+  padding: 6px 12px;
 }
 
 .workbench-grid {

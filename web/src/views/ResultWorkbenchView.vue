@@ -35,6 +35,8 @@ import ResultAnalysisWorkbench from '../components/results/ResultAnalysisWorkben
 import { buildPresentationFindings, type PresentationFinding } from '../domain/findings'
 import { fetchAnalysisSummary, fetchResultResiduals } from '../api/client'
 import type { AnalysisSelection } from '../components/analysis/analysisTypes'
+import { createAnalysisSelectionController } from '../composables/useAnalysisSelection'
+import type { SliceAxis } from '../api/types'
 
 const route = useRoute()
 const router = useRouter()
@@ -60,10 +62,98 @@ const findings = computed<PresentationFinding[]>(() =>
   analysis.value ? buildPresentationFindings(analysis.value) : [],
 )
 
-// 图表—三维联动由 Task 12 的选择控制器接管；此处保留事件透传锚点
-function onFindingLocate(_finding: PresentationFinding) {}
-function onEvidenceSelect(_selection: AnalysisSelection) {}
-function onSelectResult(_resultId: string) {}
+// ---------------------------------------------------------------------------
+// v0.9.0 Task 12：图表—三维双向联动
+// 选择控制器持有身份上下文；图表区间/发现定位 → 正交切片请求；
+// 渲染器不支持的请求显示类型化能力通知，绝不伪报定位成功。
+// ---------------------------------------------------------------------------
+const selection = createAnalysisSelectionController()
+const sliceRequest = ref<{ axis: SliceAxis; range: [number, number]; token: number } | null>(null)
+const capabilityNotice = ref<string | null>(null)
+const dockTab = ref<'quality' | 'distribution' | 'model' | 'trends' | 'residuals'>('quality')
+let sliceToken = 0
+
+function requestSlice(axis: SliceAxis, range: [number, number]) {
+  sliceToken += 1
+  capabilityNotice.value = null
+  sliceRequest.value = { axis, range, token: sliceToken }
+}
+
+function onFindingLocate(finding: PresentationFinding) {
+  const target = finding.spatialTarget
+  const datasetId = experiment.value?.params.dataset_version_id
+  if (!target || !datasetId) return
+  if (target.axis === 'xy') {
+    if (target.xRange && target.yRange) {
+      const ok = selection.select({
+        axis: 'xy',
+        x_range: target.xRange,
+        y_range: target.yRange,
+        dataset_id: datasetId,
+        result_id: resultId.value,
+      })
+      if (ok) {
+        // 当前体渲染器不支持 XY 区域过滤：类型化能力通知，不伪报定位
+        capabilityNotice.value =
+          '当前成果渲染器不支持 XY 区域过滤定位；可使用对应轴切片查看该区域剖面。'
+      }
+    }
+    return
+  }
+  if (!target.range) return
+  const ok = selection.select({
+    axis: target.axis,
+    range: target.range,
+    dataset_id: datasetId,
+    result_id: resultId.value,
+  })
+  if (ok) requestSlice(target.axis, target.range)
+}
+
+function onEvidenceSelect(sel: AnalysisSelection) {
+  if (!selection.select(sel)) return
+  if (sel.axis === 'xy') {
+    capabilityNotice.value =
+      '当前成果渲染器不支持 XY 区域过滤定位；可使用对应轴切片查看该区域剖面。'
+    return
+  }
+  requestSlice(sel.axis, sel.range)
+}
+
+function onSelectResult(nextResultId: string) {
+  if (nextResultId && nextResultId !== resultId.value) {
+    void router.push(`/results/${nextResultId}`)
+  }
+}
+
+function onSliceChange() {
+  // 三维切片移动 → 证据带切到趋势剖面标签（反向联动）
+  dockTab.value = 'trends'
+}
+
+function onSliceRequestFailed(payload: { reason: string }) {
+  capabilityNotice.value = payload.reason
+}
+
+// 深链恢复：?axis=z&range=a,b&dataset=… 进入成果页时还原选择并定位切片
+function restoreSelectionFromQuery() {
+  const q = route.query
+  const datasetId = experiment.value?.params.dataset_version_id
+  if (!datasetId || typeof q.axis !== 'string' || typeof q.range !== 'string') return
+  if (q.dataset !== datasetId) return
+  const axis = q.axis
+  if (axis !== 'x' && axis !== 'y' && axis !== 'z') return
+  const parts = q.range.split(',').map(Number)
+  if (parts.length !== 2 || !parts.every(Number.isFinite) || parts[0] > parts[1]) return
+  const range: [number, number] = [parts[0], parts[1]]
+  const ok = selection.select({
+    axis,
+    range,
+    dataset_id: datasetId,
+    result_id: resultId.value,
+  })
+  if (ok) requestSlice(axis, range)
+}
 
 // ---------------------------------------------------------------------------
 // v0.6.1 NetCDF 原生体渲染：NativeVolumePanel 接线
@@ -109,6 +199,9 @@ onMounted(async () => {
     metadata.value = meta
     const exp = await fetchExperiment(meta.experiment_id)
     experiment.value = exp
+    // 选择上下文与该成果身份绑定；随后还原深链选择（若有）
+    selection.setContext({ datasetId: exp.params.dataset_version_id, resultId: resultId.value })
+    restoreSelectionFromQuery()
     const fetches: Promise<void>[] = [
       fetchDatasetPoints(exp.params.dataset_version_id).then((p) => {
         points.value = p
@@ -182,12 +275,14 @@ onMounted(async () => {
       </header>
 
       <ResultAnalysisWorkbench
+        v-model:dock-tab="dockTab"
         :findings="findings"
         :summary="analysis"
         :residuals="residuals"
         :dataset-id="experiment?.params.dataset_version_id ?? null"
         :result-id="resultId"
         :evaluation="metadata.evaluation_summary ?? null"
+        :selection-notice="capabilityNotice"
         @locate="onFindingLocate"
         @select="onEvidenceSelect"
         @select-result="onSelectResult"
@@ -217,6 +312,9 @@ onMounted(async () => {
               v-if="metadata.dimension === '3d' && activeTab === 'field'"
               :api="volumeApi"
               :aux-points="gridSamplePoints"
+              :slice-request="sliceRequest"
+              @slice-change="onSliceChange"
+              @slice-request-failed="onSliceRequestFailed"
             />
             <SlicePanel
               v-else

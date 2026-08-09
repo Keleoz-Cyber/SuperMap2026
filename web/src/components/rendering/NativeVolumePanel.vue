@@ -43,7 +43,7 @@ export interface NativeVolumeAuxPoints {
 </script>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { ApiError } from '../../api/client'
 import type { PointLayerPayload, RenderIdentity } from '../../api/types'
 import SuperMapVolumeFrame from './SuperMapVolumeFrame.vue'
@@ -59,9 +59,19 @@ const props = withDefaults(
   defineProps<{
     api: NativeVolumeRenderApi
     auxPoints?: NativeVolumeAuxPoints | null
+    // v0.9.0 Task 12：外部（图表/发现联动）请求的正交切片目标；
+    // token 单调递增，仅承载请求语义，面板仍从权威剖面响应确立 slice 状态
+    sliceRequest?: { axis: SliceAxis; range: [number, number]; token: number } | null
   }>(),
-  { auxPoints: null },
+  { auxPoints: null, sliceRequest: null },
 )
+
+const emit = defineEmits<{
+  // 切片实际应用（含坐标）后向外通知，供证据带反向联动
+  (e: 'slice-change', payload: { axis: SliceAxis; index: number; coordinate: number }): void
+  // 请求无法落地（渲染器未就绪/区间越界）时必须显式失败，绝不伪报定位成功
+  (e: 'slice-request-failed', payload: { reason: string }): void
+}>()
 
 type VolumePhase = 'idle' | 'loading' | 'rendered' | 'failed'
 
@@ -368,7 +378,52 @@ function onAnalysisLoaded(response: SliceAnalysisResponse) {
     },
   }
   pushRenderState()
+  emit('slice-change', { axis: s.fixed_axis, index: s.index, coordinate: s.coordinate })
 }
+
+// v0.9.0 Task 12：外部切片请求（图表区间/发现定位）→ 最近坐标索引。
+// 仅解析目标索引；slice 载荷仍由权威剖面分析响应确立（app.js 硬要求）。
+watch(
+  () => props.sliceRequest,
+  (req) => {
+    if (!req) return
+    const axes = axesMeta.value
+    if (!axes) {
+      emit('slice-request-failed', { reason: '渲染器尚未就绪，无法定位切片' })
+      return
+    }
+    const coords = axes[req.axis].coordinates
+    if (coords.length === 0) {
+      emit('slice-request-failed', { reason: '当前轴无可用坐标' })
+      return
+    }
+    const mid = (req.range[0] + req.range[1]) / 2
+    const lo = Math.min(coords[0], coords[coords.length - 1])
+    const hi = Math.max(coords[0], coords[coords.length - 1])
+    if (mid < lo || mid > hi) {
+      emit('slice-request-failed', { reason: '选择区间超出数据范围' })
+      return
+    }
+    let best = 0
+    let bestDist = Infinity
+    coords.forEach((c, i) => {
+      const d = Math.abs(c - mid)
+      if (d < bestDist) {
+        bestDist = d
+        best = i
+      }
+    })
+    clearSliceDebounce()
+    if (renderState.value.mode !== 'slice') {
+      renderState.value = { ...renderState.value, mode: 'slice' }
+      pushRenderState()
+    }
+    // 模式切换的 watch 会把目标重置为 z 中位；在下一拍写入请求目标
+    nextTick(() => {
+      sliceTarget.value = { axis: req.axis, index: best }
+    })
+  },
+)
 
 // 等值面输入只在 contour 模式显示；留空回落值域中点（不带 contourValue）。
 // 注意 type="number" 输入的 v-model 会被 Vue 自动转型为 number，这里统一按字符串处理
