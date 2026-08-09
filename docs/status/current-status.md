@@ -1,6 +1,6 @@
 # 当前开发状态
 
-> 更新时间：2026-08-09（v0.8.0 第三批瓦斯预置案例分支更新）。本文是开发人员和开发 Agent 判断“现在做到哪一步”的唯一状态入口。数据细节见 [电阻率](../data/resistivity.md)、[微震](../data/microseismic.md)、[瓦斯](../data/gas.md) 和 [数据契约](../data/contracts.md)；目标产品见 [产品蓝图](../product-blueprint.md)。
+> 更新时间：2026-08-09（v0.8.1 发布收尾，合并 PR #16/#17）。本文是开发人员和开发 Agent 判断“现在做到哪一步”的唯一状态入口。数据细节见 [电阻率](../data/resistivity.md)、[微震](../data/microseismic.md)、[瓦斯](../data/gas.md) 和 [数据契约](../data/contracts.md)；目标产品见 [产品蓝图](../product-blueprint.md)。
 
 ## 1. 状态分层
 
@@ -12,21 +12,21 @@
 
 ## 2. 当前代码已实现
 
-- **v0.8.0 瓦斯预置案例与三案例数据内置化 · 第三批（`feat/v0.8.0-gas-preset` 分支，发布候选）**：
+- **v0.8.1 瓦斯预置案例与三案例数据内置化 · 第三批（已合并 main）**：
   - 数据合同：三个官方案例标准化散点源统一内置 `example_data/` 并字节级冻结（`.gitattributes` 对 `example_data/*.csv` 关闭文本规范化，任意平台检出字节一致）：电阻率 17,549 行 `X,Y,Z,RHO`（Ω·m，`04c5914d…`）、微震 1,911 行（km/s，CRLF+BOM，`4011de85…`）、瓦斯 58 行 `X,Y,Z,CH4_content`（ml/g，CRLF+BOM，`f7d6f03d…`；28 个 XY 采样位置，Z∈[121.0375,175.656]，CH4∈[0.05,34.3]）；合同校验 fail-closed，三个 seed CLI（`seed-resistivity`/`seed-microseismic`/`seed-gas`）默认源均为内置 example_data，无外部私有源依赖，DTO 只输出逻辑来源与哈希。
   - 基线身份：`config/presets/gas.json`（preset_version `gas-ch4-58/v1`）+ `config/presets/gas-official-baseline.json`：13 候选（IDW 9 + 普通克里金 4）经 spatial_kfold 5 折（seed=20260723，28 根整 XY 柱分组，逐折验证行数 [12,11,11,13,11]，公共有效 58）评审冻结 winner `ordinary_kriging` spherical/neighbor=24（RMSE=8.298439、MAE=6.552100、R²=−0.109659、Bias=−0.068618——58 点稀疏采样下 R² 为负，如实呈现为解释性估计）；DSI-like 默认参数条件评估四道门全过（公共有效 46/58、coverage 0.793103、物化全有限、包围盒外恒 NoData），仅作对照候选，绝不参与官方选择（winner ∈ {idw, ordinary_kriging} 合同锁定）。
   - 网格与成果链：规则网格 151×333×12 @[20,20,5] m（603,396 节点，bounds 来自瓦斯数据，值全有限、零 NoData）；`seed-gas` 经统一 `Case → DatasetVersion → Experiment → Run → CandidateResult → materialize → FormalSelection` 链登记官方成果（确定性身份、幂等复用、并发唯一、失败补偿），官方成果走 NetCDF 原生体渲染资产链，资产可追溯到 candidate。
   - 分析模块：`gas_content` profile 正式启用（CH4_content，ml/g）：含量分布/分位数与有效样本质量、Z 向分层统计、XY 高/低含量区域（非空单元均值 p25/p75 探索性分位口径并明示来源）、空间梯度与采样覆盖、候选模型指标对比；不输出「瓦斯危险/安全」等规范结论。
   - 边界：瓦斯坐标为局部线性米制，不做 EPSG 地理配准、不做跨案例叠加；不接入 AI/iServer；v0.9 分析中心视觉重构与 C 类结论看板仍不做；旧 legacy 瓦斯卡（“暂缓”）退役，首页三预置卡统一 `builtin_preset`。
   - 测试基线：第三批专项便携测试（example_data 合同、瓦斯 profile/seed 生命周期、基线冻结、渲染资产、API/工作台、Mock E2E）随 Task 1–8 全部通过；真实 GPU live 门规格 `web/e2e-live/gas-preset-live.spec.ts` 已入库（内置源、无跳过门、只作本机发布门），真实 run 证据由后续单独提交补入 `docs/evidence/v0.8.0-batch-3-gas/`，本文不预登记 run ID。
-- **v0.8.0 统计与空间分析中心 · 第二批（`feat/v0.8.0-statistics-analysis-center` 分支，发布候选）**：
+- **v0.8.1 统计与空间分析中心 · 第二批（已合并 main）**：
   - 新后端包 `geomodeling.analysis`：`profiles.py` profile 注册表与判定、`statistics.py` 有限统计基元、`schemas.py` 响应模型。profile 判定只读取数据版本 `profile_json.mapping` 的 `value_name`/`value_unit`/`dimension`，绝不使用 case_id：`value_name=="RHO"` → `resistivity`；`value_name=="Vx"` 且 `value_unit=="km/s"`（单位不符不静默换算）→ `microseismic_velocity`；`value_name∈{CH4,gas,gas_content}` → `gas_content`（仅注册，数据合同到位后接入）；其余或显式非 3D 一律降级 `generic_3d`，并逐条给出各专属 profile 未启用的 `disabled_reasons`（缺失项 + 展示文案），不静默显示看似完整的专业面板。
   - 只读 API：`GET /api/datasets/{id}/analysis-summary` 与 `GET /api/datasets/{id}/analysis-export?format=json|csv`；门禁顺序 404 `DATASET_NOT_FOUND` → 410 `CASE_TRASHED` → 409 `DATASET_NOT_VALIDATED`；空公共有效集 fail-closed 409 `ANALYSIS_EMPTY_COMMON_VALID`。响应携带 `dataset_id`/`profile_version`/`variable`/`quality`/`statistics`/`modules`/`provenance`（`source_sha256`、`dataset_version`、`generated_at`、`calculation_version=analysis.v1`）；CSV 导出为 7 行 `# k=v` 注释头 + 稳定表头 `section,axis,bin_index,metric,lower,upper,value`；导出文件名 `analysis-{dataset_id}-{profile}.{json,csv}`；公开载荷绝不包含本机绝对路径。
   - 微震专属模块：`axis_trends`（X/Y/Z 逐轴分箱均值/中位数趋势）、`gradient`（16×16 网格相邻单元均值差分幅值统计）、`spatial_anomaly`（高/低值区域）；电阻率专属模块：`distribution.log10`（仅严格正值入对数，排除计数保留）、`depth_slices`（16 层样本级 p75/p25 超阈占比）、`spatial_anomaly`（高/低阻区域）。空间异常阈值口径为非空单元均值的 p75/p25（`cell_mean_quantiles_p25_p75`）——致密采样下样本级阈值会被单元均值平滑，真实电阻率实测旧口径高/低占比恒 0%，已在 `62099e8` 修复并附回归测试；`depth_slices` 保持样本级 `valid_value_quantiles_p25_p75` 口径不变。
   - 前端：`/datasets/:datasetId/analysis`（`AnalysisCenterView`，A+B 布局：顶栏案例身份+数据质量徽标+导出、左侧模块导航、中央单焦点（空间/分布/剖面）、右栏质量统计+模型对比、底部可折叠剖面与导出）；案例工作台已验证数据版本旁为唯一入口；ECharts 组件全部卸载 dispose；空间分箱/剖面区间点击带 `axis`/`x_range`/`y_range`/`dataset` query 导航成果页；`generic_3d` 显示降级说明、不显示空图；390×844 无横向溢出（900px 断点右栏折下、600px 断点导航横滚）。
   - 真实数据验收：run-20260808T202639Z-d04fa748（`git_commit=62099e8`、RTX 4070、桌面 1440×900 与移动 390×844）——电阻率与微震 profile 的 API 合同、空间图/分布图像素门、XY 分箱/剖面轴/模型对比交互 diff、移动端无横向溢出全部通过；证据目录 `docs/evidence/v0.8.0-statistics-analysis/`（代码与证据分开提交）。
   - 边界：瓦斯 `gas_content` profile 仅注册，本批不伪造瓦斯数据与专业结论；C 类结论看板（发现/证据/三维定位/可打印答辩页）为 v0.9.0 预留、本批明确未实现；统计结果是案例解释辅助，不作为自动发布的地质结论。
-- **v0.8.0 电阻率散点迁移与 DSI-like（`feat/v0.8.0-resistivity-dsi-like` 分支，发布候选）**：
+- **v0.8.0 电阻率散点迁移与 DSI-like（已随 v0.8.0 发布）**：
   - 电阻率从只读 `builtin_legacy` 迁移为统一 `builtin_preset` 散点预置（案例 ID `resistivity` 不变）：标准化 CSV（17,549 行 `X,Y,Z,RHO`）内置在 `example_data/地下电阻率节点_标准化.csv`（v0.8.0 第三批起；字节级 SHA-256 冻结合同 `04c5914d…`），运行时登记 SHA-256 指纹；`preset_cli seed-resistivity` 唯一生产入口，合同校验 fail-closed；预置数据版本只读，官方正式选择用户不可改写。
   - 官方基线冻结 `config/presets/resistivity-official-baseline.json`：winner `ordinary_kriging` exponential/neighbor=24（RMSE=6.454476、MAE=3.251899、R²=0.923093、Bias=-0.095026，公共有效集 17,547；生产 `spatial_kfold` 5 折 seed=20260723），网格 7×23×42 @20 m；IDW 与 DSI-like 候选只追溯不参与官方选择；遗留训练/验证分区（15,827/1,722 行、264/29 柱、零重叠）作为源溯源事实写入 profile。
   - 新算法 **DSI-like 离散平滑插值**：IDW 初始场 + 稀疏图拉普拉斯邻域平滑趋势层 + 原始观测坐标的 IDW 残差精确化层（参数 `init_power/neighbor_connectivity/smoothing_strength/max_iterations`，收敛容差 1e-4）；硬约束门要求全部训练坐标复算误差 ≤1e-8，稀疏求解耗尽预算未收敛则候选失败且不可物化；**不等同 GOCAD DSI**，页面如实展示免责声明，绝不回退为“看起来成功”的 IDW/点云。
