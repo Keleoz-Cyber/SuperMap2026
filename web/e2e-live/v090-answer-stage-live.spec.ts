@@ -304,6 +304,8 @@ test('手机 390×844：摘要优先顺序 + 全屏三维入口 + 案例切换�
   expect(order.evidence).toBeLessThan(order.entry)
   // 关键发现首屏区可见（不等打开三维）
   await expect(page.getByTestId('home-findings')).toContainText('有效数据')
+  // 摘要优先顺序证据截图（打开全屏三维之前）
+  await writer.savePageShot(page, 'phone-summary-first')
 
   // 切换瓦斯并打开全屏三维（同一面板转为视口覆盖，iframe 不重建）
   await page.getByTestId('case-rail-item').filter({ hasText: '煤层瓦斯' }).click()
