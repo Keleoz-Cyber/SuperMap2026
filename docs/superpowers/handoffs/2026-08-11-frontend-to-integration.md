@@ -63,7 +63,7 @@
 
 ## 6. 验证证据
 
-- Vitest：`npm --prefix web run test:unit` — 55 files, **499 passed**（新增 ResultInterpretationPanel 9 + ResultGridEvidence 8 + AIAssistedReview 8 + 协议/面板/工作台集成 26）
+- Vitest：`npm --prefix web run test:unit` — 55 files, **499 passed**（较上批 449 新增 50 项：ResultInterpretationPanel 9 + ResultGridEvidence 8 + AIAssistedReview 8 + 协议 8 + 父桥 1 + 面板 6 + 工具栏 3 + 工作台 4 + 视图 3）
 - type-check/build：`npm --prefix web run type-check` 干净；`npm --prefix web run build` 成功
 - Mock E2E：`npx playwright test -c playwright.config.ts` — **41 passed**（含新 `result-analysis.spec.ts`；preview 构建态）
 - Live E2E：未执行（真实 SDK 验收属 Task 11 集成负责人）
