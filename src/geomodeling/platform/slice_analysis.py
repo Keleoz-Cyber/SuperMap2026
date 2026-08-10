@@ -112,27 +112,30 @@ def extract_grid_plane(
     return extract_slice(grid, axis, index)  # type: ignore[arg-type]
 
 
-def _statistics(values: np.ndarray, mask: np.ndarray) -> dict[str, Any]:
+def _statistics(
+    values: np.ndarray,
+    mask: np.ndarray,
+    *,
+    full_grid_thresholds: tuple[float, float] | None = None,
+) -> dict[str, Any]:
     valid = values[~mask]
     total = int(values.size)
-    if valid.size == 0:
-        return {
-            "total_count": total,
-            "valid_count": 0,
-            "nodata_count": total,
-            "min": None,
-            "max": None,
-            "mean": None,
-            "std_population": None,
-            "p10": None,
-            "p50": None,
-            "p90": None,
-        }
-    q = np.quantile(valid, [0.1, 0.5, 0.9], method="linear")
-    return {
+    base: dict[str, Any] = {
         "total_count": total,
         "valid_count": int(valid.size),
         "nodata_count": int(total - valid.size),
+    }
+    if valid.size == 0:
+        base.update({
+            "min": None, "max": None, "mean": None,
+            "std_population": None, "p10": None, "p50": None, "p90": None,
+            "low_count": 0, "normal_count": 0, "high_count": 0,
+            "low_ratio": 0.0, "normal_ratio": 0.0, "high_ratio": 0.0,
+            "thresholds": None,
+        })
+        return base
+    q = np.quantile(valid, [0.1, 0.5, 0.9], method="linear")
+    base.update({
         "min": float(valid.min()),
         "max": float(valid.max()),
         "mean": float(valid.mean()),
@@ -140,7 +143,37 @@ def _statistics(values: np.ndarray, mask: np.ndarray) -> dict[str, Any]:
         "p10": float(q[0]),
         "p50": float(q[1]),
         "p90": float(q[2]),
-    }
+    })
+    if full_grid_thresholds is not None:
+        low, high = full_grid_thresholds
+        low_count = int((valid < low).sum())
+        high_count = int((valid >= high).sum())
+        normal_count = int(valid.size) - low_count - high_count
+        base.update({
+            "low_count": low_count,
+            "normal_count": normal_count,
+            "high_count": high_count,
+            "low_ratio": low_count / valid.size,
+            "normal_ratio": normal_count / valid.size,
+            "high_ratio": high_count / valid.size,
+            "thresholds": {
+                "low": float(low),
+                "high": float(high),
+                "source": "full_grid_quartile",
+                "method": "numpy_linear_p25_p75",
+            },
+        })
+    else:
+        base.update({
+            "low_count": None,
+            "normal_count": None,
+            "high_count": None,
+            "low_ratio": None,
+            "normal_ratio": None,
+            "high_ratio": None,
+            "thresholds": None,
+        })
+    return base
 
 
 def analyze_grid_slice(
@@ -149,6 +182,8 @@ def analyze_grid_slice(
     is_nodata: np.ndarray,
     axis: str,
     index: int,
+    *,
+    full_grid_thresholds: tuple[float, float] | None = None,
 ) -> GridSliceAnalysis:
     """图表方向剖面分析：转置到设计表格方向 + 有效掩膜 + 权威统计。
 
@@ -176,7 +211,7 @@ def analyze_grid_slice(
         column_coordinates=np.asarray(plane.axes[old_names.index(column_axis)], dtype="float64"),
         values=matrix,
         nodata_mask=effective_mask,
-        statistics=_statistics(matrix, effective_mask),
+        statistics=_statistics(matrix, effective_mask, full_grid_thresholds=full_grid_thresholds),
     )
 
 
@@ -242,8 +277,15 @@ def _profile(source_kind: str, valid_min: float, valid_max: float, *, property_n
 def analyze_render_asset_slice(runtime, asset_id: str, axis: str, index: int) -> dict[str, Any]:
     """公开剖面分析：资产身份 + 三轴坐标 + 图表方向剖面 + 权威统计 + render_profile。"""
 
+    from geomodeling.platform.result_analysis import finite_valid_values, result_thresholds
+
     record, source, grid = load_ready_asset_grid(runtime, asset_id)
-    analysis = analyze_grid_slice(grid.axes, grid.values, grid.is_nodata, axis, index)
+    valid = finite_valid_values(grid.values, grid.is_nodata)
+    thresholds = result_thresholds(valid) if valid.size > 0 else None
+    analysis = analyze_grid_slice(
+        grid.axes, grid.values, grid.is_nodata, axis, index,
+        full_grid_thresholds=thresholds,
+    )
     slice_payload = analysis.to_json_slice()
     return {
         "asset_identity": {
