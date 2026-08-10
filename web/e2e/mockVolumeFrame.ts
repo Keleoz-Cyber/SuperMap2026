@@ -8,7 +8,7 @@
 export const MOCK_VOLUME_FRAME_PATH = '/supermap-volume-frame/index.html'
 
 export const MOCK_VOLUME_FRAME_HTML = `<!doctype html>
-<html><head><meta charset="utf-8"></head><body>
+<html><head><meta charset="utf-8"><style>html,body{margin:0;height:100%;background:#05080c}</style></head><body>
 <script>
 (function () {
   var PROTOCOL = 'gmp-supermap-volume/v2'
@@ -45,10 +45,19 @@ export const MOCK_VOLUME_FRAME_HTML = `<!doctype html>
         revision: msg.state.revision,
         appliedState: msg.state,
       })
-    } else if (msg.type === 'SET_POINT_LAYER' || msg.type === 'RESET_VIEW') {
+    } else if (
+      msg.type === 'SET_POINT_LAYER' ||
+      msg.type === 'RESET_VIEW' ||
+      msg.type === 'SET_CAMERA_PRESET' ||
+      msg.type === 'FOCUS_ANNOTATION'
+    ) {
       post({ type: 'COMMAND_APPLIED', commandId: msg.commandId, commandType: msg.type })
     }
   })
+  // mock e2e 用：模拟三维标注点击（真实子帧由 pick 路径发出 ANNOTATION_SELECTED）
+  window.__GMP_MOCK_SELECT__ = function (annotationId) {
+    post({ type: 'ANNOTATION_SELECTED', annotationId: annotationId })
+  }
   post({
     type: 'FRAME_READY',
     sdkVersion: 'mock-frame/0',

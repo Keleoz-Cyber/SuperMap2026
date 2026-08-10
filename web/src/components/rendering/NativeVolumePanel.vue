@@ -812,8 +812,9 @@ onMounted(() => {
   font-size: 12px;
   color: var(--gmp-text-dim);
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 4px 18px;
 }
 
 .panel-note {
