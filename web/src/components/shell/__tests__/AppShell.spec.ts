@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import AppShell from '../AppShell.vue'
 
@@ -38,5 +38,36 @@ describe('AppShell', () => {
     const entry = wrapper.get('[data-test="presentation-mode-entry"]')
     expect(entry.attributes('aria-label')).toBe('进入答辩模式')
     expect(entry.attributes('aria-disabled')).toBeUndefined()
+  })
+
+  it('hides the global header and every edit/danger entry on the presentation route', async () => {
+    const { createMemoryHistory, createRouter } = await import('vue-router')
+    const stub = { template: '<div />' }
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/', name: 'home', component: stub },
+        { path: '/trash', name: 'trash', component: stub },
+        { path: '/cases/new', name: 'case-create', component: stub },
+        { path: '/presentation', name: 'presentation', component: stub },
+      ],
+    })
+    await router.push('/presentation')
+    const wrapper = mount(AppShell, {
+      global: {
+        plugins: [router],
+        stubs: { RouterView: true, RouterLink: { template: '<a><slot /></a>' } },
+      },
+    })
+    await flushPromises()
+    expect(wrapper.find('[data-test="app-global-header"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="global-create-case"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="presentation-mode-entry"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="shell-trash-link"]').exists()).toBe(false)
+
+    await router.push('/')
+    await flushPromises()
+    expect(wrapper.find('[data-test="app-global-header"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="global-create-case"]').exists()).toBe(true)
   })
 })

@@ -151,7 +151,7 @@ onBeforeUnmount(() => {
     data-test="presentation-view"
     :data-motion="reducedMotion ? 'reduced' : 'full'"
   >
-    <PresentationOverlay />
+    <PresentationOverlay :service-online="serviceOnline" />
 
     <div class="chapter-body">
       <!-- 服务降级提示：所有章节共享 -->
@@ -259,7 +259,8 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .presentation-view {
-  min-height: calc(100vh - 52px);
+  /* 答辩全屏：全局头已隐藏，占满主区 */
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
   background: var(--s1-canvas);

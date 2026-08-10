@@ -1,8 +1,13 @@
 <script setup lang="ts">
-// v0.9.0：答辩模式控制层。章节标题/位置/上一节/下一节/章节目录/退出；
+// v0.9.0：答辩模式控制层。章节标题/位置/上一节/下一节/章节目录/退出 +
+// 服务状态徽标（全局头隐藏后由本层保留服务可见性）；
 // 只读导航，不承载任何编辑或危险操作。
 import { Close, ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
 import { usePresentationStore } from '../../stores/presentation'
+
+withDefaults(defineProps<{
+  serviceOnline?: boolean | null
+}>(), { serviceOnline: null })
 
 const store = usePresentationStore()
 </script>
@@ -15,6 +20,15 @@ const store = usePresentationStore()
         <span class="chapter-subtitle">{{ store.currentChapter.value.subtitle }}</span>
       </div>
       <div class="overlay-controls">
+        <span
+          class="service-state"
+          :class="{ offline: serviceOnline === false }"
+          data-test="presentation-service-status"
+          role="status"
+        >
+          <span class="dot" :class="serviceOnline === false ? 'bad' : serviceOnline === null ? 'pending' : 'ok'" />
+          {{ serviceOnline === null ? '服务检测中' : serviceOnline ? '服务在线' : '服务离线' }}
+        </span>
         <span class="position mono" data-test="presentation-position">
           {{ store.currentIndex.value + 1 }} / {{ store.chapters.length }}
         </span>
@@ -78,9 +92,9 @@ const store = usePresentationStore()
   border-bottom: 1px solid var(--s1-border-soft);
   background: var(--s1-surface-glass);
   backdrop-filter: blur(10px);
-  /* 答辩章节导航必须恒可见：内容滚动时吸顶在全局头下方 */
+  /* 答辩章节导航必须恒可见：吸顶（答辩全屏下全局头已隐藏，顶部即视口顶） */
   position: sticky;
-  top: 52px;
+  top: 0;
   z-index: 40;
 }
 
@@ -115,6 +129,23 @@ const store = usePresentationStore()
   display: flex;
   align-items: center;
   gap: var(--s1-space-2);
+}
+
+.service-state {
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--s1-font-sm);
+  color: var(--s1-text-dim);
+  border: 1px solid var(--s1-border);
+  border-radius: 999px;
+  padding: 3px 10px;
+  margin-right: 6px;
+  white-space: nowrap;
+}
+
+.service-state.offline {
+  color: var(--s1-warning);
+  border-color: rgba(217, 168, 78, 0.4);
 }
 
 .position {

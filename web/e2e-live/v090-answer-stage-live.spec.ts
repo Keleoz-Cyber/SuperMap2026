@@ -239,6 +239,11 @@ test('答辩模式：六章节与案例章节真实场景', async ({ page }) => 
   await installLiveProbe(page)
   await page.goto('/#/presentation')
   await expect(page.getByTestId('presentation-overlay')).toBeVisible()
+  // 答辩全屏：全局头与编辑/危险入口不可见；服务状态保留在控制层
+  await expect(page.getByTestId('app-global-header')).toHaveCount(0)
+  await expect(page.getByTestId('global-create-case')).toHaveCount(0)
+  await expect(page.getByTestId('shell-trash-link')).toHaveCount(0)
+  await expect(page.getByTestId('presentation-service-status')).toBeVisible()
   await expect(page.getByTestId('chapter-overview')).toContainText('数据接入')
 
   const chapterTitles = ['地下电阻率', '微震速度', '煤层瓦斯含量', '自定义数据', '创新点与已知边界']

@@ -29,6 +29,19 @@ test('答辩模式：六章节完整巡航与退出', async ({ page }) => {
   // 从全局头进入答辩模式
   await page.getByTestId('presentation-mode-entry').click()
   await expect(page).toHaveURL(/#\/presentation/)
+
+  // 真正全屏：普通全局头与编辑/危险入口全部隐藏
+  await expect(page.getByTestId('app-global-header')).toHaveCount(0)
+  await expect(page.getByTestId('global-create-case')).toHaveCount(0)
+  await expect(page.getByTestId('shell-trash-link')).toHaveCount(0)
+  await expect(page.getByTestId('presentation-mode-entry')).toHaveCount(0)
+  // 答辩控制层保留：服务状态、退出、上一节、下一节、章节目录
+  await expect(page.getByTestId('presentation-service-status')).toBeVisible()
+  await expect(page.getByTestId('presentation-exit')).toBeVisible()
+  await expect(page.getByTestId('presentation-prev')).toBeVisible()
+  await expect(page.getByTestId('presentation-next')).toBeVisible()
+  await expect(page.getByTestId('presentation-chapter-overview')).toBeVisible()
+
   await expect(page.getByTestId('presentation-overlay')).toBeVisible()
   await expect(page.getByTestId('presentation-title')).toContainText('平台能力总览')
   await expect(page.getByTestId('chapter-overview')).toContainText('数据接入')
@@ -54,12 +67,13 @@ test('答辩模式：六章节完整巡航与退出', async ({ page }) => {
   await page.keyboard.press('ArrowRight')
   await expect(page.getByTestId('presentation-title')).toContainText('创新点与已知边界')
 
-  // 章节目录直达 + Escape 退出回首页
+  // 章节目录直达 + Escape 退出回首页（全局头恢复）
   await page.getByTestId('presentation-chapter-overview').click()
   await expect(page.getByTestId('presentation-title')).toContainText('平台能力总览')
   await page.keyboard.press('Escape')
   await expect(page).toHaveURL(/#\/$/)
   await expect(page.getByTestId('command-center')).toBeVisible()
+  await expect(page.getByTestId('app-global-header')).toBeVisible()
 
   expect(consoleErrors).toEqual([])
 })
