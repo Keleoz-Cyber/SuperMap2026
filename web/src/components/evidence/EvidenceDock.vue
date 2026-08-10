@@ -215,13 +215,13 @@ function selectTab(tab: DockTab) {
 }
 
 .dock-note {
-  font-size: var(--s1-font-xs);
+  font-size: var(--s1-font-sm);
   color: var(--s1-text-faint);
   white-space: nowrap;
 }
 
 .dock-toggle {
-  font-size: var(--s1-font-xs);
+  font-size: var(--s1-font-sm);
   color: var(--s1-cyan-strong);
   background: transparent;
   border: 1px solid var(--s1-cyan-dim);

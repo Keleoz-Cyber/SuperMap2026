@@ -143,7 +143,7 @@ const variable = computed(() => props.summary?.variable ?? null)
 
 .cell-title {
   margin: 0;
-  font-size: var(--s1-font-xs);
+  font-size: var(--s1-font-sm);
   font-weight: 600;
   letter-spacing: 0.06em;
   color: var(--s1-text-dim);
@@ -153,7 +153,7 @@ const variable = computed(() => props.summary?.variable ?? null)
 }
 
 .cell-tag {
-  font-size: 10px;
+  font-size: var(--s1-font-sm);
   color: var(--s1-warning);
   border: 1px solid rgba(217, 168, 78, 0.4);
   border-radius: 999px;
@@ -163,7 +163,7 @@ const variable = computed(() => props.summary?.variable ?? null)
 
 .cell-empty {
   margin: 0;
-  font-size: var(--s1-font-xs);
+  font-size: var(--s1-font-sm);
   color: var(--s1-text-faint);
 }
 
@@ -196,7 +196,7 @@ const variable = computed(() => props.summary?.variable ?? null)
 
 .donut-text {
   fill: var(--s1-text-strong);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   text-anchor: middle;
   font-variant-numeric: tabular-nums;
@@ -207,7 +207,7 @@ const variable = computed(() => props.summary?.variable ?? null)
   display: flex;
   flex-direction: column;
   gap: 3px;
-  font-size: var(--s1-font-xs);
+  font-size: var(--s1-font-sm);
   color: var(--s1-text-dim);
 }
 
@@ -246,7 +246,7 @@ const variable = computed(() => props.summary?.variable ?? null)
   grid-template-columns: 96px 1fr 56px;
   align-items: center;
   gap: 8px;
-  font-size: var(--s1-font-xs);
+  font-size: var(--s1-font-sm);
 }
 
 .metric-name {
@@ -311,7 +311,7 @@ const variable = computed(() => props.summary?.variable ?? null)
 
 .cell-note {
   margin: 0;
-  font-size: 10px;
+  font-size: var(--s1-font-sm);
   color: var(--s1-text-faint);
 }
 
@@ -319,7 +319,7 @@ const variable = computed(() => props.summary?.variable ?? null)
   display: flex;
   flex-direction: column;
   gap: 3px;
-  font-size: var(--s1-font-xs);
+  font-size: var(--s1-font-sm);
   color: var(--s1-text);
 }
 

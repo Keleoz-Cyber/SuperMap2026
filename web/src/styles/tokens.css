@@ -15,7 +15,8 @@
   --s1-text: #dce7e2;
   --s1-text-strong: #f2f7f4;
   --s1-text-dim: #8fa39b;
-  --s1-text-faint: #5f7168;
+  /* 投影可读性：faint 在全部深表面上对比度 ≥ 4.5:1（合同测试锁定） */
+  --s1-text-faint: #87998f;
 
   /* ---- 描边 ---- */
   --s1-border: #21382f;

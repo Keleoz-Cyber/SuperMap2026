@@ -199,7 +199,7 @@ const store = usePresentationStore()
   border-radius: 999px;
   background: transparent;
   color: var(--s1-text-faint);
-  font-size: var(--s1-font-xs);
+  font-size: var(--s1-font-sm);
   padding: 3px 10px;
   cursor: pointer;
   transition:

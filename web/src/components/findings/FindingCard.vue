@@ -71,7 +71,7 @@ const confidenceLabel = computed(() => CONFIDENCE_LABELS[props.finding.confidenc
 }
 
 .confidence {
-  font-size: var(--s1-font-xs);
+  font-size: var(--s1-font-sm);
   border-radius: 999px;
   padding: 1px 8px;
   border: 1px solid var(--s1-border);
@@ -103,7 +103,7 @@ const confidenceLabel = computed(() => CONFIDENCE_LABELS[props.finding.confidenc
 }
 
 .evidence-chip {
-  font-size: var(--s1-font-xs);
+  font-size: var(--s1-font-sm);
   color: var(--s1-cyan-strong);
   background: var(--s1-cyan-ghost);
   border-radius: 6px;
@@ -114,7 +114,7 @@ const confidenceLabel = computed(() => CONFIDENCE_LABELS[props.finding.confidenc
 .finding-limitations {
   margin: 0;
   padding: 0 0 0 14px;
-  font-size: var(--s1-font-xs);
+  font-size: var(--s1-font-sm);
   color: var(--s1-text-faint);
   line-height: 1.5;
 }
@@ -124,7 +124,7 @@ const confidenceLabel = computed(() => CONFIDENCE_LABELS[props.finding.confidenc
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: var(--s1-font-xs);
+  font-size: var(--s1-font-sm);
   color: var(--s1-cyan-strong);
   background: transparent;
   border: 1px solid var(--s1-cyan-dim);

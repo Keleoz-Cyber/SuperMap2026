@@ -147,4 +147,33 @@ describe('responsive & accessibility contracts', () => {
       expect(tokensCss).toContain(level)
     }
   })
+
+  it('faint/dim text tokens meet 4.5:1 contrast on all dark surfaces (projection readability)', () => {
+    const hexOf = (name: string) => {
+      const m = tokensCss.match(new RegExp(`${name}:\\s*(#[0-9a-fA-F]{6})`))
+      expect(m, `token ${name} 必须存在`).toBeTruthy()
+      return m![1]
+    }
+    const lum = (hex: string) => {
+      const channels = [0, 2, 4].map((i) => {
+        const c = parseInt(hex.slice(1).slice(i, i + 2), 16) / 255
+        return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)
+      })
+      return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
+    }
+    const contrast = (fg: string, bg: string) => {
+      const [l1, l2] = [lum(fg), lum(bg)].sort((a, b) => b - a)
+      return (l1 + 0.05) / (l2 + 0.05)
+    }
+    const surfaces = ['--s1-canvas', '--s1-surface-1', '--s1-surface-2'].map(hexOf)
+    for (const textToken of ['--s1-text-faint', '--s1-text-dim', '--s1-text']) {
+      const fg = hexOf(textToken)
+      for (const bg of surfaces) {
+        expect(
+          contrast(fg, bg),
+          `${textToken}(${fg}) 在 ${bg} 上对比度必须 ≥ 4.5`,
+        ).toBeGreaterThanOrEqual(4.5)
+      }
+    }
+  })
 })

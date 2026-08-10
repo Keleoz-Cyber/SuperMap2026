@@ -48,7 +48,7 @@ const visibleFindings = computed(() => props.findings.slice(0, 5))
 
 .empty-note {
   margin-top: 6px !important;
-  font-size: var(--s1-font-xs);
+  font-size: var(--s1-font-sm);
   color: var(--s1-text-faint);
   line-height: var(--s1-leading);
 }

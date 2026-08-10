@@ -117,7 +117,7 @@ const api = computed<NativeVolumeRenderApi | null>(() => {
 }
 
 .scene-chip {
-  font-size: var(--s1-font-xs);
+  font-size: var(--s1-font-sm);
   color: var(--s1-text-dim);
   border: 1px solid var(--s1-border);
   border-radius: 999px;

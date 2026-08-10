@@ -287,7 +287,7 @@ function dataFormOf(c: CaseSummary): string | null {
   display: flex;
   flex-direction: column;
   gap: 3px;
-  font-size: var(--s1-font-xs);
+  font-size: var(--s1-font-sm);
   color: var(--s1-text-dim);
 }
 
