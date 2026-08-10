@@ -6,10 +6,10 @@
 
 - 后端交接最终 HEAD：`af22c5b` (docs: backend-to-frontend handoff report)
 - 前端开始 HEAD：`af22c5b`
-- 前端最终 HEAD：`13c7871` (test: add result analysis mock e2e)
+- 前端最终 HEAD：`83b9d18` (test: update stale schema assertions for sqlite v8；此后仅本交接文档提交)
 - 分支：`feat/v0.9.0-visual-product`
 - 工作区是否干净：是
-- 实际完成的 Task：Task 6（前端 DTO 与证据组件）、Task 7（标注/相机协议）、Task 8（iframe 场景标注层与相机辅助）、Task 9（工作台集成）、Task 10 前端部分（AIAssistedReview）、前端 Mock E2E
+- 实际完成的 Task：Task 6（前端 DTO 与证据组件）、Task 7（标注/相机协议）、Task 8（iframe 场景标注层与相机辅助）、Task 9（工作台集成）、Task 10 前端部分（AIAssistedReview）、前端 Mock E2E、1 项后端 v8 陈旧断言跨界修复
 - 明确未完成的 Task：Task 11（集成、真实 SDK 浏览器验收、CI 与文档）
 
 前端提交链（后端 HEAD 之后）：
@@ -66,9 +66,9 @@
 - Vitest：`npm --prefix web run test:unit` — 55 files, **499 passed**（较上批 449 新增 50 项：ResultInterpretationPanel 9 + ResultGridEvidence 8 + AIAssistedReview 8 + 协议 8 + 父桥 1 + 面板 6 + 工具栏 3 + 工作台 4 + 视图 3）
 - type-check/build：`npm --prefix web run type-check` 干净；`npm --prefix web run build` 成功
 - Mock E2E：`npx playwright test -c playwright.config.ts` — **41 passed**（含新 `result-analysis.spec.ts`；preview 构建态）
+- 后端便携全量：`python -m pytest tests -q -m "not local_data"` — **1889 passed, 32 deselected, 0 failed**（跨界修复后复跑；修复前 11 failed/1878 passed）
 - Live E2E：未执行（真实 SDK 验收属 Task 11 集成负责人）
-- 后端便携测试：基线核对时运行交接清单 13 文件 **259 passed**；前端零后端改动
-- 未执行及原因：真实 DeepSeek 调用（无密钥，合同与降级已由后端 15 项测试 + 前端 8 项测试覆盖）；`git diff --check origin/main...HEAD` 通过；新文件无 `sk-`/绝对路径
+- 未执行及原因：真实 DeepSeek 调用（无密钥，合同与降级已由后端 15 项测试 + 前端 8 项测试覆盖）；`git diff --check origin/main...HEAD` 通过；新文件与 dist 产物无 `sk-`/绝对路径
 
 ## 7. 已知问题与集成建议
 
