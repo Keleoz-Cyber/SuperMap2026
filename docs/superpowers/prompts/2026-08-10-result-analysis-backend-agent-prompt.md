@@ -4,15 +4,15 @@
 
 ## 开始前
 
-- 使用独立 worktree，建议分支 `feat/v0.9-result-analysis-backend`，不要进入前端 Agent 的 worktree。
-- 基线必须包含当前 `feat/v0.9.0-visual-product` 的最新文档提交。
+- 只在 `D:\study\Contest\Supermap\.worktrees\v0.9.0-visual-product` 和 `feat/v0.9.0-visual-product` 工作；开始时必须核对实际 HEAD 和工作区，不创建并行分支。
+- 你是串行开发的第一棒；前端 Agent 尚未开始。
 - 完整阅读：
   - `docs/superpowers/specs/2026-08-10-v0.9.0-result-analysis-integration-design.md`
   - `docs/superpowers/plans/2026-08-10-v0.9.0-result-analysis-integration.md`
 - 只负责计划 Task 1–5 和 Task 10 的后端部分。不要修改 `web/src/**` 或 iframe。
 - 测试先行；不合并、不发布、不写入真实 DeepSeek Key。
 
-## 第一检查点：先冻结前后端合同
+## 先冻结前后端合同
 
 最先完成并单独提交：
 
@@ -21,7 +21,7 @@
 3. 一套确定性 JSON 合同夹具，至少包含 3D 正常、2D 不适用、无不确定性、AI 未配置四种状态；
 4. OpenAPI/DTO 测试，保证未知字段和非有限数值 fail-closed。
 
-提交信息建议：`feat: freeze result analysis public contracts`。立即汇报该 commit SHA；前端 Agent 必须从该检查点开始，不要等全部后端完成。
+提交信息建议：`feat: freeze result analysis public contracts`。继续完成全部后端任务；前端 Agent 必须等你的最终汇报和干净 HEAD，不能在检查点提前启动。
 
 ## 后端实施范围
 
@@ -44,4 +44,8 @@
 
 ## 完成汇报
 
-汇报合同检查点 SHA、最终 HEAD、路由清单、JSON 夹具路径、数据库迁移、测试实数、无密钥降级结果和前端仍需注意的字段。保持分支未合并，交给集成负责人。
+1. 按 `docs/superpowers/handoffs/2026-08-11-backend-to-frontend-template.md` 写出正式交接文件，文件名固定为 `docs/superpowers/handoffs/2026-08-11-backend-to-frontend.md`，与后端代码一起提交。
+2. 最终回复必须完整汇报合同提交 SHA、最终 HEAD、路由清单、JSON 夹具路径、数据库迁移、测试实数、无密钥降级结果、已知问题和前端必须遵守的字段口径。
+3. 确认工作区干净，保持 PR OPEN，不合并、不发布，然后停止。
+
+用户会把“前端 Agent 提示词 + 你的完整最终汇报 + 交接文件路径”一起交给下一位 Agent。

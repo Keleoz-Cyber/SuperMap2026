@@ -4,10 +4,11 @@
 
 ## 开始前
 
-- 使用独立 worktree，建议分支 `feat/v0.9-result-analysis-frontend`，不要进入后端 Agent 的 worktree。
-- 必须从后端 Agent 的“公共合同检查点 SHA”创建分支；如果尚未拿到 SHA，先做代码审计和布局准备，不得自创 API 字段。
-- 完整阅读设计、实施计划、后端 JSON 合同夹具和总提示词。
-- 负责计划 Task 6–9、Task 10 前端部分及前端 Mock E2E；不要修改 Python 后端、SQLite 或迁移。
+- 只在 `D:\study\Contest\Supermap\.worktrees\v0.9.0-visual-product` 和 `feat/v0.9.0-visual-product` 工作；你是串行开发的第二棒，不创建并行分支。
+- 用户必须同时提供本提示词和后端 Agent 的完整最终汇报。还要读取 `docs/superpowers/handoffs/2026-08-11-backend-to-frontend.md`。
+- 先核对当前 HEAD、工作区、后端路由、夹具和测试是否与汇报一致；不一致时先报告，不得按旧汇报继续。
+- 完整阅读设计、实施计划、后端 JSON 合同夹具、总提示词和后端交接文件。
+- 负责计划 Task 6–9、Task 10 前端部分及前端 Mock E2E。原则上不修改 Python 后端、SQLite 或迁移；只有连通现有合同所必需的小修允许跨界，且必须补后端测试并写入交接报告。
 - 不合并、不发布，不把静态原型业务数字复制进产品。
 
 ## 页面目标
@@ -48,4 +49,8 @@
 
 ## 完成汇报
 
-汇报基线合同 SHA、最终 HEAD、页面入口、组件/切片/AI 联动、测试实数、1920×1080 截图和仍需后端补充的准确字段。保持分支未合并，交给集成负责人。
+1. 按 `docs/superpowers/handoffs/2026-08-11-frontend-to-integration-template.md` 写出正式交接文件，文件名固定为 `docs/superpowers/handoffs/2026-08-11-frontend-to-integration.md`，与前端代码一起提交。
+2. 最终回复完整汇报后端基线 HEAD、最终 HEAD、页面入口、组件/切片/AI 联动、跨界后端修复、测试实数、1920×1080 截图、已知问题和集成注意事项。
+3. 确认工作区干净，保持 PR OPEN，不合并、不发布，然后停止。
+
+用户会把“集成检查表 + 后端完整汇报 + 前端完整汇报 + 两份交接文件”一起交给集成负责人。
