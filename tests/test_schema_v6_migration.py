@@ -17,6 +17,7 @@ from sqlalchemy import inspect
 from sqlalchemy.exc import IntegrityError
 
 from geomodeling.platform import PlatformRuntime
+from geomodeling.platform import db as platform_db
 from geomodeling.platform.tables import CandidateResult
 
 from test_schema_v5_migration import V4_DDL, table_fingerprint
@@ -172,7 +173,7 @@ def test_v5_to_v6_migration_creates_render_assets_and_preserves_rows(tmp_path):
     runtime = PlatformRuntime(tmp_path / "runtime")
     runtime.initialize()
 
-    assert runtime.schema_version() == 7
+    assert runtime.schema_version() == platform_db.SCHEMA_VERSION
     with runtime.session() as session:
         existing_candidate = session.get(CandidateResult, "cand-1")
         assert existing_candidate is not None
@@ -310,7 +311,7 @@ def test_v6_initialize_is_idempotent_and_never_recreates_rows(tmp_path):
     reopened = PlatformRuntime(tmp_path / "runtime")
     reopened.initialize()
     reopened.initialize()  # 同一实例重复 initialize 同样幂等
-    assert reopened.schema_version() == 7
+    assert reopened.schema_version() == platform_db.SCHEMA_VERSION
     with reopened.engine.connect() as conn:
         inspector = inspect(conn)
         assert inspector.has_table("render_assets")
@@ -327,7 +328,7 @@ def test_initialize_rejects_schema_newer_than_v7(tmp_path):
     runtime.initialize()
     runtime.close()
     with sqlite3.connect(runtime.db_path) as conn:
-        conn.execute("PRAGMA user_version = 8")
+        conn.execute(f"PRAGMA user_version = {platform_db.SCHEMA_VERSION + 1}")
 
     with pytest.raises(RuntimeError, match="newer than code"):
         PlatformRuntime(tmp_path / "runtime").initialize()

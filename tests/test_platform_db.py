@@ -47,6 +47,8 @@ EXPECTED_TABLES = {
     "render_assets",
     # v7: 案例生命周期永久删除操作表
     "case_purge_operations",
+    # v8: AI 辅助研判记录表
+    "ai_analysis_records",
 }
 
 
@@ -276,7 +278,7 @@ def test_v6_to_v7_migration_adds_lifecycle_columns_and_purge_table(tmp_path):
     runtime = PlatformRuntime(tmp_path / "runtime")
     runtime.initialize()
 
-    assert runtime.schema_version() == 7
+    assert runtime.schema_version() == platform_db.SCHEMA_VERSION
     with runtime.engine.connect() as conn:
         inspector = inspect(conn)
         columns = {c["name"] for c in inspector.get_columns("cases")}
@@ -296,7 +298,7 @@ def test_v6_to_v7_migration_adds_lifecycle_columns_and_purge_table(tmp_path):
 
 def test_fresh_database_is_v7_with_lifecycle_artifacts(tmp_path):
     runtime = initialized_runtime(tmp_path)
-    assert runtime.schema_version() == 7
+    assert runtime.schema_version() == platform_db.SCHEMA_VERSION
     with runtime.engine.connect() as conn:
         inspector = inspect(conn)
         assert inspector.has_table("case_purge_operations")
@@ -311,7 +313,7 @@ def test_repeated_initialize_on_v7_is_idempotent(tmp_path):
     runtime = PlatformRuntime(tmp_path / "runtime")
     runtime.initialize()
     runtime.initialize()
-    assert runtime.schema_version() == 7
+    assert runtime.schema_version() == platform_db.SCHEMA_VERSION
     with runtime.engine.connect() as conn:
         inspector = inspect(conn)
         assert inspector.has_table("case_purge_operations")

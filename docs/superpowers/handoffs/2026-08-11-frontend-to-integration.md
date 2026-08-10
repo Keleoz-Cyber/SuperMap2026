@@ -46,7 +46,7 @@
 - 使用的 JSON 夹具：`tests/fixtures_result_analysis/3d_normal.json`、`2d_not_applicable.json` 逐字段复制为 `web/src/mocks/resultAnalysisMock.ts`（tsconfig 未开 `resolveJsonModule`，无法直接 import 仓库根 JSON；合同演进时必须同步修改）
 - TypeScript DTO：`web/src/api/types.ts` 新增 `ResultAnalysisSummary` 全家、`AIAnalysisRecord` 全家；`SliceStatistics` 扩展 `low/normal/high_count/ratio` + `thresholds`（可空，与后端恒携带一致）
 - Mock 与真实 API 是否一致：platformDemo 的 cand-1 analysis-summary 与 slice-analysis 共用同一阈值 [15,35]（模拟后端同口径保证）；AI 记录形态与 `ai_analysis_contracts.py` 逐字段一致；未添加任何合同外字段
-- 为连通性做过的后端小修及测试：无（后端零改动）
+- 为连通性做过的后端小修及测试：**1 项跨界修复（test-only）**。前端全量验证时发现后端便携全量 11 failed（`tests/test_platform_db.py` 5 + `tests/test_schema_v5_migration.py` 3 + `tests/test_schema_v6_migration.py` 3）：后端 v8 升级（SCHEMA_VERSION 7→8）后，旧测试仍断言 `schema_version() == 7`、`PRAGMA user_version = 8` 触发 "newer than code" 拒绝、以及 EXPECTED_TABLES 缺少 `ai_analysis_records`。修复全部改为跟随 `platform_db.SCHEMA_VERSION`（拒绝测试用 `SCHEMA_VERSION + 1`，表清单补 v8 表），只改测试断言、不动迁移逻辑；修复后 4 个迁移相关文件 29 passed，后端全量复跑结果见 §6
 - 仍需后端补充的字段：无
 
 ## 5. 视觉与浏览器证据
@@ -78,6 +78,7 @@
   - 标注 leader 高度为取景跨度 4%（最小 5m），非真实物理语义；组件 >6 时颜色循环复用
   - AI review 模式的「独立复核提示」由后端 prompt 内嵌实现（后端交接已声明）
   - 深度层段「定位切片」落在 z 轴区间中点最近索引（复用既有切片请求链），非任意斜切
+  - 基线核对发现：后端 Agent 交接的「231 passed」仅为 13 个新增/相关文件口径；其 v8 升级遗留 11 个陈旧迁移断言未更新（本次已跨界修复，见 §4）
 - 集成负责人优先复核：
   1. app.js 标注三件套（PointPrimitiveCollection/PolylineCollection/LabelCollection）与四种相机路径在真实 SDK 的像素效果（协议层已由 29 项单测 + Mock E2E 覆盖，真实 GPU 未验）
   2. 点击 pick 在真实场景的命中率（点 9/14px + 标签均带 id）
