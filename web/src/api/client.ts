@@ -1,4 +1,6 @@
 import type {
+  AIAnalysisMode,
+  AIAnalysisRecord,
   AnalysisExportDownload,
   AnalysisExportFormat,
   AnalysisJobRecord,
@@ -43,6 +45,7 @@ import type {
   QualityReport,
   RenderAssetRecord,
   RenderCapability,
+  ResultAnalysisSummary,
   SliceAnalysisResponse,
   SliceAxis,
   ResultMetadata,
@@ -370,6 +373,39 @@ export function createResultRenderAsset(resultId: string, retryFailed = false): 
 
 export function fetchResultRenderAsset(resultId: string): Promise<RenderAssetRecord> {
   return getJson<RenderAssetRecord>(`/results/${resultId}/render-assets/netcdf`)
+}
+
+// ---------------------------------------------------------------------------
+// v0.9.0：成果级只读分析摘要 + 显式 AI 辅助研判
+// analysis-summary 是纯 GET（服务端按网格哈希缓存）；ai-analysis 的 POST 是
+// 唯一显式计费入口，latest 只读。身份绑定 result_id + grid_sha256。
+// ---------------------------------------------------------------------------
+export function fetchResultAnalysisSummary(
+  resultId: string,
+  params?: { depthBins?: number; componentLimit?: number; minSupportNodes?: number },
+): Promise<ResultAnalysisSummary> {
+  const query = new URLSearchParams()
+  if (params?.depthBins !== undefined) query.set('depth_bins', String(params.depthBins))
+  if (params?.componentLimit !== undefined) query.set('component_limit', String(params.componentLimit))
+  if (params?.minSupportNodes !== undefined) {
+    query.set('min_support_nodes', String(params.minSupportNodes))
+  }
+  const suffix = query.size > 0 ? `?${query.toString()}` : ''
+  return getJson<ResultAnalysisSummary>(`/results/${resultId}/analysis-summary${suffix}`)
+}
+
+export function generateAiAnalysis(
+  resultId: string,
+  payload: { mode: AIAnalysisMode; regenerate?: boolean },
+): Promise<AIAnalysisRecord> {
+  return postJson<AIAnalysisRecord>(`/results/${resultId}/ai-analysis`, {
+    mode: payload.mode,
+    regenerate: payload.regenerate === true,
+  })
+}
+
+export function fetchLatestAiAnalysis(resultId: string): Promise<AIAnalysisRecord> {
+  return getJson<AIAnalysisRecord>(`/results/${resultId}/ai-analysis/latest`)
 }
 
 // v0.7.0 第二批：RenderAsset 统一剖面分析与导出（三来源共用）

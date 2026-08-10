@@ -1339,6 +1339,20 @@ export async function installMockApi(page: Page): Promise<void> {
         p10: 12,
         p50: 20,
         p90: 40,
+        // 与夹具自身值一致的三桶口径：11 个有效值（10..42，1 个 NoData）
+        // 阈值 [15, 35] → 低 3（10/11/12）/ 正常 5（20..32）/ 高 3（40/41/42）
+        low_count: 3,
+        normal_count: 5,
+        high_count: 3,
+        low_ratio: 3 / 11,
+        normal_ratio: 5 / 11,
+        high_ratio: 3 / 11,
+        thresholds: {
+          low: 15,
+          high: 35,
+          source: 'full_grid_quartile',
+          method: 'numpy_linear_p25_p75',
+        },
       },
       render_profile: null,
     }

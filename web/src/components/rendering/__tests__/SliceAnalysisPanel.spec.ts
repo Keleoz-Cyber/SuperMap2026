@@ -62,6 +62,13 @@ function makeResponse(axis: SliceAxis, index: number, coordinate: number): Slice
       p10: 5,
       p50: 21,
       p90: 105,
+      low_count: null,
+      normal_count: null,
+      high_count: null,
+      low_ratio: null,
+      normal_ratio: null,
+      high_ratio: null,
+      thresholds: null,
     },
     render_profile: null,
   }
@@ -177,6 +184,13 @@ describe('SliceAnalysisPanel', () => {
       p10: null,
       p50: null,
       p90: null,
+      low_count: null,
+      normal_count: null,
+      high_count: null,
+      low_ratio: null,
+      normal_ratio: null,
+      high_ratio: null,
+      thresholds: null,
     }
     api.fetchSliceAnalysis.mockResolvedValue(empty)
     const wrapper = mountPanel(api, { axis: 'z', index: 1 })
