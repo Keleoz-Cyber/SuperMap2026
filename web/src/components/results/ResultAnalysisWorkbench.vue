@@ -16,6 +16,7 @@ import type { AnalysisSelection } from '../analysis/analysisTypes'
 import { formatNumber } from '../analysis/analysisTypes'
 import ResultInterpretationPanel from './ResultInterpretationPanel.vue'
 import ResultGridEvidence from './ResultGridEvidence.vue'
+import AIAssistedReview from './AIAssistedReview.vue'
 
 const props = defineProps<{
   findings: PresentationFinding[]
@@ -48,6 +49,34 @@ const dockTabModel = defineModel<
   'composition' | 'depth' | 'components' | 'slice' | 'model' | 'input' | 'provenance'
 >('dockTab', { default: 'composition' })
 
+// 右侧研判区：规则研判（默认）/ AI 辅助切换；AI 不可用不拖垮规则研判
+const sideTab = ref<'rules' | 'ai'>('rules')
+
+// AI evidence ref 联动：组件/层段向上聚焦；全局证据切到对应证据标签
+function onFocusEvidence(ref: string) {
+  const component = /^component-(\d+)$/.exec(ref)
+  if (component) {
+    emit('focus-component', Number(component[1]))
+    return
+  }
+  const depthBin = /^depth_bin-(\d+)$/.exec(ref)
+  if (depthBin) {
+    emit('focus-depth-bin', Number(depthBin[1]))
+    return
+  }
+  const tabByRef: Record<string, typeof dockTabModel.value> = {
+    result_grid: 'composition',
+    composition: 'composition',
+    depth_profile: 'depth',
+    current_slice: 'slice',
+    model_evidence: 'model',
+    uncertainty: 'model',
+    input_quality: 'input',
+  }
+  const tab = tabByRef[ref]
+  if (tab) dockTabModel.value = tab
+}
+
 const provenanceOpen = ref(false)
 
 const metrics = computed(() => {
@@ -73,7 +102,33 @@ const metrics = computed(() => {
       </div>
 
       <aside class="workbench-side">
+        <div class="side-tabs" role="tablist" data-test="side-tabs">
+          <button
+            type="button"
+            role="tab"
+            class="side-tab"
+            :class="{ active: sideTab === 'rules' }"
+            :aria-selected="sideTab === 'rules' ? 'true' : 'false'"
+            data-test="side-tab-rules"
+            @click="sideTab = 'rules'"
+          >
+            规则研判
+          </button>
+          <button
+            type="button"
+            role="tab"
+            class="side-tab"
+            :class="{ active: sideTab === 'ai' }"
+            :aria-selected="sideTab === 'ai' ? 'true' : 'false'"
+            data-test="side-tab-ai"
+            @click="sideTab = 'ai'"
+          >
+            AI 辅助
+          </button>
+        </div>
+
         <ResultInterpretationPanel
+          v-if="sideTab === 'rules'"
           :analysis="analysis"
           :current-slice="currentSlice"
           :focused-component-id="focusedComponentId ?? null"
@@ -81,6 +136,12 @@ const metrics = computed(() => {
           :error="analysisError ?? null"
           @focus-component="emit('focus-component', $event)"
           @focus-depth-bin="emit('focus-depth-bin', $event)"
+        />
+        <AIAssistedReview
+          v-else
+          :result-id="resultId"
+          :grid-sha256="analysis?.identity.grid_sha256 ?? null"
+          @focus-evidence="onFocusEvidence"
         />
 
         <section class="side-block" data-test="result-evaluation">
@@ -168,6 +229,29 @@ const metrics = computed(() => {
   flex-direction: column;
   gap: var(--s1-space-3);
   min-width: 0;
+}
+
+.side-tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.side-tab {
+  flex: 1;
+  font-size: var(--s1-font-sm);
+  color: var(--s1-text-dim);
+  background: transparent;
+  border: 1px solid var(--s1-border);
+  border-radius: 6px;
+  padding: 5px 0;
+  cursor: pointer;
+}
+
+.side-tab.active {
+  color: var(--s1-cyan-strong);
+  background: var(--s1-cyan-ghost);
+  border-color: var(--s1-cyan-dim);
+  font-weight: 600;
 }
 
 .side-block {

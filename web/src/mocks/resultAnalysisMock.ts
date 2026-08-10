@@ -342,3 +342,112 @@ function sliceAnalysisMock(withThresholds: boolean): SliceAnalysisResponse {
 
 export const SLICE_ANALYSIS_MOCK: SliceAnalysisResponse = sliceAnalysisMock(true)
 export const SLICE_ANALYSIS_MOCK_NO_THRESHOLDS: SliceAnalysisResponse = sliceAnalysisMock(false)
+
+// ---------------------------------------------------------------------------
+// AI 辅助研判记录夹具（AIAnalysisRecord）：未配置降级 / 成功 / 服务错误。
+// 与 ai_analysis_contracts.py 逐字段一致；evidence_refs 只指向合法证据 ID。
+// ---------------------------------------------------------------------------
+import type { AIAnalysisRecord } from '../api/types'
+
+const AI_EVIDENCE_HASH = 'e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6'
+
+export const AI_RECORD_UNAVAILABLE: AIAnalysisRecord = {
+  id: 'ai-unavailable-1',
+  result_id: 'r-3d-normal',
+  grid_sha256: 'a64charhexhash00000000000000000000000000000000000000000000000000',
+  evidence_hash: AI_EVIDENCE_HASH,
+  prompt_version: 'ai_review.v1',
+  provider: 'deepseek',
+  model: 'deepseek-chat',
+  mode: 'quick',
+  status: 'unavailable',
+  review: null,
+  error_code: 'DEEPSEEK_NOT_CONFIGURED',
+  error_message: '服务端未配置 DEEPSEEK_API_KEY 环境变量',
+  usage_prompt_tokens: null,
+  usage_completion_tokens: null,
+  latency_ms: null,
+  created_at: '2026-08-11T02:00:00+00:00',
+}
+
+export const AI_RECORD_ERROR: AIAnalysisRecord = {
+  id: 'ai-error-1',
+  result_id: 'r-3d-normal',
+  grid_sha256: 'a64charhexhash00000000000000000000000000000000000000000000000000',
+  evidence_hash: AI_EVIDENCE_HASH,
+  prompt_version: 'ai_review.v1',
+  provider: 'deepseek',
+  model: 'deepseek-chat',
+  mode: 'quick',
+  status: 'error',
+  review: null,
+  error_code: 'DEEPSEEK_TIMEOUT',
+  error_message: 'DeepSeek 请求超时（30 秒）',
+  usage_prompt_tokens: null,
+  usage_completion_tokens: null,
+  latency_ms: 30012,
+  created_at: '2026-08-11T02:05:00+00:00',
+}
+
+export const AI_RECORD_SUCCEEDED: AIAnalysisRecord = {
+  id: 'ai-succeeded-1',
+  result_id: 'r-3d-normal',
+  grid_sha256: 'a64charhexhash00000000000000000000000000000000000000000000000000',
+  evidence_hash: AI_EVIDENCE_HASH,
+  prompt_version: 'ai_review.v1',
+  provider: 'deepseek',
+  model: 'deepseek-chat',
+  mode: 'quick',
+  status: 'succeeded',
+  review: {
+    spatial_pattern: {
+      summary: '高值体元集中在 20-30m 层段，A 区为最大高值连通区，B/C 区接触网格边界',
+      evidence_refs: ['result_grid', 'depth_profile', 'component-1', 'depth_bin-2'],
+    },
+    model_reliability: {
+      summary: '公共有效点 50，RMSE 5.2，R² 0.92，正式模型为 Ordinary Kriging',
+      evidence_refs: ['model_evidence'],
+    },
+    uncertainty_and_risk: {
+      summary: '不确定性证据已物化；B/C 区边界接触提示外推风险',
+      evidence_refs: ['uncertainty', 'component-2', 'component-3'],
+    },
+    review_and_next_checks: {
+      summary: '建议复核 20-30m 层段切片组成与备选候选模型指标',
+      evidence_refs: ['current_slice', 'depth_bin-2', 'model_evidence'],
+    },
+    consensus: {
+      consensus: '四个视角一致支持：高值集中于中部层段，正式模型指标可接受',
+      disagreements: ['当前切片高值占比与完整场存在轻微口径差异'],
+      recommended_checks: ['复核 20-30m 层段切片', '对比备选候选模型公共有效指标'],
+      decision_options: [
+        {
+          label: '维持当前模型',
+          trigger: 'RMSE 与 R² 满足验收口径',
+          benefit: '无需重新计算',
+          cost: '无',
+          evidence_refs: ['model_evidence'],
+        },
+        {
+          label: '复核备选模型',
+          trigger: '正式模型 R² 低于 0.9',
+          benefit: '可能进一步降低偏差',
+          cost: '需要重新交叉验证耗时',
+          evidence_refs: ['model_evidence', 'result_grid'],
+        },
+      ],
+      limitations: ['局部线性坐标，未做地理配准', '网格支持量非真实地质体积'],
+    },
+    evidence_hash: AI_EVIDENCE_HASH,
+    prompt_version: 'ai_review.v1',
+    provider: 'deepseek',
+    model: 'deepseek-chat',
+    mode: 'quick',
+  },
+  error_code: null,
+  error_message: null,
+  usage_prompt_tokens: 812,
+  usage_completion_tokens: 346,
+  latency_ms: 4321,
+  created_at: '2026-08-11T02:10:00+00:00',
+}

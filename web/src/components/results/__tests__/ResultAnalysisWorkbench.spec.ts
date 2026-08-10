@@ -28,6 +28,18 @@ vi.mock('echarts/components', () => ({
 }))
 vi.mock('echarts/renderers', () => ({ CanvasRenderer: {} }))
 
+// AI 辅助面板桩：只保留 evidence ref 联动出口，AI 自身行为由专属 spec 覆盖
+const AIStub = {
+  name: 'AIAssistedReview',
+  emits: ['focus-evidence'],
+  template:
+    '<div data-test="ai-stub">' +
+    '<button data-test="ai-stub-ref-component" @click="$emit(\'focus-evidence\', \'component-1\')" />' +
+    '<button data-test="ai-stub-ref-depth" @click="$emit(\'focus-evidence\', \'depth_bin-2\')" />' +
+    '<button data-test="ai-stub-ref-slice" @click="$emit(\'focus-evidence\', \'current_slice\')" />' +
+    '</div>',
+}
+
 const FINDING: PresentationFinding = {
   id: 'quality',
   title: '数据质量',
@@ -92,7 +104,7 @@ function mountWorkbench(props: Record<string, unknown> = {}) {
       evaluation: '<div data-test="slot-selection">正式选择面板</div>',
       provenance: '<div data-test="slot-export">导出与发布</div>',
     },
-    global: { plugins: [ElementPlus] },
+    global: { plugins: [ElementPlus], stubs: { AIAssistedReview: AIStub } },
     attachTo: document.body,
   })
 }
@@ -168,5 +180,27 @@ describe('ResultAnalysisWorkbench', () => {
     const text = wrapper.get('[data-test="result-evaluation"]').text()
     expect(text).not.toContain('NaN')
     expect(text).not.toContain('undefined')
+  })
+
+  it('rule/AI tab switch keeps rule analysis default; AI evidence refs link to components, depth bins and dock tabs', async () => {
+    const wrapper = mountWorkbench()
+    await flushPromises()
+    // 默认规则研判
+    expect(wrapper.find('[data-test="result-interpretation"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="ai-stub"]').exists()).toBe(false)
+    // 切到 AI 辅助
+    await wrapper.get('[data-test="side-tab-ai"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="result-interpretation"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="ai-stub"]').exists()).toBe(true)
+    // evidence ref → 组件/层段聚焦事件
+    await wrapper.get('[data-test="ai-stub-ref-component"]').trigger('click')
+    expect(wrapper.emitted('focus-component')).toEqual([[1]])
+    await wrapper.get('[data-test="ai-stub-ref-depth"]').trigger('click')
+    expect(wrapper.emitted('focus-depth-bin')).toEqual([[2]])
+    // evidence ref → 全局证据：证据带切到当前切片标签
+    await wrapper.get('[data-test="ai-stub-ref-slice"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="ge-pane-slice"]').exists()).toBe(true)
   })
 })
