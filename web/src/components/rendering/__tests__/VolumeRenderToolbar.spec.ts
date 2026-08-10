@@ -200,3 +200,83 @@ describe('VolumeRenderToolbar', () => {
     expect(slider.props('disabled')).toBe(true)
   })
 })
+
+// v0.9.0 Task 9：相机预设、组件标注与场景辅助进入常驻工具栏。
+// 相机预设是一次性命令（camera-preset 事件，不改状态）；标注显隐与
+// XYZ 轴/深度刻度是完整状态的可选字段（clone-modify 后整体发射）。
+describe('VolumeRenderToolbar v0.9 标注与相机', () => {
+  const ANNOTATIONS = [
+    {
+      id: 'component-1',
+      label: 'A',
+      localPosition: [15, 15, 25] as [number, number, number],
+      bounds: [
+        [10, 20],
+        [10, 20],
+        [20, 30],
+      ] as [[number, number], [number, number], [number, number]],
+      valueMax: 100,
+      supportMeasure: 500,
+      supportUnit: 'volume_coordinate_unit3' as const,
+      color: '#d9a84e',
+      visible: true,
+    },
+  ]
+
+  it('四种相机预设按钮发射 camera-preset 命令事件', async () => {
+    const wrapper = mountToolbar()
+    for (const preset of ['isometric', 'top-xy', 'front-xz', 'front-yz'] as const) {
+      await wrapper.get(`[data-test="camera-${preset}"]`).trigger('click')
+    }
+    expect(wrapper.emitted('camera-preset')).toEqual([
+      ['isometric'],
+      ['top-xy'],
+      ['front-xz'],
+      ['front-yz'],
+    ])
+    // 命令不改渲染状态
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+  })
+
+  it('组件标注开关：无标注时禁用；切换翻转全部标注 visible', async () => {
+    const disabled = mount(VolumeRenderToolbar, {
+      props: { modelValue: makeState(), profile: makeProfile(), annotationsAvailable: false },
+      global: { plugins: [ElementPlus] },
+      attachTo: document.body,
+    })
+    expect(disabled.get('[data-test="annotations-toggle"]').classes()).toContain('is-disabled')
+
+    const wrapper = mount(VolumeRenderToolbar, {
+      props: {
+        modelValue: makeState({ annotations: ANNOTATIONS }),
+        profile: makeProfile(),
+        annotationsAvailable: true,
+      },
+      global: { plugins: [ElementPlus] },
+      attachTo: document.body,
+    })
+    await wrapper.find('[data-test="annotations-toggle"] input').setValue(false)
+    const next = wrapper.emitted('update:modelValue')![0][0] as RenderStateV2
+    expect(next.annotations![0].visible).toBe(false)
+  })
+
+  it('XYZ 轴与深度刻度开关写入 sceneAids 状态字段', async () => {
+    const wrapper = mount(VolumeRenderToolbar, {
+      props: {
+        modelValue: makeState({ sceneAids: { axes: true, depthTicks: true } }),
+        profile: makeProfile(),
+        annotationsAvailable: true,
+      },
+      global: { plugins: [ElementPlus] },
+      attachTo: document.body,
+    })
+    await wrapper.find('[data-test="axes-toggle"] input').setValue(false)
+    let next = wrapper.emitted('update:modelValue')![0][0] as RenderStateV2
+    expect(next.sceneAids).toEqual({ axes: false, depthTicks: true })
+    // 受控组件：父级回填后再切换下一项
+    await wrapper.setProps({ modelValue: next })
+    await wrapper.find('[data-test="depth-ticks-toggle"] input').setValue(false)
+    next = wrapper.emitted('update:modelValue')![1][0] as RenderStateV2
+    expect(next.sceneAids).toEqual({ axes: false, depthTicks: false })
+  })
+})

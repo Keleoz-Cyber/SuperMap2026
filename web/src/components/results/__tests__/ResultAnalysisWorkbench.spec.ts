@@ -4,9 +4,11 @@ import ElementPlus from 'element-plus'
 import type { AnalysisSummaryResponse, ResultEvaluationSummary } from '../../../api/types'
 import type { PresentationFinding } from '../../../domain/findings'
 import ResultAnalysisWorkbench from '../ResultAnalysisWorkbench.vue'
+import { RESULT_ANALYSIS_MOCK_3D, SLICE_ANALYSIS_MOCK } from '../../../mocks/resultAnalysisMock'
 
-// v0.9.0 Task 11：成果与分析融合工作台合同。首屏同时包含三维场景、
-// 关键发现、证据带、模型评估摘要与溯源抽屉；组件只组合不 fetch。
+// v0.9.0 Task 9：成果与分析融合工作台合同（成果级分析版）。首屏同时包含
+// 三维场景、成果级规则研判、成果网格证据带、模型评估摘要与溯源抽屉；
+// 组件只组合不 fetch；数据集级证据只出现在「输入样本」标签下。
 
 const chartInstances: Array<{ dispose: ReturnType<typeof vi.fn> }> = []
 vi.mock('echarts/core', () => ({
@@ -17,7 +19,7 @@ vi.mock('echarts/core', () => ({
   }),
   use: vi.fn(),
 }))
-vi.mock('echarts/charts', () => ({ BarChart: {}, LineChart: {}, ScatterChart: {}, HeatmapChart: {} }))
+vi.mock('echarts/charts', () => ({ BarChart: {}, LineChart: {}, PieChart: {}, ScatterChart: {}, HeatmapChart: {} }))
 vi.mock('echarts/components', () => ({
   GridComponent: {},
   TooltipComponent: {},
@@ -72,7 +74,7 @@ const EVALUATION: ResultEvaluationSummary = {
   enhanced_evidence_available: false,
 }
 
-function mountWorkbench() {
+function mountWorkbench(props: Record<string, unknown> = {}) {
   return mount(ResultAnalysisWorkbench, {
     props: {
       findings: [FINDING],
@@ -81,6 +83,9 @@ function mountWorkbench() {
       datasetId: 'ds-1',
       resultId: 'r-1',
       evaluation: EVALUATION,
+      analysis: RESULT_ANALYSIS_MOCK_3D,
+      currentSlice: null,
+      ...props,
     },
     slots: {
       scene: '<div data-test="slot-scene">三维场景</div>',
@@ -93,15 +98,58 @@ function mountWorkbench() {
 }
 
 describe('ResultAnalysisWorkbench', () => {
-  it('first screen composes scene, findings, evidence dock, model metrics and provenance access', async () => {
+  it('first screen composes scene, result interpretation, evidence dock, model metrics and provenance', async () => {
     const wrapper = mountWorkbench()
     await flushPromises()
     expect(wrapper.get('[data-test="result-scene"]').text()).toContain('三维场景')
-    expect(wrapper.get('[data-test="result-findings"]').text()).toContain('有效数据 96/100')
+    // 成果级研判：后端发现与 A/B/C 组件
+    expect(wrapper.get('[data-test="result-interpretation"]').text()).toContain('最大高值连通区为 A 区')
+    expect(wrapper.find('[data-test="component-1"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="result-evidence-dock"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="result-grid-evidence"]').exists()).toBe(true)
     expect(wrapper.get('[data-test="result-evaluation"]').text()).toContain('RMSE')
     expect(wrapper.get('[data-test="result-evaluation"]').text()).toContain('6.454')
     expect(wrapper.find('[data-test="provenance-drawer"]').exists()).toBe(true)
+  })
+
+  it('dataset-level findings live only under the input-sample dock tab', async () => {
+    const wrapper = mountWorkbench()
+    await flushPromises()
+    // 输入样本证据明确标注，不混入成果级研判区
+    expect(wrapper.get('[data-test="result-interpretation"]').text()).not.toContain('有效数据 96/100')
+    await wrapper.get('[data-test="ge-tab-input"]').trigger('click')
+    await flushPromises()
+    const pane = wrapper.get('[data-test="ge-pane-input"]')
+    expect(pane.text()).toContain('输入样本')
+    expect(pane.text()).toContain('有效数据 96/100')
+  })
+
+  it('forwards component and depth-bin focus events from interpretation and dock', async () => {
+    const wrapper = mountWorkbench()
+    await flushPromises()
+    await wrapper.get('[data-test="component-2"]').trigger('click')
+    expect(wrapper.emitted('focus-component')).toEqual([[2]])
+    await wrapper.get('[data-test="finding-locate-finding-dominant-depth"]').trigger('click')
+    expect(wrapper.emitted('focus-depth-bin')).toEqual([[2]])
+  })
+
+  it('shows current-slice evidence shared with the 3D slice state', async () => {
+    const wrapper = mountWorkbench({ currentSlice: SLICE_ANALYSIS_MOCK })
+    await flushPromises()
+    const slice = wrapper.get('[data-test="interpretation-slice"]')
+    expect(slice.text()).toContain('Z')
+    expect(slice.text()).toContain('-400')
+    expect(slice.text()).toContain('有效 11')
+  })
+
+  it('analysis error shows typed state without stale numbers', async () => {
+    const wrapper = mountWorkbench({
+      analysis: null,
+      analysisError: 'RESULT_NOT_MATERIALIZED：成果未物化',
+    })
+    await flushPromises()
+    expect(wrapper.get('[data-test="interpretation-error"]').text()).toContain('RESULT_NOT_MATERIALIZED')
+    expect(wrapper.find('[data-test="component-1"]').exists()).toBe(false)
   })
 
   it('provenance drawer expands to reveal export/provenance slot content', async () => {
@@ -112,20 +160,6 @@ describe('ResultAnalysisWorkbench', () => {
     await flushPromises()
     expect(wrapper.find('.provenance-body').isVisible()).toBe(true)
     expect(wrapper.find('[data-test="slot-export"]').exists()).toBe(true)
-  })
-
-  it('forwards finding locate and dock selection events', async () => {
-    const wrapper = mountWorkbench()
-    await flushPromises()
-    const withTarget: PresentationFinding = {
-      ...FINDING,
-      id: 'spatial-anomaly',
-      spatialTarget: { axis: 'z', range: [-25, 0] },
-    }
-    await wrapper.setProps({ findings: [withTarget] })
-    await flushPromises()
-    await wrapper.get('[data-test="finding-locate"]').trigger('click')
-    expect(wrapper.emitted('locate')).toHaveLength(1)
   })
 
   it('model evaluation renders finite metrics only, never NaN', async () => {

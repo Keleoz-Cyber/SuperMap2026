@@ -25,6 +25,7 @@ import OrthogonalSliceControls from '../OrthogonalSliceControls.vue'
 import SliceAnalysisPanel from '../SliceAnalysisPanel.vue'
 import { PALETTES } from '../renderTransferFunctions'
 import type { RenderStateV2 } from '../renderProtocol'
+import { RESULT_ANALYSIS_MOCK_3D } from '../../../mocks/resultAnalysisMock'
 
 // v0.7.0 第二批 Task 11：统一 NativeVolumePanel 集成。
 // 面板 = 能力/资产生命周期 + 常驻工具栏（完整 v2 状态）+ 正交切片控件 +
@@ -210,6 +211,8 @@ let frameExposed: {
   applyRenderState: ReturnType<typeof vi.fn>
   setPointLayer: ReturnType<typeof vi.fn>
   resetView: ReturnType<typeof vi.fn>
+  setCameraPreset: ReturnType<typeof vi.fn>
+  focusAnnotation: ReturnType<typeof vi.fn>
 }
 
 const FrameStub = defineComponent({
@@ -219,12 +222,14 @@ const FrameStub = defineComponent({
     displayTransform: { type: Object, required: true },
     initialState: { type: Object, required: true },
   },
-  emits: ['ready', 'rendered', 'failed'],
+  emits: ['ready', 'rendered', 'failed', 'annotation-selected'],
   setup(_props, { expose }) {
     frameExposed = {
       applyRenderState: vi.fn().mockReturnValue(true),
       setPointLayer: vi.fn(),
       resetView: vi.fn(),
+      setCameraPreset: vi.fn(),
+      focusAnnotation: vi.fn(),
     }
     expose(frameExposed)
     return () => h('div', { 'data-test': 'volume-frame-stub' })
@@ -891,6 +896,127 @@ describe('NativeVolumePanel v0.9 联动挂起解析', () => {
     expect(analysis.exists()).toBe(true)
     expect(analysis.props('target')).toEqual({ axis: 'y', index: 2 })
     expect(wrapper.emitted('slice-request-failed')).toBeFalsy()
+    wrapper.unmount()
+  })
+})
+
+// v0.9.0 Task 9：成果异常标注、相机预设、组件聚焦与权威切片外发。
+// 标注线协议由 components prop 映射（id=component-N、局部坐标、确定性色带）；
+// 任何状态下组件身份变化立即重建标注，绝不跨成果残留。
+describe('NativeVolumePanel v0.9 异常标注联动', () => {
+  const COMPONENTS = RESULT_ANALYSIS_MOCK_3D.components_preview.rows
+
+  function mountWithComponents(api: FakeApi, extraProps: Record<string, unknown> = {}) {
+    return mount(NativeVolumePanel, {
+      props: { api, components: COMPONENTS, ...extraProps },
+      global: {
+        plugins: [ElementPlus],
+        stubs: { SuperMapVolumeFrame: FrameStub, SliceHeatmap: HeatmapStub },
+      },
+      attachTo: document.body,
+    })
+  }
+
+  async function mountRenderedWithComponents(extraProps: Record<string, unknown> = {}) {
+    const api = makeApi({ fetchAsset: vi.fn().mockResolvedValue(ASSET) })
+    const wrapper = mountWithComponents(api, extraProps)
+    await flushPromises()
+    await emitRendered(wrapper)
+    return wrapper
+  }
+
+  it('components 映射为 INIT 初始状态标注：id/坐标/支持量/确定性颜色', async () => {
+    const wrapper = await mountRenderedWithComponents()
+    const frame = wrapper.findComponent(FrameStub)
+    const initial = frame.props('initialState') as RenderStateV2
+    expect(initial.annotations).toHaveLength(3)
+    const [a, b] = initial.annotations!
+    expect(a).toMatchObject({
+      id: 'component-1',
+      label: 'A',
+      localPosition: [15, 15, 25],
+      valueMax: 100,
+      supportMeasure: 500,
+      supportUnit: 'volume_coordinate_unit3',
+      visible: true,
+    })
+    expect(a.bounds).toEqual([
+      [10, 20],
+      [10, 20],
+      [20, 30],
+    ])
+    // 颜色按 rank 确定性分配且互不相同
+    expect(a.color).toMatch(/^#[0-9a-fA-F]{6}$/)
+    expect(b.color).not.toBe(a.color)
+    // 初始无聚焦；场景辅助默认随状态携带
+    expect(initial.focusedAnnotationId ?? null).toBeNull()
+    expect(initial.sceneAids).toEqual({ axes: true, depthTicks: true })
+    wrapper.unmount()
+  })
+
+  it('focusedComponentId prop 写入 focusedAnnotationId 并随状态推送', async () => {
+    const wrapper = await mountRenderedWithComponents({ focusedComponentId: 2 })
+    await flushPromises()
+    // 挂载即聚焦：INIT 初始状态携带聚焦 id（无需等待状态推送）
+    expect(
+      (wrapper.findComponent(FrameStub).props('initialState') as RenderStateV2).focusedAnnotationId,
+    ).toBe('component-2')
+    // 清除聚焦：watch 推送完整状态
+    await wrapper.setProps({ focusedComponentId: null })
+    await flushPromises()
+    expect(lastAppliedState().focusedAnnotationId ?? null).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('focusComponent 命令子帧聚焦相机；annotation-selected 反选组件', async () => {
+    const wrapper = await mountRenderedWithComponents()
+    const api = wrapper.vm as unknown as { focusComponent: (id: number) => void }
+    api.focusComponent(2)
+    expect(frameExposed.focusAnnotation).toHaveBeenCalledWith('component-2')
+
+    const frame = wrapper.findComponent(FrameStub)
+    frame.vm.$emit('annotation-selected', { annotationId: 'component-3' })
+    await flushPromises()
+    expect(wrapper.emitted('annotation-selected')).toEqual([[{ componentId: 3 }]])
+    wrapper.unmount()
+  })
+
+  it('相机预设从工具栏命令子帧', async () => {
+    const wrapper = await mountRenderedWithComponents()
+    await wrapper.get('[data-test="camera-top-xy"]').trigger('click')
+    expect(frameExposed.setCameraPreset).toHaveBeenCalledWith('top-xy')
+    await wrapper.get('[data-test="camera-front-xz"]').trigger('click')
+    expect(frameExposed.setCameraPreset).toHaveBeenCalledWith('front-xz')
+    wrapper.unmount()
+  })
+
+  it('组件身份变化立即重建标注：旧 id 消失，聚焦清空', async () => {
+    const wrapper = await mountRenderedWithComponents({ focusedComponentId: 2 })
+    await flushPromises()
+    await wrapper.setProps({ components: [COMPONENTS[0]] })
+    await flushPromises()
+    const state = lastAppliedState()
+    expect(state.annotations).toHaveLength(1)
+    expect(state.annotations![0].id).toBe('component-1')
+    // 聚焦的 component-2 已不在列表：聚焦必须清空（协议硬校验）
+    expect(state.focusedAnnotationId ?? null).toBeNull()
+    // 组件清空：annotations 为空数组
+    await wrapper.setProps({ components: null })
+    await flushPromises()
+    expect(lastAppliedState().annotations).toEqual([])
+    wrapper.unmount()
+  })
+
+  it('权威剖面响应经 slice-analysis 事件外发（当前切片证据共用）', async () => {
+    const wrapper = await mountRenderedWithComponents()
+    await wrapper.get('[data-test="mode-slice"]').trigger('click')
+    await flushPromises()
+    await flushPromises()
+    const emitted = wrapper.emitted('slice-analysis')
+    expect(emitted).toBeTruthy()
+    const response = emitted!.at(-1)![0] as SliceAnalysisResponse
+    expect(response.slice.fixed_axis).toBe('z')
+    expect(response.asset_identity.asset_id).toBe(ASSET.id)
     wrapper.unmount()
   })
 })

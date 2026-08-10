@@ -9,12 +9,14 @@ import {
   type RenderScale,
 } from './renderTransferFunctions'
 import type { RenderProfile } from '../../api/types'
-import type { RenderStateV2 } from './renderProtocol'
+import { CAMERA_PRESETS, type CameraPreset, type RenderStateV2 } from './renderProtocol'
 
 // v0.7.0 Batch 2 Task 9：常驻渲染工具栏（设计 §7.2）。
 // 模式/色带/标度/滤波/不透明度/光照/渐变透明度/包围盒/重置视角常驻；
 // 每次合法修改都发射**完整克隆状态**（revision 由编排层递增）；重置视角
 // 只发 reset-view 事件，绝不改渲染状态。
+// v0.9.0 Task 9：相机预设（一次性命令）、组件标注显隐与 XYZ 轴/深度刻度
+// （状态可选字段）进入同一工具区；rail 布局供左栏纵向排布。
 
 const props = withDefaults(
   defineProps<{
@@ -25,8 +27,11 @@ const props = withDefaults(
     // 不传时回退 profile 默认（保持旧用法兼容）
     palette?: RenderPaletteId
     scale?: RenderScale
+    // v0.9.0 Task 9：组件标注可用性（无连通区时禁用开关）；rail 纵向布局
+    annotationsAvailable?: boolean
+    layout?: 'row' | 'rail'
   }>(),
-  { enabled: true, palette: undefined, scale: undefined },
+  { enabled: true, palette: undefined, scale: undefined, annotationsAvailable: false, layout: 'row' },
 )
 
 const emit = defineEmits<{
@@ -34,6 +39,7 @@ const emit = defineEmits<{
   'update:palette': [palette: RenderPaletteId]
   'update:scale': [scale: RenderScale]
   'reset-view': []
+  'camera-preset': [preset: CameraPreset]
 }>()
 
 const paletteIds = PALETTE_IDS
@@ -132,6 +138,49 @@ const boundingBoxModel = computed<boolean>({
     }),
 })
 
+// ---------------------------------------------------------------------------
+// v0.9.0 Task 9：相机预设 / 组件标注 / 场景辅助
+// 相机预设是一次性命令；标注显隐与 sceneAids 是完整状态的可选字段。
+// ---------------------------------------------------------------------------
+const CAMERA_PRESET_LABELS: Record<CameraPreset, string> = {
+  isometric: '等轴',
+  'top-xy': '俯视 XY',
+  'front-xz': '正视 XZ',
+  'front-yz': '正视 YZ',
+}
+const cameraPresets = CAMERA_PRESETS
+
+function onCameraPreset(preset: CameraPreset) {
+  if (!props.enabled) return
+  emit('camera-preset', preset)
+}
+
+// 组件标注总显隐：状态 annotations 全部成员同开关；无标注时禁用
+const annotationsVisible = computed<boolean>({
+  get: () => (state.value.annotations ?? []).some((a) => a.visible),
+  set: (value) =>
+    cloneWith((next) => {
+      if (!next.annotations) return
+      next.annotations = next.annotations.map((a) => ({ ...a, visible: value }))
+    }),
+})
+
+const axesModel = computed<boolean>({
+  get: () => state.value.sceneAids?.axes ?? false,
+  set: (value) =>
+    cloneWith((next) => {
+      next.sceneAids = { axes: value, depthTicks: next.sceneAids?.depthTicks ?? false }
+    }),
+})
+
+const depthTicksModel = computed<boolean>({
+  get: () => state.value.sceneAids?.depthTicks ?? false,
+  set: (value) =>
+    cloneWith((next) => {
+      next.sceneAids = { axes: next.sceneAids?.axes ?? false, depthTicks: value }
+    }),
+})
+
 const filterDraft = reactive({ min: '', max: '' })
 
 function applyFilter() {
@@ -155,7 +204,7 @@ function onResetView() {
 </script>
 
 <template>
-  <div class="render-toolbar" data-test="render-toolbar">
+  <div class="render-toolbar" :class="`layout-${layout}`" data-test="render-toolbar">
     <div class="toolbar-row">
       <el-radio-group
         v-model="modeModel"
@@ -287,6 +336,47 @@ function onResetView() {
         包围盒
       </el-checkbox>
     </div>
+
+    <!-- v0.9.0 Task 9：视角预设 + 组件标注 + 场景辅助 -->
+    <div class="toolbar-row aids-row">
+      <span class="control-label">视角</span>
+      <button
+        v-for="preset in cameraPresets"
+        :key="preset"
+        type="button"
+        class="preset-button"
+        :disabled="!enabled"
+        :data-test="`camera-${preset}`"
+        @click="onCameraPreset(preset)"
+      >
+        {{ CAMERA_PRESET_LABELS[preset] }}
+      </button>
+
+      <el-checkbox
+        v-model="annotationsVisible"
+        size="small"
+        :disabled="!enabled || !annotationsAvailable"
+        data-test="annotations-toggle"
+      >
+        组件标注
+      </el-checkbox>
+      <el-checkbox
+        v-model="axesModel"
+        size="small"
+        :disabled="!enabled"
+        data-test="axes-toggle"
+      >
+        XYZ 轴
+      </el-checkbox>
+      <el-checkbox
+        v-model="depthTicksModel"
+        size="small"
+        :disabled="!enabled"
+        data-test="depth-ticks-toggle"
+      >
+        深度刻度
+      </el-checkbox>
+    </div>
   </div>
 </template>
 
@@ -302,8 +392,32 @@ function onResetView() {
   flex-wrap: wrap;
   gap: 10px;
 }
+.layout-rail .toolbar-row {
+  align-items: flex-start;
+}
+.preset-button {
+  border: 1px solid var(--gmp-border);
+  background: var(--gmp-bg-soft);
+  color: var(--gmp-text-dim);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.preset-button:hover:not(:disabled) {
+  color: var(--gmp-accent);
+  border-color: var(--gmp-accent);
+}
+.preset-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 .palette-select {
   width: 180px;
+}
+.layout-rail .palette-select {
+  width: 100%;
+  max-width: 220px;
 }
 .palette-option {
   display: inline-flex;
@@ -328,5 +442,9 @@ function onResetView() {
 }
 .opacity-slider {
   width: 160px;
+}
+.layout-rail .opacity-slider {
+  flex: 1;
+  min-width: 120px;
 }
 </style>

@@ -12,11 +12,16 @@ import type {
 } from '../../api/types'
 import type { PresentationFinding } from '../../domain/findings'
 import { formatNumber } from '../analysis/analysisTypes'
+import type { AnalysisSelection } from '../analysis/analysisTypes'
+import { comparisonCandidatesOf, distributionBinsOf, profileAxesOf } from '../analysis/analysisTypes'
 import type { RenderPaletteId, RenderScale } from '../rendering/renderTransferFunctions'
 import SliceHeatmap from '../rendering/SliceHeatmap.vue'
 import AsyncState from '../states/AsyncState.vue'
 import FindingPanel from '../findings/FindingPanel.vue'
 import QualityDonut from '../evidence/QualityDonut.vue'
+import ModelMetricBars from '../evidence/ModelMetricBars.vue'
+import AxisTrendChart from '../evidence/AxisTrendChart.vue'
+import DistributionPanel from '../analysis/DistributionPanel.vue'
 import EChartBox from './EChartBox.vue'
 
 const props = withDefaults(
@@ -27,16 +32,19 @@ const props = withDefaults(
     datasetFindings?: PresentationFinding[]
     residuals?: ResidualEvidence | null
     resultId: string
+    datasetId?: string | null
     palette?: RenderPaletteId
     scale?: RenderScale
   }>(),
-  { datasetFindings: () => [], residuals: null, palette: 'viridis', scale: 'linear' },
+  { datasetFindings: () => [], residuals: null, datasetId: null, palette: 'viridis', scale: 'linear' },
 )
 
 const emit = defineEmits<{
   (e: 'focus-component', componentId: number): void
   (e: 'focus-depth-bin', index: number): void
   (e: 'locate', finding: PresentationFinding): void
+  (e: 'select', selection: AnalysisSelection): void
+  (e: 'select-result', resultId: string): void
 }>()
 
 type EvidenceTab = 'composition' | 'depth' | 'components' | 'slice' | 'model' | 'input' | 'provenance'
@@ -165,6 +173,24 @@ const modelMetrics = computed(() => {
 })
 
 const inputQuality = computed(() => props.datasetSummary?.quality ?? null)
+
+// 输入样本模块（数据集级，明确标注为插值前散点证据）
+function moduleOf(id: string) {
+  return props.datasetSummary?.modules.find((m) => m.module_id === id) ?? null
+}
+
+const inputDistribution = computed(() => {
+  const m = moduleOf('distribution')
+  return m !== null && m.status === 'ok' && distributionBinsOf(m).length > 0 ? m : null
+})
+
+const inputTrendAxes = computed(() => {
+  const m = moduleOf('profile_slices')
+  if (!m || m.status !== 'ok') return []
+  return profileAxesOf(m).filter((a) => a.bins.length > 0)
+})
+
+const inputModelCandidates = computed(() => comparisonCandidatesOf(moduleOf('model_comparison')))
 </script>
 
 <template>
@@ -335,6 +361,26 @@ const inputQuality = computed(() => props.datasetSummary?.quality ?? null)
           v-if="datasetFindings.length > 0"
           :findings="datasetFindings"
           @locate="emit('locate', $event)"
+        />
+        <DistributionPanel
+          v-if="inputDistribution && datasetSummary"
+          :module="inputDistribution"
+          :variable="datasetSummary.variable"
+          :profile="datasetSummary.analysis_profile"
+        />
+        <AxisTrendChart
+          v-if="inputTrendAxes.length > 0 && datasetId"
+          :axes="inputTrendAxes"
+          :unit="datasetSummary?.variable.unit ?? null"
+          :dataset-id="datasetId"
+          :result-id="resultId"
+          @select="emit('select', $event)"
+        />
+        <ModelMetricBars
+          v-if="inputModelCandidates.length > 0"
+          :candidates="inputModelCandidates"
+          :unit="datasetSummary?.variable.unit ?? null"
+          @select="emit('select-result', $event)"
         />
       </div>
 

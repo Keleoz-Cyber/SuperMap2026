@@ -1,18 +1,21 @@
 <script setup lang="ts">
-// v0.9.0：成果与分析融合工作台。中央三维主视图 + 右侧关键发现 +
-// 底部混合证据带 + 模型评估摘要 + 溯源/证据抽屉。
+// v0.9.0：成果与分析融合工作台（成果级分析版）。中央三维主视图 + 右侧
+// 成果级规则研判（Task 6 起替代数据集级关键发现）+ 底部成果网格证据带 +
+// 模型评估摘要 + 溯源/证据抽屉。
 // 组合器不 fetch：一切 DTO 由路由视图（ResultWorkbenchView）注入。
 import { computed, ref } from 'vue'
 import type {
   AnalysisSummaryResponse,
   ResidualEvidence,
+  ResultAnalysisSummary,
   ResultEvaluationSummary,
+  SliceAnalysisResponse,
 } from '../../api/types'
 import type { PresentationFinding } from '../../domain/findings'
 import type { AnalysisSelection } from '../analysis/analysisTypes'
 import { formatNumber } from '../analysis/analysisTypes'
-import FindingPanel from '../findings/FindingPanel.vue'
-import EvidenceDock from '../evidence/EvidenceDock.vue'
+import ResultInterpretationPanel from './ResultInterpretationPanel.vue'
+import ResultGridEvidence from './ResultGridEvidence.vue'
 
 const props = defineProps<{
   findings: PresentationFinding[]
@@ -21,6 +24,13 @@ const props = defineProps<{
   datasetId: string | null
   resultId: string
   evaluation: ResultEvaluationSummary | null
+  // 成果级分析（identity 绑定 result_id + grid_sha256；失败/未就绪为 null）
+  analysis: ResultAnalysisSummary | null
+  analysisLoading?: boolean
+  analysisError?: string | null
+  // 权威剖面响应（当前切片证据，与三维共用同一份）
+  currentSlice: SliceAnalysisResponse | null
+  focusedComponentId?: number | null
   // 图表—三维联动的类型化能力通知（如 XY 区域过滤不受支持）
   selectionNotice?: string | null
 }>()
@@ -29,13 +39,14 @@ const emit = defineEmits<{
   (e: 'locate', finding: PresentationFinding): void
   (e: 'select', selection: AnalysisSelection): void
   (e: 'select-result', resultId: string): void
+  (e: 'focus-component', componentId: number): void
+  (e: 'focus-depth-bin', index: number): void
 }>()
 
 // 三维→证据带反向联动：视图经 v-model:dock-tab 切换当前证据标签
-const dockTabModel = defineModel<'quality' | 'distribution' | 'model' | 'trends' | 'residuals'>(
-  'dockTab',
-  { default: 'quality' },
-)
+const dockTabModel = defineModel<
+  'composition' | 'depth' | 'components' | 'slice' | 'model' | 'input' | 'provenance'
+>('dockTab', { default: 'composition' })
 
 const provenanceOpen = ref(false)
 
@@ -49,8 +60,6 @@ const metrics = computed(() => {
     { label: 'Bias', value: ev.bias },
   ].filter((m) => m.value !== null && Number.isFinite(m.value))
 })
-
-void props
 </script>
 
 <template>
@@ -64,6 +73,16 @@ void props
       </div>
 
       <aside class="workbench-side">
+        <ResultInterpretationPanel
+          :analysis="analysis"
+          :current-slice="currentSlice"
+          :focused-component-id="focusedComponentId ?? null"
+          :loading="analysisLoading ?? false"
+          :error="analysisError ?? null"
+          @focus-component="emit('focus-component', $event)"
+          @focus-depth-bin="emit('focus-depth-bin', $event)"
+        />
+
         <section class="side-block" data-test="result-evaluation">
           <h3 class="side-title">模型评估</h3>
           <div v-if="metrics.length > 0" class="metric-grid">
@@ -78,21 +97,22 @@ void props
           </p>
           <slot name="evaluation" />
         </section>
-
-        <section class="side-block findings-block" data-test="result-findings">
-          <h3 class="side-title">关键发现</h3>
-          <FindingPanel :findings="findings" @locate="emit('locate', $event)" />
-        </section>
       </aside>
     </div>
 
     <div class="workbench-dock" data-test="result-evidence-dock">
-      <EvidenceDock
+      <ResultGridEvidence
         v-model:active-tab="dockTabModel"
-        :summary="summary"
+        :analysis="analysis"
+        :current-slice="currentSlice"
+        :dataset-summary="summary"
+        :dataset-findings="findings"
         :residuals="residuals"
-        :dataset-id="datasetId ?? ''"
         :result-id="resultId"
+        :dataset-id="datasetId"
+        @focus-component="emit('focus-component', $event)"
+        @focus-depth-bin="emit('focus-depth-bin', $event)"
+        @locate="emit('locate', $event)"
         @select="emit('select', $event)"
         @select-result="emit('select-result', $event)"
       />
@@ -134,7 +154,7 @@ void props
 
 .workbench-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-columns: minmax(0, 1fr) 360px;
   gap: var(--s1-space-4);
   align-items: start;
 }
@@ -197,11 +217,6 @@ void props
   color: var(--s1-text-faint);
 }
 
-.findings-block {
-  max-height: 480px;
-  overflow-y: auto;
-}
-
 .provenance-drawer {
   border: 1px solid var(--s1-border);
   border-radius: var(--s1-radius-md);
@@ -232,9 +247,9 @@ void props
   .workbench-grid {
     grid-template-columns: 1fr;
   }
+}
 
-  .findings-block {
-    max-height: none;
-  }
+.mono {
+  font-family: ui-monospace, monospace;
 }
 </style>

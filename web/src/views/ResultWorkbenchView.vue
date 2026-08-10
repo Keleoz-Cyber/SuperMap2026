@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ApiError,
@@ -8,6 +8,7 @@ import {
   fetchDatasetPoints,
   fetchExperiment,
   fetchRenderAssetSliceAnalysis,
+  fetchResultAnalysisSummary,
   fetchResultPreview,
   fetchResultRenderAsset,
   fetchResultRenderCapability,
@@ -18,8 +19,10 @@ import type {
   DatasetPoints,
   ExperimentRecord,
   ResidualEvidence,
+  ResultAnalysisSummary,
   ResultMetadata,
   ResultPreview,
+  SliceAnalysisResponse,
 } from '../api/types'
 import NativeVolumePanel from '../components/rendering/NativeVolumePanel.vue'
 import type {
@@ -58,6 +61,16 @@ const activeTab = ref<'field' | 'slices'>('field')
 const analysis = ref<AnalysisSummaryResponse | null>(null)
 const residuals = ref<ResidualEvidence | null>(null)
 
+// v0.9.0 Task 9：成果级分析（只读 GET；identity 绑定 result_id + grid_sha256）
+// 与数据集级摘要严格分离；失败仅记录类型化错误，绝不回退旧摘要。
+const resultAnalysis = ref<ResultAnalysisSummary | null>(null)
+const resultAnalysisError = ref<string | null>(null)
+const resultAnalysisLoading = ref(false)
+// 权威剖面响应（当前切片证据，由 NativeVolumePanel 外发）；聚焦组件身份
+const currentSlice = ref<SliceAnalysisResponse | null>(null)
+const focusedComponentId = ref<number | null>(null)
+const volumePanelRef = ref<InstanceType<typeof NativeVolumePanel> | null>(null)
+
 const findings = computed<PresentationFinding[]>(() =>
   analysis.value ? buildPresentationFindings(analysis.value) : [],
 )
@@ -70,7 +83,9 @@ const findings = computed<PresentationFinding[]>(() =>
 const selection = createAnalysisSelectionController()
 const sliceRequest = ref<{ axis: SliceAxis; range: [number, number]; token: number } | null>(null)
 const capabilityNotice = ref<string | null>(null)
-const dockTab = ref<'quality' | 'distribution' | 'model' | 'trends' | 'residuals'>('quality')
+const dockTab = ref<'composition' | 'depth' | 'components' | 'slice' | 'model' | 'input' | 'provenance'>(
+  'composition',
+)
 let sliceToken = 0
 
 function requestSlice(axis: SliceAxis, range: [number, number]) {
@@ -127,12 +142,39 @@ function onSelectResult(nextResultId: string) {
 }
 
 function onSliceChange() {
-  // 三维切片移动 → 证据带切到趋势剖面标签（反向联动）
-  dockTab.value = 'trends'
+  // 三维切片移动 → 证据带切到当前切片标签（反向联动）
+  dockTab.value = 'slice'
 }
 
 function onSliceRequestFailed(payload: { reason: string }) {
   capabilityNotice.value = payload.reason
+}
+
+// ---------------------------------------------------------------------------
+// v0.9.0 Task 9：成果级研判 ↔ 三维双向联动
+// ---------------------------------------------------------------------------
+
+// 研判/证据点击组件：高亮（prop 回流）+ 子帧相机聚焦
+function onFocusComponent(componentId: number) {
+  focusedComponentId.value = componentId
+  volumePanelRef.value?.focusComponent(componentId)
+}
+
+// 三维标注点击反选：高亮同步到研判面板（相机已在标注附近，不再回驱）
+function onAnnotationSelected(payload: { componentId: number }) {
+  focusedComponentId.value = payload.componentId
+}
+
+// 深度层段定位：层段 z 区间 → z 轴切片请求（复用既有正交切片链）
+function onFocusDepthBin(index: number) {
+  const bin = resultAnalysis.value?.depth_profile.bins[index]
+  if (!bin) return
+  requestSlice('z', [bin.z_lower, bin.z_upper])
+}
+
+// 权威剖面响应：当前切片证据（研判面板与证据带共用）
+function onSliceAnalysis(response: SliceAnalysisResponse) {
+  currentSlice.value = response
 }
 
 // 深链恢复：?axis=z&range=a,b&dataset=… 进入成果页时还原选择并定位切片
@@ -191,42 +233,88 @@ const sourcePoints = computed(() => {
   return { x: points.value.x, y: points.value.y, values: points.value.values }
 })
 
-onMounted(async () => {
+// 成果身份切换：先清空旧身份派生状态（分析/切片/聚焦/网格哈希），再重新加载；
+// 绝不把上一成果的分析数字、组件标注或 AI 记录残留到新身份下
+function resetForIdentityChange() {
+  metadata.value = null
+  experiment.value = null
+  preview.value = null
+  points.value = null
+  loadError.value = null
+  analysis.value = null
+  residuals.value = null
+  resultAnalysis.value = null
+  resultAnalysisError.value = null
+  resultAnalysisLoading.value = false
+  currentSlice.value = null
+  focusedComponentId.value = null
+  sliceRequest.value = null
+  capabilityNotice.value = null
+}
+
+// 加载序号：A→B→A 快速切换时，只有最新一次 load 的响应可以写入状态；
+// 旧请求无论成功/失败/finally 都不得覆盖（异步竞态守卫）
+let loadSeq = 0
+
+async function load() {
+  const seq = ++loadSeq
+  const currentResultId = resultId.value
+  const isCurrent = () => seq === loadSeq
   try {
     // v0.6.1：物化是唯一显式变异入口（POST 一次）；绝不把 fetchResult 当创建捷径。
     // 切片/预览/证据只在物化成功后获取。
-    const meta = await materializeResult(resultId.value)
+    const meta = await materializeResult(currentResultId)
+    if (!isCurrent()) return
     metadata.value = meta
     const exp = await fetchExperiment(meta.experiment_id)
+    if (!isCurrent()) return
     experiment.value = exp
     // 选择上下文与该成果身份绑定；随后还原深链选择（若有）
-    selection.setContext({ datasetId: exp.params.dataset_version_id, resultId: resultId.value })
+    selection.setContext({ datasetId: exp.params.dataset_version_id, resultId: currentResultId })
     restoreSelectionFromQuery()
+    resultAnalysisLoading.value = true
+    const datasetId = exp.params.dataset_version_id
     const fetches: Promise<void>[] = [
-      fetchDatasetPoints(exp.params.dataset_version_id).then((p) => {
-        points.value = p
+      fetchDatasetPoints(datasetId).then((p) => {
+        if (isCurrent()) points.value = p
       }),
       // 分析摘要只读：未验证/不可用时不产生结论，工作台显示真实空态
-      fetchAnalysisSummary(exp.params.dataset_version_id)
+      fetchAnalysisSummary(datasetId)
         .then((s) => {
-          analysis.value = s
+          if (isCurrent()) analysis.value = s
         })
         .catch(() => {
-          analysis.value = null
+          if (isCurrent()) analysis.value = null
         }),
-      fetchResultResiduals(resultId.value, 4)
+      fetchResultResiduals(currentResultId, 4)
         .then((r) => {
-          residuals.value = r
+          if (isCurrent()) residuals.value = r
         })
         .catch(() => {
-          residuals.value = null
+          if (isCurrent()) residuals.value = null
+        }),
+      // 成果级分析只读：identity 绑定 result_id + grid_sha256；失败显示类型化
+      // 错误，绝不回退旧成果摘要或数据集级统计冒充
+      fetchResultAnalysisSummary(currentResultId)
+        .then((s) => {
+          if (!isCurrent()) return
+          resultAnalysis.value = s
+          resultAnalysisError.value = null
+        })
+        .catch((e) => {
+          if (!isCurrent()) return
+          resultAnalysis.value = null
+          resultAnalysisError.value = e instanceof ApiError ? `${e.code}：${e.message}` : String(e)
+        })
+        .finally(() => {
+          if (isCurrent()) resultAnalysisLoading.value = false
         }),
     ]
     if (meta.dimension === '3d') {
       activeTab.value = 'field'
       fetches.push(
-        fetchResultPreview(resultId.value).then((p) => {
-          preview.value = p
+        fetchResultPreview(currentResultId).then((p) => {
+          if (isCurrent()) preview.value = p
         }),
       )
     } else {
@@ -234,8 +322,18 @@ onMounted(async () => {
     }
     await Promise.all(fetches)
   } catch (e) {
+    if (!isCurrent()) return
     loadError.value = e instanceof ApiError ? `${e.code}：${e.message}` : String(e)
   }
+}
+
+onMounted(load)
+
+// 同页切换成果（模型比较选择/深链）：清旧身份后完整重载
+watch(resultId, (next, prev) => {
+  if (!next || next === prev) return
+  resetForIdentityChange()
+  void load()
 })
 </script>
 
@@ -282,10 +380,17 @@ onMounted(async () => {
         :dataset-id="experiment?.params.dataset_version_id ?? null"
         :result-id="resultId"
         :evaluation="metadata.evaluation_summary ?? null"
+        :analysis="resultAnalysis"
+        :analysis-loading="resultAnalysisLoading"
+        :analysis-error="resultAnalysisError"
+        :current-slice="currentSlice"
+        :focused-component-id="focusedComponentId"
         :selection-notice="capabilityNotice"
         @locate="onFindingLocate"
         @select="onEvidenceSelect"
         @select-result="onSelectResult"
+        @focus-component="onFocusComponent"
+        @focus-depth-bin="onFocusDepthBin"
       >
         <template #scene>
           <section class="panel">
@@ -310,11 +415,16 @@ onMounted(async () => {
 
             <NativeVolumePanel
               v-if="metadata.dimension === '3d' && activeTab === 'field'"
+              ref="volumePanelRef"
               :api="volumeApi"
               :aux-points="gridSamplePoints"
               :slice-request="sliceRequest"
+              :components="resultAnalysis?.components_preview.rows ?? null"
+              :focused-component-id="focusedComponentId"
               @slice-change="onSliceChange"
               @slice-request-failed="onSliceRequestFailed"
+              @annotation-selected="onAnnotationSelected"
+              @slice-analysis="onSliceAnalysis"
             />
             <SlicePanel
               v-else
@@ -341,7 +451,7 @@ onMounted(async () => {
 <style scoped>
 .workbench-page {
   min-height: 100%;
-  max-width: 1080px;
+  max-width: 1760px;
   margin: 0 auto;
   padding: 28px 20px 48px;
   display: flex;
