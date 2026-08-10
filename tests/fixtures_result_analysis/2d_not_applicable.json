@@ -1,0 +1,118 @@
+{
+  "identity": {
+    "result_id": "r-2d-na",
+    "grid_sha256": "b64charhexhash00000000000000000000000000000000000000000000000000",
+    "analysis_version": "result_analysis.v1",
+    "dimension": "2d",
+    "coordinate_type": "local_linear"
+  },
+  "variable": {"name": "RHO", "unit": "ohm_m"},
+  "grid": {
+    "shape": [10, 10],
+    "valid_count": 95,
+    "nodata_count": 5,
+    "min": 2.0,
+    "max": 80.0,
+    "mean": 35.0,
+    "median": 32.0,
+    "p25": 18.0,
+    "p75": 55.0
+  },
+  "thresholds": {
+    "low": 18.0,
+    "high": 55.0,
+    "source": "full_grid_quartile",
+    "method": "numpy_linear_p25_p75"
+  },
+  "composition": {
+    "buckets": [
+      {"category": "low", "count": 24, "ratio": 0.253},
+      {"category": "normal", "count": 47, "ratio": 0.495},
+      {"category": "high", "count": 24, "ratio": 0.253}
+    ]
+  },
+  "depth_profile": {
+    "status": "not_applicable",
+    "bins": []
+  },
+  "components_preview": {
+    "threshold": 55.0,
+    "connectivity_rule": "face_2d4_3d6_v1",
+    "total": 2,
+    "returned": 2,
+    "rows": [
+      {
+        "rank": 1, "label": "A", "component_id": 1,
+        "support_node_count": 15, "support_measure": 375.0,
+        "support_unit": "area_coordinate_unit2",
+        "bounds": [[20.0, 40.0], [20.0, 40.0]],
+        "centroid": [30.0, 30.0],
+        "value_min": 56.0, "value_max": 80.0, "value_mean": 68.0,
+        "touches_grid_boundary": false
+      },
+      {
+        "rank": 2, "label": "B", "component_id": 2,
+        "support_node_count": 9, "support_measure": 225.0,
+        "support_unit": "area_coordinate_unit2",
+        "bounds": [[0.0, 10.0], [0.0, 10.0]],
+        "centroid": [5.0, 5.0],
+        "value_min": 55.0, "value_max": 70.0, "value_mean": 62.0,
+        "touches_grid_boundary": true
+      }
+    ]
+  },
+  "model_evidence": {
+    "algorithm": "idw",
+    "metrics": {"rmse": 4.1, "mae": 2.9, "r2": 0.88, "coverage": 0.91},
+    "common_valid_count": 45,
+    "formal_selection_id": null,
+    "formal_selection_note": null
+  },
+  "findings": [
+    {
+      "id": "finding-largest-component",
+      "kind": "largest_high_component",
+      "title": "最大高值连通区为 A 区",
+      "statement": "A 区网格支持面积估计 375.0，为最大连通区",
+      "evidence": [{"name": "label", "value": "A"}, {"name": "support_measure", "value": 375.0}],
+      "confidence": "high",
+      "limitations": ["网格支持面积估计非真实地质面积"],
+      "spatial_target": {"kind": "component", "component_id": 1}
+    },
+    {
+      "id": "finding-boundary-contact",
+      "kind": "boundary_contact",
+      "title": "B 区接触网格边界",
+      "statement": "B 区接触网格边界，需注意外推影响",
+      "evidence": [{"name": "boundary_components", "value": "B"}],
+      "confidence": "high",
+      "limitations": ["边界接触不代表异常延伸范围"],
+      "spatial_target": null
+    },
+    {
+      "id": "finding-formal-model",
+      "kind": "formal_model",
+      "title": "正式模型为 IDW",
+      "statement": "公共有效点 45，RMSE 4.1，R² 0.88",
+      "evidence": [{"name": "algorithm", "value": "idw"}, {"name": "rmse", "value": 4.1}, {"name": "r2", "value": 0.88}],
+      "confidence": "high",
+      "limitations": ["指标基于交叉验证"],
+      "spatial_target": null
+    },
+    {
+      "id": "finding-uncertainty",
+      "kind": "uncertainty_availability",
+      "title": "不确定性证据不适用",
+      "statement": "2D 成果无深度分层；不确定性状态为 not_applicable",
+      "evidence": [{"name": "availability", "value": "not_applicable"}],
+      "confidence": "high",
+      "limitations": [],
+      "spatial_target": null
+    }
+  ],
+  "provenance": {
+    "grid_sha256": "b64charhexhash00000000000000000000000000000000000000000000000000",
+    "calculation_version": "result_analysis.v1",
+    "threshold_method": "numpy_linear_p25_p75"
+  }
+}

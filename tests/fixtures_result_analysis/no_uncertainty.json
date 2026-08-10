@@ -1,0 +1,133 @@
+{
+  "identity": {
+    "result_id": "r-no-uncertainty",
+    "grid_sha256": "c64charhexhash00000000000000000000000000000000000000000000000000",
+    "analysis_version": "result_analysis.v1",
+    "dimension": "3d",
+    "coordinate_type": "local_linear"
+  },
+  "variable": {"name": "RHO", "unit": "ohm_m"},
+  "grid": {
+    "shape": [5, 5, 5],
+    "valid_count": 120,
+    "nodata_count": 5,
+    "min": 5.0,
+    "max": 90.0,
+    "mean": 40.0,
+    "median": 38.0,
+    "p25": 20.0,
+    "p75": 60.0
+  },
+  "thresholds": {
+    "low": 20.0,
+    "high": 60.0,
+    "source": "full_grid_quartile",
+    "method": "numpy_linear_p25_p75"
+  },
+  "composition": {
+    "buckets": [
+      {"category": "low", "count": 30, "ratio": 0.25},
+      {"category": "normal", "count": 60, "ratio": 0.5},
+      {"category": "high", "count": 30, "ratio": 0.25}
+    ]
+  },
+  "depth_profile": {
+    "status": "applicable",
+    "bins": [
+      {"z_lower": 0.0, "z_upper": 8.0, "valid_count": 30, "mean": 25.0, "high_count": 5, "high_ratio": 0.167},
+      {"z_lower": 8.0, "z_upper": 16.0, "valid_count": 30, "mean": 40.0, "high_count": 8, "high_ratio": 0.267},
+      {"z_lower": 16.0, "z_upper": 24.0, "valid_count": 30, "mean": 50.0, "high_count": 10, "high_ratio": 0.333},
+      {"z_lower": 24.0, "z_upper": 32.0, "valid_count": 30, "mean": 45.0, "high_count": 7, "high_ratio": 0.233}
+    ]
+  },
+  "components_preview": {
+    "threshold": 60.0,
+    "connectivity_rule": "face_2d4_3d6_v1",
+    "total": 2,
+    "returned": 2,
+    "rows": [
+      {
+        "rank": 1, "label": "A", "component_id": 1,
+        "support_node_count": 20, "support_measure": 1200.0,
+        "support_unit": "volume_coordinate_unit3",
+        "bounds": [[8.0, 24.0], [8.0, 24.0], [8.0, 24.0]],
+        "centroid": [16.0, 16.0, 16.0],
+        "value_min": 62.0, "value_max": 90.0, "value_mean": 75.0,
+        "touches_grid_boundary": false
+      },
+      {
+        "rank": 2, "label": "B", "component_id": 2,
+        "support_node_count": 10, "support_measure": 600.0,
+        "support_unit": "volume_coordinate_unit3",
+        "bounds": [[0.0, 8.0], [0.0, 8.0], [0.0, 8.0]],
+        "centroid": [4.0, 4.0, 4.0],
+        "value_min": 61.0, "value_max": 75.0, "value_mean": 68.0,
+        "touches_grid_boundary": true
+      }
+    ]
+  },
+  "model_evidence": {
+    "algorithm": "dsi_like",
+    "metrics": {"rmse": 6.5, "mae": 4.2, "r2": 0.85, "coverage": 0.92},
+    "common_valid_count": 80,
+    "formal_selection_id": null,
+    "formal_selection_note": null
+  },
+  "findings": [
+    {
+      "id": "finding-dominant-depth",
+      "kind": "dominant_depth_interval",
+      "title": "高值主要集中在 16-24m 深度层段",
+      "statement": "第三层段高值占比 33.3%，为所有层段最高",
+      "evidence": [{"name": "depth_bin_index", "value": 2}, {"name": "high_ratio", "value": 0.333}],
+      "confidence": "medium",
+      "limitations": ["局部坐标系"],
+      "spatial_target": {"kind": "depth_bin", "depth_bin_index": 2}
+    },
+    {
+      "id": "finding-largest-component",
+      "kind": "largest_high_component",
+      "title": "最大高值连通区为 A 区",
+      "statement": "A 区网格支持体积估计 1200.0，为最大连通区",
+      "evidence": [{"name": "label", "value": "A"}, {"name": "support_measure", "value": 1200.0}],
+      "confidence": "high",
+      "limitations": ["网格支持体积估计非真实地质体积"],
+      "spatial_target": {"kind": "component", "component_id": 1}
+    },
+    {
+      "id": "finding-boundary-contact",
+      "kind": "boundary_contact",
+      "title": "B 区接触网格边界",
+      "statement": "B 区接触网格边界，需注意外推影响",
+      "evidence": [{"name": "boundary_components", "value": "B"}],
+      "confidence": "high",
+      "limitations": ["边界接触不代表异常延伸范围"],
+      "spatial_target": null
+    },
+    {
+      "id": "finding-formal-model",
+      "kind": "formal_model",
+      "title": "正式模型为 DSI-like",
+      "statement": "公共有效点 80，RMSE 6.5，R² 0.85",
+      "evidence": [{"name": "algorithm", "value": "dsi_like"}, {"name": "rmse", "value": 6.5}, {"name": "r2", "value": 0.85}],
+      "confidence": "high",
+      "limitations": ["指标基于交叉验证", "DSI-like 为工程近似"],
+      "spatial_target": null
+    },
+    {
+      "id": "finding-uncertainty",
+      "kind": "uncertainty_availability",
+      "title": "不确定性证据缺失",
+      "statement": "该成果未物化专业不确定性层",
+      "evidence": [{"name": "availability", "value": "missing"}],
+      "confidence": "high",
+      "limitations": ["不确定性分析不可用"],
+      "spatial_target": null
+    }
+  ],
+  "provenance": {
+    "grid_sha256": "c64charhexhash00000000000000000000000000000000000000000000000000",
+    "calculation_version": "result_analysis.v1",
+    "threshold_method": "numpy_linear_p25_p75"
+  }
+}

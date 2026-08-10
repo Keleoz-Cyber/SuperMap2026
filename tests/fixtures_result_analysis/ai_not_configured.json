@@ -1,0 +1,123 @@
+{
+  "identity": {
+    "result_id": "r-ai-na",
+    "grid_sha256": "d64charhexhash00000000000000000000000000000000000000000000000000",
+    "analysis_version": "result_analysis.v1",
+    "dimension": "3d",
+    "coordinate_type": "local_linear"
+  },
+  "variable": {"name": "RHO", "unit": "ohm_m"},
+  "grid": {
+    "shape": [3, 3, 3],
+    "valid_count": 26,
+    "nodata_count": 1,
+    "min": 10.0,
+    "max": 85.0,
+    "mean": 42.0,
+    "median": 40.0,
+    "p25": 22.0,
+    "p75": 65.0
+  },
+  "thresholds": {
+    "low": 22.0,
+    "high": 65.0,
+    "source": "full_grid_quartile",
+    "method": "numpy_linear_p25_p75"
+  },
+  "composition": {
+    "buckets": [
+      {"category": "low", "count": 7, "ratio": 0.269},
+      {"category": "normal", "count": 12, "ratio": 0.462},
+      {"category": "high", "count": 7, "ratio": 0.269}
+    ]
+  },
+  "depth_profile": {
+    "status": "applicable",
+    "bins": [
+      {"z_lower": 0.0, "z_upper": 5.0, "valid_count": 9, "mean": 30.0, "high_count": 1, "high_ratio": 0.111},
+      {"z_lower": 5.0, "z_upper": 10.0, "valid_count": 9, "mean": 45.0, "high_count": 3, "high_ratio": 0.333},
+      {"z_lower": 10.0, "z_upper": 15.0, "valid_count": 8, "mean": 50.0, "high_count": 3, "high_ratio": 0.375}
+    ]
+  },
+  "components_preview": {
+    "threshold": 65.0,
+    "connectivity_rule": "face_2d4_3d6_v1",
+    "total": 1,
+    "returned": 1,
+    "rows": [
+      {
+        "rank": 1, "label": "A", "component_id": 1,
+        "support_node_count": 7, "support_measure": 175.0,
+        "support_unit": "volume_coordinate_unit3",
+        "bounds": [[0.0, 10.0], [0.0, 10.0], [5.0, 15.0]],
+        "centroid": [5.0, 5.0, 10.0],
+        "value_min": 66.0, "value_max": 85.0, "value_mean": 75.0,
+        "touches_grid_boundary": true
+      }
+    ]
+  },
+  "model_evidence": {
+    "algorithm": "ordinary_kriging",
+    "metrics": {"rmse": 3.8, "mae": 2.5, "r2": 0.94, "coverage": 0.97},
+    "common_valid_count": 30,
+    "formal_selection_id": null,
+    "formal_selection_note": null
+  },
+  "findings": [
+    {
+      "id": "finding-dominant-depth",
+      "kind": "dominant_depth_interval",
+      "title": "高值主要集中在 10-15m 深度层段",
+      "statement": "第三层段高值占比 37.5%，为所有层段最高",
+      "evidence": [{"name": "depth_bin_index", "value": 2}, {"name": "high_ratio", "value": 0.375}],
+      "confidence": "medium",
+      "limitations": ["局部坐标系"],
+      "spatial_target": {"kind": "depth_bin", "depth_bin_index": 2}
+    },
+    {
+      "id": "finding-largest-component",
+      "kind": "largest_high_component",
+      "title": "最大高值连通区为 A 区",
+      "statement": "A 区网格支持体积估计 175.0，为唯一连通区",
+      "evidence": [{"name": "label", "value": "A"}, {"name": "support_measure", "value": 175.0}],
+      "confidence": "high",
+      "limitations": ["网格支持体积估计非真实地质体积"],
+      "spatial_target": {"kind": "component", "component_id": 1}
+    },
+    {
+      "id": "finding-boundary-contact",
+      "kind": "boundary_contact",
+      "title": "A 区接触网格边界",
+      "statement": "唯一高值连通区 A 接触网格边界，需注意外推影响",
+      "evidence": [{"name": "boundary_components", "value": "A"}],
+      "confidence": "high",
+      "limitations": ["边界接触不代表异常延伸范围"],
+      "spatial_target": null
+    },
+    {
+      "id": "finding-formal-model",
+      "kind": "formal_model",
+      "title": "正式模型为 Ordinary Kriging",
+      "statement": "公共有效点 30，RMSE 3.8，R² 0.94",
+      "evidence": [{"name": "algorithm", "value": "ordinary_kriging"}, {"name": "rmse", "value": 3.8}, {"name": "r2", "value": 0.94}],
+      "confidence": "high",
+      "limitations": ["指标基于交叉验证"],
+      "spatial_target": null
+    },
+    {
+      "id": "finding-uncertainty",
+      "kind": "uncertainty_availability",
+      "title": "不确定性证据可用",
+      "statement": "经验误差尺度和 Kriging 标准差均已物化",
+      "evidence": [{"name": "availability", "value": "available"}],
+      "confidence": "high",
+      "limitations": [],
+      "spatial_target": null
+    }
+  ],
+  "provenance": {
+    "grid_sha256": "d64charhexhash00000000000000000000000000000000000000000000000000",
+    "calculation_version": "result_analysis.v1",
+    "threshold_method": "numpy_linear_p25_p75"
+  }
+}

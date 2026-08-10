@@ -1,0 +1,144 @@
+{
+  "identity": {
+    "result_id": "r-3d-normal",
+    "grid_sha256": "a64charhexhash00000000000000000000000000000000000000000000000000",
+    "analysis_version": "result_analysis.v1",
+    "dimension": "3d",
+    "coordinate_type": "local_linear"
+  },
+  "variable": {"name": "RHO", "unit": "ohm_m"},
+  "grid": {
+    "shape": [4, 4, 4],
+    "valid_count": 60,
+    "nodata_count": 4,
+    "min": 1.0,
+    "max": 100.0,
+    "mean": 45.0,
+    "median": 42.0,
+    "p25": 25.0,
+    "p75": 70.0
+  },
+  "thresholds": {
+    "low": 25.0,
+    "high": 70.0,
+    "source": "full_grid_quartile",
+    "method": "numpy_linear_p25_p75"
+  },
+  "composition": {
+    "buckets": [
+      {"category": "low", "count": 15, "ratio": 0.25},
+      {"category": "normal", "count": 30, "ratio": 0.5},
+      {"category": "high", "count": 15, "ratio": 0.25}
+    ]
+  },
+  "depth_profile": {
+    "status": "applicable",
+    "bins": [
+      {"z_lower": 0.0, "z_upper": 10.0, "valid_count": 16, "mean": 30.0, "high_count": 2, "high_ratio": 0.125},
+      {"z_lower": 10.0, "z_upper": 20.0, "valid_count": 15, "mean": 45.0, "high_count": 4, "high_ratio": 0.267},
+      {"z_lower": 20.0, "z_upper": 30.0, "valid_count": 15, "mean": 55.0, "high_count": 5, "high_ratio": 0.333},
+      {"z_lower": 30.0, "z_upper": 40.0, "valid_count": 14, "mean": 50.0, "high_count": 4, "high_ratio": 0.286}
+    ]
+  },
+  "components_preview": {
+    "threshold": 70.0,
+    "connectivity_rule": "face_2d4_3d6_v1",
+    "total": 3,
+    "returned": 3,
+    "rows": [
+      {
+        "rank": 1, "label": "A", "component_id": 1,
+        "support_node_count": 8, "support_measure": 500.0,
+        "support_unit": "volume_coordinate_unit3",
+        "bounds": [[10.0, 20.0], [10.0, 20.0], [20.0, 30.0]],
+        "centroid": [15.0, 15.0, 25.0],
+        "value_min": 72.0, "value_max": 100.0, "value_mean": 85.0,
+        "touches_grid_boundary": false,
+        "empirical_error_scale_mean": 0.3,
+        "kriging_std_mean": 2.5
+      },
+      {
+        "rank": 2, "label": "B", "component_id": 2,
+        "support_node_count": 4, "support_measure": 250.0,
+        "support_unit": "volume_coordinate_unit3",
+        "bounds": [[0.0, 10.0], [10.0, 20.0], [10.0, 20.0]],
+        "centroid": [5.0, 15.0, 15.0],
+        "value_min": 71.0, "value_max": 80.0, "value_mean": 75.0,
+        "touches_grid_boundary": true
+      },
+      {
+        "rank": 3, "label": "C", "component_id": 3,
+        "support_node_count": 3, "support_measure": 150.0,
+        "support_unit": "volume_coordinate_unit3",
+        "bounds": [[20.0, 30.0], [0.0, 10.0], [30.0, 40.0]],
+        "centroid": [25.0, 5.0, 35.0],
+        "value_min": 70.0, "value_max": 78.0, "value_mean": 74.0,
+        "touches_grid_boundary": true
+      }
+    ]
+  },
+  "model_evidence": {
+    "algorithm": "ordinary_kriging",
+    "metrics": {"rmse": 5.2, "mae": 3.8, "r2": 0.92, "coverage": 0.95, "common_valid_count": 50},
+    "common_valid_count": 50,
+    "formal_selection_id": "fs-001",
+    "formal_selection_note": "最佳候选"
+  },
+  "findings": [
+    {
+      "id": "finding-dominant-depth",
+      "kind": "dominant_depth_interval",
+      "title": "高值主要集中在 20-30m 深度层段",
+      "statement": "第三层段高值占比 33.3%，为所有层段最高",
+      "evidence": [{"name": "depth_bin_index", "value": 2}, {"name": "high_ratio", "value": 0.333}],
+      "confidence": "medium",
+      "limitations": ["局部坐标系"],
+      "spatial_target": {"kind": "depth_bin", "depth_bin_index": 2}
+    },
+    {
+      "id": "finding-largest-component",
+      "kind": "largest_high_component",
+      "title": "最大高值连通区为 A 区",
+      "statement": "A 区网格支持体积估计 500.0，为最大连通区",
+      "evidence": [{"name": "label", "value": "A"}, {"name": "support_measure", "value": 500.0}],
+      "confidence": "high",
+      "limitations": ["网格支持体积估计非真实地质体积"],
+      "spatial_target": {"kind": "component", "component_id": 1}
+    },
+    {
+      "id": "finding-boundary-contact",
+      "kind": "boundary_contact",
+      "title": "主要连通区 B 和 C 接触网格边界",
+      "statement": "B 区和 C 区均接触网格边界，需注意外推影响",
+      "evidence": [{"name": "boundary_components", "value": "B,C"}],
+      "confidence": "high",
+      "limitations": ["边界接触不代表异常延伸范围"],
+      "spatial_target": null
+    },
+    {
+      "id": "finding-formal-model",
+      "kind": "formal_model",
+      "title": "正式模型为 Ordinary Kriging",
+      "statement": "公共有效点 50，RMSE 5.2，R² 0.92",
+      "evidence": [{"name": "algorithm", "value": "ordinary_kriging"}, {"name": "rmse", "value": 5.2}, {"name": "r2", "value": 0.92}],
+      "confidence": "high",
+      "limitations": ["指标基于交叉验证"],
+      "spatial_target": null
+    },
+    {
+      "id": "finding-uncertainty",
+      "kind": "uncertainty_availability",
+      "title": "不确定性证据可用",
+      "statement": "经验误差尺度和 Kriging 标准差均已物化",
+      "evidence": [{"name": "availability", "value": "available"}],
+      "confidence": "high",
+      "limitations": [],
+      "spatial_target": null
+    }
+  ],
+  "provenance": {
+    "grid_sha256": "a64charhexhash00000000000000000000000000000000000000000000000000",
+    "calculation_version": "result_analysis.v1",
+    "threshold_method": "numpy_linear_p25_p75"
+  }
+}
