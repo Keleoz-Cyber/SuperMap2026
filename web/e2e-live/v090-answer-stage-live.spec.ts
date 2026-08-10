@@ -10,6 +10,7 @@ import {
 } from './v070RenderGates'
 import {
   V090EvidenceWriter,
+  assertV090CleanRuntime,
   createV090Record,
   installV090Observers,
   newRunId,
@@ -159,6 +160,15 @@ test.afterAll(async ({ browser }) => {
 // worker 进程被回收/拆分运行时，每个实例也保有自己场景的部分记录
 test.afterEach(() => {
   if (record) writer.writeJson(record)
+})
+
+// fail-closed：每个用例结束时断言累计网络失败/控制台错误/页面错误全为零
+// （仅允许「ERR_ABORTED 且同路径随后 200」的可证明恢复条目；断言前等待
+// 在途请求结算，避免把尚未记录的恢复误判为失败）
+test.afterEach(async () => {
+  if (!record) return
+  await new Promise((r) => setTimeout(r, 800))
+  assertV090CleanRuntime(record)
 })
 
 async function waitSceneRendered(page: Page, tag: string) {
