@@ -1,6 +1,6 @@
 # GeoModelingPlatform 成果分析、三维联动与 DeepSeek 辅助研判实施提示词
 
-你接手的是 SuperMap2026 / GeoModelingPlatform 的 v0.9.0 功能分支。不要再做静态视觉稿，也不要只补文档或堆测试；目标是把现有成果页变成由真实成果网格驱动、能在浏览器演示的分析工作台。
+你接手的是 SuperMap2026 / GeoModelingPlatform 的 v0.9.0 总任务。该任务由后端 Agent、前端 Agent 和集成负责人协作完成；不要让两个 Agent 在同一个 worktree 同时修改。详细分工分别见同目录下的 backend/frontend 提示词。不要再做静态视觉稿，也不要只补文档或堆测试；目标是把现有成果页变成由真实成果网格驱动、能在浏览器演示的分析工作台。
 
 ## 工作位置与边界
 
