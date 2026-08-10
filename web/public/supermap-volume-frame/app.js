@@ -60,6 +60,10 @@ const diag = {
   // { layerBoundsDegrees: {west,south,east,north}, zBoundsMetres: [z0,z1],
   //   cameraSpanMetres: 最大物理跨度（相机取景依据） }
   geometry: null,
+  // v0.9.0：异常标注 / 场景辅助 / 相机预设只读诊断（全模式共享同一几何）
+  annotations: { total: 0, visible: 0, focusedId: null },
+  sceneAids: { axes: false, depthTicks: false },
+  cameraPreset: 'isometric',
   errors: [], // [{ code, message }]
 }
 
@@ -71,6 +75,9 @@ function publishDiag() {
     mode: diag.mode,
     identity: diag.identity ? Object.freeze({ ...diag.identity }) : null,
     boundingBoxVisible: diag.boundingBoxVisible,
+    annotations: Object.freeze({ ...diag.annotations }),
+    sceneAids: Object.freeze({ ...diag.sceneAids }),
+    cameraPreset: diag.cameraPreset,
     geometry: diag.geometry
       ? Object.freeze({
           layerBoundsDegrees: Object.freeze({ ...diag.geometry.layerBoundsDegrees }),
@@ -406,6 +413,269 @@ function setBoundingBoxVisible(visible) {
 }
 
 // ---------------------------------------------------------------------------
+// v0.9.0 Task 8：异常标注层与场景辅助（设计 §6）
+// 标注 = PointPrimitiveCollection（锚点）+ PolylineCollection（短引线）+
+// LabelCollection（文字）；坐标恒为成果局部米制，经 INIT.displayTransform
+// 变换（与体数据同一 display-anchor 链）；每份已应用状态整体重建；
+// focusedAnnotationId 高亮；不可见标注跳过；点击标注回报 ANNOTATION_SELECTED。
+// ---------------------------------------------------------------------------
+
+let annotationLayers = null // { points, lines, labels }
+let annotationIds = new Set() // 当前场景中可点击的标注 id
+let pickHandler = null
+let axisEntities = null // XYZ 轴 + 深度刻度实体
+let currentCameraPreset = 'isometric'
+
+const ANNOTATION_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/
+const SUPPORT_UNITS = new Set(['volume_coordinate_unit3', 'area_coordinate_unit2'])
+
+function shortNumber(value) {
+  const rounded = Number(value.toPrecision(6))
+  return String(rounded)
+}
+
+function leaderHeightMetres() {
+  if (viewParams && Number.isFinite(viewParams.span)) return Math.max(viewParams.span * 0.04, 5)
+  return 20
+}
+
+function clearAnnotationLayers() {
+  if (!annotationLayers) return
+  for (const collection of Object.values(annotationLayers)) {
+    try {
+      scene.primitives.remove(collection)
+    } catch {
+      /* 已销毁不构成失败 */
+    }
+  }
+  annotationLayers = null
+  annotationIds = new Set()
+}
+
+function rebuildAnnotations(state) {
+  clearAnnotationLayers()
+  const list = Array.isArray(state.annotations) ? state.annotations : []
+  const visible = list.filter((a) => a.visible !== false)
+  diag.annotations = { total: list.length, visible: visible.length, focusedId: state.focusedAnnotationId ?? null }
+  if (visible.length === 0) {
+    publishDiag()
+    return
+  }
+  const points = new SuperMap3D.PointPrimitiveCollection()
+  const lines = new SuperMap3D.PolylineCollection()
+  const labels = new SuperMap3D.LabelCollection()
+  const ids = new Set()
+  for (const a of visible) {
+    const base = localToDisplay(initTransform, a.localPosition[0], a.localPosition[1], a.localPosition[2])
+    const top = { lon: base.lon, lat: base.lat, height: base.height + leaderHeightMetres() }
+    const focused = state.focusedAnnotationId === a.id
+    const color = SuperMap3D.Color.fromCssColorString(a.color)
+    const anchor = points.add({
+      position: SuperMap3D.Cartesian3.fromDegrees(base.lon, base.lat, base.height),
+      color,
+      pixelSize: focused ? 14 : 9,
+      outlineColor: focused ? SuperMap3D.Color.WHITE : SuperMap3D.Color.BLACK,
+      outlineWidth: 1.5,
+      disableDepthTestDistance: Number.POSITIVE_INFINITY,
+    })
+    anchor.id = a.id
+    lines.add({
+      positions: [
+        SuperMap3D.Cartesian3.fromDegrees(base.lon, base.lat, base.height),
+        SuperMap3D.Cartesian3.fromDegrees(top.lon, top.lat, top.height),
+      ],
+      width: 1.2,
+      material: SuperMap3D.Material.fromType('Color', { color: color.withAlpha(0.8) }),
+    })
+    const label = labels.add({
+      position: SuperMap3D.Cartesian3.fromDegrees(top.lon, top.lat, top.height),
+      text: `${a.label} · ${shortNumber(a.valueMax)}`,
+      font: focused ? 'bold 16px sans-serif' : '13px sans-serif',
+      fillColor: focused ? SuperMap3D.Color.fromCssColorString('#d9a84e') : SuperMap3D.Color.WHITE,
+      style: SuperMap3D.LabelStyle.FILL_AND_OUTLINE,
+      outlineColor: SuperMap3D.Color.BLACK,
+      outlineWidth: 3,
+      disableDepthTestDistance: Number.POSITIVE_INFINITY,
+    })
+    label.id = a.id
+    ids.add(a.id)
+  }
+  scene.primitives.add(points)
+  scene.primitives.add(lines)
+  scene.primitives.add(labels)
+  annotationLayers = { points, lines, labels }
+  annotationIds = ids
+  publishDiag()
+}
+
+// 点击标注 → ANNOTATION_SELECTED（父侧仍按四重校验过滤）
+function ensureAnnotationPicking() {
+  if (pickHandler) return
+  pickHandler = new SuperMap3D.ScreenSpaceEventHandler(scene.canvas)
+  pickHandler.setInputAction((movement) => {
+    if (!annotationLayers || annotationIds.size === 0) return
+    const picked = scene.pick(movement.position)
+    const primitive = picked && picked.primitive
+    const id = primitive && typeof primitive.id === 'string' ? primitive.id : null
+    if (id && annotationIds.has(id)) {
+      post({ type: 'ANNOTATION_SELECTED', annotationId: id })
+    }
+  }, SuperMap3D.ScreenSpaceEventType.LEFT_CLICK)
+}
+
+// XYZ 轴 + Z 深度刻度：角点与体盒同一边界，标签展示局部坐标值
+function clearSceneAids() {
+  if (!axisEntities) return
+  for (const entity of axisEntities) {
+    try {
+      viewer.entities.remove(entity)
+    } catch {
+      /* 已销毁不构成失败 */
+    }
+  }
+  axisEntities = null
+}
+
+function buildSceneAids(bounds, zBounds) {
+  clearSceneAids()
+  const w = bounds.west
+  const e = bounds.east
+  const s = bounds.south
+  const n = bounds.north
+  const z0 = zBounds[0]
+  const z1 = zBounds[1]
+  const created = []
+  const axisLine = (from, to, color) =>
+    viewer.entities.add({
+      show: false,
+      polyline: {
+        positions: SuperMap3D.Cartesian3.fromDegreesArrayHeights([...from, ...to]),
+        width: 2.5,
+        material: color,
+        depthTest: false,
+      },
+    })
+  // 轴起点：体盒 (west, south, z0) 角
+  created.push(axisLine([w, s, z0], [e, s, z0], SuperMap3D.Color.fromCssColorString('#e06666')))
+  created.push(axisLine([w, s, z0], [w, n, z0], SuperMap3D.Color.fromCssColorString('#6aa84f')))
+  created.push(axisLine([w, s, z0], [w, s, z1], SuperMap3D.Color.fromCssColorString('#4d8de0')))
+  // 轴端标签
+  const axisLabel = (position, text, color) =>
+    viewer.entities.add({
+      show: false,
+      position: SuperMap3D.Cartesian3.fromDegrees(...position),
+      label: {
+        text,
+        font: 'bold 13px sans-serif',
+        fillColor: color,
+        style: SuperMap3D.LabelStyle.FILL_AND_OUTLINE,
+        outlineColor: SuperMap3D.Color.BLACK,
+        outlineWidth: 3,
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+      },
+    })
+  created.push(axisLabel([e, s, z0], 'X', SuperMap3D.Color.fromCssColorString('#e06666')))
+  created.push(axisLabel([w, n, z0], 'Y', SuperMap3D.Color.fromCssColorString('#6aa84f')))
+  created.push(axisLabel([w, s, z1], 'Z', SuperMap3D.Color.fromCssColorString('#4d8de0')))
+  // 深度刻度：沿 Z 轴 5 档，显示局部 z 值（display 高度 − anchor_height）
+  const anchorHeight = initTransform.anchor_height
+  for (let i = 0; i <= 4; i += 1) {
+    const h = z0 + ((z1 - z0) * i) / 4
+    const localZ = h - anchorHeight
+    const tick = viewer.entities.add({
+      show: false,
+      position: SuperMap3D.Cartesian3.fromDegrees(w, s, h),
+      label: {
+        text: `${shortNumber(localZ)} m`,
+        font: '11px sans-serif',
+        fillColor: SuperMap3D.Color.fromCssColorString('#a7b8b0'),
+        style: SuperMap3D.LabelStyle.FILL_AND_OUTLINE,
+        outlineColor: SuperMap3D.Color.BLACK,
+        outlineWidth: 3,
+        pixelOffset: new SuperMap3D.Cartesian2(28, 0),
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+      },
+    })
+    tick._gmpDepthTick = true
+    created.push(tick)
+  }
+  axisEntities = created
+}
+
+function setSceneAidsVisible(aids) {
+  if (!axisEntities) return
+  const axesVisible = aids && aids.axes === true
+  const ticksVisible = aids && aids.depthTicks === true
+  for (const entity of axisEntities) {
+    entity.show = entity._gmpDepthTick ? ticksVisible : axesVisible
+  }
+  diag.sceneAids = { axes: axesVisible, depthTicks: ticksVisible }
+  publishDiag()
+}
+
+// 四种确定性相机预设：均以体盒中心为锚，绝不随机取景
+function applyCameraPreset(preset) {
+  if (!viewParams) throw new Error('CAMERA_PRESET_UNAVAILABLE：INIT 前无取景参数')
+  const { centerLon, centerLat, centerZ, span } = viewParams
+  const target = SuperMap3D.Cartesian3.fromDegrees(centerLon, centerLat, centerZ)
+  const EPS = 0.02
+  let heading
+  let pitch
+  let range = span * 2.5
+  if (preset === 'isometric') {
+    heading = 0.6
+    pitch = -0.9
+  } else if (preset === 'top-xy') {
+    heading = 0
+    pitch = -Math.PI / 2 + EPS
+    range = span * 2.2
+  } else if (preset === 'front-xz') {
+    heading = 0
+    pitch = -EPS
+    range = span * 2.2
+  } else if (preset === 'front-yz') {
+    heading = Math.PI / 2
+    pitch = -EPS
+    range = span * 2.2
+  } else {
+    throw new Error(`CAMERA_PRESET_INVALID：${preset}`)
+  }
+  scene.camera.lookAt(target, new SuperMap3D.HeadingPitchRange(heading, pitch, range))
+  currentCameraPreset = preset
+  diag.cameraPreset = preset
+  publishDiag()
+}
+
+function handleSetCameraPreset(msg) {
+  applyCameraPreset(msg.preset)
+  post({ type: 'COMMAND_APPLIED', commandId: msg.commandId, commandType: 'SET_CAMERA_PRESET' })
+  emitRenderState()
+}
+
+// 组件聚焦：相机对准标注质心（距离按包围盒对角线），并更新高亮
+function handleFocusAnnotation(msg) {
+  const state = lastAppliedState
+  const list = state && Array.isArray(state.annotations) ? state.annotations : []
+  const target = list.find((a) => a.id === msg.annotationId)
+  if (!target) throw new Error(`ANNOTATION_UNKNOWN：${msg.annotationId} 不在当前标注集中`)
+  const display = localToDisplay(initTransform, target.localPosition[0], target.localPosition[1], target.localPosition[2])
+  const spans = target.bounds.map((pair, i) => {
+    const scale = i === 0 ? initTransform.metres_per_degree_lon : i === 1 ? initTransform.metres_per_degree_lat : 1
+    return (pair[1] - pair[0]) * scale
+  })
+  const diagonal = Math.max(Math.hypot(spans[0], spans[1], spans[2]), 1)
+  scene.camera.lookAt(
+    SuperMap3D.Cartesian3.fromDegrees(display.lon, display.lat, display.height),
+    new SuperMap3D.HeadingPitchRange(0.6, -0.6, diagonal * 3),
+  )
+  // 高亮同步到当前状态（后续完整状态推送以父侧 focusedAnnotationId 为准）
+  state.focusedAnnotationId = target.id
+  rebuildAnnotations(state)
+  post({ type: 'COMMAND_APPLIED', commandId: msg.commandId, commandType: 'FOCUS_ANNOTATION' })
+  emitRenderState()
+}
+
+// ---------------------------------------------------------------------------
 // INIT：12 步（计划 Task 9 Step 3）
 // ---------------------------------------------------------------------------
 
@@ -424,6 +694,7 @@ async function handleInit(msg) {
 
   // 3. asset=null：仅保留点层支持，emit unsupported（绝不 emit rendered）
   if (msg.asset === null) {
+    clearAnnotationLayers()
     viewParams = {
       centerLon: initTransform.anchor_longitude,
       centerLat: initTransform.anchor_latitude,
@@ -555,6 +826,10 @@ async function handleInit(msg) {
   // 独立包围盒线框（角点=真实体元边界；初始显隐由 INIT 状态决定）
   addVolumeBoundingBox(bounds, zBounds)
   setBoundingBoxVisible(initialState.boundingBox)
+  // XYZ 轴与深度刻度：与体盒同一边界几何，初始显隐由 INIT sceneAids 决定
+  buildSceneAids(bounds, zBounds)
+  setSceneAidsVisible(initialState.sceneAids)
+  ensureAnnotationPicking()
   lookAtVolume()
 
   // 12. 画布像素探针确认体积像素后才 emit rendered
@@ -630,7 +905,63 @@ function validateStateWire(state, what) {
   if (state.contourValue !== undefined && !isFiniteNumber(state.contourValue)) {
     throw new Error(`${what}：contourValue 必须是有限数值`)
   }
+  validateAnnotationsWire(state, what)
+  if (state.sceneAids !== undefined) {
+    const aids = state.sceneAids
+    if (!aids || typeof aids.axes !== 'boolean' || typeof aids.depthTicks !== 'boolean') {
+      throw new Error(`${what}：sceneAids.axes/depthTicks 必须是布尔值`)
+    }
+  }
   return state
+}
+
+// 异常标注线协议校验（与父侧 renderProtocol.ts 同一合同）：
+// id 唯一且形态合法；局部坐标/bounds 全有限；支持量非负；色值十六进制；
+// focusedAnnotationId 必须指向当前列表成员；缺省 annotations 时不得带聚焦 id。
+function validateAnnotationsWire(state, what) {
+  if (state.annotations === undefined) {
+    if (state.focusedAnnotationId !== undefined && state.focusedAnnotationId !== null) {
+      throw new Error(`${what}：focusedAnnotationId 缺少 annotations 列表`)
+    }
+    return
+  }
+  if (!Array.isArray(state.annotations)) throw new Error(`${what}：annotations 必须是数组`)
+  const ids = new Set()
+  for (const a of state.annotations) {
+    if (!a || typeof a !== 'object') throw new Error(`${what}：annotation 缺失`)
+    if (typeof a.id !== 'string' || !ANNOTATION_ID_RE.test(a.id)) {
+      throw new Error(`${what}：annotation id 非法`)
+    }
+    if (typeof a.label !== 'string' || a.label.length === 0 || a.label.length > 16) {
+      throw new Error(`${what}：annotation label 非法`)
+    }
+    if (!Array.isArray(a.localPosition) || a.localPosition.length !== 3 || !a.localPosition.every(isFiniteNumber)) {
+      throw new Error(`${what}：annotation localPosition 必须是 3 个有限数值`)
+    }
+    if (
+      !Array.isArray(a.bounds) ||
+      a.bounds.length !== 3 ||
+      !a.bounds.every(
+        (pair) => Array.isArray(pair) && pair.length === 2 && pair.every(isFiniteNumber) && pair[0] <= pair[1],
+      )
+    ) {
+      throw new Error(`${what}：annotation bounds 必须是 3 对 lo<=hi 有限数值`)
+    }
+    if (!isFiniteNumber(a.valueMax)) throw new Error(`${what}：annotation valueMax 非有限数值`)
+    if (!isFiniteNumber(a.supportMeasure) || a.supportMeasure < 0) {
+      throw new Error(`${what}：annotation supportMeasure 必须非负有限`)
+    }
+    if (!SUPPORT_UNITS.has(a.supportUnit)) throw new Error(`${what}：annotation supportUnit 非法`)
+    if (!isHexColorString(a.color)) throw new Error(`${what}：annotation color 非法`)
+    if (typeof a.visible !== 'boolean') throw new Error(`${what}：annotation visible 必须是布尔值`)
+    if (ids.has(a.id)) throw new Error(`${what}：annotation id 重复 ${a.id}`)
+    ids.add(a.id)
+  }
+  if (state.focusedAnnotationId !== undefined && state.focusedAnnotationId !== null) {
+    if (typeof state.focusedAnnotationId !== 'string' || !ids.has(state.focusedAnnotationId)) {
+      throw new Error(`${what}：focusedAnnotationId 不在当前标注集中`)
+    }
+  }
 }
 
 // 色带线节点 → SDK ColorTransferFunction（值域节点已由父侧按标度展开）
@@ -681,6 +1012,11 @@ function applyRenderStateToLayer(layer, state) {
   }
   layer.volumeRenderMode = mode
   diag.mode = state.mode
+  // 异常标注与场景辅助随完整状态重建（v0.9.0；缺省 annotations 时清空旧标注，
+  // 绝不跨状态残留；可见性/聚焦以本份状态为唯一事实源）
+  if (state.annotations !== undefined) rebuildAnnotations(state)
+  else clearAnnotationLayers()
+  setSceneAidsVisible(state.sceneAids)
   publishDiag()
 }
 
@@ -820,6 +1156,9 @@ function handleSetPointLayer(msg) {
 function handleResetView(msg) {
   if (!viewParams) throw new Error('RESET_VIEW 在 INIT 之前不可用')
   lookAtVolume()
+  currentCameraPreset = 'isometric'
+  diag.cameraPreset = 'isometric'
+  publishDiag()
   post({ type: 'COMMAND_APPLIED', commandId: msg.commandId, commandType: 'RESET_VIEW' })
   emitRenderState()
 }
@@ -833,6 +1172,8 @@ const handlers = {
   APPLY_RENDER_STATE: handleApplyRenderState,
   SET_POINT_LAYER: handleSetPointLayer,
   RESET_VIEW: handleResetView,
+  SET_CAMERA_PRESET: handleSetCameraPreset,
+  FOCUS_ANNOTATION: handleFocusAnnotation,
 }
 
 window.addEventListener('message', (event) => {
