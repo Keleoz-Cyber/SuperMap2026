@@ -5,6 +5,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
+import { expect } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
 export interface V090NetworkEntry {

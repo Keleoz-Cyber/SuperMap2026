@@ -414,8 +414,9 @@ onBeforeUnmount(clearShellContext)
     order: 5;
   }
 
-  /* 默认只显示场景摘要头，隐藏内嵌三维画面 */
-  .cc-grid > .scene-panel .scene-body {
+  /* 默认只显示场景摘要头，隐藏内嵌三维画面
+     （:deep：scene-body 属于子组件， scoped 属性只落在子组件根上） */
+  .cc-grid > .scene-panel :deep(.scene-body) {
     display: none;
   }
 
@@ -427,7 +428,7 @@ onBeforeUnmount(clearShellContext)
     border-radius: 0;
   }
 
-  .scene-open .cc-grid > .scene-panel .scene-body {
+  .scene-open .cc-grid > .scene-panel :deep(.scene-body) {
     display: flex;
   }
 
