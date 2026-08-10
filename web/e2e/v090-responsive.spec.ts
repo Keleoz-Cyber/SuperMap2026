@@ -48,17 +48,56 @@ for (const viewport of VIEWPORTS) {
   })
 }
 
-test('手机视口：案例切换联动与证据带不遮挡场景控制', async ({ page }) => {
+test('手机视口：摘要优先顺序 + 全屏三维入口有效', async ({ page }) => {
+  test.setTimeout(90_000)
   await installMockApi(page)
   await installFrameMock(page)
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/')
 
+  // 首屏顺序：案例选择（紧凑轨）→ 案例摘要（场景头部，含唯一主动作）→
+  // 关键发现 → 证据带 → 全屏三维入口；内嵌三维画面不得先于发现出现
+  await expect(page.getByTestId('case-rail')).toBeVisible()
   await expect(page.getByTestId('command-center-scene')).toBeVisible()
-  // 切到瓦斯案例：场景标题与单位联动
-  await page.getByTestId('case-rail-item').filter({ hasText: '煤层瓦斯' }).click()
-  await expect(page.getByTestId('command-center-scene')).toContainText('煤层瓦斯')
-  await expect(page.getByTestId('command-center-scene')).toContainText('ml/g')
+  await expect(page.getByTestId('home-findings')).toBeVisible()
+  await expect(page.getByTestId('home-evidence-dock')).toBeVisible()
+  const order = await page.evaluate(() => {
+    const top = (testId: string) =>
+      document.querySelector(`[data-test="${testId}"]`)?.getBoundingClientRect().top ?? -1
+    return {
+      rail: top('case-rail'),
+      summary: top('command-center-scene'),
+      findings: top('home-findings'),
+      evidence: top('home-evidence-dock'),
+      entry: top('phone-scene-entry'),
+    }
+  })
+  expect(order.rail).toBeGreaterThanOrEqual(0)
+  expect(order.rail).toBeLessThan(order.summary)
+  expect(order.summary).toBeLessThan(order.findings)
+  expect(order.findings).toBeLessThan(order.evidence)
+  expect(order.evidence).toBeLessThan(order.entry)
+
+  // 内嵌三维画布在手机档默认不渲染（不占首屏）
+  const frameCount = await page.getByTestId('volume-frame').count()
+  let frameHidden = true
+  if (frameCount > 0) {
+    const box = await page.getByTestId('volume-frame').boundingBox()
+    frameHidden = !box || box.height === 0
+  }
+  expect(frameHidden).toBe(true)
+
+  // 全屏三维入口：打开 → 场景全屏覆盖 → 关闭恢复
+  const openBtn = page.getByTestId('phone-open-scene')
+  await openBtn.scrollIntoViewIfNeeded()
+  await openBtn.click()
+  const openBox = await page.getByTestId('command-center-scene').boundingBox()
+  expect(openBox).not.toBeNull()
+  expect(openBox!.height).toBeGreaterThanOrEqual(844 * 0.9)
+  await expect(page.getByTestId('phone-close-scene')).toBeVisible()
+  await page.getByTestId('phone-close-scene').click()
+  const closedBox = await page.getByTestId('command-center-scene').boundingBox()
+  expect(closedBox!.height).toBeLessThan(844 * 0.9)
 
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth - window.innerWidth,

@@ -272,7 +272,7 @@ test('答辩模式：六章节与案例章节真实场景', async ({ page }) => 
   await expect(page.getByTestId('command-center')).toBeVisible()
 })
 
-test('手机 390×844：无横向溢出 + 主动作 + 案例切换渲染', async ({ page }) => {
+test('手机 390×844：摘要优先顺序 + 全屏三维入口 + 案例切换渲染', async ({ page }) => {
   test.setTimeout(300_000)
   await page.setViewportSize(PHONE)
   installV090Observers(record, page)
@@ -285,10 +285,38 @@ test('手机 390×844：无横向溢出 + 主动作 + 案例切换渲染', async
   )
   expect(overflow).toBeLessThanOrEqual(0)
 
+  // 首屏顺序：案例选择 → 案例摘要 → 关键发现 → 证据带 → 全屏三维入口
+  const order = await page.evaluate(() => {
+    const top = (testId: string) =>
+      document.querySelector(`[data-test="${testId}"]`)?.getBoundingClientRect().top ?? -1
+    return {
+      rail: top('case-rail'),
+      summary: top('command-center-scene'),
+      findings: top('home-findings'),
+      evidence: top('home-evidence-dock'),
+      entry: top('phone-scene-entry'),
+    }
+  })
+  expect(order.rail).toBeGreaterThanOrEqual(0)
+  expect(order.rail).toBeLessThan(order.summary)
+  expect(order.summary).toBeLessThan(order.findings)
+  expect(order.findings).toBeLessThan(order.evidence)
+  expect(order.evidence).toBeLessThan(order.entry)
+  // 关键发现首屏区可见（不等打开三维）
+  await expect(page.getByTestId('home-findings')).toContainText('有效数据')
+
+  // 切换瓦斯并打开全屏三维（同一面板转为视口覆盖，iframe 不重建）
   await page.getByTestId('case-rail-item').filter({ hasText: '煤层瓦斯' }).click()
   await expect(page.getByTestId('command-center-scene')).toContainText('ml/g')
+  await page.getByTestId('phone-open-scene').scrollIntoViewIfNeeded()
+  await page.getByTestId('phone-open-scene').click()
+  await expect(page.getByTestId('phone-close-scene')).toBeVisible()
   await waitSceneRendered(page, 'phone-gas')
   const metrics = await analyzeVolumePixels(page, await page.getByTestId('volume-frame').screenshot())
   expectVolumeContent(metrics, '手机瓦斯 Volume', { minNonBg: 800, minCoverage: 0.08 })
   await writer.savePageShot(page, 'phone-gas')
+  // 关闭恢复摘要布局
+  await page.getByTestId('phone-close-scene').click()
+  const closedBox = await page.getByTestId('command-center-scene').boundingBox()
+  expect(closedBox!.height).toBeLessThan(PHONE.height * 0.9)
 })

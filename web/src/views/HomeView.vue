@@ -41,6 +41,10 @@ const selectedCase = computed(
   () => cases.value.find((c) => c.case_id === selectedCaseId.value) ?? null,
 )
 
+// v0.9.0 修复：手机档三维不内嵌首屏，改为显式全屏打开/关闭（JS 只承载
+// 显式全屏状态，不做视口内容分支）
+const phoneSceneOpen = ref(false)
+
 const profile = computed(() => resolveCaseProfile(selectedCase.value?.provenance_summary))
 const presentation = computed(() => CASE_PRESENTATION[profile.value])
 
@@ -195,7 +199,12 @@ onBeforeUnmount(clearShellContext)
 </script>
 
 <template>
-  <div class="command-center" :data-case-accent="presentation.accent" data-test="command-center">
+  <div
+    class="command-center"
+    :class="{ 'scene-open': phoneSceneOpen }"
+    :data-case-accent="presentation.accent"
+    data-test="command-center"
+  >
     <AsyncState
       v-if="loadError"
       kind="error"
@@ -250,6 +259,33 @@ onBeforeUnmount(clearShellContext)
         :summary="analysis"
         :loading="analysisLoading"
       />
+
+      <!-- 手机档专用：全屏三维入口（桌面档隐藏，内嵌主舞台直接在网格中） -->
+      <div class="cc-phone-entry" data-test="phone-scene-entry">
+        <template v-if="sceneResult">
+          <p class="entry-note">三维成果：{{ sceneResult.materialized ? '已物化' : '未物化' }}</p>
+          <button
+            type="button"
+            class="phone-scene-btn"
+            data-test="phone-open-scene"
+            @click="phoneSceneOpen = true"
+          >
+            打开全屏三维
+          </button>
+        </template>
+        <p v-else class="entry-note">暂无成果：完成建模实验后可查看三维成果。</p>
+      </div>
+
+      <button
+        v-if="phoneSceneOpen"
+        type="button"
+        class="phone-scene-close"
+        data-test="phone-close-scene"
+        aria-label="关闭全屏三维"
+        @click="phoneSceneOpen = false"
+      >
+        关闭三维 ✕
+      </button>
     </div>
   </div>
 </template>
@@ -355,8 +391,96 @@ onBeforeUnmount(clearShellContext)
     gap: var(--s1-space-3);
   }
 
+  /* 手机档信息顺序：案例选择 → 案例摘要（场景头部）→ 关键发现 →
+     证据带 → 全屏三维入口；内嵌三维画面不先于发现出现 */
+  .cc-grid > .case-rail {
+    order: 1;
+  }
+
+  .cc-grid > .scene-panel {
+    order: 2;
+  }
+
   .cc-findings {
+    order: 3;
     max-height: none;
+  }
+
+  .cc-evidence {
+    order: 4;
+  }
+
+  .cc-phone-entry {
+    order: 5;
+  }
+
+  /* 默认只显示场景摘要头，隐藏内嵌三维画面 */
+  .cc-grid > .scene-panel .scene-body {
+    display: none;
+  }
+
+  /* 全屏打开：同一面板转为视口覆盖，iframe 不重建 */
+  .scene-open .cc-grid > .scene-panel {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    border-radius: 0;
+  }
+
+  .scene-open .cc-grid > .scene-panel .scene-body {
+    display: flex;
+  }
+
+  .phone-scene-close {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    z-index: 2100;
+    border: 1px solid var(--s1-border-strong);
+    border-radius: 999px;
+    background: var(--s1-surface-glass);
+    color: var(--s1-text);
+    font-size: var(--s1-font-sm);
+    padding: 6px 14px;
+    cursor: pointer;
+  }
+}
+
+/* 手机入口卡默认隐藏（桌面档主舞台内嵌） */
+.cc-phone-entry {
+  display: none;
+}
+
+@media (max-width: 480px) {
+  .cc-phone-entry {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s1-space-2);
+    border: 1px solid var(--s1-border);
+    border-radius: var(--s1-radius-md);
+    background: var(--s1-surface-1);
+    padding: var(--s1-space-3);
+  }
+
+  .entry-note {
+    margin: 0;
+    font-size: var(--s1-font-sm);
+    color: var(--s1-text-dim);
+  }
+
+  .phone-scene-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    font-size: var(--s1-font-md);
+    font-weight: 600;
+    color: #06110f;
+    background: var(--s1-case-accent);
+    border: none;
+    border-radius: var(--s1-radius-sm);
+    padding: 10px 16px;
+    cursor: pointer;
   }
 }
 </style>
