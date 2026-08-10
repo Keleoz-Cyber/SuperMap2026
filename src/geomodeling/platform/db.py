@@ -39,7 +39,8 @@ from geomodeling.platform.tables import (
 # professional_result_artifacts / anomaly_extractions / analysis_jobs 五表。
 # v6: render_assets（NetCDF 渲染资产状态表，v0.6.1 设计 §2.2）。
 # v7: cases.lifecycle_state/trashed_at + case_purge_operations（v0.7.0 第三批设计 §4）。
-SCHEMA_VERSION = 7
+# v8: ai_analysis_records（v0.9.0 设计 §9.5）。
+SCHEMA_VERSION = 8
 
 _BUSY_TIMEOUT_MS = 30000
 
@@ -113,6 +114,15 @@ def _create_v7_schema(conn: engine.Connection) -> None:
         raise RuntimeError("v7 migration did not add lifecycle columns to cases")
 
 
+def _create_v8_tables(conn: engine.Connection) -> None:
+    """v7->v8：在同一事务内创建 ai_analysis_records 并显式核验。"""
+
+    Base.metadata.create_all(bind=conn, checkfirst=True)
+    inspector = inspect(conn)
+    if not inspector.has_table("ai_analysis_records"):
+        raise RuntimeError("v8 migration did not create ai_analysis_records")
+
+
 # 逐版本迁移步骤：键为起始版本。步骤为 SQL 字符串或接受连接的可调用对象；
 # 每步必须在事务内幂等执行；迁移完成后统一重打 user_version。
 # 比代码新的数据库仍然拒绝启动。
@@ -131,6 +141,7 @@ _MIGRATIONS: dict[int, tuple[str | Callable[[engine.Connection], None], ...]] = 
     4: (_create_v5_tables,),
     5: (_create_v6_tables,),
     6: (_create_v7_schema,),
+    7: (_create_v8_tables,),
 }
 
 

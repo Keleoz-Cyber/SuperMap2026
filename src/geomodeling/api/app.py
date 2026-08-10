@@ -49,6 +49,7 @@ from geomodeling.api.deps import (
     get_settings,
 )
 from geomodeling.api.routes import (
+    ai_analysis,
     analysis,
     cases,
     datasets,
@@ -409,6 +410,8 @@ def create_app() -> FastAPI:
     app.include_router(results.router)
     # v0.9.0 成果级分析摘要：纯查询 GET，结果路由之后注册
     app.include_router(result_analysis.router)
+    # v0.9.0 AI 辅助研判：显式 POST + 只读 GET
+    app.include_router(ai_analysis.router)
     # v0.7.0：DAT 微震导入/派生路由退出产品面（预置 CSV 案例取代）；
     # 派生服务层与历史运行时文件保留，通用结果/数据集读取不受影响。
     # v0.6 专业分析路由：精确前缀，不遮蔽 legacy 与微震路由；前端挂载之前注册
