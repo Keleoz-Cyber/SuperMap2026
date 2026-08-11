@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ApiError,
@@ -37,8 +37,6 @@ import type {
 import SlicePanel from '../components/results/SlicePanel.vue'
 import FormalSelectionPanel from '../components/results/FormalSelectionPanel.vue'
 import ExportPublicationPanel from '../components/results/ExportPublicationPanel.vue'
-import V6ResultTopbar from '../components/results/V6ResultTopbar.vue'
-import type { V6NavEntry } from '../components/results/V6ResultTopbar.vue'
 import V6ResultSummary from '../components/results/V6ResultSummary.vue'
 import AsyncState from '../components/states/AsyncState.vue'
 import ResultAnalysisWorkbench from '../components/results/ResultAnalysisWorkbench.vue'
@@ -47,6 +45,7 @@ import { fetchAnalysisSummary, fetchResultResiduals } from '../api/client'
 import type { AnalysisSelection } from '../components/analysis/analysisTypes'
 import { createAnalysisSelectionController } from '../composables/useAnalysisSelection'
 import type { SliceAxis } from '../api/types'
+import { clearShellContext, setShellContext } from '../stores/shellContext'
 
 // v0.9.0 V6 Task 3：成果页 = 成果专用顶栏 + 成果摘要条 + 一屏工作台外壳。
 // 页面本身在大屏下禁止纵向滚动；长内容只在右栏与证据窗内部滚动。
@@ -73,11 +72,9 @@ const resultAnalysisLoading = ref(false)
 const currentSlice = ref<SliceAnalysisResponse | null>(null)
 const focusedComponentId = ref<number | null>(null)
 const volumePanelRef = ref<InstanceType<typeof NativeVolumePanel> | null>(null)
-// 三维舞台只承担主导异常的空间定位，完整连通区清单仍由右侧研判区展示。
-// 过多标签会遮挡体场本体；按后端既有排序取前三项，不改分析结果本身。
-const sceneComponents = computed(
-  () => resultAnalysis.value?.components_preview.rows.slice(0, 3) ?? null,
-)
+// 三维舞台与异常清单必须共享同一份完整组件集合，避免 D–H 可点击却无法定位。
+// 视觉拥挤由渲染层的聚焦/显隐策略解决，不能通过截断数据身份规避。
+const sceneComponents = computed(() => resultAnalysis.value?.components_preview.rows ?? null)
 
 // v0.9.0 V6：顶栏/摘要条上下文（案例、案例列表、正式成果状态、导出状态）
 const caseRecord = ref<PlatformCaseRecord | null>(null)
@@ -199,27 +196,6 @@ function onSliceAnalysis(response: SliceAnalysisResponse) {
 // ---------------------------------------------------------------------------
 // v0.9.0 V6：顶栏导航 / 案例切换 / 导出分析报告
 // ---------------------------------------------------------------------------
-
-const v6Nav = computed<V6NavEntry[]>(() => {
-  const exp = experiment.value
-  const entry = (key: string, label: string, to: V6NavEntry['to'], active = false): V6NavEntry => ({
-    key,
-    label,
-    to,
-    active,
-  })
-  return [
-    entry('home', '首页', { name: 'home' }),
-    entry('ingest', '数据接入', exp ? { name: 'case-workspace', params: { caseId: exp.case_id } } : null),
-    entry('experiment', '建模实验', exp ? { name: 'experiment-detail', params: { experimentId: exp.id } } : null),
-    entry(
-      'compare',
-      '模型比较',
-      exp ? { name: 'candidate-comparison', params: { datasetId: exp.params.dataset_version_id } } : null,
-    ),
-    entry('result', '成果空间', { name: 'result-workbench', params: { resultId: resultId.value } }, true),
-  ]
-})
 
 function onSelectCase(caseId: string) {
   if (caseId && caseId !== experiment.value?.case_id) {
@@ -428,6 +404,23 @@ watch(resultId, (next, prev) => {
   resetForIdentityChange()
   void load()
 })
+
+watch(
+  [experiment, caseRecord, resultId],
+  ([exp, caseInfo, activeResultId]) => {
+    setShellContext({
+      caseId: exp?.case_id ?? null,
+      caseTitle: caseInfo?.name ?? null,
+      stageLabel: '成果空间',
+      caseAccent: null,
+      datasetId: exp?.params.dataset_version_id ?? null,
+      experimentId: exp?.id ?? null,
+      resultId: activeResultId,
+    })
+  },
+  { immediate: true },
+)
+onBeforeUnmount(clearShellContext)
 </script>
 
 <template>
@@ -452,15 +445,6 @@ watch(resultId, (next, prev) => {
     </div>
 
     <template v-else-if="metadata">
-      <V6ResultTopbar
-        :current-case-id="experiment?.case_id ?? null"
-        :case-title="caseRecord?.name ?? null"
-        :case-options="caseOptions.length > 0 ? caseOptions : experiment ? [{ id: experiment.case_id, name: caseRecord?.name ?? experiment.case_id }] : []"
-        :nav="v6Nav"
-        :exporting="exporting"
-        @select-case="onSelectCase"
-        @export-report="onExportReport"
-      />
       <p v-if="exportError" class="export-error" data-test="export-error" role="status">
         导出失败：{{ exportError }}
       </p>
@@ -473,6 +457,11 @@ watch(resultId, (next, prev) => {
         :common-valid-count="metadata.evaluation_summary?.common_valid_count ?? null"
         :formal-selected="formalSelected"
         :result-id="resultId"
+        :current-case-id="experiment?.case_id ?? null"
+        :case-options="caseOptions.length > 0 ? caseOptions : experiment ? [{ id: experiment.case_id, name: caseRecord?.name ?? experiment.case_id }] : []"
+        :exporting="exporting"
+        @select-case="onSelectCase"
+        @export-report="onExportReport"
       />
 
       <ResultAnalysisWorkbench
@@ -560,9 +549,9 @@ watch(resultId, (next, prev) => {
 }
 
 /* 大屏一屏外壳：页面不滚动；主舞台与证据窗内部自适应 */
-@media (min-width: 1200px) and (min-height: 800px) {
+@media (min-width: 1200px) {
   .v6-result-page {
-    height: 100dvh;
+    height: 100%;
     overflow: hidden;
   }
 

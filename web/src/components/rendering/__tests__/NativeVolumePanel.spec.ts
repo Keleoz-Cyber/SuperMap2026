@@ -368,6 +368,22 @@ describe('NativeVolumePanel 能力与资产', () => {
     expect(wrapper.findComponent(FrameStub).props('asset')).toEqual(ASSET)
   })
 
+  it('展示面可隐藏 ready 调试动作与资产身份，但保留真实体渲染', async () => {
+    const api = makeApi({ fetchAsset: vi.fn().mockResolvedValue(ASSET) })
+    const wrapper = mount(NativeVolumePanel, {
+      props: { api, showReadyDiagnostics: false },
+      global: {
+        plugins: [ElementPlus],
+        stubs: { SuperMapVolumeFrame: FrameStub, SliceHeatmap: HeatmapStub },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="refresh-asset"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="asset-identity"]').exists()).toBe(false)
+    expect(wrapper.findComponent(FrameStub).props('asset')).toEqual(ASSET)
+  })
+
   it('failed 资产：显示持久化错误与重试动作，重试调用 createAsset(true)', async () => {
     const api = makeApi({ fetchAsset: vi.fn().mockResolvedValue(FAILED_ASSET) })
     const wrapper = mountPanel(api)
@@ -1002,6 +1018,14 @@ describe('NativeVolumePanel v0.9 异常标注联动', () => {
     frame.vm.$emit('annotation-selected', { annotationId: 'component-3' })
     await flushPromises()
     expect(wrapper.emitted('annotation-selected')).toEqual([[{ componentId: 3 }]])
+    wrapper.unmount()
+  })
+
+  it('focusComponent 遇到当前渲染状态不存在的组件时保持场景可用', async () => {
+    const wrapper = await mountRenderedWithComponents()
+    const api = wrapper.vm as unknown as { focusComponent: (id: number) => void }
+    api.focusComponent(99)
+    expect(frameExposed.focusAnnotation).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 

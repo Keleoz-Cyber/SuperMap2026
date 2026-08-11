@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ElementPlus from 'element-plus'
 import * as client from '../../../api/client'
 import ResultWorkbenchView from '../../../views/ResultWorkbenchView.vue'
+import NativeVolumePanel from '../../rendering/NativeVolumePanel.vue'
 import { RESULT_ANALYSIS_MOCK_3D } from '../../../mocks/resultAnalysisMock'
 import type {
   DatasetPoints,
@@ -155,7 +156,7 @@ const POINTS: DatasetPoints = {
   source_sha256: 'ab'.repeat(32),
 }
 
-async function mountV6() {
+async function mountV6(analysis = RESULT_ANALYSIS_MOCK_3D) {
   vi.mocked(client.materializeResult).mockResolvedValue(META_3D)
   vi.mocked(client.fetchExperiment).mockResolvedValue(EXP)
   vi.mocked(client.fetchCase).mockResolvedValue(CASE)
@@ -174,7 +175,7 @@ async function mountV6() {
     is_nodata: [false, false],
     value_range: [10, 20],
   })
-  vi.mocked(client.fetchResultAnalysisSummary).mockResolvedValue(RESULT_ANALYSIS_MOCK_3D)
+  vi.mocked(client.fetchResultAnalysisSummary).mockResolvedValue(analysis)
   vi.mocked(client.fetchResultRenderCapability).mockResolvedValue(CAPABILITY)
   vi.mocked(client.fetchResultRenderAsset).mockRejectedValue(
     new client.ApiError('RENDER_ASSET_NOT_FOUND', '尚未创建', 404),
@@ -203,7 +204,7 @@ beforeEach(() => {
 describe('V6 成果工作台结构合同', () => {
   it('四层结构钩子齐备；旧面包屑与调试身份块消失', async () => {
     const { wrapper } = await mountV6()
-    expect(wrapper.find('[data-test="v6-result-topbar"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="v6-result-topbar"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="v6-result-summary"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="v6-main-stage"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="tools-rail"]').exists()).toBe(true)
@@ -221,22 +222,33 @@ describe('V6 成果工作台结构合同', () => {
     expect(tabs.map((t) => t.text())).toEqual(['综合分析', '切片与异常', '模型证据', '数据溯源'])
   })
 
-  it('V6 顶栏：品牌、五段导航、案例选择、导出报告主动作', async () => {
+  it('异常区清单与三维标注使用同一份完整组件集合', async () => {
+    const rows = Array.from({ length: 8 }, (_, index) => ({
+      ...RESULT_ANALYSIS_MOCK_3D.components_preview.rows[0],
+      rank: index + 1,
+      label: String.fromCharCode(65 + index),
+      component_id: index + 1,
+    }))
+    const analysis = {
+      ...RESULT_ANALYSIS_MOCK_3D,
+      components_preview: {
+        ...RESULT_ANALYSIS_MOCK_3D.components_preview,
+        total_count: rows.length,
+        shown_count: rows.length,
+        rows,
+      },
+    }
+    const { wrapper } = await mountV6(analysis)
+    expect(wrapper.getComponent(NativeVolumePanel).props('components')).toHaveLength(8)
+  })
+
+  it('成果摘要只承载页面身份、案例切换与导出，不再复制全局顶栏', async () => {
     const { wrapper } = await mountV6()
-    const topbar = wrapper.get('[data-test="v6-result-topbar"]')
-    expect(topbar.text()).toContain('GeoModelingPlatform')
-    expect(topbar.find('[data-test="v6-nav-home"]').exists()).toBe(true)
-    expect(topbar.find('[data-test="v6-nav-ingest"]').exists()).toBe(true)
-    expect(topbar.find('[data-test="v6-nav-experiment"]').exists()).toBe(true)
-    expect(topbar.find('[data-test="v6-nav-compare"]').exists()).toBe(true)
-    expect(topbar.find('[data-test="v6-nav-result"]').exists()).toBe(true)
-    // 案例选择显示真实案例名；导出报告是唯一主动作
-    expect(topbar.get('[data-test="v6-case-select"]').text()).toContain('地下电阻率')
-    expect(topbar.find('[data-test="v6-export-report"]').exists()).toBe(true)
-    // 答辩模式/回收站/服务版本不得挤占成果页顶栏
-    expect(topbar.find('[data-test="presentation-mode-entry"]').exists()).toBe(false)
-    expect(topbar.find('[data-test="shell-trash-link"]').exists()).toBe(false)
-    expect(topbar.find('[data-test="shell-service-status"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="v6-result-topbar"]').exists()).toBe(false)
+    const summary = wrapper.get('[data-test="v6-result-summary"]')
+    expect(summary.get('[data-test="result-case-select"]').text()).toContain('地下电阻率')
+    expect(summary.find('[data-test="result-export-report"]').exists()).toBe(true)
+    expect(wrapper.findAll('h1')).toHaveLength(1)
   })
 
   it('摘要条：左侧成果身份，右侧判断指标；无指纹长串与完整哈希', async () => {

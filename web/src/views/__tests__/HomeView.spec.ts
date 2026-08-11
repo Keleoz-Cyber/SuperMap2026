@@ -239,7 +239,7 @@ describe('HomeView 指挥舱骨架', () => {
 })
 
 describe('HomeView 用户项目入口', () => {
-  it('有 featured_result：主入口直达成果页，新建实验为次操作', async () => {
+  it('有 featured_result：主入口直达成果页，新建建模实验为次操作', async () => {
     const { wrapper, router } = await mountHome([BENCH_CASE])
 
     const primary = wrapper.find('[data-test="open-featured-result"]')
@@ -247,7 +247,7 @@ describe('HomeView 用户项目入口', () => {
     expect(primary.text()).toContain('查看体渲染成果')
     const secondary = wrapper.find('[data-test="new-experiment"]')
     expect(secondary.exists()).toBe(true)
-    expect(secondary.text()).toContain('新建实验')
+    expect(secondary.text()).toContain('新建建模实验')
     expect(wrapper.text()).not.toContain('进入调参实验室')
 
     await primary.trigger('click')
@@ -255,7 +255,7 @@ describe('HomeView 用户项目入口', () => {
     expect(router.currentRoute.value.path).toBe('/results/cand-bench-32')
   })
 
-  it('新建实验次操作仍进入实验创建页', async () => {
+  it('新建建模实验次操作仍进入实验创建页', async () => {
     const { wrapper, router } = await mountHome([BENCH_CASE])
     await wrapper.find('[data-test="new-experiment"]').trigger('click')
     await flushPromises()

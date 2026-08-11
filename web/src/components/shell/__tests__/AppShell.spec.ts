@@ -21,12 +21,16 @@ describe('AppShell', () => {
     expect(skip.attributes('href')).toBe('#main-content')
   })
 
-  it('renders brand, home navigation and trash entry through named routes', () => {
+  it('renders one brand home link and the four fixed product navigation entries', () => {
     const wrapper = mount(AppShell, {
       global: { stubs: { RouterView: true, RouterLink: { template: '<a><slot /></a>' } } },
     })
     expect(wrapper.get('[data-test="shell-brand"]').text()).toContain('GeoModelingPlatform')
-    expect(wrapper.find('[data-test="shell-home-link"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="shell-home-link"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="shell-nav-ingest"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="shell-nav-experiments"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="shell-nav-comparison"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="shell-nav-results"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="shell-trash-link"]').exists()).toBe(true)
   })
 
@@ -46,7 +50,7 @@ describe('AppShell', () => {
     expect(router.currentRoute.value.name).toBe('home')
   })
 
-  it('hides the global header on the result workbench route (V6 dedicated topbar)', async () => {
+  it('keeps the same global header on the result workbench route', async () => {
     const { createMemoryHistory, createRouter } = await import('vue-router')
     const stub = { template: '<div />' }
     const router = createRouter({
@@ -66,7 +70,7 @@ describe('AppShell', () => {
       },
     })
     await flushPromises()
-    expect(wrapper.find('[data-test="app-global-header"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="app-global-header"]').exists()).toBe(true)
 
     await router.push('/')
     await flushPromises()

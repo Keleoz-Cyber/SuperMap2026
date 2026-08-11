@@ -88,7 +88,6 @@ const recentResults = computed(() => workspace.value?.recent_results ?? [])
 // ---------------------------------------------------------------------------
 
 const currentStage = ref<CaseStageId>('data')
-const stageRefs = new Map<CaseStageId, HTMLElement>()
 
 const preparationPending = computed(() => {
   const ws = workspace.value
@@ -118,7 +117,7 @@ const stages = computed<CaseStage[]>(() => [
 ])
 
 // 唯一主动作（设计：每页一个明确主动作）：
-// 继续数据准备 > 查看成果/官方成果 > 新建实验；错误/未初始化态为返回首页
+// 继续数据准备 > 查看成果/官方成果 > 新建建模实验；错误/未初始化态为返回首页
 const primaryKind = computed<'official' | 'prepare' | 'experiment' | 'home' | null>(() => {
   if (loadError.value || notInitialized.value) return 'home'
   const ws = workspace.value
@@ -129,17 +128,19 @@ const primaryKind = computed<'official' | 'prepare' | 'experiment' | 'home' | nu
   return null
 })
 
-function setStageRef(id: CaseStageId, el: unknown) {
-  if (el instanceof HTMLElement) stageRefs.set(id, el)
+function onStageNavigate(stage: CaseStageId) {
+  if (!stages.value.some((item) => item.id === stage && item.enabled)) return
+  currentStage.value = stage
+  void router.push({ query: { ...route.query, stage } })
 }
 
-function onStageNavigate(stage: CaseStageId) {
-  currentStage.value = stage
-  const el = stageRefs.get(stage)
-  if (el && typeof el.scrollIntoView === 'function') {
-    el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }
+function syncStageFromRoute() {
+  const requested = String(route.query.stage ?? '') as CaseStageId
+  const available = stages.value.find((item) => item.id === requested && item.enabled)
+  currentStage.value = available?.id ?? 'data'
 }
+
+watch([() => route.query.stage, stages], syncStageFromRoute, { immediate: true })
 
 function openOfficialResult() {
   const url = workspace.value?.official_result?.url
@@ -282,7 +283,7 @@ onBeforeUnmount(clearShellContext)
 </script>
 
 <template>
-  <div class="case-workspace-page" :data-case-accent="caseAccent">
+  <div class="case-workspace-page product-page product-page--wide" :data-case-accent="caseAccent">
     <div v-if="notInitialized" class="workspace-state" data-test="workspace-not-initialized">
       <PageNavigation current-label="案例工作台" />
       <AsyncState
@@ -349,7 +350,13 @@ onBeforeUnmount(clearShellContext)
         />
 
         <!-- 阶段一：数据概览 -->
-        <section :ref="(el) => setStageRef('data', el)" class="stage-block">
+        <section
+          :class="{ 'is-hidden': currentStage !== 'data' }"
+          id="case-panel-data"
+          class="stage-block"
+          data-test="stage-panel-data"
+          role="tabpanel"
+        >
           <h2 class="stage-heading">数据概览</h2>
 
           <div class="workspace-section" data-test="workspace-overview">
@@ -456,7 +463,13 @@ onBeforeUnmount(clearShellContext)
         </section>
 
         <!-- 阶段二：建模实验 -->
-        <section :ref="(el) => setStageRef('experiments', el)" class="stage-block">
+        <section
+          :class="{ 'is-hidden': currentStage !== 'experiments' }"
+          id="case-panel-experiments"
+          class="stage-block"
+          data-test="stage-panel-experiments"
+          role="tabpanel"
+        >
           <h2 class="stage-heading">建模实验</h2>
           <div class="workspace-section" data-test="workspace-experiments">
             <div v-if="canCreateExperiment" class="command-row">
@@ -466,7 +479,7 @@ onBeforeUnmount(clearShellContext)
                 :data-primary-action="primaryKind === 'experiment' ? 'true' : undefined"
                 @click="createExperiment"
               >
-                新建实验
+                新建建模实验
               </el-button>
               <el-button
                 v-if="workspace.primary_dataset"
@@ -476,7 +489,7 @@ onBeforeUnmount(clearShellContext)
                 模型比较
               </el-button>
             </div>
-            <p v-else class="muted-line">当前案例不开放新建实验。</p>
+            <p v-else class="muted-line">当前案例不开放新建建模实验。</p>
             <div v-if="recentExperiments.length" class="recent-list" data-test="recent-experiments">
               <div
                 v-for="exp in recentExperiments"
@@ -498,7 +511,13 @@ onBeforeUnmount(clearShellContext)
         </section>
 
         <!-- 阶段三：成果分析 -->
-        <section :ref="(el) => setStageRef('results', el)" class="stage-block">
+        <section
+          :class="{ 'is-hidden': currentStage !== 'results' }"
+          id="case-panel-results"
+          class="stage-block"
+          data-test="stage-panel-results"
+          role="tabpanel"
+        >
           <h2 class="stage-heading">成果分析</h2>
           <div class="workspace-section" data-test="workspace-results">
             <p v-if="workspace.official_result">
@@ -544,7 +563,13 @@ onBeforeUnmount(clearShellContext)
         </section>
 
         <!-- 阶段四：证据与报告 -->
-        <section :ref="(el) => setStageRef('evidence', el)" class="stage-block">
+        <section
+          :class="{ 'is-hidden': currentStage !== 'evidence' }"
+          id="case-panel-evidence"
+          class="stage-block"
+          data-test="stage-panel-evidence"
+          role="tabpanel"
+        >
           <h2 class="stage-heading">证据与报告</h2>
           <div class="workspace-section" data-test="workspace-evidence">
             <p v-if="workspace.provenance_summary.badge" class="provenance-line">
@@ -554,7 +579,7 @@ onBeforeUnmount(clearShellContext)
               坐标语义：{{ workspace.provenance_summary.coordinate_kind ?? 'local_linear' }}（局部坐标，显示锚点仅为展示变换，非真实地理配准）
             </p>
             <p v-if="workspace.workspace_kind === 'builtin_preset'" class="provenance-line">
-              官方案例正式选择只读；用户可基于预置数据版本新建实验并登记自己的正式成果。
+              官方案例正式选择只读；用户可基于预置数据版本新建建模实验并登记自己的正式成果。
             </p>
             <p v-else-if="workspace.workspace_kind === 'user_upload'" class="provenance-line">
               成果的正式选择、导出与发布登记在成果工作台内完成。
@@ -607,6 +632,10 @@ onBeforeUnmount(clearShellContext)
   flex-direction: column;
   gap: var(--s1-space-3);
   scroll-margin-top: 120px;
+}
+
+.stage-block.is-hidden {
+  display: none;
 }
 
 .stage-heading {

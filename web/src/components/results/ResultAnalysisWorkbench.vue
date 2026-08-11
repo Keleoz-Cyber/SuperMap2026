@@ -53,6 +53,7 @@ const dockTabModel = defineModel<'overview' | 'slices' | 'model' | 'provenance'>
 
 // 右侧研判区：规则研判（默认）/ AI 辅助切换；AI 不可用不拖垮规则研判
 const sideTab = ref<'rules' | 'ai'>('rules')
+const evidenceExpanded = ref(false)
 
 // AI evidence ref 联动：组件/层段向上聚焦；全局证据切到对应证据标签
 function onFocusEvidence(ref: string) {
@@ -141,7 +142,20 @@ function onFocusEvidence(ref: string) {
       </aside>
     </div>
 
-    <div class="workbench-dock" data-test="result-evidence-dock">
+    <div
+      class="workbench-dock"
+      :class="{ expanded: evidenceExpanded }"
+      data-test="result-evidence-dock"
+    >
+      <button
+        type="button"
+        class="dock-size-toggle"
+        data-test="evidence-dock-toggle"
+        :aria-expanded="evidenceExpanded"
+        @click="evidenceExpanded = !evidenceExpanded"
+      >
+        {{ evidenceExpanded ? '收起分析' : '展开分析' }}
+      </button>
       <ResultGridEvidence
         v-model:active-tab="dockTabModel"
         :analysis="analysis"
@@ -262,8 +276,28 @@ function onFocusEvidence(ref: string) {
 
 .workbench-dock {
   flex: none;
-  height: 224px;
+  height: clamp(280px, 29vh, 330px);
   min-height: 0;
+  position: relative;
+  transition: height var(--s1-motion-normal) var(--s1-ease-out);
+}
+
+.workbench-dock.expanded {
+  height: 52vh;
+}
+
+.dock-size-toggle {
+  position: absolute;
+  top: 6px;
+  right: 92px;
+  z-index: 3;
+  border: 1px solid var(--s1-cyan-dim);
+  border-radius: 6px;
+  background: var(--s1-cyan-ghost);
+  color: var(--s1-cyan-strong);
+  padding: 4px 12px;
+  font-size: var(--s1-font-sm);
+  cursor: pointer;
 }
 
 .workbench-dock :deep(.grid-evidence) {
@@ -282,6 +316,10 @@ function onFocusEvidence(ref: string) {
 
   .workbench-dock {
     height: auto;
+  }
+
+  .dock-size-toggle {
+    display: none;
   }
 }
 </style>

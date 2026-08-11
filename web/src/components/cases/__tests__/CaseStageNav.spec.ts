@@ -23,9 +23,17 @@ describe('CaseStageNav', () => {
 
   it('marks the current stage and emits named navigation intents', async () => {
     const wrapper = mount(CaseStageNav, { props: { stages: STAGES, current: 'data' } })
-    expect(wrapper.get('[data-test="stage-nav-data"]').attributes('aria-current')).toBe('true')
+    expect(wrapper.get('nav').attributes('role')).toBe('tablist')
+    expect(wrapper.get('[data-test="stage-nav-data"]').attributes('role')).toBe('tab')
+    expect(wrapper.get('[data-test="stage-nav-data"]').attributes('aria-selected')).toBe('true')
     await wrapper.get('[data-test="stage-nav-results"]').trigger('click')
     expect(wrapper.emitted('navigate')).toEqual([['results']])
+  })
+
+  it('supports arrow-key navigation between enabled stages', async () => {
+    const wrapper = mount(CaseStageNav, { props: { stages: STAGES, current: 'data' } })
+    await wrapper.get('[data-test="stage-nav-data"]').trigger('keydown', { key: 'ArrowRight' })
+    expect(wrapper.emitted('navigate')).toEqual([['experiments']])
   })
 
   it('disabled stages stay visible with a reason and never emit', async () => {

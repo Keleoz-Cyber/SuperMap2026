@@ -162,7 +162,7 @@ function paramsPreview(parameters: Record<string, unknown>): string {
 
 .mono {
   font-family: ui-monospace, monospace;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 tr.failed {

@@ -388,7 +388,7 @@ describe('ResultWorkbenchView', () => {
 })
 
 describe('导航', () => {
-  it('成果页显示面包屑首页与实验链接（精确实验 ID）', async () => {
+  it('成果页不再渲染第二套专用导航，导航统一交给 AppShell', async () => {
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [
@@ -410,18 +410,9 @@ describe('导航', () => {
     const wrapper = mount(ResultWorkbenchView, { global: { plugins: [router, ElementPlus] } })
     await flushPromises()
 
-    await wrapper.get('[data-test="v6-nav-experiment"]').trigger('click')
-    await flushPromises()
-    expect(router.currentRoute.value).toMatchObject({
-      name: 'experiment-detail',
-      params: { experimentId: 'exp1' },
-    })
-
-    await router.push('/results/r1')
-    await flushPromises()
-    await wrapper.get('[data-test="v6-nav-home"]').trigger('click')
-    await flushPromises()
-    expect(router.currentRoute.value.name).toBe('home')
+    expect(wrapper.find('[data-test="v6-result-topbar"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="v6-nav-experiment"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="v6-nav-home"]').exists()).toBe(false)
   })
 
   it('物化失败：显示错误页且不取切片/预览，仍能返回首页', async () => {
@@ -497,7 +488,7 @@ describe('成果级分析接入', () => {
     expect(panel.props('components')[1].component_id).toBe(2)
   })
 
-  it('研判保留全部连通区，但三维场只标注前三个主导组件以避免标签遮挡', async () => {
+  it('研判与三维场共享完整连通区身份，D–H 定位不会再命中未知标注', async () => {
     const base = RESULT_ANALYSIS_MOCK_3D.components_preview.rows[0]
     const rows = Array.from({ length: 8 }, (_, index) => ({
       ...base,
@@ -517,7 +508,9 @@ describe('成果级分析接入', () => {
 
     const { wrapper } = await mountWorkbench(makeMetadata('3d'))
     const panel = wrapper.findComponent({ name: 'NativeVolumePanel' })
-    expect(panel.props('components').map((row: { component_id: number }) => row.component_id)).toEqual([1, 2, 3])
+    expect(panel.props('components').map((row: { component_id: number }) => row.component_id)).toEqual([
+      1, 2, 3, 4, 5, 6, 7, 8,
+    ])
     expect(wrapper.find('[data-test="component-8"]').exists()).toBe(true)
   })
 

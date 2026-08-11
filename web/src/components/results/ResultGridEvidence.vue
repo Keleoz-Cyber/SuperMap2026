@@ -25,6 +25,7 @@ import AxisTrendChart from '../evidence/AxisTrendChart.vue'
 import DistributionPanel from '../analysis/DistributionPanel.vue'
 import ResidualEvidenceChart from '../evidence/ResidualEvidence.vue'
 import EChartBox from './EChartBox.vue'
+import { buildComponentOption, buildDepthTrendOption } from './resultChartOptions'
 
 // 渲染资产身份（数据溯源展示；由 NativeVolumePanel 真实事件外发）
 export interface RenderAssetIdentity {
@@ -118,44 +119,14 @@ const depthApplicable = computed(
 const depthOption = computed(() => {
   const analysis = props.analysis
   if (!analysis) return {}
-  const bins = analysis.depth_profile.bins
-  return {
-    tooltip: { trigger: 'axis' },
-    grid: { left: 48, right: 48, top: 28, bottom: 24 },
-    xAxis: {
-      type: 'category',
-      data: bins.map((bin) => `${bin.z_lower}–${bin.z_upper} m`),
-      axisLabel: { color: CHART_TEXT.color },
-    },
-    yAxis: [
-      { type: 'value', name: '高值占比', axisLabel: { color: CHART_TEXT.color, formatter: (v: number) => `${(v * 100).toFixed(0)}%` } },
-      { type: 'value', name: `均值（${analysis.variable.unit}）`, axisLabel: { color: CHART_TEXT.color } },
-    ],
-    series: [
-      { name: '高值占比', type: 'bar', data: bins.map((bin) => bin.high_ratio), itemStyle: { color: '#d9a84e' } },
-      { name: '均值', type: 'line', yAxisIndex: 1, data: bins.map((bin) => bin.mean), itemStyle: { color: '#64dab1' } },
-    ],
-  }
+  return buildDepthTrendOption(analysis.depth_profile.bins, analysis.variable.unit)
 })
 
 // 组件比较：网格支持量柱 + 峰值线
 const componentsOption = computed(() => {
   const analysis = props.analysis
   if (!analysis) return {}
-  const rows = analysis.components_preview.rows
-  return {
-    tooltip: { trigger: 'axis' },
-    grid: { left: 56, right: 48, top: 28, bottom: 24 },
-    xAxis: { type: 'category', data: rows.map((row) => row.label), axisLabel: { color: CHART_TEXT.color } },
-    yAxis: [
-      { type: 'value', name: '网格支持量', axisLabel: { color: CHART_TEXT.color } },
-      { type: 'value', name: `峰值（${analysis.variable.unit}）`, axisLabel: { color: CHART_TEXT.color } },
-    ],
-    series: [
-      { name: '网格支持量', type: 'bar', data: rows.map((row) => row.support_measure), itemStyle: { color: '#4d8de0' } },
-      { name: '峰值', type: 'line', yAxisIndex: 1, data: rows.map((row) => row.value_max), itemStyle: { color: '#d9a84e' } },
-    ],
-  }
+  return buildComponentOption(analysis.components_preview.rows, analysis.variable.unit)
 })
 
 const sliceStats = computed(() => props.currentSlice?.statistics ?? null)

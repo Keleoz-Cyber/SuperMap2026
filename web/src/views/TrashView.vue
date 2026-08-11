@@ -69,7 +69,7 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="trash-page">
+  <div class="trash-page product-page">
     <PageNavigation current-label="回收站" />
     <header class="page-header">
       <h1>回收站</h1>
@@ -148,7 +148,7 @@ onMounted(load)
 
 <style scoped>
 .trash-page {
-  max-width: 1100px;
+  max-width: var(--s1-page-standard);
   margin: 0 auto;
   padding: 28px;
   box-sizing: border-box;

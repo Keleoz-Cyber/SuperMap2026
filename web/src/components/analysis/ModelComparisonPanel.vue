@@ -9,7 +9,7 @@ import {
   type ModelComparisonCandidate,
 } from './analysisTypes'
 
-// v0.8.0 第二批 Task 5：模型对比——只读既有 succeeded 候选（后端绝不重
+// v0.8.0 第二批 Task 5：模型比较——只读既有 succeeded 候选（后端绝不重
 // 算指标）。表格列：算法中文标签/参数摘要/RMSE/MAE/R²/Bias + 物化与正式
 // 选择徽标；点击行导航到 /results/{result_id}。无候选时解释性空状态。
 
@@ -21,7 +21,7 @@ const candidates = computed(() => comparisonCandidatesOf(props.module))
 
 const unavailableMessage = computed(() => {
   if (props.module && props.module.status !== 'ok') {
-    return props.module.message ?? '模型对比模块在当前数据版本不可用。'
+    return props.module.message ?? '模型比较模块在当前数据版本不可用。'
   }
   return null
 })
@@ -42,7 +42,7 @@ function openCandidate(candidate: ModelComparisonCandidate) {
 
 <template>
   <section class="panel model-comparison" data-test="model-comparison-panel">
-    <h3>模型对比</h3>
+    <h3>模型比较</h3>
     <p v-if="unavailableMessage" class="empty-note" data-test="model-comparison-empty">
       {{ unavailableMessage }}
     </p>

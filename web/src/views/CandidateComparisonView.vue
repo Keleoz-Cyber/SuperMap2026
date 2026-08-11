@@ -8,7 +8,7 @@ import type {
   MultiCandidateComparison,
 } from '../api/types'
 import { algorithmLabel, parameterSummary } from '../utils/modelingLabels'
-import PageNavigation from '../components/navigation/PageNavigation.vue'
+import PageContextHeader from '../components/navigation/PageContextHeader.vue'
 import AsyncState from '../components/states/AsyncState.vue'
 import MetricComparisonChart from '../components/comparison/MetricComparisonChart.vue'
 import ParameterDiffTable from '../components/comparison/ParameterDiffTable.vue'
@@ -237,13 +237,17 @@ watch(datasetId, (next, prev) => {
 </script>
 
 <template>
-  <div class="comparison-page" data-test="candidate-comparison-view">
-    <PageNavigation :case-id="queryCaseId || undefined" :dataset-id="datasetId" current-label="模型对比" />
-    <header class="page-header">
-      <h1>模型对比</h1>
-      <p class="page-sub">同一数据版本和验证方法下比较不同实验结果</p>
-      <p class="page-sub">数据集 <span class="mono">{{ datasetId }}</span></p>
-    </header>
+  <div class="comparison-page product-page" data-test="candidate-comparison-view">
+    <PageContextHeader
+      title="模型比较"
+      subtitle="在同一数据版本和验证口径下比较候选成果，避免把不可比指标放在一起排名。"
+      :case-id="queryCaseId || undefined"
+      :dataset-id="datasetId"
+    >
+      <template #meta>
+        <p class="page-sub">当前数据版本：<span class="mono">{{ datasetId }}</span></p>
+      </template>
+    </PageContextHeader>
 
     <AsyncState
       v-if="loadError"
@@ -432,7 +436,7 @@ watch(datasetId, (next, prev) => {
 <style scoped>
 .comparison-page {
   min-height: 100%;
-  max-width: 1080px;
+  max-width: var(--s1-page-standard);
   margin: 0 auto;
   padding: 28px 20px 48px;
   display: flex;
@@ -497,7 +501,7 @@ watch(datasetId, (next, prev) => {
 }
 
 .dup-badge {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--gmp-accent);
   margin-top: 2px;
 }
@@ -603,7 +607,7 @@ watch(datasetId, (next, prev) => {
   }
 
   .ranking-table {
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .ranking-table th,

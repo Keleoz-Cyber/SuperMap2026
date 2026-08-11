@@ -56,13 +56,13 @@
   --s1-case-accent-soft: var(--s1-accent-cyan-soft);
 
   /* ---- 排版 ---- */
-  --s1-font-xs: 11px;
-  --s1-font-sm: 12px;
-  --s1-font-md: 13px;
-  --s1-font-lg: 15px;
-  --s1-font-xl: 18px;
-  --s1-font-2xl: 22px;
-  --s1-font-3xl: 28px;
+  --s1-font-xs: 12px;
+  --s1-font-sm: 13px;
+  --s1-font-md: 14px;
+  --s1-font-lg: 16px;
+  --s1-font-xl: 20px;
+  --s1-font-2xl: 24px;
+  --s1-font-3xl: 30px;
   --s1-leading-tight: 1.25;
   --s1-leading: 1.6;
 
@@ -73,6 +73,13 @@
   --s1-space-4: 16px;
   --s1-space-6: 24px;
   --s1-space-8: 32px;
+
+  /* ---- 页面网格 ---- */
+  --s1-page-form: 1120px;
+  --s1-page-workflow: 1280px;
+  --s1-page-standard: 1440px;
+  --s1-page-wide: 1680px;
+  --s1-page-gutter: clamp(16px, 2.25vw, 40px);
 
   /* ---- 圆角 ---- */
   --s1-radius-sm: 8px;

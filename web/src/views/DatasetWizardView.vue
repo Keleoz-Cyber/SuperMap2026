@@ -180,7 +180,7 @@ function onStart() {
 </script>
 
 <template>
-  <div class="wizard-page">
+  <div class="wizard-page product-page product-page--workflow">
     <PageNavigation :case-id="caseId" current-label="数据接入与准备" />
     <header class="wizard-header">
       <h1>数据接入与准备</h1>
@@ -286,7 +286,7 @@ function onStart() {
 <style scoped>
 .wizard-page {
   min-height: 100%;
-  max-width: 980px;
+  max-width: var(--s1-page-workflow);
   margin: 0 auto;
   padding: 28px 20px 48px;
   display: flex;

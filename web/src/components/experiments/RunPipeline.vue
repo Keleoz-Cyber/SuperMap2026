@@ -141,7 +141,7 @@ const estimated = computed(() => props.run?.status === 'running')
 }
 
 .estimate-chip {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--s1-warning);
   border: 1px solid rgba(217, 168, 78, 0.4);
   border-radius: 999px;

@@ -9,6 +9,9 @@ export interface ShellContext {
   stageLabel: string | null
   // 与 CASE_PRESENTATION.accent 对应的案例辅助色键
   caseAccent: 'gold' | 'violet' | 'jade' | 'cyan' | null
+  datasetId: string | null
+  experimentId: string | null
+  resultId: string | null
 }
 
 const context = reactive<ShellContext>({
@@ -16,6 +19,9 @@ const context = reactive<ShellContext>({
   caseTitle: null,
   stageLabel: null,
   caseAccent: null,
+  datasetId: null,
+  experimentId: null,
+  resultId: null,
 })
 
 export function setShellContext(patch: Partial<ShellContext>): void {
@@ -27,6 +33,9 @@ export function clearShellContext(): void {
   context.caseTitle = null
   context.stageLabel = null
   context.caseAccent = null
+  context.datasetId = null
+  context.experimentId = null
+  context.resultId = null
 }
 
 export function useShellContext() {

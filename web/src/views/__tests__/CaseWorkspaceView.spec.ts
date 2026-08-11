@@ -257,7 +257,7 @@ describe('CaseWorkspaceView', () => {
     expect(wrapper.find('[data-test="new-experiment"]').exists()).toBe(true)
   })
 
-  it('user_upload without result: results section shows 暂无成果 and offers 新建实验', async () => {
+  it('user_upload without result: results section shows 暂无成果 and offers 新建建模实验', async () => {
     const ws = workspaceOf('user_upload')
     vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(ws)
     const { wrapper, router } = await mountWorkspace('/cases/up-1')
@@ -443,7 +443,7 @@ const RESISTIVITY_PRESET_WS: CaseWorkspaceSummary = {
     latest_validated_dataset_id: 'ds-rho-1',
     next_action: {
       step: 'experiment',
-      label: '新建实验',
+      label: '新建建模实验',
       url: '/#/cases/resistivity/experiments/new',
     },
     error: null,
@@ -472,7 +472,7 @@ describe('CaseWorkspaceView 电阻率散点预置（v0.8.0）', () => {
     await flushPromises()
     expect(router.currentRoute.value.path).toBe('/results/rho-official-1')
 
-    // 操作二：新建实验进入统一实验创建页
+    // 操作二：新建建模实验进入统一实验创建页
     await router.push('/cases/resistivity')
     await flushPromises()
     await wrapper.find('[data-test="new-experiment"]').trigger('click')
@@ -510,7 +510,7 @@ describe('CaseWorkspaceView 电阻率散点预置（v0.8.0）', () => {
     wrapper.unmount()
   })
 
-  it('预置无官方成果：收起成果直达但保留新建实验', async () => {
+  it('预置无官方成果：收起成果直达但保留新建建模实验', async () => {
     const ws: CaseWorkspaceSummary = {
       ...RESISTIVITY_PRESET_WS,
       capabilities: { ...RESISTIVITY_PRESET_WS.capabilities, official_result: false },
@@ -588,7 +588,7 @@ describe('CaseWorkspaceView 电阻率散点预置（v0.8.0）', () => {
 // ---------------------------------------------------------------------------
 // v0.8.0 第二批 Task 4：统计与空间分析中心入口。已验证数据版本旁出现唯一
 // RouterLink 入口；未验证数据版本不出现入口并显示类型化原因；入口绝不与
-// 「新建实验」等既有命令重复。
+// 「新建建模实验」等既有命令重复。
 // ---------------------------------------------------------------------------
 
 describe('CaseWorkspaceView 统计与空间分析入口（v0.8.0 第二批）', () => {
@@ -608,7 +608,7 @@ describe('CaseWorkspaceView 统计与空间分析入口（v0.8.0 第二批）', 
     expect(router.currentRoute.value.name).toBe('analysis-center')
     expect(router.currentRoute.value.params.datasetId).toBe('ds-1')
 
-    // 入口不与「新建实验」等既有命令重复
+    // 入口不与「新建建模实验」等既有命令重复
     expect(wrapper.findAll('[data-test="new-experiment"]').length).toBe(1)
     wrapper.unmount()
   })
@@ -694,7 +694,7 @@ const GAS_PRESET_WS: CaseWorkspaceSummary = {
     latest_validated_dataset_id: 'ds-gas-1',
     next_action: {
       step: 'experiment',
-      label: '新建实验',
+      label: '新建建模实验',
       url: '/#/cases/gas/experiments/new',
     },
     error: null,
@@ -724,7 +724,7 @@ describe('CaseWorkspaceView 瓦斯散点预置（v0.8.0 第三批）', () => {
     await flushPromises()
     expect(router.currentRoute.value.path).toBe('/results/gas-official-1')
 
-    // 操作二：新建实验进入统一实验创建页（携带预置数据版本）
+    // 操作二：新建建模实验进入统一实验创建页（携带预置数据版本）
     await router.push('/cases/gas')
     await flushPromises()
     await wrapper.find('[data-test="new-experiment"]').trigger('click')
@@ -784,6 +784,27 @@ describe('CaseWorkspaceView v0.9 阶段导航与唯一主动作', () => {
     wrapper.unmount()
   })
 
+  it('阶段页签真正切换唯一可见内容，并把状态写入 URL', async () => {
+    vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(workspaceOf('builtin_preset'))
+    const { wrapper, router } = await mountWorkspace(`/cases/${PRESET_ID}`)
+    expect(wrapper.get('[data-test="stage-panel-data"]').classes()).not.toContain('is-hidden')
+    expect(wrapper.get('[data-test="stage-panel-experiments"]').classes()).toContain('is-hidden')
+
+    await wrapper.get('[data-test="stage-nav-experiments"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query.stage).toBe('experiments')
+    expect(wrapper.get('[data-test="stage-panel-data"]').classes()).toContain('is-hidden')
+    expect(wrapper.get('[data-test="stage-panel-experiments"]').classes()).not.toContain('is-hidden')
+  })
+
+  it('可从 URL 直接恢复成果分析页签', async () => {
+    vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(workspaceOf('builtin_preset'))
+    const { wrapper } = await mountWorkspace(`/cases/${PRESET_ID}?stage=results`)
+    expect(wrapper.get('[data-test="stage-nav-results"]').attributes('aria-selected')).toBe('true')
+    expect(wrapper.get('[data-test="stage-panel-results"]').classes()).not.toContain('is-hidden')
+    expect(wrapper.get('[data-test="stage-panel-data"]').classes()).toContain('is-hidden')
+  })
+
   it('官方就绪（预置）：唯一主动作是查看官方成果', async () => {
     vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(workspaceOf('builtin_preset'))
     const { wrapper } = await mountWorkspace(`/cases/${PRESET_ID}`)
@@ -811,7 +832,7 @@ describe('CaseWorkspaceView v0.9 阶段导航与唯一主动作', () => {
     wrapper.unmount()
   })
 
-  it('用户案例就绪：唯一主动作是新建实验', async () => {
+  it('用户案例就绪：唯一主动作是新建建模实验', async () => {
     vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(workspaceOf('user_upload'))
     const { wrapper } = await mountWorkspace('/cases/up-1')
     const primaries = wrapper.findAll('[data-primary-action="true"]')

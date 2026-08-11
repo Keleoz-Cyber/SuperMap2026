@@ -49,7 +49,7 @@ export const MODULE_LABELS: Record<string, string> = {
   distribution: '属性分布',
   spatial_extent: '空间视图',
   profile_slices: '剖面统计',
-  model_comparison: '模型对比',
+  model_comparison: '模型比较',
   axis_trends: '轴向趋势',
   gradient: '速度梯度',
   spatial_anomaly: '空间异常',

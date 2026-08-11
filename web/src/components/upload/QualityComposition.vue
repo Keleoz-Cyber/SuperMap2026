@@ -141,7 +141,7 @@ function fmt(v: number): string {
 
 .donut-text {
   fill: var(--s1-text-strong);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   text-anchor: middle;
 }
@@ -215,7 +215,7 @@ function fmt(v: number): string {
 }
 
 .issue-list code {
-  font-size: 10px;
+  font-size: 12px;
   opacity: 0.85;
 }
 

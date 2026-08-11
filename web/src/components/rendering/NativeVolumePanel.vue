@@ -68,8 +68,17 @@ const props = withDefaults(
     // v0.9.0 V6：workbench 变体隐藏调试性外壳（标题/真值标签/资产身份块），
     // 场景只保留一行轻量状态条与 fail-closed 错误/动作
     variant?: 'default' | 'workbench'
+    // 首页等展示面只保留失败诊断；ready 资产不暴露刷新按钮、哈希和内部身份。
+    showReadyDiagnostics?: boolean
   }>(),
-  { auxPoints: null, sliceRequest: null, components: null, focusedComponentId: null, variant: 'default' },
+  {
+    auxPoints: null,
+    sliceRequest: null,
+    components: null,
+    focusedComponentId: null,
+    variant: 'default',
+    showReadyDiagnostics: true,
+  },
 )
 
 const emit = defineEmits<{
@@ -594,7 +603,9 @@ function onCameraPreset(preset: CameraPreset) {
 
 // 研判面板点击组件：子帧相机聚焦（高亮由 focusedComponentId prop 回流同步）
 function focusComponent(componentId: number) {
-  frameRef.value?.focusAnnotation(`component-${componentId}`)
+  const annotationId = `component-${componentId}`
+  if (!(renderState.value.annotations ?? []).some((item) => item.id === annotationId)) return
+  frameRef.value?.focusAnnotation(annotationId)
 }
 
 // 三维标注点击反选：只接受 component-N 形态，其他 id 一律忽略
@@ -743,7 +754,13 @@ onMounted(() => {
               >
                 {{ creating ? '正在重试…' : '重试生成渲染资产' }}
               </button>
-              <button class="link-button" data-test="refresh-asset" :disabled="creating" @click="refreshAsset">
+              <button
+                v-if="showReadyDiagnostics || !asset || asset.status !== 'ready'"
+                class="link-button"
+                data-test="refresh-asset"
+                :disabled="creating"
+                @click="refreshAsset"
+              >
                 刷新状态
               </button>
             </div>
@@ -753,7 +770,11 @@ onMounted(() => {
             </div>
             <div v-if="createError" class="panel-error" data-test="create-error">{{ createError }}</div>
 
-            <div v-if="asset && !isWorkbench" class="asset-identity" data-test="asset-identity">
+            <div
+              v-if="asset && !isWorkbench && showReadyDiagnostics"
+              class="asset-identity"
+              data-test="asset-identity"
+            >
               <div>资产：{{ asset.id }}（{{ asset.renderer }}，状态 {{ asset.status }}）</div>
               <div>网格 SHA-256：{{ asset.grid_sha256.slice(0, 16) }}…</div>
               <div v-if="asset.netcdf_sha256">NetCDF SHA-256：{{ asset.netcdf_sha256.slice(0, 16) }}…</div>
@@ -1022,7 +1043,7 @@ onMounted(() => {
 }
 
 .style-note {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--gmp-text-dim);
   opacity: 0.8;
 }

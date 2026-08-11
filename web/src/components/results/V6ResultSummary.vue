@@ -18,7 +18,20 @@ const props = defineProps<{
   commonValidCount: number | null
   formalSelected: boolean | null
   resultId: string
+  currentCaseId: string | null
+  caseOptions: Array<{ id: string; name: string }>
+  exporting?: boolean
 }>()
+
+const emit = defineEmits<{
+  (event: 'select-case', caseId: string): void
+  (event: 'export-report'): void
+}>()
+
+function onCaseChange(event: Event) {
+  const value = (event.target as HTMLSelectElement).value
+  if (value) emit('select-case', value)
+}
 
 const dimensionText = computed(() => (props.metadata.dimension === '3d' ? '三维' : '二维'))
 const shapeText = computed(() => props.metadata.shape.join(' × '))
@@ -43,6 +56,17 @@ const formalText = computed(() => {
       </p>
     </div>
     <div class="summary-right">
+      <select
+        class="case-select"
+        data-test="result-case-select"
+        aria-label="切换案例"
+        :value="currentCaseId ?? ''"
+        @change="onCaseChange"
+      >
+        <option v-for="option in caseOptions" :key="option.id" :value="option.id">
+          {{ option.name }}
+        </option>
+      </select>
       <div class="summary-metric" data-test="summary-metric-samples">
         <span class="metric-label">有效样本</span>
         <span class="metric-value mono">
@@ -70,6 +94,15 @@ const formalText = computed(() => {
       >
         模型评估
       </RouterLink>
+      <button
+        type="button"
+        class="export-action"
+        data-test="result-export-report"
+        :disabled="exporting"
+        @click="emit('export-report')"
+      >
+        {{ exporting ? '正在导出…' : '导出分析报告' }}
+      </button>
     </div>
   </section>
 </template>
@@ -115,6 +148,37 @@ const formalText = computed(() => {
   display: flex;
   gap: 10px;
   flex: none;
+}
+
+.case-select,
+.export-action {
+  align-self: center;
+  min-height: 34px;
+  border-radius: var(--s1-radius-sm);
+  font-size: var(--s1-font-sm);
+}
+
+.case-select {
+  max-width: 160px;
+  border: 1px solid var(--s1-border);
+  background: var(--s1-bg-soft);
+  color: var(--s1-text);
+  padding: 0 10px;
+}
+
+.export-action {
+  border: 1px solid var(--s1-cyan-strong);
+  background: var(--s1-cyan-strong);
+  color: #06110f;
+  padding: 0 14px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.export-action:disabled {
+  opacity: 0.55;
+  cursor: wait;
 }
 
 .summary-metric {

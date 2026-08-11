@@ -124,6 +124,27 @@ html.dark {
   margin: 8px 0 0;
 }
 
+/* 全站页面骨架：页面只选择内容宽度，不再各自发明边距与最大宽度。 */
+.product-page {
+  box-sizing: border-box;
+  width: calc(100% - 2 * var(--s1-page-gutter));
+  max-width: var(--s1-page-standard);
+  margin-inline: auto;
+  padding-block: var(--s1-space-4) var(--s1-space-8);
+}
+
+.product-page--form {
+  max-width: var(--s1-page-form);
+}
+
+.product-page--workflow {
+  max-width: var(--s1-page-workflow);
+}
+
+.product-page--wide {
+  max-width: var(--s1-page-wide);
+}
+
 /* 跳转主内容的可访问性链接（AppShell 使用） */
 .skip-link {
   position: fixed;

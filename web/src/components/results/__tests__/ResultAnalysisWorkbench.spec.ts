@@ -121,6 +121,28 @@ describe('ResultAnalysisWorkbench（V6 一屏布局）', () => {
     expect(tabs.map((t) => t.text())).toEqual(['综合分析', '切片与异常', '模型证据', '数据溯源'])
   })
 
+  it('expands and collapses the evidence dock without remounting the scene', async () => {
+    const wrapper = mountWorkbench()
+    await flushPromises()
+    const sceneElement = wrapper.get('[data-test="slot-scene"]').element
+    const dock = wrapper.get('[data-test="result-evidence-dock"]')
+    const toggle = wrapper.get('[data-test="evidence-dock-toggle"]')
+
+    expect(dock.classes()).not.toContain('expanded')
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+    expect(toggle.text()).toBe('展开分析')
+
+    await toggle.trigger('click')
+    expect(dock.classes()).toContain('expanded')
+    expect(toggle.attributes('aria-expanded')).toBe('true')
+    expect(toggle.text()).toBe('收起分析')
+    expect(wrapper.get('[data-test="slot-scene"]').element).toBe(sceneElement)
+
+    await toggle.trigger('click')
+    expect(dock.classes()).not.toContain('expanded')
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+  })
+
   it('dataset-level findings live only under the provenance input-sample cell', async () => {
     const wrapper = mountWorkbench()
     await flushPromises()

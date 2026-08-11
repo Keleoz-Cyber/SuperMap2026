@@ -1601,7 +1601,7 @@ export async function installMockApi(page: Page): Promise<void> {
           latest_validated_dataset_id: RHO_DATASET_ID,
           next_action: {
             step: 'experiment',
-            label: '新建实验',
+            label: '新建建模实验',
             url: '/#/cases/resistivity/experiments/new',
           },
           error: null,
@@ -1651,7 +1651,7 @@ export async function installMockApi(page: Page): Promise<void> {
           latest_validated_dataset_id: GAS_DATASET_ID,
           next_action: {
             step: 'experiment',
-            label: '新建实验',
+            label: '新建建模实验',
             url: '/#/cases/gas/experiments/new',
           },
           error: null,
@@ -1673,7 +1673,7 @@ export async function installMockApi(page: Page): Promise<void> {
       const prepMap: Record<string, { state: string; step: string; label: string; url: string | null }> = {
         uploaded: { state: 'needs_mapping', step: 'mapping', label: '继续字段映射', url: `/#/cases/case-e2e/datasets/ds-e2e/prepare` },
         mapped: { state: 'needs_quality_review', step: 'quality_review', label: '继续质量检查', url: `/#/cases/case-e2e/datasets/ds-e2e/prepare` },
-        validated: { state: 'ready', step: 'experiment', label: '新建实验', url: `/#/cases/case-e2e/experiments/new` },
+        validated: { state: 'ready', step: 'experiment', label: '新建建模实验', url: `/#/cases/case-e2e/experiments/new` },
         abandoned: { state: 'needs_upload', step: 'upload', label: '上传数据', url: `/#/cases/case-e2e/datasets/new` },
       }
       const prep = prepMap[state.datasetStatus] ?? prepMap.uploaded

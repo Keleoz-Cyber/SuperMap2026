@@ -122,7 +122,7 @@ async function doPublish() {
 }
 
 .sha {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--gmp-text-faint);
   margin: 0 0 8px;
 }
@@ -166,7 +166,7 @@ async function doPublish() {
 }
 
 .pub-note {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--gmp-text-faint);
   margin: 0;
 }

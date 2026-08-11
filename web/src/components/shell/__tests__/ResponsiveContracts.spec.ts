@@ -11,6 +11,7 @@ import { readFileSync } from 'node:fs'
 // vitest 的 CSS ?raw 导入会被裁剪为空串；样式规则断言直接读文件（vitest 以 web/ 为 cwd）
 const motionCss = String(readFileSync('src/styles/motion.css'))
 const tokensCss = String(readFileSync('src/styles/tokens.css'))
+const globalCss = String(readFileSync('src/styles/index.css'))
 
 // v0.9.0 Task 14：响应式/无障碍/动效合同（静态契约层；
 // 真实视口像素级门在 web/e2e/v090-responsive.spec.ts）。
@@ -90,6 +91,21 @@ beforeEach(() => {
 })
 
 describe('responsive & accessibility contracts', () => {
+  it('uses a readable global type scale and shared product-page grid', () => {
+    expect(tokensCss).toContain('--s1-font-xs: 12px')
+    expect(tokensCss).toContain('--s1-font-md: 14px')
+    expect(tokensCss).toContain('--s1-page-standard: 1440px')
+    expect(globalCss).toContain('.product-page')
+  })
+
+  it('user-facing comparison pages consistently say 模型比较', () => {
+    const sources = [
+      'src/views/CandidateComparisonView.vue',
+      'src/components/analysis/analysisTypes.ts',
+      'src/components/analysis/ModelComparisonPanel.vue',
+    ].map((path) => String(readFileSync(path)))
+    for (const source of sources) expect(source).not.toContain('模型对比')
+  })
   it('app shell exposes exactly one main landmark', async () => {
     const wrapper = await mountHome()
     expect(wrapper.findAll('main')).toHaveLength(1)

@@ -223,7 +223,7 @@ watch(datasetId, (next, prev) => {
 </script>
 
 <template>
-  <div class="analysis-center-page" data-test="analysis-center-view">
+  <div class="analysis-center-page product-page product-page--wide" data-test="analysis-center-view">
     <PageNavigation
       :case-id="caseLinkId || undefined"
       :dataset-id="datasetId"
@@ -357,7 +357,7 @@ watch(datasetId, (next, prev) => {
 <style scoped>
 .analysis-center-page {
   min-height: 100%;
-  max-width: 1400px;
+  max-width: var(--s1-page-wide);
   margin: 0 auto;
   padding: 24px 20px 48px;
   display: flex;
@@ -408,7 +408,7 @@ watch(datasetId, (next, prev) => {
 }
 
 .nav-flag {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--gmp-text-faint);
   border: 1px solid var(--gmp-border-soft);
   border-radius: 4px;

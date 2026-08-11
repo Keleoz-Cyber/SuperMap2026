@@ -42,7 +42,7 @@ async function submit() {
 </script>
 
 <template>
-  <div class="create-page">
+  <div class="create-page product-page product-page--form">
     <header class="create-header">
       <h1>新建建模案例</h1>
       <p>数据接入与准备：上传 CSV / XLSX 点数据，完成字段映射与质量校验后即可开始建模实验。</p>
@@ -86,7 +86,7 @@ async function submit() {
 <style scoped>
 .create-page {
   min-height: 100%;
-  max-width: 720px;
+  max-width: var(--s1-page-form);
   margin: 0 auto;
   padding: 40px 20px;
   display: flex;

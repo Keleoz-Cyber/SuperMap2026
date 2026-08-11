@@ -74,7 +74,12 @@ const api = computed<NativeVolumeRenderApi | null>(() => {
         impact="该案例还没有已物化的正式三维成果"
         next-action="完成建模实验并产生候选后，此处自动展示正式成果连续体"
       />
-      <NativeVolumePanel v-else-if="api" :key="resultId" :api="api" />
+      <NativeVolumePanel
+        v-else-if="api"
+        :key="resultId"
+        :api="api"
+        :show-ready-diagnostics="false"
+      />
     </div>
   </section>
 </template>

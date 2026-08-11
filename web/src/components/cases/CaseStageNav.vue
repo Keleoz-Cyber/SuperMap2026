@@ -29,11 +29,29 @@ function onSelect(stage: CaseStage) {
   emit('navigate', stage.id)
 }
 
+function onKeydown(event: KeyboardEvent) {
+  const enabled = props.stages.filter((stage) => stage.enabled)
+  const currentIndex = Math.max(0, enabled.findIndex((stage) => stage.id === props.current))
+  let nextIndex: number | null = null
+  if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+    nextIndex = (currentIndex + 1) % enabled.length
+  } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+    nextIndex = (currentIndex - 1 + enabled.length) % enabled.length
+  } else if (event.key === 'Home') {
+    nextIndex = 0
+  } else if (event.key === 'End') {
+    nextIndex = enabled.length - 1
+  }
+  if (nextIndex === null || !enabled[nextIndex]) return
+  event.preventDefault()
+  emit('navigate', enabled[nextIndex].id)
+}
+
 void props
 </script>
 
 <template>
-  <nav class="case-stage-nav" aria-label="案例业务阶段">
+  <nav class="case-stage-nav" aria-label="案例业务阶段" role="tablist">
     <button
       v-for="stage in stages"
       :key="stage.id"
@@ -41,10 +59,13 @@ void props
       class="stage-item"
       :class="{ active: stage.id === current, disabled: !stage.enabled }"
       :data-test="`stage-nav-${stage.id}`"
-      :aria-current="stage.id === current ? 'true' : undefined"
+      role="tab"
+      :aria-selected="stage.id === current ? 'true' : 'false'"
+      :tabindex="stage.id === current ? 0 : -1"
       :disabled="!stage.enabled"
       :title="stage.enabled ? undefined : (stage.reason ?? '当前不可用')"
       @click="onSelect(stage)"
+      @keydown="onKeydown"
     >
       <span class="stage-label">{{ STAGE_LABELS[stage.id] }}</span>
       <span v-if="!stage.enabled && stage.reason" class="stage-reason">{{ stage.reason }}</span>

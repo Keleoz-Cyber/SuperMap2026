@@ -26,14 +26,46 @@ void props
           <small>深地属性建模综合指挥舱</small>
         </span>
       </RouterLink>
-      <RouterLink :to="{ name: 'home' }" class="home-link" data-test="shell-home-link">
-        首页
-      </RouterLink>
-      <div v-if="context.caseTitle" class="case-context" data-test="shell-case-context">
-        <span class="ctx-sep" aria-hidden="true">/</span>
-        <span class="ctx-title">{{ context.caseTitle }}</span>
-        <span v-if="context.stageLabel" class="ctx-stage">{{ context.stageLabel }}</span>
-      </div>
+      <nav class="product-nav" aria-label="产品主导航">
+        <RouterLink :to="{ name: 'case-create' }" class="product-link" data-test="shell-nav-ingest">
+          数据接入
+        </RouterLink>
+        <RouterLink
+          v-if="context.experimentId"
+          :to="{ name: 'experiment-detail', params: { experimentId: context.experimentId } }"
+          class="product-link"
+          data-test="shell-nav-experiments"
+        >建模实验</RouterLink>
+        <RouterLink
+          v-else-if="context.caseId"
+          :to="{ name: 'case-workspace', params: { caseId: context.caseId }, query: { stage: 'experiments' } }"
+          class="product-link"
+          data-test="shell-nav-experiments"
+        >建模实验</RouterLink>
+        <span v-else class="product-link disabled" data-test="shell-nav-experiments" aria-disabled="true" title="请先选择案例">建模实验</span>
+
+        <RouterLink
+          v-if="context.datasetId"
+          :to="{ name: 'candidate-comparison', params: { datasetId: context.datasetId } }"
+          class="product-link"
+          data-test="shell-nav-comparison"
+        >模型比较</RouterLink>
+        <span v-else class="product-link disabled" data-test="shell-nav-comparison" aria-disabled="true" title="请先选择数据版本">模型比较</span>
+
+        <RouterLink
+          v-if="context.resultId"
+          :to="{ name: 'result-workbench', params: { resultId: context.resultId } }"
+          class="product-link"
+          data-test="shell-nav-results"
+        >成果空间</RouterLink>
+        <RouterLink
+          v-else-if="context.caseId"
+          :to="{ name: 'case-workspace', params: { caseId: context.caseId }, query: { stage: 'results' } }"
+          class="product-link"
+          data-test="shell-nav-results"
+        >成果空间</RouterLink>
+        <span v-else class="product-link disabled" data-test="shell-nav-results" aria-disabled="true" title="请先选择成果">成果空间</span>
+      </nav>
     </div>
 
     <div class="header-right">
@@ -132,6 +164,34 @@ void props
   font-size: var(--s1-font-md);
   padding: 4px 8px;
   border-radius: 6px;
+}
+
+.product-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: var(--s1-space-3);
+}
+
+.product-link {
+  color: var(--s1-text-dim);
+  text-decoration: none;
+  font-size: var(--s1-font-md);
+  padding: 7px 11px;
+  border-radius: var(--s1-radius-sm);
+  white-space: nowrap;
+}
+
+.product-link:hover,
+.product-link.router-link-active {
+  color: var(--s1-cyan-strong);
+  background: var(--s1-cyan-ghost);
+}
+
+.product-link.disabled {
+  color: var(--s1-text-faint);
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .home-link:hover {
@@ -235,6 +295,10 @@ void props
   .ctx-stage {
     display: none;
   }
+
+  .product-link {
+    padding-inline: 7px;
+  }
 }
 
 @media (max-width: 640px) {
@@ -245,6 +309,16 @@ void props
 
   .brand-text strong {
     font-size: var(--s1-font-md);
+  }
+
+  .product-nav {
+    overflow-x: auto;
+    scrollbar-width: none;
+    margin-left: 0;
+  }
+
+  .product-link {
+    font-size: var(--s1-font-sm);
   }
 
   /* 手机档：服务状态收敛为圆点，次级入口让位给主动作，避免横向溢出 */

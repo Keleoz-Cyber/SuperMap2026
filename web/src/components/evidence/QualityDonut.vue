@@ -87,7 +87,7 @@ const donutDash = computed(() => {
 
 .donut-text {
   fill: var(--s1-text-strong);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   text-anchor: middle;
   font-variant-numeric: tabular-nums;

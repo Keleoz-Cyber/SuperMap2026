@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import { ApiError, uploadDataset } from '../api/client'
 import type { DatasetVersionRecord } from '../api/types'
+import PageContextHeader from '../components/navigation/PageContextHeader.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -44,16 +45,19 @@ async function submit() {
 </script>
 
 <template>
-  <div class="upload-page">
-    <header class="upload-header">
-      <el-button :icon="ArrowLeft" circle title="返回案例工作台" @click="router.push(`/cases/${caseId}`)" />
-      <div class="header-title">
-        <h1>上传数据到案例</h1>
-        <p class="header-sub">
-          案例 <span class="mono">{{ caseId }}</span> · 上传 CSV / XLSX 点数据继续数据准备
-        </p>
-      </div>
-    </header>
+  <div class="upload-page product-page product-page--form">
+    <PageContextHeader
+      title="数据接入"
+      subtitle="上传 CSV 或 XLSX 点数据；系统会先校验字段和坐标，再进入建模准备。"
+      :case-id="caseId"
+      current-label="数据接入"
+    >
+      <template #actions>
+        <el-button :icon="ArrowLeft" title="返回案例工作台" @click="router.push(`/cases/${caseId}`)">
+          返回案例工作台
+        </el-button>
+      </template>
+    </PageContextHeader>
 
     <div class="upload-form">
       <label class="field">
@@ -88,7 +92,7 @@ async function submit() {
 .upload-page {
   min-height: 100%;
   padding: var(--s1-space-4) var(--s1-space-6) var(--s1-space-8);
-  max-width: 720px;
+  max-width: var(--s1-page-form);
   margin: 0 auto;
 }
 .upload-header {

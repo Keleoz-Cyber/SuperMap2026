@@ -35,7 +35,7 @@ import CandidateLeaderboard from '../components/experiments/CandidateLeaderboard
 import ExperimentLabLayout from '../components/experiments/ExperimentLabLayout.vue'
 import ParameterImpactSummary from '../components/experiments/ParameterImpactSummary.vue'
 import SpatialPreview, { type SpatialPointInput } from '../components/upload/SpatialPreview.vue'
-import PageNavigation from '../components/navigation/PageNavigation.vue'
+import PageContextHeader from '../components/navigation/PageContextHeader.vue'
 import AsyncState from '../components/states/AsyncState.vue'
 import { fetchDatasetPoints } from '../api/client'
 
@@ -399,9 +399,20 @@ onBeforeUnmount(stopPolling)
 </script>
 
 <template>
-  <div class="experiment-page">
-    <PageNavigation v-if="isCreate" :case-id="caseId" current-label="新建实验" />
-    <PageNavigation v-else :case-id="experiment?.case_id" :experiment-id="experimentId" :current-label="experiment?.name ?? '实验详情'" />
+  <div class="experiment-page product-page">
+    <PageContextHeader
+      v-if="isCreate"
+      title="新建建模实验"
+      subtitle="选择插值算法、验证方法和参数组合，运行后可在模型比较中查看结果。"
+      :case-id="caseId"
+    />
+    <PageContextHeader
+      v-else
+      :title="`${experiment?.name ?? '建模实验'} · 实验详情`"
+      subtitle="查看运行进度、候选成果、验证指标和失败原因。"
+      :case-id="experiment?.case_id"
+      :experiment-id="experimentId"
+    />
     <AsyncState
       v-if="loadError"
       kind="error"
@@ -411,14 +422,13 @@ onBeforeUnmount(stopPolling)
     />
 
     <template v-else-if="isCreate">
-      <header class="page-header">
-        <h1>调参实验室</h1>
+      <div class="experiment-context">
         <p v-if="dataset" class="page-sub">
           数据集 <b>{{ dataset.profile?.original_filename ?? dataset.id }}</b> ·
           {{ dimension === '3d' ? '三维' : '二维' }} · 案例
           <span class="mono">{{ caseId }}</span>
         </p>
-      </header>
+      </div>
       <div v-if="actionError" class="action-error" role="alert" data-test="action-error">{{ actionError }}</div>
       <ExperimentLabLayout
         v-if="dataset"
@@ -596,12 +606,11 @@ onBeforeUnmount(stopPolling)
     </template>
 
     <template v-else>
-      <header class="page-header">
-        <h1>{{ experiment?.name ?? '实验详情' }}</h1>
+      <div class="experiment-context">
         <p class="page-sub">
           实验 <span class="mono">{{ experimentId }}</span>
         </p>
-      </header>
+      </div>
       <div v-if="actionError" class="action-error" role="alert" data-test="action-error">{{ actionError }}</div>
       <SearchSummary v-if="experiment" :params="experiment.params" />
       <RunPipeline :run="latestRun" />
@@ -615,7 +624,7 @@ onBeforeUnmount(stopPolling)
 <style scoped>
 .experiment-page {
   min-height: 100%;
-  max-width: 1080px;
+  max-width: var(--s1-page-standard);
   margin: 0 auto;
   padding: 28px 20px 48px;
   display: flex;

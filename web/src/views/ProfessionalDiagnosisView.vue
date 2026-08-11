@@ -387,7 +387,7 @@ onBeforeUnmount(stopPolling)
 </script>
 
 <template>
-  <div class="diagnosis-page">
+  <div class="diagnosis-page product-page">
     <PageNavigation :case-id="caseId || undefined" :dataset-id="datasetId" current-label="空间结构分析" />
     <header class="page-header">
       <h1>空间结构分析</h1>
@@ -528,7 +528,7 @@ onBeforeUnmount(stopPolling)
 <style scoped>
 .diagnosis-page {
   min-height: 100%;
-  max-width: 1080px;
+  max-width: var(--s1-page-standard);
   margin: 0 auto;
   padding: 28px 20px 48px;
   display: flex;

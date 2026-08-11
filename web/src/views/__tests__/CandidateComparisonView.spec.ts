@@ -214,10 +214,10 @@ describe('CandidateComparisonView', () => {
     )
   })
 
-  it('标题为「模型对比」且使用可读算法标签', async () => {
+  it('标题为「模型比较」且使用可读算法标签', async () => {
     const { wrapper } = await mountView()
-    expect(wrapper.find('h1').text()).toBe('模型对比')
-    expect(wrapper.text()).toContain('同一数据版本和验证方法下比较不同实验结果')
+    expect(wrapper.find('h1').text()).toBe('模型比较')
+    expect(wrapper.text()).toContain('同一数据版本和验证口径下比较候选成果')
     expect(wrapper.text()).toContain('IDW（反距离加权）')
     expect(wrapper.text()).toContain('普通克里金')
     expect(wrapper.text()).toContain('DSI-like 离散平滑插值')

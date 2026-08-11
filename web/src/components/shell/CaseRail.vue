@@ -168,7 +168,7 @@ function dataFormOf(c: CaseSummary): string | null {
               class="item-btn ghost"
               data-test="new-experiment"
             >
-              新建实验
+              新建建模实验
             </RouterLink>
           </template>
           <RouterLink v-else :to="`/cases/${c.case_id}`" class="item-btn primary" data-test="enter-case-workspace">

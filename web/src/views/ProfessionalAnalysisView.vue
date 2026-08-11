@@ -197,7 +197,7 @@ const capabilityEntries = computed(() => {
 </script>
 
 <template>
-  <div class="analysis-page">
+  <div class="analysis-page product-page">
     <PageNavigation
       :case-id="experiment?.case_id"
       :experiment-id="metadata?.experiment_id"
@@ -330,7 +330,7 @@ const capabilityEntries = computed(() => {
 <style scoped>
 .analysis-page {
   min-height: 100%;
-  max-width: 1080px;
+  max-width: var(--s1-page-standard);
   margin: 0 auto;
   padding: 28px 20px 48px;
   display: flex;

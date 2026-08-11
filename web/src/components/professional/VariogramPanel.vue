@@ -349,7 +349,7 @@ onBeforeUnmount(() => {
 }
 
 .unsupported-note {
-  font-size: 11px;
+  font-size: 12px;
   color: #e5c76b;
 }
 
@@ -358,7 +358,7 @@ onBeforeUnmount(() => {
   color: var(--gmp-accent);
   border-radius: 6px;
   padding: 2px 8px;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .bins-table-wrap {
@@ -400,7 +400,7 @@ onBeforeUnmount(() => {
   }
 
   .sampling-line {
-    font-size: 11px;
+    font-size: 12px;
     gap: 6px 12px;
   }
 
@@ -409,12 +409,12 @@ onBeforeUnmount(() => {
   }
 
   .direction-picker {
-    font-size: 11px;
+    font-size: 12px;
     gap: 6px 10px;
   }
 
   .bins-table {
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .bins-table th,
