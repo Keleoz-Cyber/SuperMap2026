@@ -219,7 +219,7 @@ test('真实链路：上传 → 映射 → 质量 → IDW → 排行榜 → 成�
 
   // 8. 导出证据 ZIP（下载事件验证真实 ZIP 字节）
   // v0.9.0：导出与发布归入证据与溯源抽屉，先展开再操作
-  await page.getByTestId('provenance-toggle').click()
+  await page.getByTestId('ge-tab-provenance').click()
   await page.getByTestId('export-button').click()
   const downloadPromise = page.waitForEvent('download', { timeout: 60_000 })
   await page.getByTestId('export-download').click()
@@ -231,9 +231,9 @@ test('真实链路：上传 → 映射 → 质量 → IDW → 排行榜 → 成�
   expect(zipBytes.subarray(0, 2).toString()).toBe('PK')
 
   // 9. 返回实验 → 返回首页；案例卡持久化可见
-  await page.getByTestId('crumb-experiment').click()
+  await page.getByTestId('v6-nav-experiment').click()
   await expect(page).toHaveURL(/#\/experiments\/[0-9a-f-]+/)
-  await page.getByTestId('crumb-home').click()
+  await page.getByTestId('shell-home-link').click()
   await expect(page).toHaveURL(/#\/$/)
   await expect(page.getByText(caseName)).toBeVisible()
 })
@@ -370,7 +370,7 @@ test.describe('v0.6 专业建模流程（真实链路）', () => {
 
     // 12. 回成果工作台导出证据 ZIP：真实字节 + professional/ 逻辑名核对
     await page.goto(resultUrl)
-    await page.getByTestId('provenance-toggle').click()
+    await page.getByTestId('ge-tab-provenance').click()
     await page.getByTestId('export-button').click()
     const downloadPromise = page.waitForEvent('download', { timeout: 60_000 })
     await page.getByTestId('export-download').click()
@@ -407,7 +407,7 @@ test.describe('v0.6 专业建模流程（真实链路）', () => {
     ).toBe(true)
 
     // 13. 返回首页；案例卡持久化可见
-    await page.getByTestId('crumb-home').click()
+    await page.getByTestId('v6-nav-home').click()
     await expect(page).toHaveURL(/#\/$/)
     await expect(page.getByText(caseName)).toBeVisible()
   })

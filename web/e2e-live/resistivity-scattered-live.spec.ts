@@ -335,7 +335,7 @@ test.describe('v0.8.0：电阻率散点预置 + DSI-like 真实 SDK live 门', (
     await expect(page).toHaveURL(/#\/results\//, { timeout: 60_000 })
     const dsiResultId = page.url().split('/results/')[1]
     expect(dsiResultId).toBeTruthy()
-    await expect(page.locator('.page-sub')).toContainText('dsi_like')
+    await expect(page.getByTestId('v6-result-summary')).toContainText('DSI-like')
     await expect(page.getByTestId('native-volume-panel')).toBeVisible({ timeout: 60_000 })
 
     const createButton = page.getByTestId('create-asset')

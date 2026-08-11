@@ -395,7 +395,9 @@ describe('导航', () => {
         { path: '/', name: 'home', component: { template: '<div />' } },
         { path: '/cases/:caseId', name: 'case-workspace', component: { template: '<div />' } },
         { path: '/experiments/:experimentId', name: 'experiment-detail', component: { template: '<div />' } },
+        { path: '/datasets/:datasetId/candidate-comparison', name: 'candidate-comparison', component: { template: '<div />' } },
         { path: '/results/:resultId', name: 'result-workbench', component: ResultWorkbenchView },
+        { path: '/results/:resultId/evaluation', name: 'model-evaluation', component: { template: '<div />' } },
       ],
     })
     const metadata = makeMetadata('2d')
@@ -429,11 +431,12 @@ describe('导航', () => {
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [
-      { path: '/cases/:caseId', name: 'case-workspace', component: { template: '<div />' } },
-      { path: '/datasets/:datasetId/candidate-comparison', name: 'candidate-comparison', component: { template: '<div />' } },
-
         { path: '/', name: 'home', component: { template: '<div />' } },
+        { path: '/cases/:caseId', name: 'case-workspace', component: { template: '<div />' } },
+        { path: '/experiments/:experimentId', name: 'experiment-detail', component: { template: '<div />' } },
+        { path: '/datasets/:datasetId/candidate-comparison', name: 'candidate-comparison', component: { template: '<div />' } },
         { path: '/results/:resultId', name: 'result-workbench', component: ResultWorkbenchView },
+        { path: '/results/:resultId/evaluation', name: 'model-evaluation', component: { template: '<div />' } },
       ],
     })
     await router.push('/results/r-missing')

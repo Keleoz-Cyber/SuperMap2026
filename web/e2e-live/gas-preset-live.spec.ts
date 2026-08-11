@@ -504,8 +504,8 @@ test.describe('v0.8.0 第三批：瓦斯预置官方成果真实 SDK live 门', 
     await expect(page).toHaveURL(new RegExp(`#\\/results\\/${officialResultId}`), {
       timeout: 60_000,
     })
-    await expect(page.locator('.page-sub')).toContainText('ordinary_kriging')
-    await expect(page.locator('.page-sub')).toContainText('151×333×12')
+    await expect(page.getByTestId('v6-result-summary')).toContainText('普通克里金')
+    await expect(page.getByTestId('v6-result-summary')).toContainText('151 × 333 × 12')
     await expect(page.getByTestId('native-volume-panel')).toBeVisible({ timeout: 60_000 })
     await expect(page.getByTestId('create-asset')).toHaveCount(0)
 
