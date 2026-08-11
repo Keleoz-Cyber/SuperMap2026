@@ -3,10 +3,14 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ApiError,
+  createExport,
   createRenderAssetSliceExport,
   createResultRenderAsset,
+  fetchCase,
+  fetchCases,
   fetchDatasetPoints,
   fetchExperiment,
+  fetchFormalSelections,
   fetchRenderAssetSliceAnalysis,
   fetchResultAnalysisSummary,
   fetchResultPreview,
@@ -18,6 +22,7 @@ import type {
   AnalysisSummaryResponse,
   DatasetPoints,
   ExperimentRecord,
+  PlatformCaseRecord,
   ResidualEvidence,
   ResultAnalysisSummary,
   ResultMetadata,
@@ -32,7 +37,9 @@ import type {
 import SlicePanel from '../components/results/SlicePanel.vue'
 import FormalSelectionPanel from '../components/results/FormalSelectionPanel.vue'
 import ExportPublicationPanel from '../components/results/ExportPublicationPanel.vue'
-import PageNavigation from '../components/navigation/PageNavigation.vue'
+import V6ResultTopbar from '../components/results/V6ResultTopbar.vue'
+import type { V6NavEntry } from '../components/results/V6ResultTopbar.vue'
+import V6ResultSummary from '../components/results/V6ResultSummary.vue'
 import AsyncState from '../components/states/AsyncState.vue'
 import ResultAnalysisWorkbench from '../components/results/ResultAnalysisWorkbench.vue'
 import { buildPresentationFindings, type PresentationFinding } from '../domain/findings'
@@ -41,14 +48,12 @@ import type { AnalysisSelection } from '../components/analysis/analysisTypes'
 import { createAnalysisSelectionController } from '../composables/useAnalysisSelection'
 import type { SliceAxis } from '../api/types'
 
+// v0.9.0 V6 Task 3：成果页 = 成果专用顶栏 + 成果摘要条 + 一屏工作台外壳。
+// 页面本身在大屏下禁止纵向滚动；长内容只在右栏与证据窗内部滚动。
+
 const route = useRoute()
 const router = useRouter()
 const resultId = computed(() => String(route.params.resultId))
-
-// v0.7.0：每个已物化成果都有模型评估入口
-function gotoModelEvaluation() {
-  void router.push({ name: 'model-evaluation', params: { resultId: resultId.value } })
-}
 
 const metadata = ref<ResultMetadata | null>(null)
 const experiment = ref<ExperimentRecord | null>(null)
@@ -62,14 +67,31 @@ const analysis = ref<AnalysisSummaryResponse | null>(null)
 const residuals = ref<ResidualEvidence | null>(null)
 
 // v0.9.0 Task 9：成果级分析（只读 GET；identity 绑定 result_id + grid_sha256）
-// 与数据集级摘要严格分离；失败仅记录类型化错误，绝不回退旧摘要。
 const resultAnalysis = ref<ResultAnalysisSummary | null>(null)
 const resultAnalysisError = ref<string | null>(null)
 const resultAnalysisLoading = ref(false)
-// 权威剖面响应（当前切片证据，由 NativeVolumePanel 外发）；聚焦组件身份
 const currentSlice = ref<SliceAnalysisResponse | null>(null)
 const focusedComponentId = ref<number | null>(null)
 const volumePanelRef = ref<InstanceType<typeof NativeVolumePanel> | null>(null)
+
+// v0.9.0 V6：顶栏/摘要条上下文（案例、案例列表、正式成果状态、导出状态）
+const caseRecord = ref<PlatformCaseRecord | null>(null)
+const caseOptions = ref<Array<{ id: string; name: string }>>([])
+const formalSelected = ref<boolean | null>(null)
+const exporting = ref(false)
+const exportError = ref<string | null>(null)
+const renderAssetIdentity = ref<{
+  assetId: string
+  renderer: string
+  status: string
+  gridSha256: string
+  netcdfSha256: string | null
+  geolocationStatus: string
+} | null>(null)
+
+function onAssetIdentity(info: typeof renderAssetIdentity.value) {
+  renderAssetIdentity.value = info
+}
 
 const findings = computed<PresentationFinding[]>(() =>
   analysis.value ? buildPresentationFindings(analysis.value) : [],
@@ -77,15 +99,11 @@ const findings = computed<PresentationFinding[]>(() =>
 
 // ---------------------------------------------------------------------------
 // v0.9.0 Task 12：图表—三维双向联动
-// 选择控制器持有身份上下文；图表区间/发现定位 → 正交切片请求；
-// 渲染器不支持的请求显示类型化能力通知，绝不伪报定位成功。
 // ---------------------------------------------------------------------------
 const selection = createAnalysisSelectionController()
 const sliceRequest = ref<{ axis: SliceAxis; range: [number, number]; token: number } | null>(null)
 const capabilityNotice = ref<string | null>(null)
-const dockTab = ref<'composition' | 'depth' | 'components' | 'slice' | 'model' | 'input' | 'provenance'>(
-  'composition',
-)
+const dockTab = ref<'overview' | 'slices' | 'model' | 'provenance'>('overview')
 let sliceToken = 0
 
 function requestSlice(axis: SliceAxis, range: [number, number]) {
@@ -142,8 +160,8 @@ function onSelectResult(nextResultId: string) {
 }
 
 function onSliceChange() {
-  // 三维切片移动 → 证据带切到当前切片标签（反向联动）
-  dockTab.value = 'slice'
+  // 三维切片移动 → 证据窗切到「切片与异常」标签（反向联动）
+  dockTab.value = 'slices'
 }
 
 function onSliceRequestFailed(payload: { reason: string }) {
@@ -154,27 +172,74 @@ function onSliceRequestFailed(payload: { reason: string }) {
 // v0.9.0 Task 9：成果级研判 ↔ 三维双向联动
 // ---------------------------------------------------------------------------
 
-// 研判/证据点击组件：高亮（prop 回流）+ 子帧相机聚焦
 function onFocusComponent(componentId: number) {
   focusedComponentId.value = componentId
   volumePanelRef.value?.focusComponent(componentId)
 }
 
-// 三维标注点击反选：高亮同步到研判面板（相机已在标注附近，不再回驱）
 function onAnnotationSelected(payload: { componentId: number }) {
   focusedComponentId.value = payload.componentId
 }
 
-// 深度层段定位：层段 z 区间 → z 轴切片请求（复用既有正交切片链）
 function onFocusDepthBin(index: number) {
   const bin = resultAnalysis.value?.depth_profile.bins[index]
   if (!bin) return
   requestSlice('z', [bin.z_lower, bin.z_upper])
 }
 
-// 权威剖面响应：当前切片证据（研判面板与证据带共用）
 function onSliceAnalysis(response: SliceAnalysisResponse) {
   currentSlice.value = response
+}
+
+// ---------------------------------------------------------------------------
+// v0.9.0 V6：顶栏导航 / 案例切换 / 导出分析报告
+// ---------------------------------------------------------------------------
+
+const v6Nav = computed<V6NavEntry[]>(() => {
+  const exp = experiment.value
+  const entry = (key: string, label: string, to: V6NavEntry['to'], active = false): V6NavEntry => ({
+    key,
+    label,
+    to,
+    active,
+  })
+  return [
+    entry('home', '首页', { name: 'home' }),
+    entry('ingest', '数据接入', exp ? { name: 'case-workspace', params: { caseId: exp.case_id } } : null),
+    entry('experiment', '建模实验', exp ? { name: 'experiment-detail', params: { experimentId: exp.id } } : null),
+    entry(
+      'compare',
+      '模型比较',
+      exp ? { name: 'candidate-comparison', params: { datasetId: exp.params.dataset_version_id } } : null,
+    ),
+    entry('result', '成果空间', { name: 'result-workbench', params: { resultId: resultId.value } }, true),
+  ]
+})
+
+function onSelectCase(caseId: string) {
+  if (caseId && caseId !== experiment.value?.case_id) {
+    void router.push({ name: 'case-workspace', params: { caseId } })
+  }
+}
+
+// 导出分析报告：显式 POST 创建成果导出包，随后浏览器下载（唯一计费/写操作）
+async function onExportReport() {
+  if (exporting.value) return
+  exporting.value = true
+  exportError.value = null
+  try {
+    const record = await createExport(resultId.value)
+    const link = document.createElement('a')
+    link.href = `/api/exports/${record.id}/download`
+    link.download = ''
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+  } catch (e) {
+    exportError.value = e instanceof ApiError ? `${e.code}：${e.message}` : String(e)
+  } finally {
+    exporting.value = false
+  }
 }
 
 // 深链恢复：?axis=z&range=a,b&dataset=… 进入成果页时还原选择并定位切片
@@ -201,8 +266,6 @@ function restoreSelectionFromQuery() {
 // v0.6.1 NetCDF 原生体渲染：NativeVolumePanel 接线
 // ---------------------------------------------------------------------------
 
-// 面板数据层以回调注入：能力与资产状态一律纯 GET，创建是唯一 POST；
-// 剖面分析/导出经 RenderAsset 统一 API（v0.7.0 第二批，三来源共用）
 const volumeApi: NativeVolumeRenderApi = {
   fetchCapability: () => fetchResultRenderCapability(resultId.value),
   fetchAsset: () => fetchResultRenderAsset(resultId.value),
@@ -250,6 +313,10 @@ function resetForIdentityChange() {
   focusedComponentId.value = null
   sliceRequest.value = null
   capabilityNotice.value = null
+  caseRecord.value = null
+  formalSelected.value = null
+  exportError.value = null
+  renderAssetIdentity.value = null
 }
 
 // 加载序号：A→B→A 快速切换时，只有最新一次 load 的响应可以写入状态；
@@ -262,14 +329,12 @@ async function load() {
   const isCurrent = () => seq === loadSeq
   try {
     // v0.6.1：物化是唯一显式变异入口（POST 一次）；绝不把 fetchResult 当创建捷径。
-    // 切片/预览/证据只在物化成功后获取。
     const meta = await materializeResult(currentResultId)
     if (!isCurrent()) return
     metadata.value = meta
     const exp = await fetchExperiment(meta.experiment_id)
     if (!isCurrent()) return
     experiment.value = exp
-    // 选择上下文与该成果身份绑定；随后还原深链选择（若有）
     selection.setContext({ datasetId: exp.params.dataset_version_id, resultId: currentResultId })
     restoreSelectionFromQuery()
     resultAnalysisLoading.value = true
@@ -278,7 +343,6 @@ async function load() {
       fetchDatasetPoints(datasetId).then((p) => {
         if (isCurrent()) points.value = p
       }),
-      // 分析摘要只读：未验证/不可用时不产生结论，工作台显示真实空态
       fetchAnalysisSummary(datasetId)
         .then((s) => {
           if (isCurrent()) analysis.value = s
@@ -293,8 +357,6 @@ async function load() {
         .catch(() => {
           if (isCurrent()) residuals.value = null
         }),
-      // 成果级分析只读：identity 绑定 result_id + grid_sha256；失败显示类型化
-      // 错误，绝不回退旧成果摘要或数据集级统计冒充
       fetchResultAnalysisSummary(currentResultId)
         .then((s) => {
           if (!isCurrent()) return
@@ -308,6 +370,32 @@ async function load() {
         })
         .finally(() => {
           if (isCurrent()) resultAnalysisLoading.value = false
+        }),
+      // V6 顶栏/摘要条上下文（只读；失败不阻断主链）
+      fetchCase(exp.case_id)
+        .then((c) => {
+          if (isCurrent()) caseRecord.value = c
+        })
+        .catch(() => {
+          if (isCurrent()) caseRecord.value = null
+        }),
+      fetchCases()
+        .then((c) => {
+          if (isCurrent()) {
+            caseOptions.value = c.cases.map((item) => ({ id: item.case_id, name: item.title }))
+          }
+        })
+        .catch(() => {
+          if (isCurrent()) caseOptions.value = []
+        }),
+      fetchFormalSelections(exp.case_id)
+        .then((s) => {
+          if (isCurrent()) {
+            formalSelected.value = s.selections.some((sel) => sel.candidate_result_id === currentResultId)
+          }
+        })
+        .catch(() => {
+          if (isCurrent()) formalSelected.value = null
         }),
     ]
     if (meta.dimension === '3d') {
@@ -338,54 +426,64 @@ watch(resultId, (next, prev) => {
 </script>
 
 <template>
-  <div class="workbench-page">
-    <PageNavigation
-      :case-id="experiment?.case_id"
-      :experiment-id="metadata?.experiment_id"
-      :result-id="resultId"
-      current-label="成果工作台"
-    />
-    <AsyncState
-      v-if="loadError"
-      kind="error"
-      title="成果加载失败"
-      :impact="loadError"
-      next-action="返回案例工作台或实验页重新进入"
-    />
+  <div class="v6-result-page" data-test="v6-result-page">
+    <div v-if="loadError" class="v6-error">
+      <AsyncState
+        kind="error"
+        title="成果加载失败"
+        :impact="loadError"
+        next-action="返回首页或实验页重新进入"
+      />
+      <div class="v6-error-links">
+        <RouterLink to="/" data-test="crumb-home">首页</RouterLink>
+        <RouterLink
+          v-if="metadata?.experiment_id"
+          :to="{ name: 'experiment-detail', params: { experimentId: metadata.experiment_id } }"
+          data-test="crumb-experiment"
+        >
+          实验
+        </RouterLink>
+      </div>
+    </div>
 
     <template v-else-if="metadata">
-      <header class="page-header">
-        <h1>成果工作台</h1>
-        <p class="page-sub">
-          算法 <b>{{ metadata.algorithm }}</b> ·
-          <span class="mono">{{ metadata.fingerprint.slice(0, 12) }}</span> ·
-          {{ metadata.dimension === '3d' ? '三维' : '二维' }} ·
-          网格 {{ metadata.shape.join('×') }} ·
-          值域 {{ metadata.value_range[0] }} ~ {{ metadata.value_range[1] }}
-        </p>
-        <button
-          class="professional-entry"
-          data-test="model-evaluation-entry"
-          @click="gotoModelEvaluation"
-        >
-          模型评估
-        </button>
-      </header>
+      <V6ResultTopbar
+        :current-case-id="experiment?.case_id ?? null"
+        :case-title="caseRecord?.name ?? null"
+        :case-options="caseOptions.length > 0 ? caseOptions : experiment ? [{ id: experiment.case_id, name: caseRecord?.name ?? experiment.case_id }] : []"
+        :nav="v6Nav"
+        :exporting="exporting"
+        @select-case="onSelectCase"
+        @export-report="onExportReport"
+      />
+      <p v-if="exportError" class="export-error" data-test="export-error" role="status">
+        导出失败：{{ exportError }}
+      </p>
+      <V6ResultSummary
+        :case-title="caseRecord?.name ?? null"
+        :metadata="metadata"
+        :variable="resultAnalysis?.variable ?? null"
+        :valid-sample-count="analysis?.quality.valid_count ?? null"
+        :r2="metadata.evaluation_summary?.r2 ?? null"
+        :common-valid-count="metadata.evaluation_summary?.common_valid_count ?? null"
+        :formal-selected="formalSelected"
+        :result-id="resultId"
+      />
 
       <ResultAnalysisWorkbench
-        class="page-workbench"
+        class="v6-body"
         v-model:dock-tab="dockTab"
         :findings="findings"
         :summary="analysis"
         :residuals="residuals"
         :dataset-id="experiment?.params.dataset_version_id ?? null"
         :result-id="resultId"
-        :evaluation="metadata.evaluation_summary ?? null"
         :analysis="resultAnalysis"
         :analysis-loading="resultAnalysisLoading"
         :analysis-error="resultAnalysisError"
         :current-slice="currentSlice"
         :focused-component-id="focusedComponentId"
+        :asset-identity="renderAssetIdentity"
         :selection-notice="capabilityNotice"
         @locate="onFindingLocate"
         @select="onEvidenceSelect"
@@ -394,47 +492,47 @@ watch(resultId, (next, prev) => {
         @focus-depth-bin="onFocusDepthBin"
       >
         <template #scene>
-          <section class="panel">
-            <div v-if="metadata.dimension === '3d'" class="view-tabs">
-              <button
-                class="view-tab"
-                :class="{ active: activeTab === 'field' }"
-                data-test="tab-field"
-                @click="activeTab = 'field'"
-              >
-                完整场
-              </button>
-              <button
-                class="view-tab"
-                :class="{ active: activeTab === 'slices' }"
-                data-test="tab-slices"
-                @click="activeTab = 'slices'"
-              >
-                X / Y / Z 切片
-              </button>
-            </div>
+          <div v-if="metadata.dimension === '3d'" class="view-tabs">
+            <button
+              class="view-tab"
+              :class="{ active: activeTab === 'field' }"
+              data-test="tab-field"
+              @click="activeTab = 'field'"
+            >
+              完整场
+            </button>
+            <button
+              class="view-tab"
+              :class="{ active: activeTab === 'slices' }"
+              data-test="tab-slices"
+              @click="activeTab = 'slices'"
+            >
+              X / Y / Z 切片
+            </button>
+          </div>
 
-            <NativeVolumePanel
-              v-if="metadata.dimension === '3d' && activeTab === 'field'"
-              ref="volumePanelRef"
-              :api="volumeApi"
-              :aux-points="gridSamplePoints"
-              :slice-request="sliceRequest"
-              :components="resultAnalysis?.components_preview.rows ?? null"
-              :focused-component-id="focusedComponentId"
-              @slice-change="onSliceChange"
-              @slice-request-failed="onSliceRequestFailed"
-              @annotation-selected="onAnnotationSelected"
-              @slice-analysis="onSliceAnalysis"
-            />
-            <SlicePanel
-              v-else
-              :result-id="resultId"
-              :dimension="metadata.dimension"
-              :shape="metadata.shape"
-              :source-points="sourcePoints"
-            />
-          </section>
+          <NativeVolumePanel
+            v-if="metadata.dimension === '3d' && activeTab === 'field'"
+            ref="volumePanelRef"
+            variant="workbench"
+            :api="volumeApi"
+            :aux-points="gridSamplePoints"
+            :slice-request="sliceRequest"
+            :components="resultAnalysis?.components_preview.rows ?? null"
+            :focused-component-id="focusedComponentId"
+            @slice-change="onSliceChange"
+            @slice-request-failed="onSliceRequestFailed"
+            @annotation-selected="onAnnotationSelected"
+            @slice-analysis="onSliceAnalysis"
+            @asset-identity="onAssetIdentity"
+          />
+          <SlicePanel
+            v-else
+            :result-id="resultId"
+            :dimension="metadata.dimension"
+            :shape="metadata.shape"
+            :source-points="sourcePoints"
+          />
         </template>
         <template #evaluation>
           <FormalSelectionPanel v-if="experiment" :result-id="resultId" :case-id="experiment.case_id" />
@@ -450,94 +548,50 @@ watch(resultId, (next, prev) => {
 </template>
 
 <style scoped>
-.workbench-page {
+.v6-result-page {
   min-height: 100%;
-  max-width: 1760px;
-  margin: 0 auto;
-  padding: 28px 20px 48px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
 }
 
+/* 大屏一屏外壳：页面不滚动；主舞台与证据窗内部自适应 */
 @media (min-width: 1200px) and (min-height: 800px) {
-  .workbench-page {
-    height: calc(100vh - 52px);
-    min-height: 0;
-    box-sizing: border-box;
-    padding: 12px 20px;
-    gap: 8px;
+  .v6-result-page {
+    height: 100dvh;
     overflow: hidden;
   }
 
-  .page-header {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-    column-gap: 16px;
-  }
-
-  .page-sub {
-    margin-top: 4px;
-  }
-
-  .professional-entry {
-    grid-column: 2;
-    grid-row: 1 / span 2;
-    margin-top: 0;
-  }
-
-  .page-workbench {
+  .v6-body {
     flex: 1;
     min-height: 0;
   }
 }
 
-.page-header h1 {
-  margin: 0;
-  font-size: 20px;
+.v6-error {
+  padding: 48px 20px;
+  max-width: 720px;
+  margin: 0 auto;
 }
 
-.page-sub {
-  margin: 8px 0 0;
-  font-size: 12px;
-  color: var(--gmp-text-faint);
+.v6-error-links {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  margin-top: 12px;
 }
 
-.mono {
-  font-family: ui-monospace, monospace;
-}
-
-.back-link {
-  margin-left: 12px;
+.v6-error-links a {
   color: var(--gmp-accent);
   text-decoration: none;
+  font-size: 13px;
 }
 
-.professional-entry {
-  margin-top: 10px;
-  border: 1px solid var(--gmp-accent);
-  background: transparent;
-  color: var(--gmp-accent);
-  border-radius: 8px;
-  padding: 6px 16px;
+.export-error {
+  margin: 0;
+  padding: 4px 18px;
   font-size: 12px;
-  cursor: pointer;
-  align-self: flex-start;
-}
-
-.professional-entry:hover {
-  background: rgba(79, 209, 197, 0.1);
-}
-
-.panel {
-  background: var(--gmp-card);
-  border: 1px solid var(--gmp-border);
-  border-radius: 12px;
-  padding: 16px 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  color: var(--s1-warning, #d9a84e);
+  border-bottom: 1px solid var(--s1-border, #22322c);
 }
 
 .view-tabs {
@@ -550,7 +604,7 @@ watch(resultId, (next, prev) => {
   background: var(--gmp-bg-soft);
   color: var(--gmp-text-dim);
   border-radius: 8px;
-  padding: 6px 14px;
+  padding: 5px 14px;
   font-size: 12px;
   cursor: pointer;
 }

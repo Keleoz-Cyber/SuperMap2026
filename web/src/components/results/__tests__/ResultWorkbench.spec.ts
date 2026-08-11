@@ -51,6 +51,8 @@ vi.mock('../../../api/client', async (importOriginal) => {
     fetchResultRenderAsset: vi.fn(),
     createResultRenderAsset: vi.fn(),
     fetchResultAnalysisSummary: vi.fn(),
+    fetchCase: vi.fn(),
+    fetchCases: vi.fn(),
   }
 })
 
@@ -240,9 +242,23 @@ async function mountWorkbench(metadata: ResultMetadata) {
     new client.ApiError('RENDER_ASSET_NOT_FOUND', '该渲染源尚未创建渲染资产', 404),
   )
   vi.mocked(client.createResultRenderAsset).mockResolvedValue(ASSET_READY)
+  vi.mocked(client.fetchCase).mockResolvedValue({
+    id: 'c1',
+    name: '测试案例',
+    case_type: 'generic',
+    config: {},
+    created_at: T,
+    updated_at: T,
+  })
+  vi.mocked(client.fetchCases).mockResolvedValue({
+    cases: [{ case_id: 'c1', title: '测试案例', status: 'active', links: { detail: '/cases/c1', publish_status: null } }],
+  })
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
+      { path: '/cases/:caseId', name: 'case-workspace', component: { template: '<div />' } },
+      { path: '/datasets/:datasetId/candidate-comparison', name: 'candidate-comparison', component: { template: '<div />' } },
+
       { path: '/', name: 'home', component: { template: '<div />' } },
       { path: '/experiments/:experimentId', name: 'experiment-detail', component: { template: '<div />' } },
       { path: '/results/:resultId', name: 'result-workbench', component: ResultWorkbenchView },
@@ -259,6 +275,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   // 默认：成果级分析成功（单测可覆盖为失败/按身份区分）
   vi.mocked(client.fetchResultAnalysisSummary).mockResolvedValue(RESULT_ANALYSIS_MOCK_3D)
+  vi.mocked(client.fetchFormalSelections).mockResolvedValue({ case_id: 'c1', selections: [] })
 })
 
 describe('ResultWorkbenchView', () => {
@@ -336,6 +353,9 @@ describe('ResultWorkbenchView', () => {
     vi.mocked(client.createPublication).mockResolvedValue(PUBLICATION)
     const { wrapper } = await mountWorkbench(makeMetadata('2d'))
 
+    // v0.9.0 V6：导出/发布迁入证据窗「数据溯源」标签
+    await wrapper.get('[data-test="ge-tab-provenance"]').trigger('click')
+    await flushPromises()
     expect(wrapper.find('[data-test="publication-status"]').text()).toContain('未请求')
     await wrapper.find('[data-test="export-button"]').trigger('click')
     await flushPromises()
@@ -388,7 +408,7 @@ describe('导航', () => {
     const wrapper = mount(ResultWorkbenchView, { global: { plugins: [router, ElementPlus] } })
     await flushPromises()
 
-    await wrapper.get('[data-test="crumb-experiment"]').trigger('click')
+    await wrapper.get('[data-test="v6-nav-experiment"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value).toMatchObject({
       name: 'experiment-detail',
@@ -397,7 +417,7 @@ describe('导航', () => {
 
     await router.push('/results/r1')
     await flushPromises()
-    await wrapper.get('[data-test="crumb-home"]').trigger('click')
+    await wrapper.get('[data-test="v6-nav-home"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.name).toBe('home')
   })
@@ -409,6 +429,9 @@ describe('导航', () => {
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [
+      { path: '/cases/:caseId', name: 'case-workspace', component: { template: '<div />' } },
+      { path: '/datasets/:datasetId/candidate-comparison', name: 'candidate-comparison', component: { template: '<div />' } },
+
         { path: '/', name: 'home', component: { template: '<div />' } },
         { path: '/results/:resultId', name: 'result-workbench', component: ResultWorkbenchView },
       ],
@@ -430,6 +453,8 @@ describe('导出下载', () => {
   it('下载链接使用返回的 export id 而非 result id', async () => {
     vi.mocked(client.createExport).mockResolvedValue(EXPORT)
     const { wrapper } = await mountWorkbench(makeMetadata('2d'))
+    await wrapper.get('[data-test="ge-tab-provenance"]').trigger('click')
+    await flushPromises()
     await wrapper.find('[data-test="export-button"]').trigger('click')
     await flushPromises()
     const link = wrapper.get('[data-test="export-download"]')

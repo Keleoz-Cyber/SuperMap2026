@@ -6,9 +6,8 @@ import type { PresentationFinding } from '../../../domain/findings'
 import ResultAnalysisWorkbench from '../ResultAnalysisWorkbench.vue'
 import { RESULT_ANALYSIS_MOCK_3D, SLICE_ANALYSIS_MOCK } from '../../../mocks/resultAnalysisMock'
 
-// v0.9.0 Task 9：成果与分析融合工作台合同（成果级分析版）。首屏同时包含
-// 三维场景、成果级规则研判、成果网格证据带、模型评估摘要与溯源抽屉；
-// 组件只组合不 fetch；数据集级证据只出现在「输入样本」标签下。
+// v0.9.0 V6：成果工作台一屏布局合同。三栏主舞台（工具/场景/研判）+
+// 四标签证据窗；组合器不 fetch；调试身份只在数据溯源出现。
 
 const chartInstances: Array<{ dispose: ReturnType<typeof vi.fn> }> = []
 vi.mock('echarts/core', () => ({
@@ -28,7 +27,7 @@ vi.mock('echarts/components', () => ({
 }))
 vi.mock('echarts/renderers', () => ({ CanvasRenderer: {} }))
 
-// AI 辅助面板桩：只保留 evidence ref 联动出口，AI 自身行为由专属 spec 覆盖
+// AI 辅助面板桩：只保留 evidence ref 联动出口
 const AIStub = {
   name: 'AIAssistedReview',
   emits: ['focus-evidence'],
@@ -94,7 +93,6 @@ function mountWorkbench(props: Record<string, unknown> = {}) {
       residuals: null,
       datasetId: 'ds-1',
       resultId: 'r-1',
-      evaluation: EVALUATION,
       analysis: RESULT_ANALYSIS_MOCK_3D,
       currentSlice: null,
       ...props,
@@ -108,32 +106,32 @@ function mountWorkbench(props: Record<string, unknown> = {}) {
     attachTo: document.body,
   })
 }
+void EVALUATION
 
-describe('ResultAnalysisWorkbench', () => {
-  it('first screen composes scene, result interpretation, evidence dock, model metrics and provenance', async () => {
+describe('ResultAnalysisWorkbench（V6 一屏布局）', () => {
+  it('main stage composes scene slot and analysis side; dock shows four tabs', async () => {
     const wrapper = mountWorkbench()
     await flushPromises()
+    expect(wrapper.find('[data-test="v6-main-stage"]').exists()).toBe(true)
     expect(wrapper.get('[data-test="result-scene"]').text()).toContain('三维场景')
-    // 成果级研判：后端发现与 A/B/C 组件
+    expect(wrapper.find('[data-test="result-analysis-side"]').exists()).toBe(true)
     expect(wrapper.get('[data-test="result-interpretation"]').text()).toContain('最大高值连通区为 A 区')
-    expect(wrapper.find('[data-test="component-1"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="result-evidence-dock"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="result-grid-evidence"]').exists()).toBe(true)
-    expect(wrapper.get('[data-test="result-evaluation"]').text()).toContain('RMSE')
-    expect(wrapper.get('[data-test="result-evaluation"]').text()).toContain('6.454')
-    expect(wrapper.find('[data-test="provenance-drawer"]').exists()).toBe(true)
+    const tabs = wrapper.findAll('[data-test^="ge-tab-"]')
+    expect(tabs.map((t) => t.text())).toEqual(['综合分析', '切片与异常', '模型证据', '数据溯源'])
   })
 
-  it('dataset-level findings live only under the input-sample dock tab', async () => {
+  it('dataset-level findings live only under the provenance input-sample cell', async () => {
     const wrapper = mountWorkbench()
     await flushPromises()
-    // 输入样本证据明确标注，不混入成果级研判区
     expect(wrapper.get('[data-test="result-interpretation"]').text()).not.toContain('有效数据 96/100')
-    await wrapper.get('[data-test="ge-tab-input"]').trigger('click')
+    await wrapper.get('[data-test="ge-tab-provenance"]').trigger('click')
     await flushPromises()
-    const pane = wrapper.get('[data-test="ge-pane-input"]')
+    const pane = wrapper.get('[data-test="ge-pane-provenance"]')
     expect(pane.text()).toContain('输入样本')
     expect(pane.text()).toContain('有效数据 96/100')
+    // 导出/发布内容迁入数据溯源标签
+    expect(pane.find('[data-test="slot-export"]').exists()).toBe(true)
   })
 
   it('forwards component and depth-bin focus events from interpretation and dock', async () => {
@@ -164,43 +162,27 @@ describe('ResultAnalysisWorkbench', () => {
     expect(wrapper.find('[data-test="component-1"]').exists()).toBe(false)
   })
 
-  it('provenance drawer expands to reveal export/provenance slot content', async () => {
+  it('evaluation slot renders formal selection inside analysis side', async () => {
     const wrapper = mountWorkbench()
     await flushPromises()
-    expect(wrapper.find('.provenance-body').isVisible()).toBe(false)
-    await wrapper.get('[data-test="provenance-toggle"]').trigger('click')
-    await flushPromises()
-    expect(wrapper.find('.provenance-body').isVisible()).toBe(true)
-    expect(wrapper.find('[data-test="slot-export"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="result-evaluation"]').find('[data-test="slot-selection"]').exists()).toBe(true)
   })
 
-  it('model evaluation renders finite metrics only, never NaN', async () => {
+  it('rule/AI tab switch keeps rule analysis default; AI evidence refs link components, depth bins and dock tabs', async () => {
     const wrapper = mountWorkbench()
     await flushPromises()
-    const text = wrapper.get('[data-test="result-evaluation"]').text()
-    expect(text).not.toContain('NaN')
-    expect(text).not.toContain('undefined')
-  })
-
-  it('rule/AI tab switch keeps rule analysis default; AI evidence refs link to components, depth bins and dock tabs', async () => {
-    const wrapper = mountWorkbench()
-    await flushPromises()
-    // 默认规则研判
     expect(wrapper.find('[data-test="result-interpretation"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="ai-stub"]').exists()).toBe(false)
-    // 切到 AI 辅助
     await wrapper.get('[data-test="side-tab-ai"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-test="result-interpretation"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="ai-stub"]').exists()).toBe(true)
-    // evidence ref → 组件/层段聚焦事件
     await wrapper.get('[data-test="ai-stub-ref-component"]').trigger('click')
     expect(wrapper.emitted('focus-component')).toEqual([[1]])
     await wrapper.get('[data-test="ai-stub-ref-depth"]').trigger('click')
     expect(wrapper.emitted('focus-depth-bin')).toEqual([[2]])
-    // evidence ref → 全局证据：证据带切到当前切片标签
     await wrapper.get('[data-test="ai-stub-ref-slice"]').trigger('click')
     await flushPromises()
-    expect(wrapper.find('[data-test="ge-pane-slice"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="ge-pane-slices"]').exists()).toBe(true)
   })
 })

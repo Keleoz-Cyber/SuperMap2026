@@ -65,8 +65,11 @@ const props = withDefaults(
     // v0.9.0 Task 9：成果级高值连通区（异常标注唯一事实源）与外部聚焦组件
     components?: ResultComponentPreview[] | null
     focusedComponentId?: number | null
+    // v0.9.0 V6：workbench 变体隐藏调试性外壳（标题/真值标签/资产身份块），
+    // 场景只保留一行轻量状态条与 fail-closed 错误/动作
+    variant?: 'default' | 'workbench'
   }>(),
-  { auxPoints: null, sliceRequest: null, components: null, focusedComponentId: null },
+  { auxPoints: null, sliceRequest: null, components: null, focusedComponentId: null, variant: 'default' },
 )
 
 const emit = defineEmits<{
@@ -77,6 +80,18 @@ const emit = defineEmits<{
   // v0.9.0 Task 9：三维标注点击反选组件；权威剖面响应外发（当前切片证据）
   (e: 'annotation-selected', payload: { componentId: number }): void
   (e: 'slice-analysis', response: SliceAnalysisResponse): void
+  // v0.9.0 V6：资产身份外发（成果页「数据溯源」展示；主舞台不再显示调试块）
+  (
+    e: 'asset-identity',
+    info: {
+      assetId: string
+      renderer: string
+      status: string
+      gridSha256: string
+      netcdfSha256: string | null
+      geolocationStatus: string
+    } | null,
+  ): void
 }>()
 
 type VolumePhase = 'idle' | 'loading' | 'rendered' | 'failed'
@@ -295,6 +310,8 @@ const phaseText = computed(() => {
   }
 })
 
+const isWorkbench = computed(() => props.variant === 'workbench')
+
 async function refreshAsset() {
   // 状态刷新是纯 GET：绝不隐式 POST
   try {
@@ -368,6 +385,28 @@ function onFrameRendered(payload: RenderIdentity | null) {
   identity.value = payload
   phase.value = 'rendered'
 }
+
+// 资产身份外发：数据溯源页签展示（workbench 变体不在主舞台显示调试块）
+watch(
+  () => [asset.value?.id ?? null, capability.value?.geolocation_status ?? null] as const,
+  () => {
+    const record = asset.value
+    const cap = capability.value
+    if (!record || !cap) {
+      emit('asset-identity', null)
+      return
+    }
+    emit('asset-identity', {
+      assetId: record.id,
+      renderer: record.renderer,
+      status: record.status,
+      gridSha256: record.grid_sha256,
+      netcdfSha256: record.netcdf_sha256,
+      geolocationStatus: cap.geolocation_status,
+    })
+  },
+  { immediate: true },
+)
 
 function onFrameFailed(error: { code: string; message: string }) {
   // 原生失败保持显式错误：绝不切换到任何替代渲染
@@ -577,18 +616,26 @@ onMounted(() => {
 </script>
 
 <template>
-  <section class="native-volume-panel" data-test="native-volume-panel">
-    <header class="panel-header">
+  <section class="native-volume-panel" :class="{ workbench: isWorkbench }" data-test="native-volume-panel">
+    <header v-if="!isWorkbench" class="panel-header">
       <h3 class="panel-title">NetCDF 原生体渲染</h3>
       <span class="volume-phase" data-test="volume-phase">{{ phaseText }}</span>
     </header>
 
-    <!-- 固定真值标签：渲染器 / 坐标状态 / 辅助点定位，恒显 -->
-    <ul class="truth-labels" data-test="truth-labels">
+    <!-- 固定真值标签：渲染器 / 坐标状态 / 辅助点定位（默认变体恒显） -->
+    <ul v-if="!isWorkbench" class="truth-labels" data-test="truth-labels">
       <li>渲染器：SuperMap3D VoxelGridLayer3D</li>
       <li>坐标状态：显示锚点（非真实地理配准）</li>
       <li>辅助采样点：不参与连续体渲染</li>
     </ul>
+
+    <!-- V6 workbench 变体：一行轻量状态条（相位/渲染器/坐标契约），调试块移入数据溯源 -->
+    <p v-if="isWorkbench" class="volume-status-line" data-test="volume-status-line">
+      <span class="volume-phase" data-test="volume-phase">{{ phaseText }}</span>
+      <span>SuperMap3D VoxelGridLayer3D</span>
+      <span v-if="capability">坐标契约：{{ capability.geolocation_status }}</span>
+      <span>辅助采样点不参与连续体渲染</span>
+    </p>
 
     <div v-if="capabilityLoading" class="panel-note" data-test="capability-loading">能力检查中…</div>
     <div v-else-if="capabilityError" class="panel-error" data-test="capability-error">
@@ -597,7 +644,7 @@ onMounted(() => {
     </div>
 
     <template v-else-if="capability">
-      <div class="panel-note" data-test="geo-status">坐标契约：{{ capability.geolocation_status }}</div>
+      <div v-if="!isWorkbench" class="panel-note" data-test="geo-status">坐标契约：{{ capability.geolocation_status }}</div>
 
       <!-- v0.9.0 Task 9：左栏显示工具 + 中央三维场景双列布局 -->
       <div class="panel-body">
@@ -700,7 +747,7 @@ onMounted(() => {
             </div>
             <div v-if="createError" class="panel-error" data-test="create-error">{{ createError }}</div>
 
-            <div v-if="asset" class="asset-identity" data-test="asset-identity">
+            <div v-if="asset && !isWorkbench" class="asset-identity" data-test="asset-identity">
               <div>资产：{{ asset.id }}（{{ asset.renderer }}，状态 {{ asset.status }}）</div>
               <div>网格 SHA-256：{{ asset.grid_sha256.slice(0, 16) }}…</div>
               <div v-if="asset.netcdf_sha256">NetCDF SHA-256：{{ asset.netcdf_sha256.slice(0, 16) }}…</div>
@@ -919,6 +966,19 @@ onMounted(() => {
 
 .toggle-label input:disabled {
   cursor: not-allowed;
+}
+
+.volume-status-line {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 12px;
+  color: var(--gmp-text-dim);
+}
+
+.volume-status-line .volume-phase {
+  color: var(--gmp-accent);
 }
 
 .style-note {

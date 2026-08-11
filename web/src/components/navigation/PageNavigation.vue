@@ -15,7 +15,7 @@ const caseLabel = computed(() => props.caseName ?? '案例')
 </script>
 
 <template>
-  <nav class="page-nav" aria-label="页面导航">
+  <nav class="page-nav" aria-label="页面导航" data-test="page-navigation">
     <ol class="breadcrumb-list">
       <li class="crumb">
         <RouterLink to="/" data-test="crumb-home">首页</RouterLink>

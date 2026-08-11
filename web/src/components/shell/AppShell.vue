@@ -2,6 +2,7 @@
 // v0.9.0：持久应用壳。拥有跳转链接、全局头和主内容区；
 // 服务状态只做轻量健康检查，不加载任何页面业务数据。
 // 答辩模式（/presentation）隐藏全局头与全部编辑/危险入口，形成真正全屏。
+// v0.9.0 V6：成果页使用专用顶栏（V6ResultTopbar），全局头同样隐藏。
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { fetchHealth } from '../../api/client'
@@ -13,6 +14,7 @@ const serviceVersion = ref<string | null>(null)
 // 单测可无路由插件直接挂载；useRoute 缺路由时返回 undefined
 const route = useRoute()
 const isPresentation = computed(() => route?.name === 'presentation')
+const isResultWorkbench = computed(() => route?.name === 'result-workbench')
 
 onMounted(async () => {
   try {
@@ -29,7 +31,7 @@ onMounted(async () => {
   <div class="app-shell" :class="{ 'presentation-fullscreen': isPresentation }">
     <a class="skip-link" href="#main-content">跳转到主内容</a>
     <AppHeader
-      v-if="!isPresentation"
+      v-if="!isPresentation && !isResultWorkbench"
       :service-state="serviceState"
       :service-version="serviceVersion"
       data-test="app-global-header"
