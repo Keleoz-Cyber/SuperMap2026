@@ -336,4 +336,39 @@ const metrics = computed(() => {
 .mono {
   font-family: ui-monospace, monospace;
 }
+
+@media (min-width: 1200px) and (min-height: 800px) {
+  .result-workbench {
+    position: relative;
+    min-height: 0;
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto auto;
+    gap: 8px;
+  }
+
+  .selection-notice {
+    position: absolute;
+    z-index: 2;
+    left: 50%;
+    transform: translateX(-50%);
+    max-width: min(720px, 60vw);
+  }
+
+  .workbench-grid {
+    min-height: 0;
+    align-items: stretch;
+  }
+
+  .workbench-scene,
+  .workbench-side {
+    min-height: 0;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+  }
+
+  .workbench-dock {
+    max-height: 220px;
+    overflow-y: auto;
+  }
+}
 </style>

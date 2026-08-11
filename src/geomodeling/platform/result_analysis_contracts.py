@@ -84,7 +84,7 @@ class ResultIdentity(ContractModel):
     grid_sha256: str
     analysis_version: str
     dimension: Literal["2d", "3d"]
-    coordinate_type: str
+    coordinate_type: CoordinateType
 
 
 class VariableInfo(ContractModel):
@@ -114,7 +114,7 @@ class GridStatistics(ContractModel):
 class Thresholds(ContractModel):
     low: float
     high: float
-    source: str
+    source: ThresholdSource
     method: str
 
     @field_validator("low", "high")
@@ -159,7 +159,7 @@ class DepthBin(ContractModel):
 
 
 class DepthProfile(ContractModel):
-    status: str
+    status: DepthProfileStatus
     bins: list[DepthBin]
 
 
@@ -256,11 +256,11 @@ class FindingEvidence(ContractModel):
 
 class Finding(ContractModel):
     id: str
-    kind: str
+    kind: FindingKind
     title: str
     statement: str
     evidence: list[FindingEvidence]
-    confidence: str
+    confidence: FindingConfidence
     limitations: list[str]
     spatial_target: SpatialTarget | None = None
 

@@ -1321,7 +1321,7 @@ export interface ResultAnalysisIdentity {
   grid_sha256: string
   analysis_version: string
   dimension: '2d' | '3d'
-  coordinate_type: string
+  coordinate_type: 'local_linear' | 'wgs84'
 }
 
 export interface ResultAnalysisVariable {
@@ -1344,7 +1344,7 @@ export interface ResultGridStatistics {
 export interface ResultThresholds {
   low: number
   high: number
-  source: string
+  source: 'full_grid_quartile'
   method: string
 }
 
@@ -1370,7 +1370,7 @@ export interface ResultDepthBin {
 export type ResultDepthProfileStatus = 'applicable' | 'not_applicable'
 
 export interface ResultDepthProfile {
-  status: ResultDepthProfileStatus | string
+  status: ResultDepthProfileStatus
   bins: ResultDepthBin[]
 }
 
@@ -1426,11 +1426,16 @@ export interface ResultFindingEvidence {
 
 export interface ResultAnalysisFinding {
   id: string
-  kind: string
+  kind:
+    | 'dominant_depth_interval'
+    | 'largest_high_component'
+    | 'boundary_contact'
+    | 'formal_model'
+    | 'uncertainty_availability'
   title: string
   statement: string
   evidence: ResultFindingEvidence[]
-  confidence: string
+  confidence: 'high' | 'medium' | 'low'
   limitations: string[]
   spatial_target: ResultSpatialTarget | null
 }
@@ -1493,7 +1498,7 @@ export interface AIReview {
   prompt_version: string
   provider: string
   model: string
-  mode: string
+  mode: AIAnalysisMode
 }
 
 export interface AIAnalysisRecord {
@@ -1504,8 +1509,8 @@ export interface AIAnalysisRecord {
   prompt_version: string
   provider: string
   model: string
-  mode: string
-  status: string
+  mode: AIAnalysisMode
+  status: AIAnalysisStatus
   review: AIReview | null
   error_code: string | null
   error_message: string | null

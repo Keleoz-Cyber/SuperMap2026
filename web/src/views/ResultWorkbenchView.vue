@@ -373,6 +373,7 @@ watch(resultId, (next, prev) => {
       </header>
 
       <ResultAnalysisWorkbench
+        class="page-workbench"
         v-model:dock-tab="dockTab"
         :findings="findings"
         :summary="analysis"
@@ -457,6 +458,39 @@ watch(resultId, (next, prev) => {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+@media (min-width: 1200px) and (min-height: 800px) {
+  .workbench-page {
+    height: calc(100vh - 52px);
+    min-height: 0;
+    box-sizing: border-box;
+    padding: 12px 20px;
+    gap: 8px;
+    overflow: hidden;
+  }
+
+  .page-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: 16px;
+  }
+
+  .page-sub {
+    margin-top: 4px;
+  }
+
+  .professional-entry {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    margin-top: 0;
+  }
+
+  .page-workbench {
+    flex: 1;
+    min-height: 0;
+  }
 }
 
 .page-header h1 {

@@ -251,6 +251,25 @@ class TestResultAnalysisContract:
         with pytest.raises(ValidationError):
             ResultAnalysisSummary.model_validate(payload)
 
+    @pytest.mark.parametrize(
+        ("path", "invalid_value"),
+        [
+            (("identity", "coordinate_type"), "invented_coordinates"),
+            (("thresholds", "source"), "slice_local_guess"),
+            (("depth_profile", "status"), "unknown"),
+            (("findings", 0, "kind"), "unsupported_finding"),
+            (("findings", 0, "confidence"), "certain"),
+        ],
+    )
+    def test_rejects_unknown_public_enum_values(self, path, invalid_value):
+        payload = _minimal_result_summary()
+        target = payload
+        for key in path[:-1]:
+            target = target[key]
+        target[path[-1]] = invalid_value
+        with pytest.raises(ValidationError):
+            ResultAnalysisSummary.model_validate(payload)
+
     def test_2d_not_applicable_depth(self):
         payload = _minimal_result_summary()
         payload["identity"]["dimension"] = "2d"
@@ -315,6 +334,12 @@ class TestAIReviewContract:
     def test_rejects_empty_evidence_ref(self):
         payload = _minimal_ai_review()
         payload["spatial_pattern"]["evidence_refs"] = ["component-1", ""]
+        with pytest.raises(ValidationError):
+            AIReview.model_validate(payload)
+
+    def test_rejects_unknown_mode(self):
+        payload = _minimal_ai_review()
+        payload["mode"] = "freeform"
         with pytest.raises(ValidationError):
             AIReview.model_validate(payload)
 

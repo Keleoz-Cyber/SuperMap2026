@@ -105,6 +105,7 @@ describe('ResultInterpretationPanel', () => {
     expect(slice.text()).toContain('-400')
     expect(slice.text()).toContain('有效 11')
     // 共享完整网格阈值的组成（夹具：低 3 / 正常 5 / 高 3）
+    expect(slice.text()).toContain('沿用完整网格 p25/p75 阈值')
     expect(slice.text()).toContain('27.3%')
     expect(slice.text()).toContain('45.5%')
     // 与完整场高值占比差值（切片 27.3% - 全场 25.0%）

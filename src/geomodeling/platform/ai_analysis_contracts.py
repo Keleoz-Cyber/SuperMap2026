@@ -134,7 +134,7 @@ class EvidenceDepthBin(ContractModel):
 
 
 class EvidenceDepthProfile(ContractModel):
-    status: str
+    status: Literal["applicable", "not_applicable"]
     bins: list[EvidenceDepthBin]
 
 
@@ -287,7 +287,7 @@ class AIReview(ContractModel):
     prompt_version: str
     provider: str
     model: str
-    mode: str
+    mode: AIAnalysisMode
 
     @model_validator(mode="after")
     def _check_evidence_refs(self) -> "AIReview":
@@ -315,8 +315,8 @@ class AIAnalysisRecord(ContractModel):
     prompt_version: str
     provider: str
     model: str
-    mode: str
-    status: str
+    mode: AIAnalysisMode
+    status: AIAnalysisStatus
     review: AIReview | None = None
     error_code: str | None = None
     error_message: str | None = None

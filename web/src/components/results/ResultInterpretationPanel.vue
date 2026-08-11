@@ -241,6 +241,7 @@ function onFindingLocate(finding: NonNullable<ResultAnalysisSummary['findings']>
             均值 {{ formatNumber(sliceStats?.mean) }}
           </p>
           <template v-if="sliceStats && sliceStats.thresholds">
+            <p class="scope-note">低/正常/高组成沿用完整网格 p25/p75 阈值</p>
             <div class="bucket-row compact">
               <div class="bucket" data-category="low">
                 <span class="bucket-label">低值</span>
