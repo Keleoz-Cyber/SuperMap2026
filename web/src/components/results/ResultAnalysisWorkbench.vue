@@ -144,7 +144,7 @@ function onFocusEvidence(ref: string) {
 
     <div
       class="workbench-dock"
-      :class="{ expanded: evidenceExpanded }"
+      :class="[{ expanded: evidenceExpanded }, `dock-${dockTabModel}`]"
       data-test="result-evidence-dock"
     >
       <button
@@ -283,7 +283,16 @@ function onFocusEvidence(ref: string) {
 }
 
 .workbench-dock.expanded {
-  height: 52vh;
+  height: clamp(440px, 58vh, 580px);
+}
+
+/* 切片/溯源内容更短：展开时按内容收口，避免为了固定高度制造大片空区。 */
+.workbench-dock.expanded.dock-slices {
+  height: clamp(390px, 44vh, 440px);
+}
+
+.workbench-dock.expanded.dock-provenance {
+  height: clamp(400px, 45vh, 450px);
 }
 
 .dock-size-toggle {

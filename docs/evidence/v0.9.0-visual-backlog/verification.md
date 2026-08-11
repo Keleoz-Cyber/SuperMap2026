@@ -16,6 +16,23 @@
 - 首页 ready 成果不再显示刷新按钮、资产 ID、SHA 或渲染身份；失败诊断仍保留。
 - 成果页首次进入时“光照”“渐变透明度”均未勾选。
 - AI 快速解读显示独立说明与独立空态，界面正文未直接出现 `depth_profile`、`spatial_components`、`result_grid` 等内部证据 ID。
+- 底部四类证据不再共用同一套自动列宽：综合分析为 4/8，切片与异常为空态时为 3/9，模型证据为 6/6，数据溯源为四个等宽摘要卡片；输入样本的分布、发现和轴向趋势收进默认折叠的详细分析。
+- 四个页签使用独立 DOM 身份，切换后内部 `scrollTop` 均回到 0，不继承上一页签的滚动位置。
+
+## 证据窗布局实测
+
+| 视口 | 页签 | 内容区 clientHeight / scrollHeight | clientWidth / scrollWidth | 结论 |
+|---|---|---:|---:|---|
+| 1440×900 | 综合分析 | 485 / 485 | 1440 / 1440 | 无内部滚动或横向溢出 |
+| 1440×900 | 切片与异常 | 359 / 359 | 1440 / 1440 | 无内部滚动或横向溢出 |
+| 1440×900 | 模型证据 | 485 / 485 | 1440 / 1440 | 无内部滚动或横向溢出 |
+| 1440×900 | 数据溯源 | 368 / 368 | 1440 / 1440 | 无内部滚动或横向溢出 |
+| 1920×1080 | 综合分析 | 543 / 543 | 1920 / 1920 | 无内部滚动或横向溢出 |
+| 1920×1080 | 切片与异常 | 403 / 403 | 1920 / 1920 | 无内部滚动或横向溢出 |
+| 1920×1080 | 模型证据 | 543 / 543 | 1920 / 1920 | 无内部滚动或横向溢出 |
+| 1920×1080 | 数据溯源 | 413 / 413 | 1920 / 1920 | 无内部滚动或横向溢出 |
+
+两个视口的文档 `clientWidth/scrollWidth`、`clientHeight/scrollHeight` 也完全一致，无页面级溢出。
 
 ## 视口数据
 
@@ -40,12 +57,18 @@
 - `case-1440-final.png`
 - `compare-1440-final.png`
 - `home-mobile-390-final.png`
+- `09-overview-balanced-1440.png`
+- `09-slices-balanced-1440.png`
+- `09-model-balanced-1440.png`
+- `09-provenance-balanced-1440.png`
 
 ## 自动化证据
 
+- `npm --prefix web run test:unit`：57 个测试文件、515 项测试通过。
 - `npm --prefix web run type-check`：通过。
-- `npm --prefix web run test:unit`：通过。
-- `npm --prefix web run build`：通过（本轮最终代码需在提交前复跑）。
+- `npm --prefix web run build`：通过。
+- `npm --prefix web run test:e2e -- e2e/result-analysis.spec.ts`：1 项成果分析 Mock E2E 通过。
+- 真实浏览器本轮控制台：3 条普通消息，`error=0`、`warning=0`。
 - 聚焦测试覆盖：图表选项、完整异常标注、案例 URL 标签、单一应用壳、首页调试信息隐藏、证据窗展开不重建场景。
 
 ## 尚未关闭的问题

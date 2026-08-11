@@ -96,9 +96,11 @@ describe('ResultGridEvidence（V6 四标签）', () => {
     await wrapper.get('[data-test="ge-tab-slices"]').trigger('click')
     await flushPromises()
     expect(wrapper.get('[data-test="ge-pane-slices"]').text()).toContain('进入切片模式')
+    expect(wrapper.get('[data-test="ge-pane-slices"]').classes()).toContain('no-current-slice')
     await wrapper.setProps({ currentSlice: SLICE_ANALYSIS_MOCK })
     await flushPromises()
     const pane = wrapper.get('[data-test="ge-pane-slices"]')
+    expect(pane.classes()).not.toContain('no-current-slice')
     expect(pane.text()).toContain('有效 11')
     expect(pane.text()).toContain('27.3%')
     expect(wrapper.find('[data-test="ge-slice-heatmap"]').exists()).toBe(true)
@@ -141,6 +143,53 @@ describe('ResultGridEvidence（V6 四标签）', () => {
     expect(pane.text()).toContain('a64charhex')
     expect(pane.text()).toContain('nc-abc123')
     expect(pane.text()).toContain('display_anchor_only')
+  })
+
+  it('四类证据使用各自布局，切换标签后不继承上一页的内部滚动位置', async () => {
+    const wrapper = mountEvidence()
+    await flushPromises()
+
+    const overview = wrapper.get('[data-test="ge-pane-overview"]')
+    expect(overview.classes()).toContain('layout-overview')
+    ;(overview.element as HTMLElement).scrollTop = 160
+
+    await wrapper.get('[data-test="ge-tab-slices"]').trigger('click')
+    await flushPromises()
+    const slices = wrapper.get('[data-test="ge-pane-slices"]')
+    expect(slices.classes()).toContain('layout-slices')
+    expect(slices.element).not.toBe(overview.element)
+    expect((slices.element as HTMLElement).scrollTop).toBe(0)
+
+    await wrapper.get('[data-test="ge-tab-model"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="ge-pane-model"]').classes()).toContain('layout-model')
+
+    await wrapper.get('[data-test="ge-tab-provenance"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="ge-pane-provenance"]').classes()).toContain('layout-provenance')
+  })
+
+  it('数据溯源默认只展示摘要，输入样本详细分析按需展开', async () => {
+    const wrapper = mountEvidence({
+      datasetFindings: [
+        {
+          id: 'quality',
+          title: '数据质量',
+          statement: '有效数据 96/100',
+          evidence: ['重复坐标 0'],
+          source: { datasetId: 'ds-1', sourceSha256: 'abc', calculationVersion: 'analysis.v1' },
+          confidence: 'verified',
+          limitations: [],
+        },
+      ],
+    })
+    await wrapper.get('[data-test="ge-tab-provenance"]').trigger('click')
+    await flushPromises()
+
+    const details = wrapper.get('[data-test="ge-input-details"]')
+    expect(details.attributes('open')).toBeUndefined()
+    expect(details.get('summary').text()).toContain('查看输入样本详细分析')
+    expect(wrapper.get('[data-test="ge-input-summary"]').text()).toContain('96')
   })
 
   it('disposes every chart instance on unmount', async () => {

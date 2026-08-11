@@ -131,6 +131,7 @@ describe('ResultAnalysisWorkbench（V6 一屏布局）', () => {
     expect(dock.classes()).not.toContain('expanded')
     expect(toggle.attributes('aria-expanded')).toBe('false')
     expect(toggle.text()).toBe('展开分析')
+    expect(dock.classes()).toContain('dock-overview')
 
     await toggle.trigger('click')
     expect(dock.classes()).toContain('expanded')
@@ -141,6 +142,11 @@ describe('ResultAnalysisWorkbench（V6 一屏布局）', () => {
     await toggle.trigger('click')
     expect(dock.classes()).not.toContain('expanded')
     expect(toggle.attributes('aria-expanded')).toBe('false')
+
+    await wrapper.get('[data-test="ge-tab-provenance"]').trigger('click')
+    await flushPromises()
+    expect(dock.classes()).toContain('dock-provenance')
+    expect(dock.classes()).not.toContain('dock-overview')
   })
 
   it('dataset-level findings live only under the provenance input-sample cell', async () => {

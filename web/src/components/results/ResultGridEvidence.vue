@@ -195,46 +195,63 @@ const hasResiduals = computed(() => (props.residuals?.returned ?? 0) > 0)
     />
 
     <!-- 数据溯源：资产身份/导出/输入样本不依赖成果分析（分析缺失时仍可用） -->
-    <div v-if="activeTab === 'provenance'" class="evidence-pane grouped" data-test="ge-pane-provenance">
-      <section class="evidence-cell">
+    <div
+      v-if="activeTab === 'provenance'"
+      key="provenance"
+      class="evidence-pane grouped layout-provenance"
+      :class="{ 'no-asset': !assetIdentity }"
+      data-test="ge-pane-provenance"
+    >
+      <section class="evidence-cell input-summary-card" data-test="ge-input-summary">
         <h4 class="cell-title">输入样本 <span class="scope-tag">输入样本</span></h4>
         <template v-if="inputQuality">
-          <p class="pane-note">
-            有效 {{ (inputQuality?.valid_count ?? 0).toLocaleString() }} / 共
-            {{ (inputQuality?.row_count ?? 0).toLocaleString() }} 行，无效
-            {{ (inputQuality?.invalid_count ?? 0).toLocaleString() }}，重复坐标
-            {{ (inputQuality?.duplicate_coordinate_count ?? 0).toLocaleString() }}
-          </p>
-          <div class="input-quality">
-            <QualityDonut
-              :valid="inputQuality?.valid_count ?? 0"
-              :invalid="inputQuality?.invalid_count ?? 0"
-              :total="inputQuality?.row_count ?? 0"
-            />
+          <div class="input-quality-summary">
+            <p class="pane-note">
+              有效 {{ (inputQuality?.valid_count ?? 0).toLocaleString() }} / 共
+              {{ (inputQuality?.row_count ?? 0).toLocaleString() }} 行<br />
+              无效 {{ (inputQuality?.invalid_count ?? 0).toLocaleString() }} · 重复坐标
+              {{ (inputQuality?.duplicate_coordinate_count ?? 0).toLocaleString() }}
+            </p>
+            <div class="input-quality">
+              <QualityDonut
+                :valid="inputQuality?.valid_count ?? 0"
+                :invalid="inputQuality?.invalid_count ?? 0"
+                :total="inputQuality?.row_count ?? 0"
+              />
+            </div>
           </div>
         </template>
         <p v-else class="pane-note">输入样本质量报告不可用</p>
-        <FindingPanel
-          v-if="datasetFindings.length > 0"
-          :findings="datasetFindings"
-          @locate="emit('locate', $event)"
-        />
-        <DistributionPanel
-          v-if="inputDistribution && datasetSummary"
-          :module="inputDistribution"
-          :variable="datasetSummary.variable"
-          :profile="datasetSummary.analysis_profile"
-        />
-        <AxisTrendChart
-          v-if="inputTrendAxes.length > 0 && datasetId"
-          :axes="inputTrendAxes"
-          :unit="datasetSummary?.variable.unit ?? null"
-          :dataset-id="datasetId"
-          :result-id="resultId"
-          @select="emit('select', $event)"
-        />
+        <details
+          v-if="datasetFindings.length > 0 || inputDistribution || inputTrendAxes.length > 0"
+          class="input-details"
+          data-test="ge-input-details"
+        >
+          <summary>查看输入样本详细分析</summary>
+          <div class="input-details-body">
+            <FindingPanel
+              v-if="datasetFindings.length > 0"
+              :findings="datasetFindings"
+              @locate="emit('locate', $event)"
+            />
+            <DistributionPanel
+              v-if="inputDistribution && datasetSummary"
+              :module="inputDistribution"
+              :variable="datasetSummary.variable"
+              :profile="datasetSummary.analysis_profile"
+            />
+            <AxisTrendChart
+              v-if="inputTrendAxes.length > 0 && datasetId"
+              :axes="inputTrendAxes"
+              :unit="datasetSummary?.variable.unit ?? null"
+              :dataset-id="datasetId"
+              :result-id="resultId"
+              @select="emit('select', $event)"
+            />
+          </div>
+        </details>
       </section>
-      <section v-if="analysis" class="evidence-cell">
+      <section v-if="analysis" class="evidence-cell result-identity-card">
         <h4 class="cell-title">成果身份 <span class="scope-tag">成果网格</span></h4>
         <dl class="provenance-list">
           <div><dt>成果</dt><dd class="mono">{{ analysis.identity.result_id }}</dd></div>
@@ -245,7 +262,7 @@ const hasResiduals = computed(() => (props.residuals?.returned ?? 0) > 0)
           <div><dt>坐标类型</dt><dd>{{ analysis.identity.coordinate_type }}（局部线性，非地理配准）</dd></div>
         </dl>
       </section>
-      <section v-if="assetIdentity" class="evidence-cell" data-test="ge-asset-identity">
+      <section v-if="assetIdentity" class="evidence-cell asset-identity-card" data-test="ge-asset-identity">
         <h4 class="cell-title">渲染资产 <span class="scope-tag">成果网格</span></h4>
         <dl class="provenance-list">
           <div><dt>资产</dt><dd class="mono">{{ assetIdentity.assetId }}</dd></div>
@@ -258,7 +275,7 @@ const hasResiduals = computed(() => (props.residuals?.returned ?? 0) > 0)
           <div><dt>坐标契约</dt><dd>{{ assetIdentity.geolocationStatus }}</dd></div>
         </dl>
       </section>
-      <section class="evidence-cell">
+      <section class="evidence-cell export-card">
         <h4 class="cell-title">导出与发布</h4>
         <slot name="provenance-actions" />
       </section>
@@ -266,7 +283,12 @@ const hasResiduals = computed(() => (props.residuals?.returned ?? 0) > 0)
 
     <template v-else-if="analysis">
       <!-- 综合分析：成果组成 + 深度趋势 -->
-      <div v-if="activeTab === 'overview'" class="evidence-pane grouped" data-test="ge-pane-overview">
+      <div
+        v-if="activeTab === 'overview'"
+        key="overview"
+        class="evidence-pane grouped layout-overview"
+        data-test="ge-pane-overview"
+      >
         <section class="evidence-cell">
           <h4 class="cell-title">成果组成 <span class="scope-tag">成果网格</span></h4>
           <EChartBox :option="compositionOption" data-test="ge-composition-chart" />
@@ -314,7 +336,13 @@ const hasResiduals = computed(() => (props.residuals?.returned ?? 0) > 0)
       </div>
 
       <!-- 切片与异常：当前切片 + 高值连通区 -->
-      <div v-if="activeTab === 'slices'" class="evidence-pane grouped" data-test="ge-pane-slices">
+      <div
+        v-if="activeTab === 'slices'"
+        key="slices"
+        class="evidence-pane grouped layout-slices"
+        :class="{ 'no-current-slice': !currentSlice }"
+        data-test="ge-pane-slices"
+      >
         <section class="evidence-cell">
           <h4 class="cell-title">当前切片 <span class="scope-tag">成果网格</span></h4>
           <p v-if="!currentSlice" class="pane-note">进入切片模式后显示当前切片证据</p>
@@ -358,7 +386,12 @@ const hasResiduals = computed(() => (props.residuals?.returned ?? 0) > 0)
       </div>
 
       <!-- 模型证据：候选指标 + 残差 -->
-      <div v-if="activeTab === 'model'" class="evidence-pane grouped" data-test="ge-pane-model">
+      <div
+        v-if="activeTab === 'model'"
+        key="model"
+        class="evidence-pane grouped layout-model"
+        data-test="ge-pane-model"
+      >
         <section class="evidence-cell">
           <h4 class="cell-title">模型指标 <span class="scope-tag">成果网格</span></h4>
           <p class="pane-note">
@@ -452,17 +485,74 @@ const hasResiduals = computed(() => (props.residuals?.returned ?? 0) > 0)
   padding: var(--s1-space-2) var(--s1-space-3);
   overflow: auto;
   min-height: 0;
+  flex: 1;
+  overscroll-behavior: contain;
 }
 
 .evidence-pane.grouped {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: var(--s1-space-3);
   align-items: start;
+  align-content: start;
+  grid-auto-rows: min-content;
 }
 
 .evidence-cell {
   min-width: 0;
+  border: 1px solid var(--s1-border-soft);
+  border-radius: var(--s1-radius-md);
+  background: linear-gradient(145deg, rgba(83, 215, 184, 0.035), rgba(5, 18, 14, 0.2));
+  padding: var(--s1-space-2) var(--s1-space-3);
+  overflow: hidden;
+}
+
+.layout-overview > :first-child {
+  grid-column: span 4;
+}
+
+.layout-overview > :last-child {
+  grid-column: span 8;
+}
+
+.layout-slices > :first-child {
+  grid-column: span 5;
+}
+
+.layout-slices > :last-child {
+  grid-column: span 7;
+}
+
+.layout-slices.no-current-slice > :first-child {
+  grid-column: span 3;
+}
+
+.layout-slices.no-current-slice > :last-child {
+  grid-column: span 9;
+}
+
+.layout-model > .evidence-cell {
+  grid-column: span 6;
+}
+
+.layout-provenance .input-summary-card {
+  grid-column: span 3;
+}
+
+.layout-provenance .result-identity-card {
+  grid-column: span 3;
+}
+
+.layout-provenance .asset-identity-card {
+  grid-column: span 3;
+}
+
+.layout-provenance .export-card {
+  grid-column: span 3;
+}
+
+.layout-provenance.no-asset .export-card {
+  grid-column: span 6;
 }
 
 .cell-title {
@@ -576,7 +666,38 @@ const hasResiduals = computed(() => (props.residuals?.returned ?? 0) > 0)
 }
 
 .input-quality {
-  max-width: 240px;
+  width: min(180px, 46%);
+  flex: none;
+}
+
+.input-quality-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s1-space-2);
+}
+
+.input-quality-summary .pane-note {
+  margin: 0;
+}
+
+.input-details {
+  margin-top: var(--s1-space-2);
+  border-top: 1px solid var(--s1-border-soft);
+  padding-top: var(--s1-space-2);
+}
+
+.input-details summary {
+  color: var(--s1-cyan-strong);
+  font-size: var(--s1-font-sm);
+  cursor: pointer;
+  user-select: none;
+}
+
+.input-details-body {
+  display: grid;
+  gap: var(--s1-space-3);
+  margin-top: var(--s1-space-3);
 }
 
 .provenance-list {
@@ -606,5 +727,20 @@ const hasResiduals = computed(() => (props.residuals?.returned ?? 0) > 0)
 
 .mono {
   font-family: ui-monospace, monospace;
+}
+
+.layout-overview :deep(.echart-box),
+.layout-slices :deep(.echart-box) {
+  height: 160px;
+}
+
+@media (max-width: 1199px) {
+  .evidence-pane.grouped {
+    grid-template-columns: 1fr;
+  }
+
+  .evidence-pane.grouped > .evidence-cell {
+    grid-column: 1;
+  }
 }
 </style>
