@@ -59,9 +59,9 @@ test.describe('v0.4 通用建模流程（mock API）', () => {
     await page.getByTestId('selection-submit').click()
     await expect(page.getByTestId('formal-selection-panel')).toContainText('公共验证 RMSE 最低')
 
+    // v0.9.0 V6：导出与发布归入证据窗「数据溯源」标签，先切换再操作
+    await page.getByTestId('ge-tab-provenance').click()
     await expect(page.getByTestId('publication-status')).toContainText('未请求')
-    // v0.9.0：导出与发布归入证据与溯源抽屉，先展开再操作
-    await page.getByTestId('provenance-toggle').click()
     await page.getByTestId('export-button').click()
     await expect(page.getByTestId('export-file').first()).toContainText('manifest.json')
     await expect(page.getByTestId('publication-status')).toContainText('未请求')
@@ -69,9 +69,9 @@ test.describe('v0.4 通用建模流程（mock API）', () => {
     await expect(page.getByTestId('publication-status')).toContainText('manual_required')
 
     // 导航回归：成果 → 实验 → 首页，无死路
-    await page.getByTestId('crumb-experiment').click()
+    await page.getByTestId('v6-nav-experiment').click()
     await expect(page).toHaveURL(/#\/experiments\/exp-e2e/)
-    await page.getByTestId('crumb-home').click()
+    await page.getByTestId('shell-home-link').click()
     await expect(page).toHaveURL(/#\/$/)
     await expect(page.getByTestId('create-case-card')).toBeVisible()
   })

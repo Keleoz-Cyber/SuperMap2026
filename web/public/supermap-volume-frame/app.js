@@ -634,8 +634,8 @@ function setSceneAidsVisible(aids) {
 // V6 取景常数（集中命名）：等轴 span×1.65、正视/俯视 span×1.55 起步；
 // 最终值只依据真实 GPU 截图调整，目标是体场占中央场景高度 58%–72%，
 // 不得缩放顶点或改 display transform 伪造大小。
-const CAMERA_RANGE_ISOMETRIC = 1.65
-const CAMERA_RANGE_ORTHO = 1.55
+const CAMERA_RANGE_ISOMETRIC = 2.62
+const CAMERA_RANGE_ORTHO = 2.3
 
 function applyCameraPreset(preset) {
   if (!viewParams) throw new Error('CAMERA_PRESET_UNAVAILABLE：INIT 前无取景参数')

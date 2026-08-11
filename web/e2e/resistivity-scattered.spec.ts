@@ -82,12 +82,16 @@ test.describe('v0.8.0 电阻率散点预置与 DSI-like（mock API）', () => {
     // ---- 成果页：算法身份 + 显式资产 → 渲染状态 ----
     await page.getByTestId('open-result').click()
     await expect(page).toHaveURL(/#\/results\/cand-rho-dsi-1/)
-    await expect(page.locator('.page-sub')).toContainText('dsi_like')
-    await expect(page.locator('.page-sub')).toContainText('7×23×42')
+    // v0.9.0 V6：算法身份在成果摘要条（中文标签 + 网格维度）
+    await expect(page.getByTestId('v6-result-summary')).toContainText('DSI-like')
+    await expect(page.getByTestId('v6-result-summary')).toContainText('7 × 23 × 42')
     await expect(page.getByTestId('native-volume-panel')).toBeVisible()
     await page.getByTestId('create-asset').click()
     await expect(page.getByTestId('volume-phase')).toContainText('已渲染')
-    await expect(page.getByTestId('asset-identity')).toContainText('supermap_voxelgrid_netcdf')
+    // V6：资产身份移入证据窗「数据溯源」标签，主舞台不显示调试块
+    await expect(page.getByTestId('asset-identity')).toHaveCount(0)
+    await page.getByTestId('ge-tab-provenance').click()
+    await expect(page.getByTestId('ge-asset-identity')).toContainText('supermap_voxelgrid_netcdf')
 
     // ---- X/Y/Z 正交剖面控件（坐标标签只来自权威剖面响应）----
     await page.getByTestId('mode-slice').click()
@@ -116,8 +120,8 @@ test.describe('v0.8.0 电阻率散点预置与 DSI-like（mock API）', () => {
     await page.goto('/')
     await page.locator(RHO_CARD).getByTestId('open-official-result').click()
     await expect(page).toHaveURL(/#\/results\/cand-rho-official/)
-    await expect(page.locator('.page-sub')).toContainText('ordinary_kriging')
-    await expect(page.locator('.page-sub')).toContainText('7×23×42')
+    await expect(page.getByTestId('v6-result-summary')).toContainText('普通克里金')
+    await expect(page.getByTestId('v6-result-summary')).toContainText('7 × 23 × 42')
     await expect(page.getByTestId('native-volume-panel')).toBeVisible()
     // NetCDF 资产懒创建：显式创建入口就绪（与微震预置官方成果同一形态）
     await expect(page.getByTestId('create-asset')).toBeVisible()

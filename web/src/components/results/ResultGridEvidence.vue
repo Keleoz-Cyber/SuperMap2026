@@ -215,7 +215,7 @@ const hasResiduals = computed(() => (props.residuals?.returned ?? 0) > 0)
     </header>
 
     <AsyncState
-      v-if="!analysis"
+      v-if="!analysis && activeTab !== 'provenance'"
       kind="nodata"
       title="暂无成果网格证据"
       impact="成果组成/深度/组件/切片统计不可用"
@@ -223,7 +223,77 @@ const hasResiduals = computed(() => (props.residuals?.returned ?? 0) > 0)
       data-test="ge-empty"
     />
 
-    <template v-else>
+    <!-- 数据溯源：资产身份/导出/输入样本不依赖成果分析（分析缺失时仍可用） -->
+    <div v-if="activeTab === 'provenance'" class="evidence-pane grouped" data-test="ge-pane-provenance">
+      <section class="evidence-cell">
+        <h4 class="cell-title">输入样本 <span class="scope-tag">输入样本</span></h4>
+        <template v-if="inputQuality">
+          <p class="pane-note">
+            有效 {{ (inputQuality?.valid_count ?? 0).toLocaleString() }} / 共
+            {{ (inputQuality?.row_count ?? 0).toLocaleString() }} 行，无效
+            {{ (inputQuality?.invalid_count ?? 0).toLocaleString() }}，重复坐标
+            {{ (inputQuality?.duplicate_coordinate_count ?? 0).toLocaleString() }}
+          </p>
+          <div class="input-quality">
+            <QualityDonut
+              :valid="inputQuality?.valid_count ?? 0"
+              :invalid="inputQuality?.invalid_count ?? 0"
+              :total="inputQuality?.row_count ?? 0"
+            />
+          </div>
+        </template>
+        <p v-else class="pane-note">输入样本质量报告不可用</p>
+        <FindingPanel
+          v-if="datasetFindings.length > 0"
+          :findings="datasetFindings"
+          @locate="emit('locate', $event)"
+        />
+        <DistributionPanel
+          v-if="inputDistribution && datasetSummary"
+          :module="inputDistribution"
+          :variable="datasetSummary.variable"
+          :profile="datasetSummary.analysis_profile"
+        />
+        <AxisTrendChart
+          v-if="inputTrendAxes.length > 0 && datasetId"
+          :axes="inputTrendAxes"
+          :unit="datasetSummary?.variable.unit ?? null"
+          :dataset-id="datasetId"
+          :result-id="resultId"
+          @select="emit('select', $event)"
+        />
+      </section>
+      <section v-if="analysis" class="evidence-cell">
+        <h4 class="cell-title">成果身份 <span class="scope-tag">成果网格</span></h4>
+        <dl class="provenance-list">
+          <div><dt>成果</dt><dd class="mono">{{ analysis.identity.result_id }}</dd></div>
+          <div><dt>网格 SHA-256</dt><dd class="mono">{{ analysis.provenance.grid_sha256.slice(0, 16) }}…</dd></div>
+          <div><dt>计算版本</dt><dd class="mono">{{ analysis.provenance.calculation_version }}</dd></div>
+          <div><dt>阈值方法</dt><dd class="mono">{{ analysis.provenance.threshold_method }}</dd></div>
+          <div><dt>连通规则</dt><dd class="mono">{{ analysis.components_preview.connectivity_rule }}</dd></div>
+          <div><dt>坐标类型</dt><dd>{{ analysis.identity.coordinate_type }}（局部线性，非地理配准）</dd></div>
+        </dl>
+      </section>
+      <section v-if="assetIdentity" class="evidence-cell" data-test="ge-asset-identity">
+        <h4 class="cell-title">渲染资产 <span class="scope-tag">成果网格</span></h4>
+        <dl class="provenance-list">
+          <div><dt>资产</dt><dd class="mono">{{ assetIdentity.assetId }}</dd></div>
+          <div><dt>渲染器/状态</dt><dd class="mono">{{ assetIdentity.renderer }} / {{ assetIdentity.status }}</dd></div>
+          <div><dt>网格 SHA-256</dt><dd class="mono">{{ assetIdentity.gridSha256.slice(0, 16) }}…</dd></div>
+          <div v-if="assetIdentity.netcdfSha256">
+            <dt>NetCDF SHA-256</dt>
+            <dd class="mono">{{ assetIdentity.netcdfSha256.slice(0, 16) }}…</dd>
+          </div>
+          <div><dt>坐标契约</dt><dd>{{ assetIdentity.geolocationStatus }}</dd></div>
+        </dl>
+      </section>
+      <section class="evidence-cell">
+        <h4 class="cell-title">导出与发布</h4>
+        <slot name="provenance-actions" />
+      </section>
+    </div>
+
+    <template v-else-if="analysis">
       <!-- 综合分析：成果组成 + 深度趋势 -->
       <div v-if="activeTab === 'overview'" class="evidence-pane grouped" data-test="ge-pane-overview">
         <section class="evidence-cell">
@@ -348,75 +418,6 @@ const hasResiduals = computed(() => (props.residuals?.returned ?? 0) > 0)
         </section>
       </div>
 
-      <!-- 数据溯源：输入样本 + 成果/资产身份 + 导出 -->
-      <div v-if="activeTab === 'provenance'" class="evidence-pane grouped" data-test="ge-pane-provenance">
-        <section class="evidence-cell">
-          <h4 class="cell-title">输入样本 <span class="scope-tag">输入样本</span></h4>
-          <template v-if="inputQuality">
-            <p class="pane-note">
-              有效 {{ (inputQuality?.valid_count ?? 0).toLocaleString() }} / 共
-              {{ (inputQuality?.row_count ?? 0).toLocaleString() }} 行，无效
-              {{ (inputQuality?.invalid_count ?? 0).toLocaleString() }}，重复坐标
-              {{ (inputQuality?.duplicate_coordinate_count ?? 0).toLocaleString() }}
-            </p>
-            <div class="input-quality">
-              <QualityDonut
-                :valid="inputQuality?.valid_count ?? 0"
-                :invalid="inputQuality?.invalid_count ?? 0"
-                :total="inputQuality?.row_count ?? 0"
-              />
-            </div>
-          </template>
-          <p v-else class="pane-note">输入样本质量报告不可用</p>
-          <FindingPanel
-            v-if="datasetFindings.length > 0"
-            :findings="datasetFindings"
-            @locate="emit('locate', $event)"
-          />
-          <DistributionPanel
-            v-if="inputDistribution && datasetSummary"
-            :module="inputDistribution"
-            :variable="datasetSummary.variable"
-            :profile="datasetSummary.analysis_profile"
-          />
-          <AxisTrendChart
-            v-if="inputTrendAxes.length > 0 && datasetId"
-            :axes="inputTrendAxes"
-            :unit="datasetSummary?.variable.unit ?? null"
-            :dataset-id="datasetId"
-            :result-id="resultId"
-            @select="emit('select', $event)"
-          />
-        </section>
-        <section class="evidence-cell">
-          <h4 class="cell-title">成果身份 <span class="scope-tag">成果网格</span></h4>
-          <dl class="provenance-list">
-            <div><dt>成果</dt><dd class="mono">{{ analysis.identity.result_id }}</dd></div>
-            <div><dt>网格 SHA-256</dt><dd class="mono">{{ analysis.provenance.grid_sha256.slice(0, 16) }}…</dd></div>
-            <div><dt>计算版本</dt><dd class="mono">{{ analysis.provenance.calculation_version }}</dd></div>
-            <div><dt>阈值方法</dt><dd class="mono">{{ analysis.provenance.threshold_method }}</dd></div>
-            <div><dt>连通规则</dt><dd class="mono">{{ analysis.components_preview.connectivity_rule }}</dd></div>
-            <div><dt>坐标类型</dt><dd>{{ analysis.identity.coordinate_type }}（局部线性，非地理配准）</dd></div>
-          </dl>
-        </section>
-        <section v-if="assetIdentity" class="evidence-cell" data-test="ge-asset-identity">
-          <h4 class="cell-title">渲染资产 <span class="scope-tag">成果网格</span></h4>
-          <dl class="provenance-list">
-            <div><dt>资产</dt><dd class="mono">{{ assetIdentity.assetId }}</dd></div>
-            <div><dt>渲染器/状态</dt><dd class="mono">{{ assetIdentity.renderer }} / {{ assetIdentity.status }}</dd></div>
-            <div><dt>网格 SHA-256</dt><dd class="mono">{{ assetIdentity.gridSha256.slice(0, 16) }}…</dd></div>
-            <div v-if="assetIdentity.netcdfSha256">
-              <dt>NetCDF SHA-256</dt>
-              <dd class="mono">{{ assetIdentity.netcdfSha256.slice(0, 16) }}…</dd>
-            </div>
-            <div><dt>坐标契约</dt><dd>{{ assetIdentity.geolocationStatus }}</dd></div>
-          </dl>
-        </section>
-        <section class="evidence-cell">
-          <h4 class="cell-title">导出与发布</h4>
-          <slot name="provenance-actions" />
-        </section>
-      </div>
     </template>
   </section>
 </template>

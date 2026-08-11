@@ -21,8 +21,11 @@ import {
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = path.resolve(HERE, '../..')
-const EVIDENCE_DIR = path.join(REPO_ROOT, 'docs', 'evidence', 'v0.9.0-result-analysis-live')
+// v0.9.0 V6 Task 7：证据按运行时间分目录（同一 commit 的验收运行可复核）
+const RUN_ID = `run-${new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '').replace('T', 'T')}Z`
+const EVIDENCE_DIR = path.join(REPO_ROOT, 'docs', 'evidence', 'v0.9.0-v6-result-workbench', RUN_ID)
 const VIEWPORT = { width: 1920, height: 1080 }
+const VIEWPORT_1440 = { width: 1440, height: 900 }
 
 interface SeedResult {
   official_result: { result_id: string }
@@ -52,7 +55,7 @@ async function frameDiag(page: Page): Promise<Record<string, any>> {
   return frame!.evaluate(() => (window as any).__GMP_VOLUME_FRAME__)
 }
 
-// 非背景像素包围盒高度占比（中央 60% 宽，排除坐标架/Logo/罗盘；行阈值 4 像素抗噪）
+// 非背景像素包围盒高度占比（中央 32%–68% 宽，排除坐标架/Logo/罗盘；行阈值 4 像素抗噪）
 async function contentHeightRatio(page: Page, shot: Buffer): Promise<number> {
   const dataUrl = 'data:image/png;base64,' + shot.toString('base64')
   return page.evaluate(async (src: string) => {
@@ -67,11 +70,14 @@ async function contentHeightRatio(page: Page, shot: Buffer): Promise<number> {
     c.height = img.height
     const ctx = c.getContext('2d')!
     ctx.drawImage(img, 0, 0)
-    const x0 = Math.floor(img.width * 0.2)
-    const x1 = Math.floor(img.width * 0.8)
+    const x0 = Math.floor(img.width * 0.32)
+    const x1 = Math.floor(img.width * 0.68)
+    // 跳过元素边框带（.volume-frame 有 1px 边框，边框色高于背景阈值）
+    const yStart = 3
+    const yEnd = img.height - 3
     let top = -1
     let bottom = -1
-    for (let y = 0; y < img.height; y += 1) {
+    for (let y = yStart; y < yEnd; y += 1) {
       const d = ctx.getImageData(x0, y, x1 - x0, 1).data
       let rowNonBg = 0
       for (let i = 0; i < d.length; i += 4) {
@@ -82,7 +88,7 @@ async function contentHeightRatio(page: Page, shot: Buffer): Promise<number> {
         bottom = y
       }
     }
-    return top >= 0 ? (bottom - top + 1) / img.height : 0
+    return top >= 0 ? (bottom - top + 1) / (yEnd - yStart) : 0
   }, dataUrl)
 }
 
@@ -190,6 +196,25 @@ test('官方电阻率成果：规则分析、三维组件、切片、相机、AI
   expect(volumeHeightRatio).toBeGreaterThanOrEqual(0.58)
   expect(volumeHeightRatio).toBeLessThanOrEqual(0.72)
 
+  // v0.9.0 V6 Task 7：一屏布局测量——顶栏/摘要条/三栏舞台/证据窗
+  await expect(page.getByTestId('v6-result-topbar')).toBeVisible()
+  await expect(page.getByTestId('v6-result-summary')).toBeVisible()
+  expect(page.getByTestId('page-navigation')).toHaveCount(0)
+  expect(page.getByTestId('asset-identity')).toHaveCount(0)
+  const columns = await page.evaluate(() => {
+    const rail = document.querySelector('[data-test="tools-rail"]')?.getBoundingClientRect()
+    const scene = document.querySelector('[data-test="result-scene"]')?.getBoundingClientRect()
+    const side = document.querySelector('[data-test="result-analysis-side"]')?.getBoundingClientRect()
+    return { rail: rail?.width ?? 0, scene: scene?.width ?? 0, side: side?.width ?? 0 }
+  })
+  expect(columns.rail).toBeGreaterThanOrEqual(300)
+  expect(columns.scene).toBeGreaterThanOrEqual(560)
+  expect(columns.side).toBeGreaterThanOrEqual(350)
+  // 证据窗首屏完整可见（底边不超过视口）
+  const dockBox = await page.getByTestId('result-evidence-dock').boundingBox()
+  expect(dockBox).toBeTruthy()
+  expect(dockBox!.y + dockBox!.height).toBeLessThanOrEqual(VIEWPORT.height + 1)
+
   const firstComponent = summary.components_preview.rows[0]
   await page.getByTestId(`component-${firstComponent.component_id}`).click()
   await expect
@@ -217,6 +242,17 @@ test('官方电阻率成果：规则分析、三维组件、切片、相机、AI
   await page.getByTestId('side-tab-rules').click()
   await expect(page.getByTestId('result-interpretation')).toBeVisible()
 
+  // v0.9.0 V6 Task 7：四个证据标签全部可切换且内容非空；资产身份只在数据溯源
+  for (const tab of ['overview', 'slices', 'model'] as const) {
+    await page.getByTestId(`ge-tab-${tab}`).click()
+    const pane = page.getByTestId(`ge-pane-${tab}`)
+    await expect(pane).toBeVisible()
+    expect((await pane.innerText()).trim().length).toBeGreaterThan(0)
+  }
+  await page.getByTestId('ge-tab-provenance').click()
+  await expect(page.getByTestId('ge-pane-provenance')).toBeVisible()
+  await expect(page.getByTestId('ge-asset-identity')).toContainText('supermap_voxelgrid_netcdf')
+
   const overflow = await page.evaluate(() => ({
     documentX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
     bodyX: document.body.scrollWidth - document.body.clientWidth,
@@ -229,9 +265,10 @@ test('官方电阻率成果：规则分析、三维组件、切片、相机、AI
   expect(overflow.bodyY).toBeLessThanOrEqual(1)
 
   mkdirSync(EVIDENCE_DIR, { recursive: true })
-  await page.screenshot({ path: path.join(EVIDENCE_DIR, 'result-analysis-live-1920x1080.png') })
+  await page.getByTestId('ge-tab-overview').click()
+  await page.screenshot({ path: path.join(EVIDENCE_DIR, 'v6-workbench-1920x1080.png') })
   writeFileSync(
-    path.join(EVIDENCE_DIR, 'result-analysis-live.json'),
+    path.join(EVIDENCE_DIR, 'v6-workbench-1920x1080.json'),
     `${JSON.stringify({
       result_id: resultId,
       grid_sha256: summary.identity.grid_sha256,
@@ -240,7 +277,9 @@ test('官方电阻率成果：规则分析、三维组件、切片、相机、AI
       ai_status: 'unavailable',
       viewport: VIEWPORT,
       overflow,
+      columns,
       volume_height_ratio: volumeHeightRatio,
+      scene_aids_geometry: diag.sceneAidsGeometry,
       diag: await frameDiag(page),
       network_failures: networkFailures,
       console: consoleEntries,
@@ -258,4 +297,61 @@ test('官方电阻率成果：规则分析、三维组件、切片、相机、AI
   )
   expect(networkFailures).toEqual([])
   expect(unexplainedConsoleErrors).toEqual([])
+})
+
+// v0.9.0 V6 Task 7：1440×900 一屏验收（布局不溢出、不裁切、证据窗完整）
+test('V6 成果工作台 1440×900：一屏无溢出，工具/研判/证据可用', async ({ page }) => {
+  test.setTimeout(420_000)
+  const dataDir = isolatedDataDir()
+  const seededRaw = execFileSync(
+    process.env.PYTHON ?? 'python',
+    ['-m', 'geomodeling.preset_cli', 'seed-resistivity', '--data-dir', dataDir],
+    { cwd: REPO_ROOT, encoding: 'utf8', timeout: 180_000 },
+  )
+  const seeded = JSON.parse(seededRaw.trim().split('\n').pop()!) as SeedResult
+  const resultId = seeded.official_result.result_id
+
+  const consoleEntries: Array<{ type: string; text: string }> = []
+  page.on('console', (message) => consoleEntries.push({ type: message.type(), text: message.text() }))
+  page.on('pageerror', (error) => consoleEntries.push({ type: 'pageerror', text: String(error) }))
+
+  await installLiveProbe(page)
+  await page.setViewportSize(VIEWPORT_1440)
+  await page.goto(`/#/results/${resultId}`, { waitUntil: 'load', timeout: 60_000 })
+  await expect(page.getByTestId('v6-result-topbar')).toBeVisible({ timeout: 60_000 })
+  await expect(page.getByTestId('v6-result-summary')).toBeVisible()
+
+  const createAsset = page.getByTestId('create-asset')
+  if (await createAsset.isVisible().catch(() => false)) {
+    await createAsset.click()
+  }
+  await expect(page.getByTestId('volume-phase')).toHaveText('已渲染', { timeout: 90_000 })
+
+  // 无页面级横/纵溢出
+  const overflow = await page.evaluate(() => ({
+    documentX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    documentY: document.documentElement.scrollHeight - document.documentElement.clientHeight,
+  }))
+  expect(overflow.documentX).toBeLessThanOrEqual(1)
+  expect(overflow.documentY).toBeLessThanOrEqual(1)
+
+  // 三栏与证据窗仍在视口内（1440 下限：工具 328 / 研判 390 / 中央 ≥560）
+  const columns = await page.evaluate(() => {
+    const rail = document.querySelector('[data-test="tools-rail"]')?.getBoundingClientRect()
+    const scene = document.querySelector('[data-test="result-scene"]')?.getBoundingClientRect()
+    const side = document.querySelector('[data-test="result-analysis-side"]')?.getBoundingClientRect()
+    return { rail: rail?.width ?? 0, scene: scene?.width ?? 0, side: side?.width ?? 0 }
+  })
+  expect(columns.rail).toBeGreaterThanOrEqual(300)
+  expect(columns.scene).toBeGreaterThanOrEqual(520)
+  expect(columns.side).toBeGreaterThanOrEqual(350)
+  const dockBox = await page.getByTestId('result-evidence-dock').boundingBox()
+  expect(dockBox).toBeTruthy()
+  expect(dockBox!.y + dockBox!.height).toBeLessThanOrEqual(VIEWPORT_1440.height + 1)
+
+  mkdirSync(EVIDENCE_DIR, { recursive: true })
+  await page.screenshot({ path: path.join(EVIDENCE_DIR, 'v6-workbench-1440x900.png') })
+
+  const consoleErrors = consoleEntries.filter((entry) => ['error', 'pageerror'].includes(entry.type))
+  expect(consoleErrors).toEqual([])
 })

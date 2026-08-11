@@ -94,14 +94,16 @@ test.describe('v0.8.0 第三批瓦斯含量预置（mock API）', () => {
     // ---- 官方成果页：算法身份 + 显式资产 → 渲染状态 ----
     await page.getByTestId('open-official-result').click()
     await expect(page).toHaveURL(/#\/results\/cand-gas-official/)
-    await expect(page.locator('.page-sub')).toContainText('ordinary_kriging')
-    await expect(page.locator('.page-sub')).toContainText('三维')
-    await expect(page.locator('.page-sub')).toContainText('网格 151×333×12')
+    await expect(page.getByTestId('v6-result-summary')).toContainText('普通克里金')
+    await expect(page.getByTestId('v6-result-summary')).toContainText('三维')
+    await expect(page.getByTestId('v6-result-summary')).toContainText('151 × 333 × 12')
     await expect(page.getByTestId('native-volume-panel')).toBeVisible()
     // NetCDF 资产懒创建：显式创建入口 → 已渲染
     await page.getByTestId('create-asset').click()
     await expect(page.getByTestId('volume-phase')).toContainText('已渲染')
-    await expect(page.getByTestId('asset-identity')).toContainText('supermap_voxelgrid_netcdf')
+    await page.getByTestId('ge-tab-provenance').click()
+    await expect(page.getByTestId('ge-asset-identity')).toContainText('supermap_voxelgrid_netcdf')
+    await page.getByTestId('ge-tab-overview').click()
 
     // ---- X/Y/Z 正交剖面控件（坐标标签只来自权威剖面响应）----
     await page.getByTestId('mode-slice').click()
@@ -189,8 +191,8 @@ test.describe('v0.8.0 第三批瓦斯含量预置（mock API）', () => {
     await page.goto('/')
     await page.locator(GAS_CARD).getByTestId('open-official-result').click()
     await expect(page).toHaveURL(/#\/results\/cand-gas-official/)
-    await expect(page.locator('.page-sub')).toContainText('ordinary_kriging')
-    await expect(page.locator('.page-sub')).toContainText('151×333×12')
+    await expect(page.getByTestId('v6-result-summary')).toContainText('普通克里金')
+    await expect(page.getByTestId('v6-result-summary')).toContainText('151 × 333 × 12')
     await expect(page.getByTestId('native-volume-panel')).toBeVisible()
     // NetCDF 资产懒创建：显式创建入口就绪（与电阻率/微震预置官方成果同一形态）
     await expect(page.getByTestId('create-asset')).toBeVisible()

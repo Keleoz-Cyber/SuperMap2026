@@ -77,7 +77,10 @@ test('3D 成果工作台：物化 + 原生体渲染 + 工具栏完整状态 + �
   expect(assetPosts[0].body).toEqual({ retry_failed: false })
 
   // 协议握手：mock 子帧 FRAME_READY → INIT → RENDER_STATE rendered
-  await expect(page.getByTestId('asset-identity')).toContainText('supermap_voxelgrid_netcdf')
+  // v0.9.0 V6：资产身份在证据窗「数据溯源」标签
+  await page.getByTestId('ge-tab-provenance').click()
+  await expect(page.getByTestId('ge-asset-identity')).toContainText('supermap_voxelgrid_netcdf')
+  await page.getByTestId('ge-tab-overview').click()
   const frame = page.frames().find((f) => f.url().includes('/supermap-volume-frame/index.html'))
   expect(frame).toBeTruthy()
   const frameMessages = async () =>
@@ -198,7 +201,7 @@ test('3D 成果工作台：物化 + 原生体渲染 + 工具栏完整状态 + �
   // v0.9.0：导出与发布归入证据与溯源抽屉，先展开再断言
   await expect(page.getByTestId('model-evaluation-entry')).toBeVisible()
   await expect(page.getByTestId('selection-submit')).toBeVisible()
-  await page.getByTestId('provenance-toggle').click()
+  await page.getByTestId('ge-tab-provenance').click()
   await expect(page.getByTestId('export-button')).toBeVisible()
 
   // 切片 tab 保留既有行为
