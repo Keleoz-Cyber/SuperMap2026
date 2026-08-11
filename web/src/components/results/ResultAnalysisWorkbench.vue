@@ -168,6 +168,11 @@ function onFocusEvidence(ref: string) {
 
 <style scoped>
 .result-workbench {
+  /* 成果页是演示主工作台，局部提高最小字号，不影响上传/实验等高密度表单。 */
+  --s1-font-xs: 12px;
+  --s1-font-sm: 13px;
+  --s1-font-md: 14px;
+  --s1-font-lg: 16px;
   display: flex;
   flex-direction: column;
   gap: var(--s1-space-2);

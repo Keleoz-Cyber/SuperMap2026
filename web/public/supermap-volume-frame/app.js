@@ -367,7 +367,7 @@ function lookAtVolume() {
   const target = SuperMap3D.Cartesian3.fromDegrees(centerLon, centerLat, centerZ)
   scene.camera.lookAt(
     target,
-    new SuperMap3D.HeadingPitchRange(0.6, -0.9, span * CAMERA_RANGE_ISOMETRIC),
+    new SuperMap3D.HeadingPitchRange(1.25, -0.72, span * CAMERA_RANGE_ISOMETRIC),
   )
 }
 
@@ -631,10 +631,10 @@ function setSceneAidsVisible(aids) {
 }
 
 // 四种确定性相机预设：均以体盒中心为锚，绝不随机取景。
-// V6 取景常数（集中命名）：等轴 span×1.65、正视/俯视 span×1.55 起步；
-// 最终值只依据真实 GPU 截图调整，目标是体场占中央场景高度 58%–72%，
-// 不得缩放顶点或改 display transform 伪造大小。
-const CAMERA_RANGE_ISOMETRIC = 2.62
+// V6 取景常数（集中命名）：等轴视角优先展开本案例较长的 Y/Z 方向；
+// 最终值只依据真实 GPU 截图调整，目标是体场高度约 58%–76%，且宽度
+// 不低于场景 24%。不得缩放顶点或改 display transform 伪造大小。
+const CAMERA_RANGE_ISOMETRIC = 2.12
 const CAMERA_RANGE_ORTHO = 2.3
 
 function applyCameraPreset(preset) {
@@ -646,8 +646,8 @@ function applyCameraPreset(preset) {
   let pitch
   let range = span * CAMERA_RANGE_ISOMETRIC
   if (preset === 'isometric') {
-    heading = 0.6
-    pitch = -0.9
+    heading = 1.25
+    pitch = -0.72
   } else if (preset === 'top-xy') {
     heading = 0
     pitch = -Math.PI / 2 + EPS

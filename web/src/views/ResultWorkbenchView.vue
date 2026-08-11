@@ -73,6 +73,11 @@ const resultAnalysisLoading = ref(false)
 const currentSlice = ref<SliceAnalysisResponse | null>(null)
 const focusedComponentId = ref<number | null>(null)
 const volumePanelRef = ref<InstanceType<typeof NativeVolumePanel> | null>(null)
+// 三维舞台只承担主导异常的空间定位，完整连通区清单仍由右侧研判区展示。
+// 过多标签会遮挡体场本体；按后端既有排序取前三项，不改分析结果本身。
+const sceneComponents = computed(
+  () => resultAnalysis.value?.components_preview.rows.slice(0, 3) ?? null,
+)
 
 // v0.9.0 V6：顶栏/摘要条上下文（案例、案例列表、正式成果状态、导出状态）
 const caseRecord = ref<PlatformCaseRecord | null>(null)
@@ -518,7 +523,7 @@ watch(resultId, (next, prev) => {
             :api="volumeApi"
             :aux-points="gridSamplePoints"
             :slice-request="sliceRequest"
-            :components="resultAnalysis?.components_preview.rows ?? null"
+            :components="sceneComponents"
             :focused-component-id="focusedComponentId"
             @slice-change="onSliceChange"
             @slice-request-failed="onSliceRequestFailed"

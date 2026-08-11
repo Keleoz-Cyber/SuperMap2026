@@ -497,6 +497,30 @@ describe('成果级分析接入', () => {
     expect(panel.props('components')[1].component_id).toBe(2)
   })
 
+  it('研判保留全部连通区，但三维场只标注前三个主导组件以避免标签遮挡', async () => {
+    const base = RESULT_ANALYSIS_MOCK_3D.components_preview.rows[0]
+    const rows = Array.from({ length: 8 }, (_, index) => ({
+      ...base,
+      rank: index + 1,
+      label: String.fromCharCode(65 + index),
+      component_id: index + 1,
+    }))
+    vi.mocked(client.fetchResultAnalysisSummary).mockResolvedValue({
+      ...RESULT_ANALYSIS_MOCK_3D,
+      components_preview: {
+        ...RESULT_ANALYSIS_MOCK_3D.components_preview,
+        total: 8,
+        returned: 8,
+        rows,
+      },
+    })
+
+    const { wrapper } = await mountWorkbench(makeMetadata('3d'))
+    const panel = wrapper.findComponent({ name: 'NativeVolumePanel' })
+    expect(panel.props('components').map((row: { component_id: number }) => row.component_id)).toEqual([1, 2, 3])
+    expect(wrapper.find('[data-test="component-8"]').exists()).toBe(true)
+  })
+
   it('成果分析失败显示类型化错误，不残留组件也不回退数据集级统计', async () => {
     vi.mocked(client.fetchResultAnalysisSummary).mockRejectedValue(
       new client.ApiError('RESULT_ANALYSIS_NO_VALID_CELLS', '网格无有效体元', 422),
