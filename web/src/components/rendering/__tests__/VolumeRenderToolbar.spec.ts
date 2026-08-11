@@ -280,3 +280,41 @@ describe('VolumeRenderToolbar v0.9 标注与相机', () => {
     expect(next.sceneAids).toEqual({ axes: false, depthTicks: false })
   })
 })
+
+// v0.9.0 V6 Task 4：rail 布局的信息架构顺序合同（表达→传递函数→透明度→
+// 属性过滤→空间定位→辅助图层→视角预设），组标签不低于 12px 由样式合同保证。
+describe('VolumeRenderToolbar V6 rail 信息架构', () => {
+  it('rail 布局按 V6 顺序输出工具组', () => {
+    const wrapper = mount(VolumeRenderToolbar, {
+      props: {
+        modelValue: makeState({ sceneAids: { axes: true, depthTicks: true } }),
+        profile: makeProfile(),
+        annotationsAvailable: true,
+        layout: 'rail',
+      },
+      global: { plugins: [ElementPlus] },
+      attachTo: document.body,
+      slots: {
+        spatial: '<div data-test="slot-spatial">切片控件</div>',
+        'aux-layer': '<div data-test="slot-aux">辅助采样点</div>',
+      },
+    })
+    const groups = wrapper.findAll('[data-test^="rail-group-"]')
+    expect(groups.map((g) => g.attributes('data-test'))).toEqual([
+      'rail-group-mode',
+      'rail-group-transfer',
+      'rail-group-opacity',
+      'rail-group-filter',
+      'rail-group-spatial',
+      'rail-group-layers',
+      'rail-group-camera',
+    ])
+    // 空间定位与辅助图层槽位内容真实落位
+    expect(wrapper.get('[data-test="rail-group-spatial"]').text()).toContain('切片控件')
+    expect(wrapper.get('[data-test="rail-group-layers"]').text()).toContain('辅助采样点')
+    // 组标签
+    expect(wrapper.get('[data-test="rail-group-mode"]').text()).toContain('表达方式')
+    expect(wrapper.get('[data-test="rail-group-layers"]').text()).toContain('辅助图层')
+    expect(wrapper.get('[data-test="rail-group-camera"]').text()).toContain('视角预设')
+  })
+})

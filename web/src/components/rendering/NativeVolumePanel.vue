@@ -662,52 +662,58 @@ onMounted(() => {
             @update:scale="onScaleUpdate"
             @reset-view="onResetView"
             @camera-preset="onCameraPreset"
-          />
+          >
+            <template #spatial>
+              <!-- 等值面输入只在 contour 模式显示 -->
+              <div v-if="renderState.mode === 'contour'" class="control-row" data-test="contour-controls">
+                <label class="control-label" for="contour-value">等值面值</label>
+                <input
+                  id="contour-value"
+                  v-model="contourInput"
+                  class="number-input"
+                  data-test="contour-value"
+                  type="number"
+                  :disabled="!controlsEnabled"
+                  @change="applyContourValue"
+                />
+                <button
+                  class="link-button"
+                  data-test="contour-apply"
+                  :disabled="!controlsEnabled"
+                  @click="applyContourValue"
+                >
+                  应用等值面
+                </button>
+              </div>
 
-          <!-- 等值面输入只在 contour 模式显示 -->
-          <div v-if="renderState.mode === 'contour'" class="control-row" data-test="contour-controls">
-            <label class="control-label" for="contour-value">等值面值</label>
-            <input
-              id="contour-value"
-              v-model="contourInput"
-              class="number-input"
-              data-test="contour-value"
-              type="number"
-              :disabled="!controlsEnabled"
-              @change="applyContourValue"
-            />
-            <button
-              class="link-button"
-              data-test="contour-apply"
-              :disabled="!controlsEnabled"
-              @click="applyContourValue"
-            >
-              应用等值面
-            </button>
-            <span class="style-note">留空使用数据值域中点</span>
-          </div>
-
-          <OrthogonalSliceControls
-            v-if="renderState.mode === 'slice' && axesMeta"
-            :mode="renderState.mode"
-            :axes="axesMeta"
-            @change="onSliceChange"
-            @commit="onSliceCommit"
-          />
-
-          <div class="control-row">
-            <label class="toggle-label">
-              <input
-                v-model="auxVisible"
-                data-test="aux-points-toggle"
-                type="checkbox"
-                :disabled="!auxPoints || !frameReady"
-                @change="pushPointLayer"
+              <OrthogonalSliceControls
+                v-if="renderState.mode === 'slice' && axesMeta"
+                :mode="renderState.mode"
+                :axes="axesMeta"
+                @change="onSliceChange"
+                @commit="onSliceCommit"
               />
-              辅助采样点
-            </label>
-            <span class="style-note">默认关闭；仅作数据分布参考</span>
-          </div>
+              <span
+                v-if="renderState.mode === 'volume'"
+                class="style-note"
+                data-test="spatial-hint"
+              >
+                切片或等值面模式下可沿轴定位
+              </span>
+            </template>
+            <template #aux-layer>
+              <label class="toggle-label">
+                <input
+                  v-model="auxVisible"
+                  data-test="aux-points-toggle"
+                  type="checkbox"
+                  :disabled="!auxPoints || !frameReady"
+                  @change="pushPointLayer"
+                />
+                辅助采样点
+              </label>
+            </template>
+          </VolumeRenderToolbar>
         </aside>
 
         <div class="scene-column">
@@ -806,6 +812,40 @@ onMounted(() => {
   grid-template-columns: 280px minmax(0, 1fr);
   gap: 12px;
   align-items: start;
+  min-height: 0;
+}
+
+/* v0.9.0 V6 workbench：工具栏 328px + 中央场景 min 560px，填满舞台高度 */
+.native-volume-panel.workbench .panel-body {
+  grid-template-columns: 328px minmax(560px, 1fr);
+  height: 100%;
+}
+
+.native-volume-panel.workbench {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.native-volume-panel.workbench .scene-column {
+  min-height: 0;
+  height: 100%;
+}
+
+.native-volume-panel.workbench .tools-rail {
+  overflow-y: auto;
+  min-height: 0;
+  max-height: 100%;
+}
+
+/* 工作台变体：场景画布吃掉剩余高度（不被 16/9 上限压小） */
+.native-volume-panel.workbench :deep(.volume-frame) {
+  aspect-ratio: auto;
+  flex: 1;
+  min-height: 300px;
+  max-height: none;
 }
 
 .tools-rail {
