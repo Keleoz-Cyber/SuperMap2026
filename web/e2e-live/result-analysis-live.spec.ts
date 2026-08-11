@@ -52,6 +52,40 @@ async function frameDiag(page: Page): Promise<Record<string, any>> {
   return frame!.evaluate(() => (window as any).__GMP_VOLUME_FRAME__)
 }
 
+// 非背景像素包围盒高度占比（中央 60% 宽，排除坐标架/Logo/罗盘；行阈值 4 像素抗噪）
+async function contentHeightRatio(page: Page, shot: Buffer): Promise<number> {
+  const dataUrl = 'data:image/png;base64,' + shot.toString('base64')
+  return page.evaluate(async (src: string) => {
+    const img = new Image()
+    await new Promise((res, rej) => {
+      img.onload = res
+      img.onerror = rej
+      img.src = src
+    })
+    const c = document.createElement('canvas')
+    c.width = img.width
+    c.height = img.height
+    const ctx = c.getContext('2d')!
+    ctx.drawImage(img, 0, 0)
+    const x0 = Math.floor(img.width * 0.2)
+    const x1 = Math.floor(img.width * 0.8)
+    let top = -1
+    let bottom = -1
+    for (let y = 0; y < img.height; y += 1) {
+      const d = ctx.getImageData(x0, y, x1 - x0, 1).data
+      let rowNonBg = 0
+      for (let i = 0; i < d.length; i += 4) {
+        if (d[i] > 12 || d[i + 1] > 12 || d[i + 2] > 12) rowNonBg += 1
+      }
+      if (rowNonBg > 4) {
+        if (top < 0) top = y
+        bottom = y
+      }
+    }
+    return top >= 0 ? (bottom - top + 1) / img.height : 0
+  }, dataUrl)
+}
+
 test.use({ launchOptions: { args: ['--use-angle=gl'] } })
 
 test('官方电阻率成果：规则分析、三维组件、切片、相机、AI 降级保持同一身份', async ({
@@ -137,6 +171,25 @@ test('官方电阻率成果：规则分析、三维组件、切片、相机、AI
   expect(diag.annotations.total).toBe(summary.components_preview.rows.length)
   expect(diag.annotations.visible).toBe(summary.components_preview.rows.length)
 
+  // v0.9.0 V6 Task 5：坐标架几何合同——原点在包围盒外，轴长比 1.2–1.3
+  expect(diag.sceneAidsGeometry?.originOutsideBounds).toBe(true)
+  for (const ratio of Object.values(
+    diag.sceneAidsGeometry.axisLengthRatios as Record<string, number>,
+  )) {
+    expect(ratio).toBeGreaterThanOrEqual(1.2)
+    expect(ratio).toBeLessThanOrEqual(1.3)
+  }
+
+  // v0.9.0 V6 Task 2/5：默认渲染状态——光照/渐变透明度关闭，包围盒开启
+  await expect(page.getByTestId('lighting-toggle').locator('input')).not.toBeChecked()
+  await expect(page.getByTestId('gradient-opacity-toggle').locator('input')).not.toBeChecked()
+  await expect(page.getByTestId('bounding-box-toggle').locator('input')).toBeChecked()
+
+  // v0.9.0 V6 Task 5/7：体场非背景像素包围盒占帧高 58%–72%（只调相机，不改数据几何）
+  const volumeHeightRatio = await contentHeightRatio(page, frameShot)
+  expect(volumeHeightRatio).toBeGreaterThanOrEqual(0.58)
+  expect(volumeHeightRatio).toBeLessThanOrEqual(0.72)
+
   const firstComponent = summary.components_preview.rows[0]
   await page.getByTestId(`component-${firstComponent.component_id}`).click()
   await expect
@@ -187,6 +240,7 @@ test('官方电阻率成果：规则分析、三维组件、切片、相机、AI
       ai_status: 'unavailable',
       viewport: VIEWPORT,
       overflow,
+      volume_height_ratio: volumeHeightRatio,
       diag: await frameDiag(page),
       network_failures: networkFailures,
       console: consoleEntries,

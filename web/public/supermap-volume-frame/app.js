@@ -63,6 +63,8 @@ const diag = {
   // v0.9.0：异常标注 / 场景辅助 / 相机预设只读诊断（全模式共享同一几何）
   annotations: { total: 0, visible: 0, focusedId: null },
   sceneAids: { axes: false, depthTicks: false },
+  // V6 坐标架几何诊断：{ originOutsideBounds, axisLengthRatios: {x,y,z} }
+  sceneAidsGeometry: null,
   cameraPreset: 'isometric',
   errors: [], // [{ code, message }]
 }
@@ -77,6 +79,12 @@ function publishDiag() {
     boundingBoxVisible: diag.boundingBoxVisible,
     annotations: Object.freeze({ ...diag.annotations }),
     sceneAids: Object.freeze({ ...diag.sceneAids }),
+    sceneAidsGeometry: diag.sceneAidsGeometry
+      ? Object.freeze({
+          originOutsideBounds: diag.sceneAidsGeometry.originOutsideBounds,
+          axisLengthRatios: Object.freeze({ ...diag.sceneAidsGeometry.axisLengthRatios }),
+        })
+      : null,
     cameraPreset: diag.cameraPreset,
     geometry: diag.geometry
       ? Object.freeze({
@@ -357,7 +365,10 @@ function opacityFunction(vmin, vmax, factor) {
 function lookAtVolume() {
   const { centerLon, centerLat, centerZ, span } = viewParams
   const target = SuperMap3D.Cartesian3.fromDegrees(centerLon, centerLat, centerZ)
-  scene.camera.lookAt(target, new SuperMap3D.HeadingPitchRange(0.6, -0.9, span * 2.5))
+  scene.camera.lookAt(
+    target,
+    new SuperMap3D.HeadingPitchRange(0.6, -0.9, span * CAMERA_RANGE_ISOMETRIC),
+  )
 }
 
 // 独立包围盒线框：八个角点严格来自 layerBounds/zBounds（真实体元边界，
@@ -523,7 +534,17 @@ function ensureAnnotationPicking() {
   }, SuperMap3D.ScreenSpaceEventType.LEFT_CLICK)
 }
 
-// XYZ 轴 + Z 深度刻度：角点与体盒同一边界，标签展示局部坐标值
+// XYZ 轴 + Z 深度刻度：V6 坐标架几何（原点外移、轴长 1.25×跨度、独立深度标尺）。
+// 几何纯函数在 sceneAidsGeometry.js（同帧内容哈希纳管）；以 import.meta.url
+// 查询串动态导入，保证 warm-cache 下与 app.js 同版本。
+let sceneAidsGeometryMod = null
+async function ensureSceneAidsGeometry() {
+  if (sceneAidsGeometryMod) return sceneAidsGeometryMod
+  const query = new URL(import.meta.url).search || ''
+  sceneAidsGeometryMod = await import('./sceneAidsGeometry.js' + query)
+  return sceneAidsGeometryMod
+}
+
 function clearSceneAids() {
   if (!axisEntities) return
   for (const entity of axisEntities) {
@@ -536,14 +557,8 @@ function clearSceneAids() {
   axisEntities = null
 }
 
-function buildSceneAids(bounds, zBounds) {
+function buildSceneAids(bounds, zBounds, geometry) {
   clearSceneAids()
-  const w = bounds.west
-  const e = bounds.east
-  const s = bounds.south
-  const n = bounds.north
-  const z0 = zBounds[0]
-  const z1 = zBounds[1]
   const created = []
   const axisLine = (from, to, color) =>
     viewer.entities.add({
@@ -555,11 +570,6 @@ function buildSceneAids(bounds, zBounds) {
         depthTest: false,
       },
     })
-  // 轴起点：体盒 (west, south, z0) 角
-  created.push(axisLine([w, s, z0], [e, s, z0], SuperMap3D.Color.fromCssColorString('#e06666')))
-  created.push(axisLine([w, s, z0], [w, n, z0], SuperMap3D.Color.fromCssColorString('#6aa84f')))
-  created.push(axisLine([w, s, z0], [w, s, z1], SuperMap3D.Color.fromCssColorString('#4d8de0')))
-  // 轴端标签
   const axisLabel = (position, text, color) =>
     viewer.entities.add({
       show: false,
@@ -574,19 +584,20 @@ function buildSceneAids(bounds, zBounds) {
         disableDepthTestDistance: Number.POSITIVE_INFINITY,
       },
     })
-  created.push(axisLabel([e, s, z0], 'X', SuperMap3D.Color.fromCssColorString('#e06666')))
-  created.push(axisLabel([w, n, z0], 'Y', SuperMap3D.Color.fromCssColorString('#6aa84f')))
-  created.push(axisLabel([w, s, z1], 'Z', SuperMap3D.Color.fromCssColorString('#4d8de0')))
-  // 深度刻度：沿 Z 轴 5 档，显示局部 z 值（display 高度 − anchor_height）
-  const anchorHeight = initTransform.anchor_height
-  for (let i = 0; i <= 4; i += 1) {
-    const h = z0 + ((z1 - z0) * i) / 4
-    const localZ = h - anchorHeight
-    const tick = viewer.entities.add({
+  // 三轴起点为包围盒外原点（west/south/bottom 均外移）
+  created.push(axisLine(geometry.axes.x.from, geometry.axes.x.to, SuperMap3D.Color.fromCssColorString('#e06666')))
+  created.push(axisLine(geometry.axes.y.from, geometry.axes.y.to, SuperMap3D.Color.fromCssColorString('#6aa84f')))
+  created.push(axisLine(geometry.axes.z.from, geometry.axes.z.to, SuperMap3D.Color.fromCssColorString('#4d8de0')))
+  created.push(axisLabel(geometry.axes.x.to, 'X', SuperMap3D.Color.fromCssColorString('#e06666')))
+  created.push(axisLabel(geometry.axes.y.to, 'Y', SuperMap3D.Color.fromCssColorString('#6aa84f')))
+  created.push(axisLabel(geometry.axes.z.to, 'Z', SuperMap3D.Color.fromCssColorString('#4d8de0')))
+  // 深度刻度：独立 Z 标尺（与 Z 轴平行但独立偏移），标签为局部 z 值
+  for (const tick of geometry.depthTicks) {
+    const entity = viewer.entities.add({
       show: false,
-      position: SuperMap3D.Cartesian3.fromDegrees(w, s, h),
+      position: SuperMap3D.Cartesian3.fromDegrees(...tick.position),
       label: {
-        text: `${shortNumber(localZ)} m`,
+        text: `${shortNumber(tick.localZ)} m`,
         font: '11px sans-serif',
         fillColor: SuperMap3D.Color.fromCssColorString('#a7b8b0'),
         style: SuperMap3D.LabelStyle.FILL_AND_OUTLINE,
@@ -596,10 +607,16 @@ function buildSceneAids(bounds, zBounds) {
         disableDepthTestDistance: Number.POSITIVE_INFINITY,
       },
     })
-    tick._gmpDepthTick = true
-    created.push(tick)
+    entity._gmpDepthTick = true
+    created.push(entity)
   }
   axisEntities = created
+  // 坐标架几何只读诊断（live 门按合同验证：原点在外、轴长比 1.2–1.3）
+  diag.sceneAidsGeometry = {
+    originOutsideBounds: geometry.originOutsideBounds === true,
+    axisLengthRatios: { ...geometry.axisLengthRatios },
+  }
+  publishDiag()
 }
 
 function setSceneAidsVisible(aids) {
@@ -613,7 +630,13 @@ function setSceneAidsVisible(aids) {
   publishDiag()
 }
 
-// 四种确定性相机预设：均以体盒中心为锚，绝不随机取景
+// 四种确定性相机预设：均以体盒中心为锚，绝不随机取景。
+// V6 取景常数（集中命名）：等轴 span×1.65、正视/俯视 span×1.55 起步；
+// 最终值只依据真实 GPU 截图调整，目标是体场占中央场景高度 58%–72%，
+// 不得缩放顶点或改 display transform 伪造大小。
+const CAMERA_RANGE_ISOMETRIC = 1.65
+const CAMERA_RANGE_ORTHO = 1.55
+
 function applyCameraPreset(preset) {
   if (!viewParams) throw new Error('CAMERA_PRESET_UNAVAILABLE：INIT 前无取景参数')
   const { centerLon, centerLat, centerZ, span } = viewParams
@@ -621,22 +644,22 @@ function applyCameraPreset(preset) {
   const EPS = 0.02
   let heading
   let pitch
-  let range = span * 2.5
+  let range = span * CAMERA_RANGE_ISOMETRIC
   if (preset === 'isometric') {
     heading = 0.6
     pitch = -0.9
   } else if (preset === 'top-xy') {
     heading = 0
     pitch = -Math.PI / 2 + EPS
-    range = span * 2.2
+    range = span * CAMERA_RANGE_ORTHO
   } else if (preset === 'front-xz') {
     heading = 0
     pitch = -EPS
-    range = span * 2.2
+    range = span * CAMERA_RANGE_ORTHO
   } else if (preset === 'front-yz') {
     heading = Math.PI / 2
     pitch = -EPS
-    range = span * 2.2
+    range = span * CAMERA_RANGE_ORTHO
   } else {
     throw new Error(`CAMERA_PRESET_INVALID：${preset}`)
   }
@@ -826,8 +849,14 @@ async function handleInit(msg) {
   // 独立包围盒线框（角点=真实体元边界；初始显隐由 INIT 状态决定）
   addVolumeBoundingBox(bounds, zBounds)
   setBoundingBoxVisible(initialState.boundingBox)
-  // XYZ 轴与深度刻度：与体盒同一边界几何，初始显隐由 INIT sceneAids 决定
-  buildSceneAids(bounds, zBounds)
+  // V6 坐标架：XYZ 轴原点外移 + 轴长 1.25×跨度 + 独立深度标尺（同版本几何模块）
+  const aidsGeometryModule = await ensureSceneAidsGeometry()
+  const aidsGeometry = aidsGeometryModule.computeSceneAidsGeometry(
+    bounds,
+    zBounds,
+    initTransform.anchor_height,
+  )
+  buildSceneAids(bounds, zBounds, aidsGeometry)
   setSceneAidsVisible(initialState.sceneAids)
   ensureAnnotationPicking()
   lookAtVolume()

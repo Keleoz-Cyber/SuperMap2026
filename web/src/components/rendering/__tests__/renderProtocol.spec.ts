@@ -222,9 +222,9 @@ describe('renderProtocol v2', () => {
     expect(url).toMatch(/[?&]sdk=([0-9a-f]{16}|unpinned)/)
   })
 
-  it('帧版本与 public/supermap-volume-frame 三文件内容哈希一致', () => {
+  it('帧版本与 public/supermap-volume-frame 全部运行时文件内容哈希一致', () => {
     const hash = createHash('sha256')
-    for (const name of ['index.html', 'app.js', 'styles.css']) {
+    for (const name of ['index.html', 'app.js', 'styles.css', 'sceneAidsGeometry.js']) {
       hash.update(
         readFileSync(resolve(__dirname, '../../../../public/supermap-volume-frame', name)),
       )
