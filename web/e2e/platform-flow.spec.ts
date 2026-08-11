@@ -69,9 +69,9 @@ test.describe('v0.4 通用建模流程（mock API）', () => {
     await expect(page.getByTestId('publication-status')).toContainText('manual_required')
 
     // 导航回归：成果 → 实验 → 首页，无死路
-    await page.getByTestId('v6-nav-experiment').click()
+    await page.getByTestId('shell-nav-experiments').click()
     await expect(page).toHaveURL(/#\/experiments\/exp-e2e/)
-    await page.getByTestId('shell-home-link').click()
+    await page.getByTestId('shell-brand').click()
     await expect(page).toHaveURL(/#\/$/)
     await expect(page.getByTestId('create-case-card')).toBeVisible()
   })
@@ -225,7 +225,7 @@ test.describe('v0.6.1 体积基准卡直达成果（mock API）', () => {
     await expect(primary).toContainText('查看体渲染成果')
     const secondary = page.getByTestId('new-experiment')
     await expect(secondary).toBeVisible()
-    await expect(secondary).toContainText('新建实验')
+    await expect(secondary).toContainText('新建建模实验')
 
     // 次操作：新建实验 → 实验创建页（与查看已有成果互不混淆）
     await secondary.click()

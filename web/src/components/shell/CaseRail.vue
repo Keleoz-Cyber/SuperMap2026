@@ -221,6 +221,7 @@ function dataFormOf(c: CaseSummary): string | null {
 }
 
 .rail-item {
+  scroll-margin-top: 72px;
   border: 1px solid var(--s1-border);
   border-radius: var(--s1-radius-md);
   background: var(--s1-surface-1);
@@ -273,6 +274,10 @@ function dataFormOf(c: CaseSummary): string | null {
 .card-overflow {
   display: flex;
   align-items: center;
+}
+
+.card-overflow :deep(.el-dropdown) {
+  scroll-margin-top: 72px;
 }
 
 .overflow-trigger {
@@ -390,8 +395,8 @@ function dataFormOf(c: CaseSummary): string | null {
    新建/下载入口由全局头承担，避免长列表把三维顶出首屏 */
 @media (max-width: 480px) {
   .case-rail {
-    flex-direction: row;
-    overflow-x: auto;
+    flex-direction: column;
+    overflow-x: hidden;
     gap: var(--s1-space-2);
     padding-bottom: 2px;
   }
@@ -399,6 +404,9 @@ function dataFormOf(c: CaseSummary): string | null {
   .rail-section {
     flex-direction: row;
     gap: var(--s1-space-2);
+    max-width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
   }
 
   .rail-title {

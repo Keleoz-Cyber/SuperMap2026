@@ -25,8 +25,12 @@ test.describe('v0.7.0 微震预置案例（mock API）', () => {
     await expect(page.getByTestId('workspace-overview')).toBeVisible()
     await expect(page.getByTestId('workspace-data')).toBeVisible()
     await expect(page.getByTestId('workspace-experiments')).toBeVisible()
-    await expect(page.getByTestId('workspace-results')).toBeVisible()
     await expect(page.getByTestId('workspace-data')).toContainText('Vx')
+
+    // 阶段标签只展示当前内容；显式切到成果分析后再检查成果区。
+    await page.getByTestId('stage-nav-results').click()
+    await expect(page.getByTestId('workspace-results')).toBeVisible()
+    await page.getByTestId('stage-nav-data').click()
 
     // 官方成果直达 → 成果页 NetCDF 原生体渲染面板
     await page.getByTestId('open-official-result').click()

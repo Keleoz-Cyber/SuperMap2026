@@ -233,7 +233,7 @@ test('真实链路：上传 → 映射 → 质量 → IDW → 排行榜 → 成�
   // 9. 返回实验 → 返回首页；案例卡持久化可见
   await page.getByTestId('v6-nav-experiment').click()
   await expect(page).toHaveURL(/#\/experiments\/[0-9a-f-]+/)
-  await page.getByTestId('shell-home-link').click()
+  await page.getByTestId('shell-brand').click()
   await expect(page).toHaveURL(/#\/$/)
   await expect(page.getByText(caseName)).toBeVisible()
 })
@@ -407,7 +407,7 @@ test.describe('v0.6 专业建模流程（真实链路）', () => {
     ).toBe(true)
 
     // 13. 返回首页；案例卡持久化可见
-    await page.getByTestId('v6-nav-home').click()
+    await page.getByTestId('shell-brand').click()
     await expect(page).toHaveURL(/#\/$/)
     await expect(page.getByText(caseName)).toBeVisible()
   })

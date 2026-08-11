@@ -12,6 +12,7 @@ import { readFileSync } from 'node:fs'
 const motionCss = String(readFileSync('src/styles/motion.css'))
 const tokensCss = String(readFileSync('src/styles/tokens.css'))
 const globalCss = String(readFileSync('src/styles/index.css'))
+const caseRailSource = String(readFileSync('src/components/shell/CaseRail.vue'))
 
 // v0.9.0 Task 14：响应式/无障碍/动效合同（静态契约层；
 // 真实视口像素级门在 web/e2e/v090-responsive.spec.ts）。
@@ -105,6 +106,10 @@ describe('responsive & accessibility contracts', () => {
       'src/components/analysis/ModelComparisonPanel.vue',
     ].map((path) => String(readFileSync(path)))
     for (const source of sources) expect(source).not.toContain('模型对比')
+  })
+
+  it('mobile case actions keep clear space below the sticky global header', () => {
+    expect(caseRailSource).toContain('scroll-margin-top: 72px')
   })
   it('app shell exposes exactly one main landmark', async () => {
     const wrapper = await mountHome()

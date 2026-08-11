@@ -797,6 +797,18 @@ describe('CaseWorkspaceView v0.9 阶段导航与唯一主动作', () => {
     expect(wrapper.get('[data-test="stage-panel-experiments"]').classes()).not.toContain('is-hidden')
   })
 
+  it('默认工作台保留跨阶段常用入口，用户无需先猜阶段', async () => {
+    vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(workspaceOf('builtin_preset'))
+    const { wrapper } = await mountWorkspace(`/cases/${PRESET_ID}`)
+
+    expect(wrapper.find('.workspace-shortcuts').exists()).toBe(true)
+    expect(wrapper.find('.workspace-shortcuts [data-test="new-experiment"]').exists()).toBe(true)
+    expect(wrapper.find('.workspace-shortcuts [data-test="analysis-center-entry"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="stage-panel-data"]').isVisible()).toBe(true)
+    expect(wrapper.get('[data-test="stage-panel-experiments"]').classes()).toContain('is-hidden')
+    wrapper.unmount()
+  })
+
   it('可从 URL 直接恢复成果分析页签', async () => {
     vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(workspaceOf('builtin_preset'))
     const { wrapper } = await mountWorkspace(`/cases/${PRESET_ID}?stage=results`)

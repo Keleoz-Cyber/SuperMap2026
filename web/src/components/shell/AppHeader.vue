@@ -303,6 +303,7 @@ void props
 
 @media (max-width: 640px) {
   .app-header {
+    position: static;
     padding: 0 var(--s1-space-2);
     gap: var(--s1-space-2);
   }

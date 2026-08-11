@@ -349,6 +349,43 @@ onBeforeUnmount(clearShellContext)
           @navigate="onStageNavigate"
         />
 
+        <!-- 跨阶段常用入口始终可达；阶段标签仍只负责切换对应内容。 -->
+        <div class="workspace-section workspace-shortcuts" data-test="workspace-experiments">
+          <div class="shortcut-label">
+            <strong>常用操作</strong>
+            <span>从这里直接进入下一步，不必先猜阶段标签。</span>
+          </div>
+          <div class="command-row">
+            <el-button
+              v-if="canCreateExperiment"
+              type="primary"
+              data-test="new-experiment"
+              :data-primary-action="primaryKind === 'experiment' ? 'true' : undefined"
+              @click="createExperiment"
+            >
+              新建建模实验
+            </el-button>
+            <el-button
+              v-if="workspace.primary_dataset"
+              data-test="model-comparison"
+              @click="gotoComparisonForDataset(workspace.primary_dataset.id)"
+            >
+              模型比较
+            </el-button>
+            <router-link
+              v-if="canOpenAnalysisCenter"
+              class="analysis-entry"
+              data-test="analysis-center-entry"
+              :to="`/datasets/${workspace.primary_dataset?.id}/analysis`"
+            >
+              统计与空间分析
+            </router-link>
+            <span v-else-if="workspace.primary_dataset" class="analysis-unavailable">
+              数据版本通过验证后可使用统计与空间分析
+            </span>
+          </div>
+        </div>
+
         <!-- 阶段一：数据概览 -->
         <section
           :class="{ 'is-hidden': currentStage !== 'data' }"
@@ -471,24 +508,8 @@ onBeforeUnmount(clearShellContext)
           role="tabpanel"
         >
           <h2 class="stage-heading">建模实验</h2>
-          <div class="workspace-section" data-test="workspace-experiments">
-            <div v-if="canCreateExperiment" class="command-row">
-              <el-button
-                type="primary"
-                data-test="new-experiment"
-                :data-primary-action="primaryKind === 'experiment' ? 'true' : undefined"
-                @click="createExperiment"
-              >
-                新建建模实验
-              </el-button>
-              <el-button
-                v-if="workspace.primary_dataset"
-                data-test="model-comparison"
-                @click="gotoComparisonForDataset(workspace.primary_dataset.id)"
-              >
-                模型比较
-              </el-button>
-            </div>
+          <div class="workspace-section" data-test="workspace-experiments-panel">
+            <p v-if="canCreateExperiment" class="muted-line">常用建模操作已固定在工作台上方。</p>
             <p v-else class="muted-line">当前案例不开放新建建模实验。</p>
             <div v-if="recentExperiments.length" class="recent-list" data-test="recent-experiments">
               <div
@@ -547,15 +568,7 @@ onBeforeUnmount(clearShellContext)
               </div>
             </div>
             <template v-if="workspace.primary_dataset">
-              <router-link
-                v-if="canOpenAnalysisCenter"
-                class="analysis-entry"
-                data-test="analysis-center-entry"
-                :to="`/datasets/${workspace.primary_dataset.id}/analysis`"
-              >
-                统计与空间分析
-              </router-link>
-              <p v-else class="analysis-unavailable" data-test="analysis-center-unavailable">
+              <p v-if="!canOpenAnalysisCenter" class="analysis-unavailable" data-test="analysis-center-unavailable">
                 数据版本尚未通过验证：完成质量验证后，统计与空间分析才可用。
               </p>
             </template>
@@ -654,9 +667,33 @@ onBeforeUnmount(clearShellContext)
   padding: var(--s1-space-3) var(--s1-space-4);
 }
 
+.workspace-shortcuts {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s1-space-4);
+  flex-wrap: wrap;
+  border-color: var(--s1-case-accent);
+}
+
+.shortcut-label {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  color: var(--s1-text-dim);
+  font-size: var(--s1-font-sm);
+}
+
+.shortcut-label strong {
+  color: var(--s1-text-strong);
+  font-size: var(--s1-font-md);
+}
+
 .command-row {
   display: flex;
   gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
 }
 
 .warn-line {
