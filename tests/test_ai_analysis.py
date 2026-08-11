@@ -269,6 +269,22 @@ class TestAiAnalysisService:
         latest = get_latest_ai_analysis(runtime, candidate_id)
         assert latest is None
 
+    def test_get_latest_filters_records_by_analysis_mode(self, tmp_path, monkeypatch):
+        monkeypatch.delenv(ENV_API_KEY, raising=False)
+        client, runtime = make_client(tmp_path)
+        candidate_id = _prepare_run(client)
+        client.post(f"/api/results/{candidate_id}/materialize")
+
+        adapter = DeepSeekAdapter(api_key="sk-test", _transport=FakeTransport(_success_ai_response))
+        generate_ai_analysis(runtime, candidate_id, mode="quick", adapter=adapter)
+        generate_ai_analysis(runtime, candidate_id, mode="review", adapter=adapter)
+
+        quick = get_latest_ai_analysis(runtime, candidate_id, mode="quick")
+        review = get_latest_ai_analysis(runtime, candidate_id, mode="review")
+
+        assert quick is not None and quick.mode == "quick"
+        assert review is not None and review.mode == "review"
+
     def test_no_api_key_in_database(self, tmp_path, monkeypatch):
         monkeypatch.delenv(ENV_API_KEY, raising=False)
         client, runtime = make_client(tmp_path)
@@ -329,6 +345,29 @@ class TestAiAnalysisApi:
         data = resp.json()
         assert data["status"] == "succeeded"
         assert data["review"]["mode"] == "quick"
+
+    def test_get_latest_filters_by_requested_mode(self, tmp_path, monkeypatch):
+        monkeypatch.delenv(ENV_API_KEY, raising=False)
+        client, runtime = make_client(tmp_path)
+        candidate_id = _prepare_run(client)
+        client.post(f"/api/results/{candidate_id}/materialize")
+
+        adapter = DeepSeekAdapter(api_key="sk-test", _transport=FakeTransport(_success_ai_response))
+        generate_ai_analysis(runtime, candidate_id, mode="quick", adapter=adapter)
+
+        quick = client.get(
+            f"/api/results/{candidate_id}/ai-analysis/latest",
+            params={"mode": "quick"},
+        )
+        review = client.get(
+            f"/api/results/{candidate_id}/ai-analysis/latest",
+            params={"mode": "review"},
+        )
+
+        assert quick.status_code == 200
+        assert quick.json()["mode"] == "quick"
+        assert review.status_code == 404
+        assert review.json()["error"]["details"]["mode"] == "review"
 
     def test_no_api_key_in_response(self, tmp_path, monkeypatch):
         monkeypatch.delenv(ENV_API_KEY, raising=False)

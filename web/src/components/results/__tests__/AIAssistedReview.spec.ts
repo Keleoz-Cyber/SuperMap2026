@@ -43,9 +43,9 @@ describe('AIAssistedReview', () => {
   it('无记录：显示真实空态与显式生成入口，规则研判提示恒在', async () => {
     const wrapper = mountPanel()
     await flushPromises()
-    expect(client.fetchLatestAiAnalysis).toHaveBeenCalledWith('r-3d-normal')
+    expect(client.fetchLatestAiAnalysis).toHaveBeenCalledWith('r-3d-normal', 'quick')
     const empty = wrapper.get('[data-test="ai-empty"]')
-    expect(empty.text()).toContain('尚未生成 AI 辅助分析')
+    expect(empty.text()).toContain('尚未生成快速解读')
     expect(wrapper.text()).toContain('规则研判')
     await wrapper.get('[data-test="ai-generate"]').trigger('click')
     expect(client.generateAiAnalysis).toHaveBeenCalledWith('r-3d-normal', {
@@ -75,12 +75,12 @@ describe('AIAssistedReview', () => {
     expect(wrapper.find('[data-test="ai-retry"]').exists()).toBe(true)
   })
 
-  it('成功：四视角/共识/分歧/候选路径/复核清单/限制与身份尾注', async () => {
+  it('成功：结论优先、关键判断、行动与方案比较具有明确层级', async () => {
     vi.mocked(client.fetchLatestAiAnalysis).mockResolvedValue(AI_RECORD_SUCCEEDED)
     const wrapper = mountPanel()
     await flushPromises()
-    // 明确的辅助意见标识
-    expect(wrapper.get('[data-test="ai-review"]').text()).toContain('AI 辅助意见')
+    expect(wrapper.get('[data-test="ai-conclusion"]').text()).toContain('四个视角一致支持')
+    expect(wrapper.get('[data-test="ai-review"]').text()).toContain('快速解读')
     // 四视角
     expect(wrapper.get('[data-test="ai-perspective-spatial_pattern"]').text()).toContain('高值体元集中')
     expect(wrapper.get('[data-test="ai-perspective-model_reliability"]').text()).toContain('RMSE 5.2')
@@ -98,6 +98,7 @@ describe('AIAssistedReview', () => {
     expect(wrapper.get('[data-test="ai-checks"]').text()).toContain('复核 20-30m 层段切片')
     expect(wrapper.get('[data-test="ai-limitations"]').text()).toContain('局部线性坐标')
     // 身份尾注：provider/model/时间/prompt 版本/evidence hash 短码
+    await wrapper.get('[data-test="ai-technical-details"]').trigger('click')
     const footer = wrapper.get('[data-test="ai-identity"]')
     expect(footer.text()).toContain('deepseek')
     expect(footer.text()).toContain('deepseek-chat')
@@ -111,6 +112,11 @@ describe('AIAssistedReview', () => {
     vi.mocked(client.fetchLatestAiAnalysis).mockResolvedValue(AI_RECORD_SUCCEEDED)
     const wrapper = mountPanel()
     await flushPromises()
+    await wrapper.get('[data-test="ai-evidence-spatial_pattern"]').trigger('click')
+    expect(wrapper.text()).toContain('异常区域 A')
+    expect(wrapper.text()).toContain('深度层段 3')
+    expect(wrapper.text()).not.toContain('component-1')
+    expect(wrapper.text()).not.toContain('depth_bin-2')
     await wrapper.get('[data-test="ai-ref-spatial_pattern-component-1"]').trigger('click')
     await wrapper.get('[data-test="ai-ref-spatial_pattern-depth_bin-2"]').trigger('click')
     await wrapper.get('[data-test="ai-ref-review_and_next_checks-current_slice"]').trigger('click')
@@ -121,16 +127,40 @@ describe('AIAssistedReview', () => {
     ])
   })
 
-  it('重新生成携带 regenerate=true 与所选模式；生成中显示进行中状态', async () => {
+  it('切换模式按模式读取记录，不混用快速解读内容，也不自动触发付费生成', async () => {
     vi.mocked(client.fetchLatestAiAnalysis).mockResolvedValue(AI_RECORD_SUCCEEDED)
-    vi.mocked(client.generateAiAnalysis).mockResolvedValue(AI_RECORD_SUCCEEDED)
+    const wrapper = mountPanel()
+    await flushPromises()
+    vi.mocked(client.fetchLatestAiAnalysis).mockRejectedValue(
+      new ApiError('AI_ANALYSIS_NOT_FOUND', '尚无深度复核记录', 404),
+    )
+    await wrapper.get('[data-test="ai-mode-review"]').trigger('click')
+    await flushPromises()
+    expect(client.fetchLatestAiAnalysis).toHaveBeenLastCalledWith('r-3d-normal', 'review')
+    expect(client.generateAiAnalysis).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-test="ai-review"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="ai-empty"]').text()).toContain('尚未生成深度复核')
+  })
+
+  it('旧服务忽略 mode 时前端拒绝展示模式不匹配的记录', async () => {
+    vi.mocked(client.fetchLatestAiAnalysis).mockResolvedValue(AI_RECORD_SUCCEEDED)
     const wrapper = mountPanel()
     await flushPromises()
     await wrapper.get('[data-test="ai-mode-review"]').trigger('click')
-    await wrapper.get('[data-test="ai-regenerate"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="ai-review"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="ai-empty"]').text()).toContain('尚未生成深度复核')
+  })
+
+  it('深度复核生成入口明确说明模式并携带 review', async () => {
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('[data-test="ai-mode-review"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-test="ai-generate"]').trigger('click')
     expect(client.generateAiAnalysis).toHaveBeenCalledWith('r-3d-normal', {
       mode: 'review',
-      regenerate: true,
+      regenerate: false,
     })
   })
 
@@ -158,7 +188,7 @@ describe('AIAssistedReview', () => {
     )
     await wrapper.setProps({ resultId: 'r-other', gridSha256: 'b'.repeat(64) })
     await flushPromises()
-    expect(client.fetchLatestAiAnalysis).toHaveBeenCalledWith('r-other')
+    expect(client.fetchLatestAiAnalysis).toHaveBeenCalledWith('r-other', 'quick')
     expect(wrapper.find('[data-test="ai-review"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="ai-empty"]').exists()).toBe(true)
   })

@@ -655,16 +655,21 @@ def generate_ai_analysis(
     return record
 
 
-def get_latest_ai_analysis(runtime, result_id: str) -> AIAnalysisRecord | None:
-    """Get the latest AI analysis record for a result (read-only)."""
+def get_latest_ai_analysis(
+    runtime,
+    result_id: str,
+    *,
+    mode: str | None = None,
+) -> AIAnalysisRecord | None:
+    """Get the latest AI analysis record, optionally scoped to one mode."""
 
     with runtime.session() as session:
-        row = (
-            session.query(tables.AIAnalysisRecord)
-            .filter(tables.AIAnalysisRecord.result_id == result_id)
-            .order_by(tables.AIAnalysisRecord.created_at.desc())
-            .first()
+        query = session.query(tables.AIAnalysisRecord).filter(
+            tables.AIAnalysisRecord.result_id == result_id,
         )
+        if mode is not None:
+            query = query.filter(tables.AIAnalysisRecord.mode == mode)
+        row = query.order_by(tables.AIAnalysisRecord.created_at.desc()).first()
         if row is None:
             return None
         review = None

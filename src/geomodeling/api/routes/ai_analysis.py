@@ -6,7 +6,7 @@ GET  /api/results/{result_id}/ai-analysis/latest — read-only latest record
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends
 
@@ -41,17 +41,18 @@ def create_ai_analysis(
 @router.get("/api/results/{result_id}/ai-analysis/latest")
 def get_latest(
     result_id: str,
+    mode: Literal["quick", "review"] | None = None,
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
     require_active_candidate(runtime, result_id)
-    record = get_latest_ai_analysis(runtime, result_id)
+    record = get_latest_ai_analysis(runtime, result_id, mode=mode)
     if record is None:
         from geomodeling.platform.errors import PlatformError
 
         raise PlatformError(
             "AI_ANALYSIS_NOT_FOUND",
             "尚无 AI 辅助分析记录",
-            {"result_id": result_id},
+            {"result_id": result_id, "mode": mode},
             http_status=404,
         )
     return record.model_dump(mode="json")

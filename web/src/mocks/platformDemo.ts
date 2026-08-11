@@ -162,8 +162,8 @@ interface MockState {
   caseTrashedAt: string | null
   // v0.7.0 batch 3：多候选比较调用计数（首次 comparable，后续 incompatible）
   comparisonCalls: number
-  // v0.9.0：AI 辅助研判状态机（404 直到显式 POST 生成）
-  aiRecord: unknown | null
+  // v0.9.0：AI 辅助研判按模式隔离（各模式 404 直到显式 POST 生成）
+  aiRecords: Partial<Record<'quick' | 'review', unknown>>
 }
 
 // ---------------------------------------------------------------- v0.6 专业建模
@@ -1226,7 +1226,7 @@ export async function installMockApi(page: Page): Promise<void> {
     casePurged: false,
     caseTrashedAt: null,
     comparisonCalls: 0,
-    aiRecord: null,
+    aiRecords: {},
   }
 
   const runBody = (status: string, completed: number) => ({
@@ -2519,18 +2519,23 @@ export async function installMockApi(page: Page): Promise<void> {
     // v0.9.0：AI 辅助研判（POST 显式生成 / latest 只读；无记录 404）
     if (path === '/results/cand-1/ai-analysis' && method === 'POST') {
       const body = route.request().postDataJSON() as { mode?: string }
-      state.aiRecord = aiRecordE2E(body.mode === 'review' ? 'review' : 'quick')
-      return json(route, state.aiRecord, 201)
+      const requestedMode = body.mode === 'review' ? 'review' : 'quick'
+      state.aiRecords[requestedMode] = aiRecordE2E(requestedMode)
+      return json(route, state.aiRecords[requestedMode], 201)
     }
     if (path === '/results/cand-1/ai-analysis/latest' && method === 'GET') {
-      if (!state.aiRecord) {
+      const requestedMode = new URL(route.request().url()).searchParams.get('mode') === 'review'
+        ? 'review'
+        : 'quick'
+      const aiRecord = state.aiRecords[requestedMode]
+      if (!aiRecord) {
         return json(
           route,
-          { error: { code: 'AI_ANALYSIS_NOT_FOUND', message: '尚无 AI 辅助分析记录', details: { result_id: 'cand-1' } } },
+          { error: { code: 'AI_ANALYSIS_NOT_FOUND', message: '尚无 AI 辅助分析记录', details: { result_id: 'cand-1', mode: requestedMode } } },
           404,
         )
       }
-      return json(route, state.aiRecord)
+      return json(route, aiRecord)
     }
     if (path === '/results/cand-1/select-formal' && method === 'POST') {
       const body = route.request().postDataJSON() as { note: string; selected_by?: string }

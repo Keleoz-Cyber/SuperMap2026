@@ -127,15 +127,16 @@ test.describe('成果级分析工作台（mock 协议帧）', () => {
     await page.evaluate(() => window.scrollTo(0, 0))
     await page.screenshot({ path: `${EVIDENCE_DIR}/03-evidence-provenance.png` })
 
-    // AI 辅助：空态 → 显式生成 → 四视角 → evidence ref 联动组件
+    // AI 辅助：空态 → 显式生成 → 结论优先 → 依据联动组件
     await page.getByTestId('side-tab-ai').click()
     await expect(page.getByTestId('ai-empty')).toContainText('尚未生成')
     await page.getByTestId('ai-generate').click()
-    await expect(page.getByTestId('ai-review')).toContainText('AI 辅助意见')
+    await expect(page.getByTestId('ai-review')).toContainText('快速解读结论')
     await expect(page.getByTestId('ai-perspective-spatial_pattern')).toContainText('高值体元集中')
     await expect(page.getByTestId('ai-decision-options')).toContainText('维持当前模型')
     await expect(page.getByTestId('ai-identity')).toContainText('deepseek-chat')
     await expect(page.getByTestId('ai-identity')).toContainText('ai_review.v1')
+    await page.getByTestId('ai-evidence-spatial_pattern').click()
     await page.getByTestId('ai-ref-spatial_pattern-component-1').click()
     await expect
       .poll(async () =>

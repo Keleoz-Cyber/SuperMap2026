@@ -404,8 +404,12 @@ export function generateAiAnalysis(
   })
 }
 
-export function fetchLatestAiAnalysis(resultId: string): Promise<AIAnalysisRecord> {
-  return getJson<AIAnalysisRecord>(`/results/${resultId}/ai-analysis/latest`)
+export function fetchLatestAiAnalysis(
+  resultId: string,
+  mode?: AIAnalysisMode,
+): Promise<AIAnalysisRecord> {
+  const suffix = mode ? `?mode=${encodeURIComponent(mode)}` : ''
+  return getJson<AIAnalysisRecord>(`/results/${resultId}/ai-analysis/latest${suffix}`)
 }
 
 // v0.7.0 第二批：RenderAsset 统一剖面分析与导出（三来源共用）
