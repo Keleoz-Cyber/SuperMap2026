@@ -122,6 +122,7 @@ class DeepSeekAdapter:
             # V4 defaults to thinking mode. This endpoint needs bounded-latency,
             # structured review output rather than exposed reasoning tokens.
             "thinking": {"type": "disabled"},
+            "temperature": 0,
             "max_tokens": self.max_tokens,
         }
 

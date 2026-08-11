@@ -69,7 +69,11 @@
   - `DEEPSEEK_TIMEOUT_SEC` — 默认 90
   - `DEEPSEEK_MAX_TOKENS` — 默认 4096
 - 成果研判固定使用 JSON Output，并显式发送
-  `thinking={"type":"disabled"}`；V4 默认思考模式不适合该低延迟结构化接口。
+  `thinking={"type":"disabled"}`、`temperature=0`；V4 默认思考模式不适合该低延迟结构化接口。
+- EvidencePacket 会读取候选成果已经登记的公共有效集、RMSE、MAE、R²、覆盖率、
+  输入质量与正式选择 ID，确保 AI 研判不与同页规则研判自相矛盾。
+- 禁止领域结论按句校验；“不可视为真实地质体积”等明确否定边界允许展示，
+  正向或裸领域断言继续 fail-closed。
 - 启动命令：`uvicorn geomodeling.api.app:app --host 127.0.0.1 --port 8000`
 - Mock/Fake DeepSeek 使用方式：构造 `DeepSeekAdapter(api_key="sk-test", _transport=FakeTransport(response_factory))`，FakeTransport 实现 `post(url, *, json, headers, timeout) -> httpx.Response`
 - 真实 Key 可选验证方式：设置 `DEEPSEEK_API_KEY` 环境变量后 POST `/api/results/{result_id}/ai-analysis`

@@ -115,9 +115,11 @@ class FakeTransport:
     def __init__(self, response_factory):
         self._factory = response_factory
         self.call_count = 0
+        self.calls: list[dict[str, Any]] = []
 
     def post(self, url: str, *, json: dict, headers: dict, timeout: float) -> httpx.Response:
         self.call_count += 1
+        self.calls.append({"url": url, "json": json, "timeout": timeout})
         return self._factory()
 
 
@@ -184,9 +186,10 @@ class TestAiAnalysisService:
         candidate_id = _prepare_run(client)
         client.post(f"/api/results/{candidate_id}/materialize")
 
+        transport = FakeTransport(_success_ai_response)
         adapter = DeepSeekAdapter(
             api_key="sk-test",
-            _transport=FakeTransport(_success_ai_response),
+            _transport=transport,
         )
         record = generate_ai_analysis(runtime, candidate_id, mode="quick", adapter=adapter)
         assert record.status == "succeeded"
@@ -194,6 +197,10 @@ class TestAiAnalysisService:
         assert record.review.mode == "quick"
         assert record.review.provider == "deepseek"
         assert record.usage_prompt_tokens == 200
+        user_prompt = transport.calls[0]["json"]["messages"][1]["content"]
+        assert '"common_valid_count": null' not in user_prompt
+        assert '"rmse": null' not in user_prompt
+        assert '"r2": null' not in user_prompt
 
     def test_reuse_existing_record(self, tmp_path, monkeypatch):
         monkeypatch.delenv(ENV_API_KEY, raising=False)
@@ -437,3 +444,40 @@ class TestEvidencePacketAndValidation:
             validate_ai_review(bad_content, packet, hash_val, "deepseek", "test-model", "quick")
         assert exc.value.code == AI_ANALYSIS_UNAVAILABLE
         assert "储量" in (exc.value.details.get("prohibited") or "")
+
+    def test_prohibited_term_allowed_only_in_explicit_limitations(self, tmp_path, monkeypatch):
+        monkeypatch.delenv(ENV_API_KEY, raising=False)
+        client, runtime = make_client(tmp_path)
+        candidate_id = _prepare_run(client)
+        client.post(f"/api/results/{candidate_id}/materialize")
+
+        from geomodeling.platform.results import load_grid, read_materialized_metadata
+
+        metadata = read_materialized_metadata(runtime, candidate_id)
+        grid = load_grid(runtime, candidate_id)
+        summary = analyze_result_grid(
+            grid, result_id=candidate_id, grid_sha256=metadata["grid_sha256"],
+            variable_name="RHO", variable_unit="ohm_m",
+        )
+        packet = build_evidence_packet(summary)
+        hash_val = compute_evidence_hash(packet)
+        content = json.dumps({
+            "spatial_pattern": {
+                "summary": "网格支持量非真实地质体积，仅用于比较组件规模",
+                "evidence_refs": ["result_grid"],
+            },
+            "model_reliability": {"summary": "需要结合指标", "evidence_refs": ["model_evidence"]},
+            "uncertainty_and_risk": {"summary": "边界需要复核", "evidence_refs": ["uncertainty"]},
+            "review_and_next_checks": {"summary": "复核边界", "evidence_refs": ["constraints"]},
+            "consensus": {
+                "consensus": "仅作属性场解释",
+                "disagreements": [],
+                "recommended_checks": [],
+                "decision_options": [],
+                "limitations": ["网格支持量不可视为真实地质体积"],
+            },
+        })
+
+        review = validate_ai_review(content, packet, hash_val, "deepseek", "test-model", "quick")
+        assert "非真实地质体积" in review.spatial_pattern.summary
+        assert review.consensus.limitations == ["网格支持量不可视为真实地质体积"]

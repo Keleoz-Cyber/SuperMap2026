@@ -162,3 +162,4 @@ class TestDeepSeekAdapter:
         adapter.chat_json("system", "user")
         payload = transport.calls[0]["json"]
         assert payload["thinking"] == {"type": "disabled"}
+        assert payload["temperature"] == 0

@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
+import re
 import time
 import uuid
 from typing import Any
@@ -62,6 +64,32 @@ _PROHIBITED_CLAIMS = [
     "含水性", "含水", "危险性", "危险", "储量", "成矿", "地质体积",
     "工程安全", "安全等级", "资源量",
 ]
+
+_BOUNDARY_MARKERS = (
+    "超出当前证据范围",
+    "无法判断", "无法评估", "无法用于", "无法支持", "无法推断", "无法解释为",
+    "不能判断", "不能评估", "不能用于", "不能支持", "不能推断", "不能代表",
+    "不可用于", "不可视为", "不可解释为", "不可推断",
+    "不代表", "不等于", "不是", "并非", "非真实", "不具备", "未知",
+)
+
+
+def _unsupported_claim_term(text: str) -> str | None:
+    """Return a prohibited term used as a claim, not a negative boundary.
+
+    The model may state that evidence *cannot* support a domain conclusion.
+    Those explicit boundary sentences are safe and useful; positive or bare
+    domain assertions remain fail-closed. Sentence-level matching prevents a
+    disclaimer elsewhere in the paragraph from laundering an unsafe claim.
+    """
+
+    for sentence in re.split(r"[。！？!?；;\n]", text):
+        if not sentence:
+            continue
+        for term in _PROHIBITED_CLAIMS:
+            if term in sentence and not any(marker in sentence for marker in _BOUNDARY_MARKERS):
+                return term
+    return None
 
 
 def build_evidence_packet(
@@ -306,9 +334,24 @@ def validate_ai_review(
                     {"ref": ref},
                 )
 
-    all_text = json.dumps(raw, ensure_ascii=False)
-    for claim in _PROHIBITED_CLAIMS:
-        if claim in all_text:
+    # Explicit negative boundary statements may repeat a domain term (for
+    # example, "不可视为真实地质体积"). Positive or bare domain claims remain
+    # fail-closed across every analytical and decision surface.
+    claim_surfaces = [
+        review.spatial_pattern.summary,
+        review.model_reliability.summary,
+        review.uncertainty_and_risk.summary,
+        review.review_and_next_checks.summary,
+        review.consensus.consensus,
+        *review.consensus.disagreements,
+        *review.consensus.recommended_checks,
+        *review.consensus.limitations,
+    ]
+    for option in review.consensus.decision_options:
+        claim_surfaces.extend([option.label, option.trigger, option.benefit, option.cost])
+    for text in claim_surfaces:
+        claim = _unsupported_claim_term(text)
+        if claim is not None:
             raise PlatformError(
                 AI_ANALYSIS_UNAVAILABLE,
                 f"AI 输出包含禁止的领域结论: {claim}",
@@ -361,6 +404,57 @@ def generate_ai_analysis(
     grid_sha256 = metadata.get("grid_sha256", "")
     grid = load_grid(runtime, result_id)
 
+    # Reuse the candidate's persisted cross-validation evidence. The rule
+    # analysis and AI review must not disagree merely because the AI packet
+    # omitted metrics that already exist in the platform database.
+    model_metrics: dict[str, float | None] = {}
+    common_valid_count: int | None = None
+    formal_selection_id: str | None = None
+    input_quality: dict[str, int | float | None] = {}
+    with runtime.session() as session:
+        candidate = session.get(tables.CandidateResult, result_id)
+        raw_metrics = (
+            tables.loads_canonical(candidate.metrics_json)
+            if candidate is not None and candidate.metrics_json
+            else {}
+        )
+        for key in ("rmse", "mae", "r2", "coverage"):
+            value = raw_metrics.get(key)
+            try:
+                parsed = float(value) if value is not None else None
+            except (TypeError, ValueError):
+                parsed = None
+            model_metrics[key] = parsed if parsed is None or math.isfinite(parsed) else None
+
+        def parse_nonnegative_int(value: Any) -> int | None:
+            try:
+                parsed = int(value) if value is not None else None
+            except (TypeError, ValueError):
+                return None
+            return parsed if parsed is not None and parsed >= 0 else None
+
+        parsed_common_valid = parse_nonnegative_int(raw_metrics.get("common_valid_count"))
+        if parsed_common_valid is not None and parsed_common_valid >= 0:
+            common_valid_count = parsed_common_valid
+
+        input_quality = {
+            "validated_count": parse_nonnegative_int(raw_metrics.get("candidate_valid_count")),
+            "total_count": parse_nonnegative_int(raw_metrics.get("total_count")),
+            "coverage": model_metrics.get("coverage"),
+        }
+
+        run = session.get(tables.Run, candidate.run_id) if candidate is not None else None
+        experiment = session.get(tables.Experiment, run.experiment_id) if run is not None else None
+        if experiment is not None:
+            selection = (
+                session.query(tables.FormalSelection)
+                .filter(tables.FormalSelection.case_id == experiment.case_id)
+                .order_by(tables.FormalSelection.created_at.desc())
+                .first()
+            )
+            if selection is not None:
+                formal_selection_id = selection.id
+
     summary = analyze_result_grid(
         grid,
         result_id=result_id,
@@ -371,6 +465,9 @@ def generate_ai_analysis(
         component_limit=8,
         min_support_nodes=2,
         algorithm=metadata.get("algorithm", "unknown"),
+        model_metrics=model_metrics,
+        common_valid_count=common_valid_count,
+        formal_selection_id=formal_selection_id,
         coordinate_type=metadata.get("coordinate_kind", "local_linear"),
     )
 
@@ -405,7 +502,11 @@ def generate_ai_analysis(
     packet = build_evidence_packet(
         summary,
         current_slice=current_slice_data,
+        model_metrics=model_metrics,
+        common_valid_count=common_valid_count,
+        formal_selection_id=formal_selection_id,
         uncertainty_available=uncertainty_available,
+        input_quality=input_quality,
     )
     evidence_hash = compute_evidence_hash(packet)
 
