@@ -3,7 +3,7 @@ import { installMockApi } from '../src/mocks/platformDemo'
 import { MOCK_VOLUME_FRAME_HTML } from './mockVolumeFrame'
 
 // v0.9.0 Task 14：响应式与零横向溢出像素级门（mock API + 协议 mock 子帧）。
-// 覆盖桌面答辩屏/普通笔记本/平板/手机四档视口；任何档位出现横向溢出、
+// 覆盖桌面大屏/普通笔记本/平板/手机四档视口；任何档位出现横向溢出、
 // 主动作缺失或未处理页面错误即失败。
 
 const VIEWPORTS = [

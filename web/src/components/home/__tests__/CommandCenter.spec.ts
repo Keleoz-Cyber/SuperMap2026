@@ -190,7 +190,6 @@ async function mountHome(cases: CaseSummary[]) {
     routes: [
       { path: '/', name: 'home', component: HomeView },
       { path: '/trash', name: 'trash', component: stub },
-      { path: '/presentation', name: 'presentation', component: stub },
       { path: '/cases/new', name: 'case-create', component: stub },
       { path: '/cases/:caseId', name: 'case-workspace', component: stub },
       { path: '/cases/:caseId/experiments/new', name: 'experiment-create', component: stub },

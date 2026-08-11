@@ -125,7 +125,10 @@ beforeEach(() => {
 
 describe('ResultWorkbenchView v0.7.0（DAT 证据层退出）', () => {
   it('has no microseismic import route registered', () => {
-    expect(router.resolve('/cases/builtin-microseismic-vx-1911/microseismic/import').matched).toHaveLength(0)
+    // v0.9.0 V6：catch-all 兜底存在后，「路由未注册」的准确语义是
+    // 只命中 catch-all 重定向（回首页），不存在任何 DAT 专用路由
+    const matched = router.resolve('/cases/builtin-microseismic-vx-1911/microseismic/import').matched
+    expect(matched.every((record) => record.path === '/:pathMatch(.*)*')).toBe(true)
   })
 
   it('client exposes no DAT derivation calls', () => {

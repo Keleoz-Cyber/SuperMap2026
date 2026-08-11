@@ -2,7 +2,7 @@
 // v0.9.0：全局应用头。纯展示组件——不 fetch 页面数据、不创建路由实例；
 // 导航一律使用命名路由，服务状态与案例上下文由 AppShell/壳上下文传入。
 import { RouterLink } from 'vue-router'
-import { Delete, DataAnalysis, Upload } from '@element-plus/icons-vue'
+import { Delete, Upload } from '@element-plus/icons-vue'
 import { WEB_VERSION } from '../../version'
 import { useShellContext } from '../../stores/shellContext'
 
@@ -54,15 +54,6 @@ void props
       >
         <el-icon :size="15"><Upload /></el-icon>
         导入数据 / 新建建模
-      </RouterLink>
-      <RouterLink
-        :to="{ name: 'presentation' }"
-        class="action ghost"
-        data-test="presentation-mode-entry"
-        aria-label="进入答辩模式"
-      >
-        <el-icon :size="15"><DataAnalysis /></el-icon>
-        答辩模式
       </RouterLink>
       <RouterLink :to="{ name: 'trash' }" class="action ghost" data-test="shell-trash-link">
         <el-icon :size="15"><Delete /></el-icon>

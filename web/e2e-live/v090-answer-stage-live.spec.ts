@@ -242,36 +242,6 @@ test('成果页图表→三维联动：趋势点击驱动切片', async ({ page 
   await writer.savePageShot(page, 'linkage-gas')
 })
 
-test('答辩模式：六章节与案例章节真实场景', async ({ page }) => {
-  test.setTimeout(600_000)
-  await page.setViewportSize(DESKTOP)
-  installV090Observers(record, page)
-  await installLiveProbe(page)
-  await page.goto('/#/presentation')
-  await expect(page.getByTestId('presentation-overlay')).toBeVisible()
-  // 答辩全屏：全局头与编辑/危险入口不可见；服务状态保留在控制层
-  await expect(page.getByTestId('app-global-header')).toHaveCount(0)
-  await expect(page.getByTestId('global-create-case')).toHaveCount(0)
-  await expect(page.getByTestId('shell-trash-link')).toHaveCount(0)
-  await expect(page.getByTestId('presentation-service-status')).toBeVisible()
-  await expect(page.getByTestId('chapter-overview')).toContainText('数据接入')
-
-  const chapterTitles = ['地下电阻率', '微震速度', '煤层瓦斯含量', '自定义数据', '创新点与已知边界']
-  for (const title of chapterTitles) {
-    await page.keyboard.press('ArrowRight')
-    await expect(page.getByTestId('presentation-title')).toContainText(title)
-  }
-  // 电阻率章节真实渲染门
-  await page.getByTestId('presentation-chapter-resistivity').click()
-  await waitSceneRendered(page, 'presentation-resistivity')
-  const metrics = await analyzeVolumePixels(page, await page.getByTestId('volume-frame').screenshot())
-  expectVolumeContent(metrics, '答辩电阻率章节 Volume', { minNonBg: 2000, minCoverage: 0.15 })
-  await writer.savePageShot(page, 'presentation-resistivity')
-
-  await page.keyboard.press('Escape')
-  await expect(page.getByTestId('command-center')).toBeVisible()
-})
-
 test('手机 390×844：摘要优先顺序 + 全屏三维入口 + 案例切换渲染', async ({ page }) => {
   test.setTimeout(300_000)
   await page.setViewportSize(PHONE)

@@ -6,8 +6,6 @@ import * as client from '../../../api/client'
 import type { CaseSummary } from '../../../api/types'
 import AppShell from '../AppShell.vue'
 import HomeView from '../../../views/HomeView.vue'
-import PresentationOverlay from '../../presentation/PresentationOverlay.vue'
-import { resetPresentationStore, usePresentationStore } from '../../../stores/presentation'
 import { readFileSync } from 'node:fs'
 
 // vitest 的 CSS ?raw 导入会被裁剪为空串；样式规则断言直接读文件（vitest 以 web/ 为 cwd）
@@ -75,7 +73,6 @@ async function mountHome() {
       { path: '/cases/new', name: 'case-create', component: stub },
       { path: '/cases/:caseId', name: 'case-workspace', component: stub },
       { path: '/results/:resultId', name: 'result-workbench', component: stub },
-      { path: '/presentation', name: 'presentation', component: stub },
     ],
   })
   await router.push('/')
@@ -90,7 +87,6 @@ async function mountHome() {
 beforeEach(() => {
   document.body.innerHTML = ''
   vi.clearAllMocks()
-  resetPresentationStore()
 })
 
 describe('responsive & accessibility contracts', () => {
@@ -118,17 +114,6 @@ describe('responsive & accessibility contracts', () => {
     for (const el of controls) {
       const name = el.text().trim() || el.attributes('aria-label') || el.attributes('title')
       expect(name).toBeTruthy()
-    }
-    wrapper.unmount()
-  })
-
-  it('presentation controls are native buttons (keyboard reachable)', () => {
-    const store = usePresentationStore()
-    store.enter()
-    const wrapper = mount(PresentationOverlay, { global: { plugins: [ElementPlus] } })
-    for (const testId of ['presentation-prev', 'presentation-next', 'presentation-exit']) {
-      const el = wrapper.get(`[data-test="${testId}"]`)
-      expect(el.element.tagName).toBe('BUTTON')
     }
     wrapper.unmount()
   })

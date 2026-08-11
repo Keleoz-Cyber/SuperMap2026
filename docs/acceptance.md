@@ -5,7 +5,7 @@
 v0.9.0 视觉产品验收（真实数据 + 真实浏览器为准；不以后端 mock 或构建通过代替视觉结论）：
 
 1. 设计与计划：[2026-08-10 设计规格](superpowers/specs/2026-08-10-v0.9.0-visual-product-redesign-design.md) 与 [实施计划](superpowers/plans/2026-08-10-v0.9.0-visual-product-redesign.md)；验收矩阵与测试实数见 [evidence/v0.9.0/verification.md](evidence/v0.9.0/verification.md)。
-2. 聚焦门：`npm --prefix web run test:e2e -- v090`（指挥舱/自定义数据全链/答辩模式/四档响应式，mock API + 协议 mock 子帧）；真实 SDK live 门 `npm --prefix web run test:e2e:live -- v090-answer-stage-live.spec.ts`（隔离 GEOMODELING_DATA_DIR，三案例内置源 seed，RTX GPU 像素门）。
+2. 聚焦门：`npm --prefix web run test:e2e -- v090`（指挥舱/自定义数据全链/四档响应式/成果级分析，mock API + 协议 mock 子帧）；真实 SDK live 门 `npm --prefix web run test:e2e:live -- v090-answer-stage-live.spec.ts`（隔离 GEOMODELING_DATA_DIR，三案例内置源 seed，RTX GPU 像素门）。
 3. 界面语义红线：官方案例不出现上传步骤；每页唯一主动作；结论卡必须带 source/confidence/limitations；环图仅用于可加总部分-整体；瓦斯不输出危险/安全/储量结论；坐标恒标局部线性 + 显示锚点。
 4. 回归红线：三案例源哈希、官方基线指纹、渲染协议 v2、回收站与正式选择保护全部保持既有测试绿色；`local_data` 分层与既有 live 门不删减。
 5. 成果级分析集成门：`npm --prefix web run test:e2e:live -- result-analysis-live.spec.ts` 必须在隔离运行时中 seed 官方电阻率成果，显式创建 NetCDF 资产，并验证 `result_id + grid_sha256`、规则研判、组件标注/聚焦、四相机、Volume/Slice/Contour、权威切片、DeepSeek 未配置类型化降级和 1920×1080 页面级横纵溢出不超过 1 px。真实证据见 [evidence/v0.9.0-result-analysis-live/verification.md](evidence/v0.9.0-result-analysis-live/verification.md)。
