@@ -157,14 +157,15 @@ function formatError(e: unknown): string {
 
 // 渲染默认值来自 capability.render_profile（色带/标度经纯函数展开）；
 // 缺省（不支持/点云专用初始化）使用固定安全默认
+// v0.9.0 V6：光照/渐变透明度在 profile 缺失降级路径同样默认关闭
 function profileDefaults() {
   const profile = capability.value?.render_profile ?? null
   const range: [number, number] = profile ? profile.value_range : [0, 1]
   return {
     range,
     stops: buildColorStops(profile?.default_palette ?? 'viridis', profile?.default_scale ?? 'linear', range),
-    lighting: profile?.lighting ?? true,
-    gradientOpacity: profile?.gradient_opacity ?? true,
+    lighting: profile?.lighting ?? false,
+    gradientOpacity: profile?.gradient_opacity ?? false,
     boundingBox: profile?.bounding_box ?? true,
     opacity: profile?.opacity ?? 1,
   }

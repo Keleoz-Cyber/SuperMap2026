@@ -40,8 +40,10 @@ class RenderProfile:
     log_available: bool
     value_range: tuple[float, float]
     filter_range: tuple[float, float]
-    lighting: bool = True
-    gradient_opacity: bool = True
+    # v0.9.0 V6：光照与渐变透明度默认关闭（画面以真实体素颜色为主）；
+    # 包围盒默认开启。能力开关不受默认值影响。
+    lighting: bool = False
+    gradient_opacity: bool = False
     bounding_box: bool = True
     opacity: float = 1.0
 

@@ -81,8 +81,8 @@ const CANDIDATE_PROFILE: RenderProfile = {
   log_available: true,
   value_range: [4.2, 5.8],
   filter_range: [4.2, 5.8],
-  lighting: true,
-  gradient_opacity: true,
+  lighting: false,
+  gradient_opacity: false,
   bounding_box: true,
   opacity: 1,
 }
@@ -96,8 +96,8 @@ const LEGACY_PROFILE: RenderProfile = {
   log_available: true,
   value_range: [1.4, 133.1],
   filter_range: [1.4, 133.1],
-  lighting: true,
-  gradient_opacity: true,
+  lighting: false,
+  gradient_opacity: false,
   bounding_box: true,
   opacity: 1,
 }
@@ -352,8 +352,8 @@ describe('NativeVolumePanel 能力与资产', () => {
     expect(initial.filter).toEqual({ min: 4.2, max: 5.8 })
     expect(initial.colorTransferFunction).toHaveLength(5)
     expect(initial.colorTransferFunction[0].color).toBe(PALETTES.viridis[0])
-    expect(initial.lighting).toBe(true)
-    expect(initial.gradientOpacity).toBe(true)
+    expect(initial.lighting).toBe(false)
+    expect(initial.gradientOpacity).toBe(false)
     expect(initial.boundingBox).toBe(true)
   })
 
@@ -479,7 +479,7 @@ describe('NativeVolumePanel 控件与 revision', () => {
     expect(state.mode).toBe('volume')
     expect(state.opacity).toBe(0.5)
     expect(state.colorTransferFunction).toHaveLength(5)
-    expect(state.lighting).toBe(true)
+    expect(state.lighting).toBe(false)
 
     // 滤波变更：revision=3
     await wrapper.find('[data-test="filter-min"]').setValue('4.5')
@@ -502,15 +502,19 @@ describe('NativeVolumePanel 控件与 revision', () => {
     expect(wrapper.find('[data-test="lighting-toggle"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="gradient-opacity-toggle"]').exists()).toBe(true)
 
-    await wrapper.find('[data-test="lighting-toggle"] input').setValue(false)
+    // 默认关闭；用户手动打开后完整状态推送 true
+    expect(
+      (wrapper.findComponent(FrameStub).props('initialState') as RenderStateV2).lighting,
+    ).toBe(false)
+    await wrapper.find('[data-test="lighting-toggle"] input').setValue(true)
     await flushPromises()
-    expect(lastAppliedState().lighting).toBe(false)
+    expect(lastAppliedState().lighting).toBe(true)
 
-    await wrapper.find('[data-test="gradient-opacity-toggle"] input').setValue(false)
+    await wrapper.find('[data-test="gradient-opacity-toggle"] input').setValue(true)
     await flushPromises()
     const state = lastAppliedState()
-    expect(state.gradientOpacity).toBe(false)
-    expect(state.lighting).toBe(false)
+    expect(state.gradientOpacity).toBe(true)
+    expect(state.lighting).toBe(true)
   })
 
   it('等值面输入只在 contour 模式显示；值进入状态，留空回落值域中点语义', async () => {
@@ -896,6 +900,26 @@ describe('NativeVolumePanel v0.9 联动挂起解析', () => {
     expect(analysis.exists()).toBe(true)
     expect(analysis.props('target')).toEqual({ axis: 'y', index: 2 })
     expect(wrapper.emitted('slice-request-failed')).toBeFalsy()
+    wrapper.unmount()
+  })
+})
+
+// v0.9.0 V6 Task 1：无 profile 降级路径的默认渲染状态合同
+describe('NativeVolumePanel V6 默认渲染状态', () => {
+  it('render_profile=null 降级路径：光照/渐变透明度默认关闭，包围盒默认开启', async () => {
+    const api = makeApi({
+      fetchCapability: vi.fn().mockResolvedValue({
+        ...supportedCapability(null),
+        render_profile: null,
+      }),
+      fetchAsset: vi.fn().mockResolvedValue(ASSET),
+    })
+    const wrapper = mountPanel(api)
+    await flushPromises()
+    const initial = wrapper.findComponent(FrameStub).props('initialState') as RenderStateV2
+    expect(initial.lighting).toBe(false)
+    expect(initial.gradientOpacity).toBe(false)
+    expect(initial.boundingBox).toBe(true)
     wrapper.unmount()
   })
 })

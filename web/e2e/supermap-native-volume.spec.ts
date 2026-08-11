@@ -92,7 +92,10 @@ test('3D 成果工作台：物化 + 原生体渲染 + 工具栏完整状态 + �
   expect((await frameMessages()).map((m) => m.type)).toContain('INIT')
 
   // ------------------------------------------------------------ 常驻工具栏
-  // 光照/渐变透明度/包围盒运行时切换
+  // v0.9.0 V6：INIT 初始状态光照/渐变透明度默认关闭，包围盒默认开启
+  const initMsg = (await frameMessages()).find((m) => m.type === 'INIT')
+  expect(initMsg?.state).toMatchObject({ lighting: false, gradientOpacity: false, boundingBox: true })
+  // 光照/渐变透明度/包围盒运行时切换（默认关 → 打开；包围盒默认开 → 关闭）
   await page.getByTestId('lighting-toggle').click()
   await page.getByTestId('gradient-opacity-toggle').click()
   await page.getByTestId('bounding-box-toggle').click()
@@ -127,8 +130,8 @@ test('3D 成果工作台：物化 + 原生体渲染 + 工具栏完整状态 + �
       mode: 'contour',
       contourValue: 30,
       filter: { min: 20, max: 50 },
-      lighting: false,
-      gradientOpacity: false,
+      lighting: true,
+      gradientOpacity: true,
       boundingBox: false,
     })
   const lastComplete = (await appliedStates()).at(-1)!

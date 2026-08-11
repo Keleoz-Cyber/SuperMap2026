@@ -177,8 +177,8 @@ def test_capability_supported_with_display_transform(tmp_path, monkeypatch):
         lo, hi = profile["value_range"]
         assert lo > 0 and hi > lo
         assert profile["filter_range"] == profile["value_range"]
-        assert profile["lighting"] is True
-        assert profile["gradient_opacity"] is True
+        assert profile["lighting"] is False
+        assert profile["gradient_opacity"] is False
         assert profile["bounding_box"] is True
         assert profile["opacity"] == 1.0
         assert capability["grid_kind"] == "regular"
