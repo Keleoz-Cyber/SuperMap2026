@@ -15,6 +15,7 @@ import httpx
 import pytest
 
 from geomodeling.integrations.deepseek import (
+    DEFAULT_TIMEOUT_SEC,
     DEEPSEEK_EMPTY_RESPONSE,
     DEEPSEEK_MALFORMED_JSON,
     DEEPSEEK_NOT_CONFIGURED,
@@ -73,6 +74,14 @@ class TestDeepSeekAdapter:
         assert adapter is not None
         assert adapter.api_key == "sk-test-key"
         assert adapter.model == "deepseek-chat"
+
+    def test_from_env_uses_current_flash_model_by_default(self, monkeypatch):
+        monkeypatch.setenv(ENV_API_KEY, "sk-test-key")
+        monkeypatch.delenv("DEEPSEEK_MODEL", raising=False)
+        adapter = DeepSeekAdapter.from_env()
+        assert adapter is not None
+        assert adapter.model == "deepseek-v4-flash"
+        assert adapter.timeout == float(DEFAULT_TIMEOUT_SEC)
 
     def test_successful_json_response(self):
         transport = FakeTransport(lambda: _make_response(200, _success_body()))
@@ -146,3 +155,10 @@ class TestDeepSeekAdapter:
         adapter.chat_json("system", "user")
         payload = transport.calls[0]["json"]
         assert payload["response_format"] == {"type": "json_object"}
+
+    def test_explicitly_disables_thinking_for_low_latency_json_analysis(self):
+        transport = FakeTransport(lambda: _make_response(200, _success_body()))
+        adapter = DeepSeekAdapter(api_key="sk-test", _transport=transport)
+        adapter.chat_json("system", "user")
+        payload = transport.calls[0]["json"]
+        assert payload["thinking"] == {"type": "disabled"}

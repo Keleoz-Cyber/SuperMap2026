@@ -360,6 +360,10 @@ class TestEvidencePacketAndValidation:
         packet1 = build_evidence_packet(summary)
         packet2 = build_evidence_packet(summary)
         assert compute_evidence_hash(packet1) == compute_evidence_hash(packet2)
+        assert {
+            "identity", "variable", "result_grid", "spatial_components",
+            "model_evidence", "uncertainty", "input_quality", "constraints",
+        }.issubset(packet1.valid_evidence_ids)
 
     def test_invalid_evidence_ref_rejected(self, tmp_path, monkeypatch):
         monkeypatch.delenv(ENV_API_KEY, raising=False)

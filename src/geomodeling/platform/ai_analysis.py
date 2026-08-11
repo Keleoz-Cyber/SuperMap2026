@@ -226,8 +226,11 @@ def build_prompts(packet: EvidencePacket, mode: str) -> tuple[str, str]:
         "review_and_next_checks（均为 {summary, evidence_refs[]}），"
         "consensus {consensus, disagreements[], recommended_checks[], "
         "decision_options[{label, trigger, benefit, cost, evidence_refs[]}], limitations[]}。"
-        "evidence_ref 可选值：component-{id}, depth_bin-{index}, result_grid, "
-        "depth_profile, composition, model_evidence, uncertainty, input_quality, current_slice。"
+        "evidence_ref 可选值：identity, variable, result_grid, spatial_components, "
+        "component-{id}, depth_profile, depth_bin-{index}, composition, "
+        "model_evidence, uncertainty, input_quality, constraints, current_slice。"
+        "limitations 可以引用 constraints，但不得复述 prohibited_claims 中的词，"
+        "统一表述为‘超出当前证据范围’。"
     )
 
     if mode == "review":

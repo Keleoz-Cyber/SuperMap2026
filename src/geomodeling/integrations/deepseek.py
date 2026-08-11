@@ -25,8 +25,10 @@ ENV_TIMEOUT_SEC = "DEEPSEEK_TIMEOUT_SEC"
 ENV_MAX_TOKENS = "DEEPSEEK_MAX_TOKENS"
 
 DEFAULT_BASE_URL = "https://api.deepseek.com"
-DEFAULT_MODEL = "deepseek-chat"
-DEFAULT_TIMEOUT_SEC = 30
+# DeepSeek 官方 API 自 2026-07-24 起弃用 deepseek-chat；V4 Flash 的
+# OpenAI-compatible 请求模型 ID 为 deepseek-v4-flash。
+DEFAULT_MODEL = "deepseek-v4-flash"
+DEFAULT_TIMEOUT_SEC = 90
 DEFAULT_MAX_TOKENS = 4096
 
 # Error codes
@@ -117,6 +119,9 @@ class DeepSeekAdapter:
                 {"role": "user", "content": user_prompt},
             ],
             "response_format": {"type": "json_object"},
+            # V4 defaults to thinking mode. This endpoint needs bounded-latency,
+            # structured review output rather than exposed reasoning tokens.
+            "thinking": {"type": "disabled"},
             "max_tokens": self.max_tokens,
         }
 

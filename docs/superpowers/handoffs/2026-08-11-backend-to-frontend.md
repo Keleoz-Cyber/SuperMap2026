@@ -65,9 +65,11 @@
 - 新环境变量（不得写真实值）：
   - `DEEPSEEK_API_KEY` — 必填，仅服务端环境变量
   - `DEEPSEEK_BASE_URL` — 默认 `https://api.deepseek.com`
-  - `DEEPSEEK_MODEL` — 默认 `deepseek-chat`
-  - `DEEPSEEK_TIMEOUT_SEC` — 默认 30
+  - `DEEPSEEK_MODEL` — 默认 `deepseek-v4-flash`（官方 V4 Flash 请求 ID）
+  - `DEEPSEEK_TIMEOUT_SEC` — 默认 90
   - `DEEPSEEK_MAX_TOKENS` — 默认 4096
+- 成果研判固定使用 JSON Output，并显式发送
+  `thinking={"type":"disabled"}`；V4 默认思考模式不适合该低延迟结构化接口。
 - 启动命令：`uvicorn geomodeling.api.app:app --host 127.0.0.1 --port 8000`
 - Mock/Fake DeepSeek 使用方式：构造 `DeepSeekAdapter(api_key="sk-test", _transport=FakeTransport(response_factory))`，FakeTransport 实现 `post(url, *, json, headers, timeout) -> httpx.Response`
 - 真实 Key 可选验证方式：设置 `DEEPSEEK_API_KEY` 环境变量后 POST `/api/results/{result_id}/ai-analysis`

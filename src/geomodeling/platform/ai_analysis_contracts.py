@@ -240,15 +240,22 @@ class EvidencePacket(ContractModel):
     @property
     def valid_evidence_ids(self) -> set[str]:
         """Return the set of valid evidence IDs for ref validation."""
-        ids: set[str] = set()
+        # Every top-level EvidencePacket node is a legitimate aggregate
+        # citation; component/depth-bin IDs below provide finer granularity.
+        ids: set[str] = {
+            "identity",
+            "variable",
+            "result_grid",
+            "spatial_components",
+            "model_evidence",
+            "uncertainty",
+            "input_quality",
+            "constraints",
+        }
         for comp in self.spatial_components:
             ids.add(f"component-{comp.component_id}")
-        ids.add("result_grid")
         ids.add("depth_profile")
         ids.add("composition")
-        ids.add("model_evidence")
-        ids.add("uncertainty")
-        ids.add("input_quality")
         if self.current_slice is not None:
             ids.add("current_slice")
         for i in range(len(self.result_grid.depth_profile.bins)):
