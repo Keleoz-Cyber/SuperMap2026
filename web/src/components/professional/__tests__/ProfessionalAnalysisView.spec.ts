@@ -527,12 +527,30 @@ describe('单候选联动与参数快照', () => {
 
     expect(wrapper.find('[data-test="baseline-metrics"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="baseline-only-note"]').text()).toContain('基础评估可用')
+    expect(wrapper.get('[data-test="evaluation-conclusion"]').text()).toContain('基线指标已生成')
+    expect(wrapper.get('[data-test="evaluation-conclusion"]').text()).toContain('逐折与残差证据未生成')
+    expect(wrapper.get('[data-test="evaluation-next-actions"]').text()).toContain('返回三维成果')
+    expect(wrapper.get('[data-test="evaluation-next-actions"]').text()).toContain('比较候选')
+    expect(wrapper.get('[data-test="evaluation-next-actions"]').text()).toContain('导出')
+    expect(wrapper.get('[data-test="baseline-metrics"]').text()).toContain('RMSE 反映典型误差尺度')
+    expect(wrapper.get('[data-test="baseline-metrics"]').text()).toContain('R² 当前不可计算')
     expect(wrapper.find('[data-test="baseline-r2"]').text()).toContain('不可计算')
     expect(client.fetchProfessionalResult).not.toHaveBeenCalled()
     expect(client.fetchResultFolds).not.toHaveBeenCalled()
     expect(client.fetchResultResiduals).not.toHaveBeenCalled()
     expect(wrapper.find('[data-test="crumb-home"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="back-to-workbench"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('增强证据可用时结论先说明逐折、残差与泄漏检查状态', async () => {
+    mockKrigingPath()
+    const { wrapper } = await mountAnalysis()
+
+    const conclusion = wrapper.get('[data-test="evaluation-conclusion"]')
+    expect(conclusion.text()).toContain('增强评估证据可用')
+    expect(conclusion.text()).toContain('未检测到空间折分泄漏')
+    expect(conclusion.text()).not.toContain('r1')
     wrapper.unmount()
   })
 
