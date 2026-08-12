@@ -69,7 +69,7 @@ test.describe('v0.4 通用建模流程（mock API）', () => {
     await expect(page.getByTestId('publication-status')).toContainText('manual_required')
 
     // 导航回归：成果 → 实验 → 首页，无死路
-    await page.getByTestId('shell-nav-experiments').click()
+    await page.getByTestId('enter-case-workspace').first().click()
     await expect(page).toHaveURL(/#\/experiments\/exp-e2e/)
     await page.getByTestId('shell-brand').click()
     await expect(page).toHaveURL(/#\/$/)

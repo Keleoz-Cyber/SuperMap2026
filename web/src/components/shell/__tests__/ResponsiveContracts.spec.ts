@@ -120,10 +120,16 @@ describe('responsive & accessibility contracts', () => {
     )
     for (const path of specFiles) {
       const source = String(readFileSync(path))
-      for (const retiredId of ['v6-nav-experiment', 'v6-nav-home', 'shell-home-link']) {
+      for (const retiredId of ['v6-nav-experiment', 'v6-nav-home']) {
         expect(source, `${path} 仍引用退役导航 ${retiredId}`).not.toContain(retiredId)
       }
     }
+  })
+
+  it('mobile header collapses utilities instead of stacking the primary action vertically', () => {
+    const headerSource = String(readFileSync('src/components/shell/AppHeader.vue'))
+    expect(headerSource).toContain('data-test="shell-mobile-menu"')
+    expect(headerSource).not.toContain('.action.primary {\n    padding: 6px 10px')
   })
 
   it('app shell exposes exactly one main landmark', async () => {

@@ -231,7 +231,7 @@ test('真实链路：上传 → 映射 → 质量 → IDW → 排行榜 → 成�
   expect(zipBytes.subarray(0, 2).toString()).toBe('PK')
 
   // 9. 返回实验 → 返回首页；案例卡持久化可见
-  await page.getByTestId('shell-nav-experiments').click()
+  await page.getByTestId('enter-case-workspace').first().click()
   await expect(page).toHaveURL(/#\/experiments\/[0-9a-f-]+/)
   await page.getByTestId('shell-brand').click()
   await expect(page).toHaveURL(/#\/$/)

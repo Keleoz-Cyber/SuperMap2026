@@ -2,16 +2,13 @@
 // v0.9.0：全局应用头。纯展示组件——不 fetch 页面数据、不创建路由实例；
 // 导航一律使用命名路由，服务状态与案例上下文由 AppShell/壳上下文传入。
 import { RouterLink } from 'vue-router'
-import { Delete, Upload } from '@element-plus/icons-vue'
+import { Delete, MoreFilled, Upload } from '@element-plus/icons-vue'
 import { WEB_VERSION } from '../../version'
-import { useShellContext } from '../../stores/shellContext'
 
 const props = defineProps<{
   serviceState: 'unknown' | 'online' | 'offline'
   serviceVersion: string | null
 }>()
-
-const context = useShellContext()
 
 void props
 </script>
@@ -27,44 +24,15 @@ void props
         </span>
       </RouterLink>
       <nav class="product-nav" aria-label="产品主导航">
+        <RouterLink :to="{ name: 'home' }" class="product-link" data-test="shell-home-link">
+          首页
+        </RouterLink>
+        <RouterLink :to="{ name: 'home', query: { focus: 'cases' } }" class="product-link" data-test="shell-nav-cases">
+          案例
+        </RouterLink>
         <RouterLink :to="{ name: 'case-create' }" class="product-link" data-test="shell-nav-ingest">
           数据接入
         </RouterLink>
-        <RouterLink
-          v-if="context.experimentId"
-          :to="{ name: 'experiment-detail', params: { experimentId: context.experimentId } }"
-          class="product-link"
-          data-test="shell-nav-experiments"
-        >建模实验</RouterLink>
-        <RouterLink
-          v-else-if="context.caseId"
-          :to="{ name: 'case-workspace', params: { caseId: context.caseId }, query: { stage: 'experiments' } }"
-          class="product-link"
-          data-test="shell-nav-experiments"
-        >建模实验</RouterLink>
-        <span v-else class="product-link disabled" data-test="shell-nav-experiments" aria-disabled="true" title="请先选择案例">建模实验</span>
-
-        <RouterLink
-          v-if="context.datasetId"
-          :to="{ name: 'candidate-comparison', params: { datasetId: context.datasetId } }"
-          class="product-link"
-          data-test="shell-nav-comparison"
-        >模型比较</RouterLink>
-        <span v-else class="product-link disabled" data-test="shell-nav-comparison" aria-disabled="true" title="请先选择数据版本">模型比较</span>
-
-        <RouterLink
-          v-if="context.resultId"
-          :to="{ name: 'result-workbench', params: { resultId: context.resultId } }"
-          class="product-link"
-          data-test="shell-nav-results"
-        >成果空间</RouterLink>
-        <RouterLink
-          v-else-if="context.caseId"
-          :to="{ name: 'case-workspace', params: { caseId: context.caseId }, query: { stage: 'results' } }"
-          class="product-link"
-          data-test="shell-nav-results"
-        >成果空间</RouterLink>
-        <span v-else class="product-link disabled" data-test="shell-nav-results" aria-disabled="true" title="请先选择成果">成果空间</span>
       </nav>
     </div>
 
@@ -92,6 +60,26 @@ void props
         回收站
       </RouterLink>
     </div>
+    <details class="mobile-menu" data-test="shell-mobile-menu">
+      <summary aria-label="打开全局菜单">
+        <el-icon :size="18"><MoreFilled /></el-icon>
+      </summary>
+      <nav class="mobile-menu-panel" aria-label="移动端全局菜单">
+        <span class="mobile-service" role="status">
+          <span class="dot" :class="serviceState === 'online' ? 'ok' : serviceState === 'offline' ? 'bad' : 'pending'"></span>
+          {{ serviceState === 'online' ? '服务在线' : serviceState === 'offline' ? '服务离线' : '服务检测中' }}
+          · v{{ serviceVersion ?? WEB_VERSION }}
+        </span>
+        <RouterLink :to="{ name: 'case-create' }">
+          <el-icon :size="15"><Upload /></el-icon>
+          导入数据
+        </RouterLink>
+        <RouterLink :to="{ name: 'trash' }">
+          <el-icon :size="15"><Delete /></el-icon>
+          回收站
+        </RouterLink>
+      </nav>
+    </details>
   </header>
 </template>
 
@@ -158,14 +146,6 @@ void props
   letter-spacing: 0.08em;
 }
 
-.home-link {
-  color: var(--s1-text-dim);
-  text-decoration: none;
-  font-size: var(--s1-font-md);
-  padding: 4px 8px;
-  border-radius: 6px;
-}
-
 .product-nav {
   display: flex;
   align-items: center;
@@ -186,42 +166,6 @@ void props
 .product-link.router-link-active {
   color: var(--s1-cyan-strong);
   background: var(--s1-cyan-ghost);
-}
-
-.product-link.disabled {
-  color: var(--s1-text-faint);
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-.home-link:hover {
-  color: var(--s1-cyan-strong);
-}
-
-.case-context {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  font-size: var(--s1-font-md);
-  color: var(--s1-text-dim);
-}
-
-.ctx-title {
-  color: var(--s1-case-accent);
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 220px;
-}
-
-.ctx-stage {
-  font-size: var(--s1-font-xs);
-  color: var(--s1-text-faint);
-  border: 1px solid var(--s1-border);
-  border-radius: 999px;
-  padding: 1px 8px;
 }
 
 .service-pill {
@@ -280,6 +224,68 @@ void props
   cursor: not-allowed;
 }
 
+.mobile-menu {
+  display: none;
+  position: relative;
+}
+
+.mobile-menu summary {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--s1-border);
+  border-radius: var(--s1-radius-sm);
+  color: var(--s1-text);
+  cursor: pointer;
+  list-style: none;
+}
+
+.mobile-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.mobile-menu summary:focus-visible {
+  outline: 2px solid var(--s1-cyan-strong);
+  outline-offset: 2px;
+}
+
+.mobile-menu-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 1200;
+  display: grid;
+  min-width: 210px;
+  padding: var(--s1-space-2);
+  border: 1px solid var(--s1-border-strong);
+  border-radius: var(--s1-radius-md);
+  background: var(--s1-surface-2);
+  box-shadow: var(--s1-elevation-3);
+}
+
+.mobile-menu-panel a,
+.mobile-service {
+  display: flex;
+  align-items: center;
+  gap: var(--s1-space-2);
+  padding: 10px 12px;
+  color: var(--s1-text);
+  text-decoration: none;
+  border-radius: var(--s1-radius-sm);
+  font-size: var(--s1-font-md);
+}
+
+.mobile-menu-panel a:hover {
+  color: var(--s1-cyan-strong);
+  background: var(--s1-cyan-ghost);
+}
+
+.mobile-service {
+  color: var(--s1-text-dim);
+  border-bottom: 1px solid var(--s1-border-soft);
+}
+
 @media (max-width: 900px) {
   .app-header {
     padding: 0 var(--s1-space-3);
@@ -287,12 +293,7 @@ void props
   }
 
   .brand-text small,
-  .home-link,
   .version {
-    display: none;
-  }
-
-  .ctx-stage {
     display: none;
   }
 
@@ -303,7 +304,7 @@ void props
 
 @media (max-width: 640px) {
   .app-header {
-    position: static;
+    position: sticky;
     padding: 0 var(--s1-space-2);
     gap: var(--s1-space-2);
   }
@@ -316,26 +317,29 @@ void props
     overflow-x: auto;
     scrollbar-width: none;
     margin-left: 0;
+    gap: 0;
   }
 
   .product-link {
     font-size: var(--s1-font-sm);
   }
 
-  /* 手机档：服务状态收敛为圆点，次级入口让位给主动作，避免横向溢出 */
-  .service-pill {
-    font-size: 0;
-    padding: 6px;
-    gap: 0;
-  }
-
-  .header-right .action.ghost {
+  .header-right {
     display: none;
   }
 
-  .action.primary {
-    padding: 6px 10px;
-    font-size: var(--s1-font-sm);
+  .mobile-menu {
+    display: block;
+  }
+}
+
+@media (max-width: 420px) {
+  .brand-text {
+    display: none;
+  }
+
+  .product-link {
+    padding-inline: 8px;
   }
 }
 </style>

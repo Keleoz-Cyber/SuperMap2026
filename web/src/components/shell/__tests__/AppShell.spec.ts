@@ -21,16 +21,18 @@ describe('AppShell', () => {
     expect(skip.attributes('href')).toBe('#main-content')
   })
 
-  it('renders one brand home link and the four fixed product navigation entries', () => {
+  it('renders explicit stable global navigation without context-disabled entries', () => {
     const wrapper = mount(AppShell, {
       global: { stubs: { RouterView: true, RouterLink: { template: '<a><slot /></a>' } } },
     })
     expect(wrapper.get('[data-test="shell-brand"]').text()).toContain('GeoModelingPlatform')
-    expect(wrapper.find('[data-test="shell-home-link"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="shell-home-link"]').text()).toBe('首页')
+    expect(wrapper.get('[data-test="shell-nav-cases"]').text()).toBe('案例')
     expect(wrapper.find('[data-test="shell-nav-ingest"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="shell-nav-experiments"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="shell-nav-comparison"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="shell-nav-results"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="shell-nav-experiments"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="shell-nav-comparison"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="shell-nav-results"]').exists()).toBe(false)
+    expect(wrapper.find('[aria-disabled="true"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="shell-trash-link"]').exists()).toBe(true)
   })
 
