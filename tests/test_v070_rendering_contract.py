@@ -150,6 +150,9 @@ def test_frame_publishes_geometry_diagnostic():
         "cellSizeMetres",
         "bboxSpansMetres",
         "boundingBoxVisible",
+        "cameraRangeBoundsMetres",
+        "cameraRangeMetres",
+        "cameraTargetAlignment",
     ):
         assert token in src, token
 
@@ -173,3 +176,25 @@ def test_bbox_corners_derive_from_layer_bounds():
     assert re.search(r"fromDegreesArrayHeights|Cartesian3\.fromDegrees", src)
     for banned in ("padding", "PAD"):
         assert banned not in src
+
+
+def test_camera_range_is_content_versioned_and_bounded():
+    src = _frame_source()
+    vite = VITE_CONFIG.read_text(encoding="utf-8")
+    assert "cameraRangePolicy.js" in src
+    assert "cameraRangePolicy.js" in vite
+    assert "minimumZoomDistance" in src
+    assert "maximumZoomDistance" in src
+    assert "nextWheelCameraRange" in src
+    assert ".sm-zoombar" in src
+    assert "restoreZoomBarTarget" in src
+
+
+def test_initial_camera_view_precedes_interaction_clamp_binding():
+    """初始正确构图后才能注册相机 changed 限幅，避免初始化中间态被拉近。"""
+
+    src = _frame_source()
+    assert re.search(
+        r"ensureAnnotationPicking\(\)\s+lookAtVolume\(\)\s+await configureCameraRange\(\)",
+        src,
+    )

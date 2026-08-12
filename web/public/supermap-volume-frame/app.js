@@ -94,6 +94,9 @@ function publishDiag() {
           cellSizeMetres: Object.freeze([...diag.geometry.cellSizeMetres]),
           bboxSpansMetres: Object.freeze([...diag.geometry.bboxSpansMetres]),
           cameraSpanMetres: diag.geometry.cameraSpanMetres,
+          cameraRangeBoundsMetres: Object.freeze([...diag.geometry.cameraRangeBoundsMetres]),
+          cameraRangeMetres: diag.geometry.cameraRangeMetres,
+          cameraTargetAlignment: diag.geometry.cameraTargetAlignment,
         })
       : null,
     errors: Object.freeze(diag.errors.map((e) => Object.freeze({ ...e }))),
@@ -335,6 +338,122 @@ async function ensureViewer() {
   }
 }
 
+let cameraRangePolicyMod = null
+let cameraWheelBound = false
+let cameraClampScheduled = false
+let cameraZoomBarBound = false
+
+async function ensureCameraRangePolicy() {
+  if (cameraRangePolicyMod) return cameraRangePolicyMod
+  const query = new URL(import.meta.url).search || ''
+  cameraRangePolicyMod = await import('./cameraRangePolicy.js' + query)
+  return cameraRangePolicyMod
+}
+
+function volumeCameraTarget() {
+  return SuperMap3D.Cartesian3.fromDegrees(
+    viewParams.centerLon,
+    viewParams.centerLat,
+    viewParams.centerZ,
+  )
+}
+
+function currentCameraRange() {
+  const position = scene.camera.positionWC || scene.camera.position
+  return SuperMap3D.Cartesian3.distance(position, volumeCameraTarget())
+}
+
+function currentCameraTargetAlignment() {
+  const position = scene.camera.positionWC || scene.camera.position
+  const direction = scene.camera.directionWC || scene.camera.direction
+  const towardTarget = SuperMap3D.Cartesian3.normalize(
+    SuperMap3D.Cartesian3.subtract(
+      volumeCameraTarget(),
+      position,
+      new SuperMap3D.Cartesian3(),
+    ),
+    new SuperMap3D.Cartesian3(),
+  )
+  return SuperMap3D.Cartesian3.dot(direction, towardTarget)
+}
+
+function applyCameraRange(range) {
+  const heading = scene.camera.heading
+  const pitch = scene.camera.pitch
+  scene.camera.lookAt(
+    volumeCameraTarget(),
+    new SuperMap3D.HeadingPitchRange(heading, pitch, range),
+  )
+  if (diag.geometry) {
+    diag.geometry.cameraRangeMetres = range
+    diag.geometry.cameraTargetAlignment = currentCameraTargetAlignment()
+    publishDiag()
+  }
+}
+
+async function configureCameraRange() {
+  const policy = await ensureCameraRangePolicy()
+  const [minimum, maximum] = policy.cameraRangeBounds(viewParams.span)
+  const controller = scene.screenSpaceCameraController
+  controller.minimumZoomDistance = minimum
+  controller.maximumZoomDistance = maximum
+  // SuperMap3D/Cesium 默认滚轮步长偏大；降低内建系数，同时以捕获阶段的
+  // 8% 确定性步长接管滚轮。右侧导航缩放条继续使用 SDK 控件，但共享上下限。
+  controller.zoomFactor = 1
+  diag.geometry.cameraRangeBoundsMetres = [minimum, maximum]
+
+  if (!cameraWheelBound) {
+    scene.canvas.addEventListener(
+      'wheel',
+      (event) => {
+        if (!viewParams || !cameraRangePolicyMod) return
+        event.preventDefault()
+        event.stopImmediatePropagation()
+        const next = cameraRangePolicyMod.nextWheelCameraRange(
+          currentCameraRange(),
+          viewParams.span,
+          event.deltaY,
+        )
+        applyCameraRange(next)
+      },
+      { passive: false, capture: true },
+    )
+    cameraWheelBound = true
+
+    scene.camera.changed.addEventListener(() => {
+      if (!viewParams || !cameraRangePolicyMod || cameraClampScheduled) return
+      cameraClampScheduled = true
+      requestAnimationFrame(() => {
+        cameraClampScheduled = false
+        const current = currentCameraRange()
+        const clamped = cameraRangePolicyMod.clampCameraRange(current, viewParams.span)
+        const alignment = currentCameraTargetAlignment()
+        if (Math.abs(clamped - current) > 0.01) applyCameraRange(clamped)
+        else if (diag.geometry) {
+          diag.geometry.cameraRangeMetres = current
+          diag.geometry.cameraTargetAlignment = alignment
+          publishDiag()
+        }
+      })
+    })
+  }
+
+  if (!cameraZoomBarBound) {
+    const zoomBar = document.querySelector('.sm-zoombar')
+    if (zoomBar) {
+      const restoreZoomBarTarget = () => {
+        requestAnimationFrame(() => {
+          if (!viewParams || !cameraRangePolicyMod) return
+          applyCameraRange(cameraRangePolicyMod.clampCameraRange(currentCameraRange(), viewParams.span))
+        })
+      }
+      zoomBar.addEventListener('pointerup', restoreZoomBarTarget)
+      zoomBar.addEventListener('mouseup', restoreZoomBarTarget)
+      cameraZoomBarBound = true
+    }
+  }
+}
+
 // handoff 色带：RGB 控制点 0..1 浮点，5 档蓝→青→黄→橙→红
 function buildTransferFunctions(vmin, vmax) {
   const span = vmax - vmin
@@ -367,7 +486,11 @@ function lookAtVolume() {
   const target = SuperMap3D.Cartesian3.fromDegrees(centerLon, centerLat, centerZ)
   scene.camera.lookAt(
     target,
-    new SuperMap3D.HeadingPitchRange(1.25, -0.72, span * CAMERA_RANGE_ISOMETRIC),
+    new SuperMap3D.HeadingPitchRange(
+      CAMERA_HEADING_ISOMETRIC,
+      CAMERA_PITCH_ISOMETRIC,
+      span * CAMERA_RANGE_ISOMETRIC,
+    ),
   )
 }
 
@@ -634,7 +757,9 @@ function setSceneAidsVisible(aids) {
 // V6 取景常数（集中命名）：等轴视角优先展开本案例较长的 Y/Z 方向；
 // 最终值只依据真实 GPU 截图调整，目标是体场高度约 58%–76%，且宽度
 // 不低于场景 24%。不得缩放顶点或改 display transform 伪造大小。
-const CAMERA_RANGE_ISOMETRIC = 2.12
+const CAMERA_HEADING_ISOMETRIC = 1.25
+const CAMERA_PITCH_ISOMETRIC = -0.95
+const CAMERA_RANGE_ISOMETRIC = 2.32
 const CAMERA_RANGE_ORTHO = 2.3
 
 function applyCameraPreset(preset) {
@@ -646,8 +771,8 @@ function applyCameraPreset(preset) {
   let pitch
   let range = span * CAMERA_RANGE_ISOMETRIC
   if (preset === 'isometric') {
-    heading = 1.25
-    pitch = -0.72
+    heading = CAMERA_HEADING_ISOMETRIC
+    pitch = CAMERA_PITCH_ISOMETRIC
   } else if (preset === 'top-xy') {
     heading = 0
     pitch = -Math.PI / 2 + EPS
@@ -844,6 +969,9 @@ async function handleInit(msg) {
     ),
     bboxSpansMetres: spansMetres,
     cameraSpanMetres: viewParams.span,
+    cameraRangeBoundsMetres: [viewParams.span * 0.9, viewParams.span * 4.5],
+    cameraRangeMetres: viewParams.span * CAMERA_RANGE_ISOMETRIC,
+    cameraTargetAlignment: 1,
   }
   publishDiag()
   // 独立包围盒线框（角点=真实体元边界；初始显隐由 INIT 状态决定）
@@ -860,6 +988,7 @@ async function handleInit(msg) {
   setSceneAidsVisible(initialState.sceneAids)
   ensureAnnotationPicking()
   lookAtVolume()
+  await configureCameraRange()
 
   // 12. 画布像素探针确认体积像素后才 emit rendered
   await probeVolumePixels()

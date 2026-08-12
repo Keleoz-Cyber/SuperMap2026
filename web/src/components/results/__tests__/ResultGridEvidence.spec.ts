@@ -13,7 +13,10 @@ import {
 // 综合分析/切片与异常/模型证据/数据溯源；七类证据全部保留只归组；
 // 每个面板标注成果网格/输入样本口径；ECharts 实例卸载即 dispose。
 
-const chartInstances: Array<{ dispose: ReturnType<typeof vi.fn> }> = []
+const chartInstances: Array<{
+  dispose: ReturnType<typeof vi.fn>
+  setOption: ReturnType<typeof vi.fn>
+}> = []
 vi.mock('echarts/core', () => ({
   init: vi.fn(() => {
     const instance = { setOption: vi.fn(), resize: vi.fn(), dispose: vi.fn(), on: vi.fn() }
@@ -58,7 +61,17 @@ function mountEvidence(props: Record<string, unknown> = {}) {
       resultId: 'r-3d-normal',
       ...props,
     },
-    global: { plugins: [ElementPlus] },
+    global: {
+      plugins: [ElementPlus],
+      stubs: {
+        SliceHeatmap: {
+          template: '<div data-test="slice-heatmap-stub" />',
+          methods: {
+            capturePng: () => Promise.resolve(new Blob(['png'], { type: 'image/png' })),
+          },
+        },
+      },
+    },
     attachTo: document.body,
   })
 }
@@ -68,16 +81,32 @@ describe('ResultGridEvidence（V6 四标签）', () => {
     const wrapper = mountEvidence()
     await flushPromises()
     const tabs = wrapper.findAll('[data-test^="ge-tab-"]')
-    expect(tabs.map((t) => t.text())).toEqual(['综合分析', '切片与异常', '模型证据', '数据溯源'])
+    expect(tabs.map((t) => t.text())).toEqual(['成果概览', '切片分析', '模型可信度', '数据与导出'])
+  })
+
+  it('成果组成环图不绘制外侧标签和重复图例，避免窄卡片内遮挡', async () => {
+    const before = chartInstances.length
+    const wrapper = mountEvidence()
+    await flushPromises()
+    const composition = chartInstances[before]
+    const option = composition.setOption.mock.calls.at(-1)?.[0] as {
+      legend?: { show?: boolean }
+      series?: Array<{ label?: { show?: boolean }; labelLine?: { show?: boolean } }>
+    }
+    expect(option.legend?.show).toBe(false)
+    expect(option.series?.[0]?.label?.show).toBe(false)
+    expect(option.series?.[0]?.labelLine?.show).toBe(false)
+    wrapper.unmount()
   })
 
   it('综合分析：组成环图 + 深度趋势图 + 层段表（成果网格口径）', async () => {
     const wrapper = mountEvidence()
     await flushPromises()
     const pane = wrapper.get('[data-test="ge-pane-overview"]')
-    expect(pane.text()).toContain('成果网格')
+    expect(wrapper.get('[data-test="ge-scope-badge"]').text()).toContain('成果网格')
     expect(wrapper.find('[data-test="ge-composition-chart"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="ge-depth-chart"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="ge-depth-chart-scroll"]').exists()).toBe(true)
     expect(pane.text()).toContain('15')
     expect(pane.text()).toContain('33.3%')
     await wrapper.get('[data-test="ge-depth-bin-2"]').trigger('click')
@@ -105,8 +134,36 @@ describe('ResultGridEvidence（V6 四标签）', () => {
     expect(pane.text()).toContain('27.3%')
     expect(wrapper.find('[data-test="ge-slice-heatmap"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="ge-components-chart"]').exists()).toBe(true)
+    expect(pane.text()).toContain('标准差')
     await wrapper.get('[data-test="ge-component-1"]').trigger('click')
     expect(wrapper.emitted('focus-component')).toEqual([[1]])
+  })
+
+  it('切片分析从唯一热力图生成 PNG 并调用注入的导出动作', async () => {
+    const exportSlice = vi.fn().mockResolvedValue(undefined)
+    const wrapper = mountEvidence({ currentSlice: SLICE_ANALYSIS_MOCK, exportSlice })
+    await wrapper.get('[data-test="ge-tab-slices"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-test="ge-export-slice"]').trigger('click')
+    await flushPromises()
+    expect(exportSlice).toHaveBeenCalledWith(expect.any(Blob))
+  })
+
+  it('成果摘要不可用时仍独立展示权威切片、统计和导出', async () => {
+    const exportSlice = vi.fn().mockResolvedValue(undefined)
+    const wrapper = mountEvidence({
+      analysis: null,
+      currentSlice: SLICE_ANALYSIS_MOCK,
+      exportSlice,
+      activeTab: 'slices',
+    })
+    await flushPromises()
+    const pane = wrapper.get('[data-test="ge-pane-slices"]')
+    expect(wrapper.find('[data-test="ge-slice-heatmap"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="ge-slice-statistics"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="ge-export-slice"]').exists()).toBe(true)
+    expect(pane.text()).toContain('成果异常区域分析暂不可用')
+    expect(wrapper.find('[data-test="ge-empty"]').exists()).toBe(false)
   })
 
   it('模型证据：后端指标 + 残差类型化空态', async () => {

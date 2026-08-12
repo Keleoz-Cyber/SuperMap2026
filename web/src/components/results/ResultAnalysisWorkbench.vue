@@ -34,6 +34,7 @@ const props = defineProps<{
   assetIdentity?: RenderAssetIdentity | null
   // 图表—三维联动的类型化能力通知（如 XY 区域过滤不受支持）
   selectionNotice?: string | null
+  exportSlice?: ((png: Blob) => Promise<void>) | null
 }>()
 
 const emit = defineEmits<{
@@ -121,7 +122,7 @@ function onFocusEvidence(ref: string) {
         type="button"
         data-test="workbench-focus-analysis"
         :aria-pressed="focusMode === 'analysis'"
-        @click="setFocus('analysis')"
+            @click="setFocus('analysis'); dockTabModel = 'overview'"
       >分析</button>
     </div>
     <div class="workbench-grid" data-test="v6-main-stage">
@@ -204,6 +205,7 @@ function onFocusEvidence(ref: string) {
         :result-id="resultId"
         :dataset-id="datasetId"
         :asset-identity="assetIdentity ?? null"
+        :export-slice="exportSlice ?? null"
         @focus-component="emit('focus-component', $event)"
         @focus-depth-bin="emit('focus-depth-bin', $event)"
         @locate="emit('locate', $event)"
@@ -398,11 +400,13 @@ function onFocusEvidence(ref: string) {
 }
 
 .focus-analysis .workbench-grid {
-  grid-template-columns: minmax(320px, 0.8fr) minmax(420px, 1.2fr);
+  display: none;
 }
 
 .focus-analysis .workbench-dock {
-  height: clamp(380px, 44vh, 500px);
+  flex: 1;
+  height: auto;
+  min-height: 420px;
 }
 
 .focus-controls .workbench-scene :deep(.native-volume-panel.workbench .panel-body) {
@@ -475,21 +479,14 @@ function onFocusEvidence(ref: string) {
     display: none;
   }
 
-  .focus-analysis .workbench-scene {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-  }
-
-  .focus-analysis .workbench-dock,
-  .focus-analysis .workbench-side {
-    display: flex;
+  .focus-analysis .workbench-grid {
+    display: none;
   }
 
   .focus-analysis .workbench-dock {
-    height: auto;
+    display: flex;
+    flex: 1;
+    min-height: 420px;
   }
 }
 </style>

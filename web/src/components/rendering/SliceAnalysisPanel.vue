@@ -41,8 +41,15 @@ const props = withDefaults(
     palette?: RenderPaletteId
     scale?: RenderScale
     enabled?: boolean
+    display?: 'panel' | 'controller'
   }>(),
-  { axesMeta: null, palette: 'viridis', scale: 'linear', enabled: true },
+  {
+    axesMeta: null,
+    palette: 'viridis',
+    scale: 'linear',
+    enabled: true,
+    display: 'panel',
+  },
 )
 
 const emit = defineEmits<{
@@ -184,7 +191,8 @@ function statText(value: number | null, digits = 4): string {
 </script>
 
 <template>
-  <div class="slice-analysis" data-test="slice-analysis">
+  <span v-if="display === 'controller'" hidden data-test="slice-analysis-controller" />
+  <div v-else class="slice-analysis" data-test="slice-analysis">
     <div v-if="loadError" class="analysis-error" data-test="slice-error">
       剖面加载失败：{{ loadError }}
       <el-button size="small" text data-test="slice-retry" @click="retry">重试</el-button>

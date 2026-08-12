@@ -91,8 +91,9 @@ MOCK_SPEC_MARKERS = (
     "axis-x",
     "axis-y",
     "axis-z",
-    "slice-analysis",
-    "export-slice",
+    "slice-coordinate",
+    "ge-slice-heatmap",
+    "ge-export-slice",
 )
 
 LIVE_SPEC_MARKERS = (

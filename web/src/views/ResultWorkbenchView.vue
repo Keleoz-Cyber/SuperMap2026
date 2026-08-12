@@ -191,6 +191,20 @@ function onFocusDepthBin(index: number) {
 
 function onSliceAnalysis(response: SliceAnalysisResponse) {
   currentSlice.value = response
+  dockTab.value = 'slices'
+}
+
+async function exportCurrentSlice(png: Blob) {
+  const slice = currentSlice.value
+  const assetId = renderAssetIdentity.value?.assetId
+  if (!slice || !assetId) throw new Error('当前切片尚未就绪')
+  const record = await createRenderAssetSliceExport(
+    assetId,
+    slice.slice.fixed_axis,
+    slice.slice.index,
+    png,
+  )
+  window.location.assign(`/api/exports/${record.id}/download`)
 }
 
 // ---------------------------------------------------------------------------
@@ -479,6 +493,7 @@ onBeforeUnmount(clearShellContext)
         :focused-component-id="focusedComponentId"
         :asset-identity="renderAssetIdentity"
         :selection-notice="capabilityNotice"
+        :export-slice="exportCurrentSlice"
         @locate="onFindingLocate"
         @select="onEvidenceSelect"
         @select-result="onSelectResult"
@@ -486,27 +501,8 @@ onBeforeUnmount(clearShellContext)
         @focus-depth-bin="onFocusDepthBin"
       >
         <template #scene>
-          <div v-if="metadata.dimension === '3d'" class="view-tabs">
-            <button
-              class="view-tab"
-              :class="{ active: activeTab === 'field' }"
-              data-test="tab-field"
-              @click="activeTab = 'field'"
-            >
-              完整场
-            </button>
-            <button
-              class="view-tab"
-              :class="{ active: activeTab === 'slices' }"
-              data-test="tab-slices"
-              @click="activeTab = 'slices'"
-            >
-              X / Y / Z 切片
-            </button>
-          </div>
-
           <NativeVolumePanel
-            v-if="metadata.dimension === '3d' && activeTab === 'field'"
+            v-if="metadata.dimension === '3d'"
             ref="volumePanelRef"
             variant="workbench"
             :api="volumeApi"
@@ -586,28 +582,6 @@ onBeforeUnmount(clearShellContext)
   font-size: 12px;
   color: var(--s1-warning, #d9a84e);
   border-bottom: 1px solid var(--s1-border, #22322c);
-}
-
-.view-tabs {
-  display: flex;
-  gap: 8px;
-}
-
-.view-tab {
-  border: 1px solid var(--gmp-border);
-  background: var(--gmp-bg-soft);
-  color: var(--gmp-text-dim);
-  border-radius: 8px;
-  padding: 5px 14px;
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.view-tab.active {
-  background: var(--gmp-accent);
-  border-color: var(--gmp-accent);
-  color: #0b0f14;
-  font-weight: 600;
 }
 
 .page-loading {

@@ -99,18 +99,19 @@ test.describe('v0.8.0 电阻率散点预置与 DSI-like（mock API）', () => {
     // ---- X/Y/Z 正交剖面控件（坐标标签只来自权威剖面响应）----
     await page.getByTestId('mode-slice').click()
     await expect(page.getByTestId('slice-controls')).toBeVisible()
-    await expect(page.getByTestId('slice-coordinate-label')).toContainText('Z = -400')
+    await expect(page.getByTestId('slice-coordinate')).toContainText('Z = -400')
     await page.getByTestId('axis-x').click()
-    await expect(page.getByTestId('slice-coordinate-label')).toContainText('X = -141')
+    await expect(page.getByTestId('slice-coordinate')).toContainText('X = -141')
     await page.getByTestId('axis-y').click()
-    await expect(page.getByTestId('slice-coordinate-label')).toContainText('Y = 292')
+    await expect(page.getByTestId('slice-coordinate')).toContainText('Y = 292')
     await page.getByTestId('axis-z').click()
-    await expect(page.getByTestId('slice-coordinate-label')).toContainText('Z = -400')
+    await expect(page.getByTestId('slice-coordinate')).toContainText('Z = -400')
 
     // ---- 剖面分析入口（统计 + 导出命令）----
-    await expect(page.getByTestId('slice-analysis')).toBeVisible()
-    await expect(page.getByTestId('slice-statistics')).toContainText('有效 11 / NoData 1')
-    await expect(page.getByTestId('export-slice')).toBeEnabled()
+    await expect(page.getByTestId('ge-pane-slices')).toBeVisible()
+    await expect(page.getByTestId('ge-slice-heatmap')).toBeVisible()
+    await expect(page.getByTestId('ge-slice-statistics')).toContainText('均值')
+    await expect(page.getByTestId('ge-export-slice')).toBeEnabled()
 
     // 成果页全程无 legacy/S3M/DAT 语样
     await expect(page.locator('body')).not.toContainText('S3M')

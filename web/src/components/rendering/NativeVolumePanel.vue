@@ -814,6 +814,7 @@ onMounted(() => {
             :palette="activePalette"
             :scale="activeScale"
             :enabled="controlsEnabled"
+            display="controller"
             @analysis-loaded="onAnalysisLoaded"
             @axes-meta-loaded="onAxesMetaLoaded"
           />
@@ -840,7 +841,7 @@ onMounted(() => {
 
 /* v0.9.0 V6 workbench：工具栏 328px + 中央场景 min 560px，填满舞台高度 */
 .native-volume-panel.workbench .panel-body {
-  grid-template-columns: 328px minmax(560px, 1fr);
+  grid-template-columns: 312px minmax(0, 1fr);
   height: 100%;
 }
 
@@ -890,8 +891,14 @@ onMounted(() => {
 }
 
 @media (max-width: 900px) {
-  .panel-body {
+  .panel-body,
+  .native-volume-panel.workbench .panel-body {
     grid-template-columns: 1fr;
+  }
+
+  .native-volume-panel.workbench .tools-rail {
+    max-height: none;
+    overflow: visible;
   }
 }
 

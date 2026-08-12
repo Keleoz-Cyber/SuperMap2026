@@ -118,7 +118,7 @@ describe('ResultAnalysisWorkbench（V6 一屏布局）', () => {
     expect(wrapper.get('[data-test="result-interpretation"]').text()).toContain('最大高值连通区为 A 区')
     expect(wrapper.find('[data-test="result-evidence-dock"]').exists()).toBe(true)
     const tabs = wrapper.findAll('[data-test^="ge-tab-"]')
-    expect(tabs.map((t) => t.text())).toEqual(['综合分析', '切片与异常', '模型证据', '数据溯源'])
+    expect(tabs.map((t) => t.text())).toEqual(['成果概览', '切片分析', '模型可信度', '数据与导出'])
   })
 
   it('expands and collapses the evidence dock without remounting the scene', async () => {

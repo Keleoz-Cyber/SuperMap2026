@@ -13,11 +13,19 @@ const props = defineProps<{ option: Record<string, unknown> }>()
 
 const host = ref<HTMLDivElement | null>(null)
 let chart: ReturnType<typeof echartsInit> | null = null
+let resizeObserver: ResizeObserver | null = null
+const resizeChart = () => chart?.resize()
 
 onMounted(() => {
   if (!host.value) return
   chart = echartsInit(host.value)
   chart.setOption(props.option)
+  if (typeof ResizeObserver !== 'undefined') {
+    resizeObserver = new ResizeObserver(resizeChart)
+    resizeObserver.observe(host.value)
+  } else {
+    window.addEventListener('resize', resizeChart)
+  }
 })
 
 watch(
@@ -29,6 +37,9 @@ watch(
 )
 
 onBeforeUnmount(() => {
+  resizeObserver?.disconnect()
+  resizeObserver = null
+  window.removeEventListener('resize', resizeChart)
   chart?.dispose()
   chart = null
 })

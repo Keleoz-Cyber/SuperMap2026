@@ -53,6 +53,29 @@ test.beforeAll(() => {
   assertIsolatedDataDir()
 })
 
+test('中断数据准备：首页主动作返回同一字段映射流程', async ({ page }) => {
+  const caseName = `Live 续接 ${Date.now()}`
+  await page.goto('/')
+  await page.getByTestId('create-case-card').click()
+  await page.getByTestId('case-name').fill(caseName)
+  await page.getByTestId('case-file').setInputFiles(DEMO_CSV)
+  await page.getByTestId('case-submit').click()
+  await expect(page).toHaveURL(/#\/cases\/[0-9a-f-]+\/datasets\/[0-9a-f-]+\/prepare/)
+  const preparationUrl = page.url()
+  const caseId = preparationUrl.match(/#\/cases\/([0-9a-f-]+)\/datasets\//)![1]
+
+  await page.goto('/')
+  const createdCase = page.locator(
+    `[data-test="case-rail-item"][data-case-id="${caseId}"]`,
+  )
+  await expect(createdCase).toBeVisible({ timeout: 30_000 })
+  await createdCase.click()
+  const primary = page.getByTestId('command-primary-action')
+  await expect(primary).toContainText('继续数据准备')
+  await primary.click()
+  await expect(page).toHaveURL(preparationUrl)
+})
+
 test('真实链路：上传 → 映射 → 质量 → IDW → 排行榜 → 成果切片 → 选择 → 导出 → 首页', async ({
   page,
   request,
@@ -103,17 +126,15 @@ test('真实链路：上传 → 映射 → 质量 → IDW → 排行榜 → 成�
   const firstRow = page.getByTestId('candidate-row').first()
   await expect(firstRow).toContainText(/\d+\.\d{3}/)
 
-  // 6. 打开成果：完整场（NetCDF 原生体渲染面板）+ X/Y/Z 切片（真实坐标标签为数值）
+  // 6. 打开成果：3D 工具栏进入 X/Y/Z 切片，底部切片分析是唯一二维视图
   await page.getByTestId('open-result').first().click()
   await expect(page).toHaveURL(/#\/results\/[0-9a-f-]+/)
   await expect(page.getByTestId('native-volume-panel')).toBeVisible({ timeout: 30_000 })
   await expect(page.getByTestId('create-asset')).toBeVisible({ timeout: 30_000 })
-  await page.getByTestId('tab-slices').click()
-  await expect(page.getByTestId('slice-label')).toContainText(/Z = -?\d+(\.\d+)? m/)
-  await page.getByTestId('axis-x').click()
-  await expect(page.getByTestId('slice-label')).toContainText(/X = -?\d+(\.\d+)? m/)
-  await page.getByTestId('axis-y').click()
-  await expect(page.getByTestId('slice-label')).toContainText(/Y = -?\d+(\.\d+)? m/)
+  // 此时资产尚未创建，切片模式按钮存在但按能力门禁禁用；后续公开 HTTP
+  // 合同继续验证三轴分析与导出，不渲染已退役的第二套 SlicePanel。
+  await expect(page.getByTestId('mode-slice')).toBeVisible()
+  await expect(page.getByTestId('tab-slices')).toHaveCount(0)
 
   // 6b. v0.7.0 第二批用户上传门：Case→Dataset→Experiment→Run→Candidate 已经
   // 上方真实 UI 流程创建；此处继续走公开 HTTP：render-capability → 显式

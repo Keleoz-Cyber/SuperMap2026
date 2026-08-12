@@ -4,7 +4,7 @@
 //   模型证据 = 模型指标 + 残差；数据溯源 = 输入样本 + 成果/资产身份 + 导出。
 // 七类证据全部保留，只归组；每个面板标注「成果网格」或「输入样本」口径；
 // 组件只接收 DTO 不 fetch；ECharts 统一 dispose。
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import type {
   AnalysisSummaryResponse,
   ResidualEvidence,
@@ -49,6 +49,7 @@ const props = withDefaults(
     assetIdentity?: RenderAssetIdentity | null
     palette?: RenderPaletteId
     scale?: RenderScale
+    exportSlice?: ((png: Blob) => Promise<void>) | null
   }>(),
   {
     datasetFindings: () => [],
@@ -57,6 +58,7 @@ const props = withDefaults(
     assetIdentity: null,
     palette: 'viridis',
     scale: 'linear',
+    exportSlice: null,
   },
 )
 
@@ -73,10 +75,10 @@ export type EvidenceTab = 'overview' | 'slices' | 'model' | 'provenance'
 const activeTab = defineModel<EvidenceTab>('activeTab', { default: 'overview' })
 
 const TABS: Array<{ id: EvidenceTab; label: string; scope: string }> = [
-  { id: 'overview', label: '综合分析', scope: '成果网格' },
-  { id: 'slices', label: '切片与异常', scope: '成果网格' },
-  { id: 'model', label: '模型证据', scope: '成果网格' },
-  { id: 'provenance', label: '数据溯源', scope: '输入样本/成果身份' },
+  { id: 'overview', label: '成果概览', scope: '成果网格' },
+  { id: 'slices', label: '切片分析', scope: '成果网格' },
+  { id: 'model', label: '模型可信度', scope: '验证证据' },
+  { id: 'provenance', label: '数据与导出', scope: '输入与成果' },
 ]
 
 function percent(ratio: number | null | undefined): string {
@@ -84,7 +86,6 @@ function percent(ratio: number | null | undefined): string {
   return `${(ratio * 100).toFixed(1)}%`
 }
 
-const CHART_TEXT = { color: '#a7b8b0' }
 const BUCKET_COLORS: Record<string, string> = { low: '#4d8de0', normal: '#8a9aa2', high: '#d9a84e' }
 const BUCKET_LABELS: Record<string, string> = { low: '低值', normal: '正常', high: '高值' }
 
@@ -94,13 +95,15 @@ const compositionOption = computed(() => {
   if (!analysis) return {}
   return {
     tooltip: { trigger: 'item', formatter: '{b}: {c} 体元节点（{d}%）' },
-    legend: { bottom: 0, textStyle: CHART_TEXT, itemWidth: 12, itemHeight: 8 },
+    legend: { show: false },
     series: [
       {
         type: 'pie',
         radius: ['42%', '68%'],
-        center: ['50%', '44%'],
-        label: { color: CHART_TEXT.color, formatter: '{b}\n{d}%' },
+        center: ['50%', '50%'],
+        label: { show: false },
+        labelLine: { show: false },
+        avoidLabelOverlap: true,
         data: analysis.composition.buckets.map((bucket) => ({
           name: BUCKET_LABELS[bucket.category] ?? bucket.category,
           value: bucket.count,
@@ -130,6 +133,23 @@ const componentsOption = computed(() => {
 })
 
 const sliceStats = computed(() => props.currentSlice?.statistics ?? null)
+const sliceHeatmapRef = ref<InstanceType<typeof SliceHeatmap> | null>(null)
+const sliceExporting = ref(false)
+const sliceExportError = ref<string | null>(null)
+
+async function exportCurrentSlice() {
+  if (!props.currentSlice || !props.exportSlice || sliceExporting.value) return
+  sliceExporting.value = true
+  sliceExportError.value = null
+  try {
+    const png = await sliceHeatmapRef.value!.capturePng()
+    await props.exportSlice(png)
+  } catch (error) {
+    sliceExportError.value = error instanceof Error ? error.message : String(error)
+  } finally {
+    sliceExporting.value = false
+  }
+}
 
 const modelMetrics = computed(() => {
   const evidence = props.analysis?.model_evidence
@@ -186,7 +206,11 @@ const hasResiduals = computed(() => (props.residuals?.returned ?? 0) > 0)
     </header>
 
     <AsyncState
-      v-if="!analysis && activeTab !== 'provenance'"
+      v-if="
+        !analysis &&
+        activeTab !== 'provenance' &&
+        !(activeTab === 'slices' && currentSlice)
+      "
       kind="nodata"
       title="暂无成果网格证据"
       impact="成果组成/深度/组件/切片统计不可用"
@@ -281,16 +305,17 @@ const hasResiduals = computed(() => (props.residuals?.returned ?? 0) > 0)
       </section>
     </div>
 
-    <template v-else-if="analysis">
+    <template v-else-if="analysis || (activeTab === 'slices' && currentSlice)">
       <!-- 综合分析：成果组成 + 深度趋势 -->
       <div
-        v-if="activeTab === 'overview'"
+        v-if="activeTab === 'overview' && analysis"
         key="overview"
         class="evidence-pane grouped layout-overview"
         data-test="ge-pane-overview"
       >
         <section class="evidence-cell">
-          <h4 class="cell-title">成果组成 <span class="scope-tag">成果网格</span></h4>
+          <h4 class="cell-title">成果组成</h4>
+          <p class="cell-lead">低值、常态与高值体元的整体占比</p>
           <EChartBox :option="compositionOption" data-test="ge-composition-chart" />
           <div class="bucket-strip">
             <span
@@ -304,9 +329,13 @@ const hasResiduals = computed(() => (props.residuals?.returned ?? 0) > 0)
           </div>
         </section>
         <section class="evidence-cell">
-          <h4 class="cell-title">深度趋势 <span class="scope-tag">成果网格</span></h4>
+          <h4 class="cell-title">深度趋势</h4>
+          <p class="cell-lead">沿深度识别高值富集层段及均值变化</p>
           <template v-if="depthApplicable">
-            <EChartBox :option="depthOption" data-test="ge-depth-chart" />
+            <div class="chart-scroll" data-test="ge-depth-chart-scroll">
+              <EChartBox :option="depthOption" data-test="ge-depth-chart" />
+            </div>
+            <div class="table-scroll">
             <table class="depth-table">
               <thead>
                 <tr><th>层段（m）</th><th>有效体元</th><th>均值</th><th>高值占比</th><th /></tr>
@@ -330,6 +359,7 @@ const hasResiduals = computed(() => (props.residuals?.returned ?? 0) > 0)
                 </tr>
               </tbody>
             </table>
+            </div>
           </template>
           <p v-else class="pane-note">深度分层不适用（二维成果无 Z 向层段）</p>
         </section>
@@ -344,7 +374,7 @@ const hasResiduals = computed(() => (props.residuals?.returned ?? 0) > 0)
         data-test="ge-pane-slices"
       >
         <section class="evidence-cell">
-          <h4 class="cell-title">当前切片 <span class="scope-tag">成果网格</span></h4>
+          <h4 class="cell-title">当前切片</h4>
           <p v-if="!currentSlice" class="pane-note">进入切片模式后显示当前切片证据</p>
           <template v-else>
             <p class="pane-note">
@@ -358,13 +388,40 @@ const hasResiduals = computed(() => (props.residuals?.returned ?? 0) > 0)
               </template>
             </p>
             <div class="slice-heatmap" data-test="ge-slice-heatmap">
-              <SliceHeatmap :analysis="currentSlice" :palette="palette" :scale="scale" />
+              <!-- 覆盖内部根 testid，避免与场景 SliceAnalysisPanel 的 slice-heatmap 冲突 -->
+              <SliceHeatmap
+                ref="sliceHeatmapRef"
+                :analysis="currentSlice"
+                :palette="palette"
+                :scale="scale"
+                data-test="ge-dock-slice-heatmap-inner"
+              />
+            </div>
+            <div class="slice-stat-grid" data-test="ge-slice-statistics">
+              <div><span>值域</span><strong>{{ formatNumber(sliceStats?.min) }}–{{ formatNumber(sliceStats?.max) }}</strong></div>
+              <div><span>均值</span><strong>{{ formatNumber(sliceStats?.mean) }}</strong></div>
+              <div><span>标准差</span><strong>{{ formatNumber(sliceStats?.std_population) }}</strong></div>
+              <div><span>中位数</span><strong>{{ formatNumber(sliceStats?.p50) }}</strong></div>
+            </div>
+            <div class="slice-actions">
+              <button
+                v-if="exportSlice"
+                type="button"
+                class="link-button"
+                data-test="ge-export-slice"
+                :disabled="sliceExporting"
+                @click="exportCurrentSlice"
+              >
+                {{ sliceExporting ? '正在生成…' : '下载切片分析包' }}
+              </button>
+              <span v-if="sliceExportError" class="inline-error" role="status">{{ sliceExportError }}</span>
             </div>
           </template>
         </section>
         <section class="evidence-cell">
-          <h4 class="cell-title">高值连通区 <span class="scope-tag">成果网格</span></h4>
-          <template v-if="analysis.components_preview.rows.length > 0">
+          <h4 class="cell-title">异常区域</h4>
+          <p class="cell-lead">按网格连通性比较高值区域规模与峰值</p>
+          <template v-if="analysis && analysis.components_preview.rows.length > 0">
             <EChartBox :option="componentsOption" data-test="ge-components-chart" />
             <div class="bucket-strip">
               <button
@@ -381,19 +438,20 @@ const hasResiduals = computed(() => (props.residuals?.returned ?? 0) > 0)
               </button>
             </div>
           </template>
-          <p v-else class="pane-note">当前阈值下无高值连通区</p>
+          <p v-else-if="analysis" class="pane-note">当前阈值下无高值连通区</p>
+          <p v-else class="pane-note">成果异常区域分析暂不可用；当前切片证据不受影响。</p>
         </section>
       </div>
 
       <!-- 模型证据：候选指标 + 残差 -->
       <div
-        v-if="activeTab === 'model'"
+        v-if="activeTab === 'model' && analysis"
         key="model"
         class="evidence-pane grouped layout-model"
         data-test="ge-pane-model"
       >
         <section class="evidence-cell">
-          <h4 class="cell-title">模型指标 <span class="scope-tag">成果网格</span></h4>
+          <h4 class="cell-title">模型指标</h4>
           <p class="pane-note">
             算法 {{ analysis.model_evidence.algorithm }} · 交叉验证公共有效点
             {{ analysis.model_evidence.common_valid_count?.toLocaleString() ?? '—' }}
@@ -412,7 +470,7 @@ const hasResiduals = computed(() => (props.residuals?.returned ?? 0) > 0)
           />
         </section>
         <section class="evidence-cell">
-          <h4 class="cell-title">残差 <span class="scope-tag">输入样本</span></h4>
+          <h4 class="cell-title">验证残差</h4>
           <p v-if="!hasResiduals" class="pane-note">暂无残差证据</p>
           <ResidualEvidenceChart
             v-else
@@ -508,19 +566,19 @@ const hasResiduals = computed(() => (props.residuals?.returned ?? 0) > 0)
 }
 
 .layout-overview > :first-child {
-  grid-column: span 4;
+  grid-column: span 3;
 }
 
 .layout-overview > :last-child {
-  grid-column: span 8;
+  grid-column: span 9;
 }
 
 .layout-slices > :first-child {
-  grid-column: span 5;
+  grid-column: span 7;
 }
 
 .layout-slices > :last-child {
-  grid-column: span 7;
+  grid-column: span 5;
 }
 
 .layout-slices.no-current-slice > :first-child {
@@ -638,6 +696,52 @@ const hasResiduals = computed(() => (props.residuals?.returned ?? 0) > 0)
   overflow: hidden;
 }
 
+.slice-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--s1-space-2);
+  margin-top: var(--s1-space-2);
+}
+
+.chart-scroll,
+.table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+
+.slice-stat-grid > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  border-left: 2px solid var(--s1-cyan-dim);
+  padding-left: 8px;
+}
+
+.slice-stat-grid span {
+  color: var(--s1-text-faint);
+  font-size: var(--s1-font-xs);
+}
+
+.slice-stat-grid strong {
+  color: var(--s1-text);
+  font-size: var(--s1-font-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.slice-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s1-space-2);
+  margin-top: var(--s1-space-2);
+}
+
+.inline-error {
+  color: var(--el-color-danger);
+  font-size: var(--s1-font-xs);
+}
+
 .metric-strip {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
@@ -668,6 +772,13 @@ const hasResiduals = computed(() => (props.residuals?.returned ?? 0) > 0)
 .input-quality {
   width: min(180px, 46%);
   flex: none;
+}
+
+.cell-lead {
+  margin: -2px 0 var(--s1-space-2);
+  color: var(--s1-text-faint);
+  font-size: var(--s1-font-sm);
+  line-height: 1.45;
 }
 
 .input-quality-summary {
@@ -741,6 +852,35 @@ const hasResiduals = computed(() => (props.residuals?.returned ?? 0) > 0)
 
   .evidence-pane.grouped > .evidence-cell {
     grid-column: 1;
+  }
+}
+
+@media (max-width: 640px) {
+  .evidence-head {
+    align-items: flex-start;
+  }
+
+  .evidence-scope {
+    display: none;
+  }
+
+  .evidence-tab {
+    flex: 1 1 calc(50% - 4px);
+    padding-inline: 6px;
+  }
+
+  .slice-stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .layout-overview .chart-scroll :deep(.echart-box),
+  .layout-slices :deep(.echart-box) {
+    width: 620px;
+    max-width: none;
+  }
+
+  .depth-table {
+    min-width: 620px;
   }
 }
 </style>

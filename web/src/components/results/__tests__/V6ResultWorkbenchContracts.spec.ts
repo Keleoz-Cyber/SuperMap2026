@@ -13,6 +13,7 @@ import type {
   PlatformCaseRecord,
   RenderCapability,
   ResultMetadata,
+  SliceAnalysisResponse,
 } from '../../../api/types'
 
 // v0.9.0 V6 Task 3/4：成果工作台一屏结构合同。
@@ -156,6 +157,54 @@ const POINTS: DatasetPoints = {
   source_sha256: 'ab'.repeat(32),
 }
 
+const CURRENT_SLICE: SliceAnalysisResponse = {
+  asset_identity: {
+    asset_id: 'nc-test',
+    source_kind: 'candidate_result',
+    source_id: 'r1',
+    grid_sha256: 'cd'.repeat(32),
+    netcdf_sha256: 'ef'.repeat(32),
+  },
+  property: { name: 'RHO', unit: 'Ω·m' },
+  axes: {
+    x: { length: 2, coordinates: [-150, -141], unit: 'm' },
+    y: { length: 2, coordinates: [260, 292], unit: 'm' },
+    z: { length: 2, coordinates: [-800, -740], unit: 'm' },
+  },
+  slice: {
+    fixed_axis: 'z',
+    index: 1,
+    coordinate: -740,
+    sdk_relative_position: 1,
+    row_axis: 'y',
+    column_axis: 'x',
+    row_coordinates: [260, 292],
+    column_coordinates: [-150, -141],
+    values: [[10, 20], [30, 40]],
+    nodata_mask: [[false, false], [false, false]],
+  },
+  statistics: {
+    total_count: 4,
+    valid_count: 4,
+    nodata_count: 0,
+    min: 10,
+    max: 40,
+    mean: 25,
+    std_population: 11.1803,
+    p10: 13,
+    p50: 25,
+    p90: 37,
+    thresholds: null,
+    low_count: null,
+    normal_count: null,
+    high_count: null,
+    low_ratio: null,
+    normal_ratio: null,
+    high_ratio: null,
+  },
+  render_profile: null,
+}
+
 async function mountV6(analysis = RESULT_ANALYSIS_MOCK_3D) {
   vi.mocked(client.materializeResult).mockResolvedValue(META_3D)
   vi.mocked(client.fetchExperiment).mockResolvedValue(EXP)
@@ -219,7 +268,16 @@ describe('V6 成果工作台结构合同', () => {
   it('证据窗只使用四个一级标签', async () => {
     const { wrapper } = await mountV6()
     const tabs = wrapper.findAll('[data-test^="ge-tab-"]')
-    expect(tabs.map((t) => t.text())).toEqual(['综合分析', '切片与异常', '模型证据', '数据溯源'])
+    expect(tabs.map((t) => t.text())).toEqual(['成果概览', '切片分析', '模型可信度', '数据与导出'])
+  })
+
+  it('首次收到权威切片响应就自动聚焦唯一的切片分析模块', async () => {
+    const { wrapper } = await mountV6()
+    wrapper.getComponent(NativeVolumePanel).vm.$emit('slice-analysis', CURRENT_SLICE)
+    await flushPromises()
+    expect(wrapper.find('[data-test="ge-pane-slices"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="ge-slice-heatmap"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="slice-analysis"]').exists()).toBe(false)
   })
 
   it('异常区清单与三维标注使用同一份完整组件集合', async () => {

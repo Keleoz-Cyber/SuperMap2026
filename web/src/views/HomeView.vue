@@ -68,6 +68,10 @@ interface PrimaryAction {
   url: string
 }
 
+function appRoute(url: string): string {
+  return url.startsWith('/#/') ? url.slice(2) : url
+}
+
 // 每个案例恰好一个主动作（设计 §5.2）：官方案例进入案例分析；
 // 用户项目按权威 data_preparation 状态给出继续数据准备/继续建模
 const primaryAction = computed<PrimaryAction | null>(() => {
@@ -86,6 +90,12 @@ const primaryAction = computed<PrimaryAction | null>(() => {
   }
   return { label: '进入案例分析', url: `/cases/${c.case_id}` }
 })
+
+function openPrimaryAction() {
+  const action = primaryAction.value
+  if (!action) return
+  void router.push(appRoute(action.url))
+}
 
 const coordinateNote = computed(() => {
   const kind = selectedCase.value?.provenance_summary?.coordinate_kind
@@ -258,7 +268,7 @@ onBeforeUnmount(clearShellContext)
             class="cc-primary"
             data-test="command-primary-action"
             data-primary-action="true"
-            @click="router.push(primaryAction.url)"
+            @click="openPrimaryAction"
           >
             {{ primaryAction.label }}
             <el-icon :size="13"><ArrowRight /></el-icon>

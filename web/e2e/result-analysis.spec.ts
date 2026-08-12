@@ -106,14 +106,14 @@ test.describe('成果级分析工作台（mock 协议帧）', () => {
 
     // 切片模式：权威统计共享完整网格阈值（27.3%/45.5%），证据带切片联动
     await page.getByTestId('mode-slice').click()
-    await expect(page.getByTestId('slice-coordinate-label')).toContainText('Z = -400')
+    await expect(page.getByTestId('slice-coordinate')).toContainText('Z = -400')
     await expect(page.getByTestId('interpretation-slice')).toContainText('27.3%')
     await expect(page.getByTestId('interpretation-slice')).toContainText('45.5%')
     await expect(page.getByTestId('interpretation-slice')).toContainText('+2.3')
     await page.evaluate(() => window.scrollTo(0, 0))
     await page.screenshot({ path: `${EVIDENCE_DIR}/02-workbench-slice.png` })
 
-    // 证据窗四标签（V6 归组：综合分析/切片与异常/模型证据/数据溯源）
+    // 成果分析四标签（V6 归组：成果概览/切片分析/模型可信度/数据与导出）
     await page.getByTestId('ge-tab-overview').click()
     await expect(page.getByTestId('ge-pane-overview')).toContainText('45.1%')
     await page.getByTestId('ge-tab-slices').click()

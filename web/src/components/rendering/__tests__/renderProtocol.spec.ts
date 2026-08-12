@@ -224,7 +224,13 @@ describe('renderProtocol v2', () => {
 
   it('帧版本与 public/supermap-volume-frame 全部运行时文件内容哈希一致', () => {
     const hash = createHash('sha256')
-    for (const name of ['index.html', 'app.js', 'styles.css', 'sceneAidsGeometry.js']) {
+    for (const name of [
+      'index.html',
+      'app.js',
+      'styles.css',
+      'sceneAidsGeometry.js',
+      'cameraRangePolicy.js',
+    ]) {
       hash.update(
         readFileSync(resolve(__dirname, '../../../../public/supermap-volume-frame', name)),
       )

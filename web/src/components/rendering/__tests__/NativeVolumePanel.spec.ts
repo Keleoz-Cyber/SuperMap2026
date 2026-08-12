@@ -666,7 +666,8 @@ describe('NativeVolumePanel 切片集成', () => {
     expect(analysis.exists()).toBe(true)
     expect(analysis.props('target')).toEqual({ axis: 'z', index: 1 })
     expect(analysis.props('axesMeta')).toBeTruthy()
-    expect(wrapper.find('[data-test="slice-coordinate-label"]').text()).toContain('Z = -800')
+    expect(analysis.props('display')).toBe('controller')
+    expect(wrapper.find('[data-test="slice-coordinate-label"]').exists()).toBe(false)
 
     // 3D slice 状态完全来自权威响应（coordinate / sdk_relative_position）
     const state = lastAppliedState()
@@ -1083,6 +1084,10 @@ describe('NativeVolumePanel v0.9 异常标注联动', () => {
     const response = emitted!.at(-1)![0] as SliceAnalysisResponse
     expect(response.slice.fixed_axis).toBe('z')
     expect(response.asset_identity.asset_id).toBe(ASSET.id)
+    const controller = wrapper.findComponent(SliceAnalysisPanel)
+    expect(controller.props('display')).toBe('controller')
+    expect(wrapper.find('[data-test="slice-analysis"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="slice-analysis-controller"]').exists()).toBe(true)
     wrapper.unmount()
   })
 })

@@ -421,7 +421,7 @@ export async function waitSliceApplied(
   expect(resp.ok()).toBe(true)
   const analysis = await resp.json()
   const coordinate = analysis.slice.coordinate
-  await expect(page.getByTestId('slice-coordinate-label')).toContainText(
+  await expect(page.getByTestId('slice-coordinate')).toContainText(
     `${axis.toUpperCase()} = ${coordinate}`,
     { timeout: 30_000 },
   )
@@ -954,9 +954,9 @@ export async function runV070RenderGates(params: V070GateParams): Promise<V070Ga
   timings['slice-reenter'] = reenter.totalMs
   previous = reenter.shot
   const analysis = await waitSliceApplied(page, request, frame, assetId, exportAxis, exportIdx)
-  await expect(page.getByTestId('export-slice')).toBeEnabled()
+  await expect(page.getByTestId('ge-export-slice')).toBeEnabled()
   const downloadPromise = page.waitForEvent('download', { timeout: 60_000 })
-  await page.getByTestId('export-slice').click()
+  await page.getByTestId('ge-export-slice').click()
   const download = await downloadPromise
   expect(download.suggestedFilename()).toBe('slice-analysis.zip')
   const zipBuf = await readFile(await download.path())

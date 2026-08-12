@@ -234,7 +234,7 @@ test('成果页图表→三维联动：趋势点击驱动切片', async ({ page 
   expect(box).toBeTruthy()
   await page.mouse.click(box!.x + box!.width * 0.5, box!.y + box!.height * 0.5)
   // 切片坐标标签出现（模式切换为 slice 并应用权威剖面）
-  await expect(page.getByTestId('slice-coordinate-label')).toBeVisible({ timeout: 60_000 })
+  await expect(page.getByTestId('slice-coordinate')).toBeVisible({ timeout: 60_000 })
   await page.waitForTimeout(1200)
   const after = await page.getByTestId('volume-frame').screenshot()
   expect(Buffer.compare(before, after)).not.toBe(0)

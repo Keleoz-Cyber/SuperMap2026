@@ -260,7 +260,7 @@ describe('CommandCenter 指挥舱', () => {
   })
 
   it('user case with unfinished preparation shows 继续数据准备 as the only primary action', async () => {
-    const { wrapper } = await mountHome([RESISTIVITY_CASE, USER_PREP_CASE])
+    const { wrapper, router } = await mountHome([RESISTIVITY_CASE, USER_PREP_CASE])
     vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(
       workspaceOf(USER_PREP_CASE, {
         primary_dataset: null,
@@ -271,7 +271,7 @@ describe('CommandCenter 指挥舱', () => {
           next_action: {
             step: 'quality_review',
             label: '继续质量检查',
-            url: '/cases/case-user-1/datasets/ds-user-1/prepare',
+            url: '/#/cases/case-user-1/datasets/ds-user-1/prepare',
           },
           error: null,
         },
@@ -283,7 +283,10 @@ describe('CommandCenter 指挥舱', () => {
     const primaries = wrapper.findAll('[data-primary-action="true"]')
     expect(primaries).toHaveLength(1)
     expect(primaries[0].text()).toContain('继续数据准备')
-    // 无成果：三维区为解释性空态，不渲染假场景
-    expect(wrapper.get('[data-test="command-center-scene"]').text()).toContain('暂无成果')
+    await primaries[0].trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.fullPath).toBe(
+      '/cases/case-user-1/datasets/ds-user-1/prepare',
+    )
   })
 })

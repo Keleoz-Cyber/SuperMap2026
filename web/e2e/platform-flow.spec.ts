@@ -4,7 +4,7 @@ import { installMockApi } from '../src/mocks/platformDemo'
 // 浏览器冒烟：完整 v0.4 流程，全程 mock API，不需要 iServer。
 
 test.describe('v0.4 通用建模流程（mock API）', () => {
-  test('案例创建 → 向导 → 实验 → 排行榜 → 成果切片 → 选择 → 导出', async ({ page }) => {
+  test('案例创建 → 向导 → 实验 → 排行榜 → 成果 → 选择 → 导出', async ({ page }) => {
     await installMockApi(page)
 
     // 首页 → 新建案例（v0.9.0：全局壳品牌与版本徽标）
@@ -43,15 +43,11 @@ test.describe('v0.4 通用建模流程（mock API）', () => {
     await expect(page.getByTestId('run-progress')).toBeVisible()
     await expect(page.getByTestId('leaderboard')).toContainText('1.200', { timeout: 15000 })
 
-    // 成果工作台：切片三方向 + 坐标标签
+    // 成果工作台：3D 工具栏是唯一切片入口；资产未创建时按能力门禁禁用
     await page.getByTestId('open-result').first().click()
     await expect(page).toHaveURL(/#\/results\/cand-1/)
-    await page.getByTestId('tab-slices').click()
-    await expect(page.getByTestId('slice-label')).toContainText('Z = -800 m')
-    await page.getByTestId('axis-x').click()
-    await expect(page.getByTestId('slice-label')).toContainText('X = -150 m')
-    await page.getByTestId('axis-y').click()
-    await expect(page.getByTestId('slice-label')).toContainText('Y = 260 m')
+    await expect(page.getByTestId('mode-slice')).toBeDisabled()
+    await expect(page.getByTestId('tab-slices')).toHaveCount(0)
 
     // 正式选择（理由必填）与导出/发布状态分离
     await page.getByTestId('selection-submit').click()
@@ -236,7 +232,7 @@ test.describe('v0.6.1 体积基准卡直达成果（mock API）', () => {
     await page.goto('/')
     await primary.click()
     await expect(page).toHaveURL(/#\/results\/cand-1/)
-    await expect(page.getByTestId('tab-slices')).toBeVisible()
+    await expect(page.getByTestId('mode-slice')).toBeVisible()
   })
 })
 
@@ -275,7 +271,7 @@ test.describe('v0.6.1 实验成果状态区（mock API）', () => {
     // 主入口：多候选取排行榜首名（cand-1，RMSE 1.2 < 2.4），一键直达成果工作台
     await page.getByTestId('view-result').click()
     await expect(page).toHaveURL(/#\/results\/cand-1/)
-    await expect(page.getByTestId('tab-slices')).toBeVisible()
+    await expect(page.getByTestId('mode-slice')).toBeVisible()
   })
 })
 

@@ -190,7 +190,7 @@ test('官方电阻率成果：规则分析、三维组件、切片、相机、AI
 
   let diag = await frameDiag(page)
   expect(diag.phase).toBe('rendered')
-  const expectedSceneAnnotations = Math.min(summary.components_preview.rows.length, 3)
+  const expectedSceneAnnotations = summary.components_preview.rows.length
   expect(diag.annotations.total).toBe(expectedSceneAnnotations)
   expect(diag.annotations.visible).toBe(expectedSceneAnnotations)
 
@@ -215,15 +215,19 @@ test('官方电阻率成果：规则分析、三维组件、切片、相机、AI
   }
   const bodyShot = await page.getByTestId('volume-frame').screenshot()
   const volumeRatios = await contentBoundingRatios(page, bodyShot)
+  const initialCameraGeometry = (await frameDiag(page)).geometry
   expect(volumeRatios.height).toBeGreaterThanOrEqual(0.58)
-  expect(volumeRatios.height).toBeLessThanOrEqual(0.76)
+  expect(
+    volumeRatios.height,
+    `initial camera geometry: ${JSON.stringify(initialCameraGeometry)}`,
+  ).toBeLessThanOrEqual(0.76)
   expect(volumeRatios.width).toBeGreaterThanOrEqual(0.24)
   for (const id of ['annotations-toggle', 'axes-toggle', 'depth-ticks-toggle']) {
     await page.getByTestId(id).click()
   }
 
   // v0.9.0 V6 Task 7：一屏布局测量——顶栏/摘要条/三栏舞台/证据窗
-  await expect(page.getByTestId('v6-result-topbar')).toBeVisible()
+  await expect(page.getByTestId('app-global-header')).toBeVisible()
   await expect(page.getByTestId('v6-result-summary')).toBeVisible()
   expect(page.getByTestId('page-navigation')).toHaveCount(0)
   expect(page.getByTestId('asset-identity')).toHaveCount(0)
@@ -251,6 +255,49 @@ test('官方电阻率成果：规则分析、三维组件、切片、相机、AI
     await page.getByTestId(`camera-${preset}`).click()
     await expect.poll(async () => (await frameDiag(page)).cameraPreset).toBe(preset)
   }
+
+  // 成果尺度相关的相机安全区：滚轮单步约 8%，SDK 导航条与滚轮共享上下限。
+  const frame = page.frames().find((item) => item.url().includes('/supermap-volume-frame/'))!
+  const cameraBefore = (await frameDiag(page)).geometry
+  expect(cameraBefore.cameraRangeMetres).toBeGreaterThanOrEqual(cameraBefore.cameraRangeBoundsMetres[0])
+  expect(cameraBefore.cameraRangeMetres).toBeLessThanOrEqual(cameraBefore.cameraRangeBoundsMetres[1])
+  await frame.locator('canvas').hover()
+  await page.mouse.wheel(0, 120)
+  await expect
+    .poll(async () => (await frameDiag(page)).geometry.cameraRangeMetres)
+    .not.toBe(cameraBefore.cameraRangeMetres)
+  const cameraAfterWheel = (await frameDiag(page)).geometry
+  const wheelRatio = cameraAfterWheel.cameraRangeMetres / cameraBefore.cameraRangeMetres
+  expect(wheelRatio).toBeGreaterThanOrEqual(1.06)
+  expect(wheelRatio).toBeLessThanOrEqual(1.1)
+
+  const zoomBar = frame.locator('.sm-zoombar')
+  const zoomTrack = frame.locator('.sm-zoom')
+  const barBox = await zoomBar.boundingBox()
+  const trackBox = await zoomTrack.boundingBox()
+  expect(barBox).toBeTruthy()
+  expect(trackBox).toBeTruthy()
+  await page.mouse.move(barBox!.x + barBox!.width / 2, barBox!.y + barBox!.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(barBox!.x + barBox!.width / 2, trackBox!.y + trackBox!.height - 4, {
+    steps: 12,
+  })
+  await page.mouse.up()
+  await page.waitForTimeout(800)
+  const cameraAfterBar = (await frameDiag(page)).geometry
+  expect(cameraAfterBar.cameraRangeMetres).toBeGreaterThanOrEqual(cameraAfterBar.cameraRangeBoundsMetres[0])
+  expect(cameraAfterBar.cameraRangeMetres).toBeLessThanOrEqual(cameraAfterBar.cameraRangeBoundsMetres[1])
+  expect(cameraAfterBar.cameraTargetAlignment).toBeGreaterThanOrEqual(0.999)
+  const cameraShot = await page.getByTestId('volume-frame').screenshot()
+  expectVolumeContent(
+    await analyzeVolumePixels(page, cameraShot),
+    `导航缩放后的体渲染 ${JSON.stringify(cameraAfterBar)}`,
+    {
+    minNonBg: 1200,
+    minCoverage: 0.03,
+    },
+  )
+  await page.getByTestId('reset-view').click()
 
   await page.getByTestId('mode-slice').click()
   await expect.poll(async () => (await frameDiag(page)).mode).toBe('slice')
@@ -353,7 +400,7 @@ test('V6 成果工作台 1440×900：一屏无溢出，工具/研判/证据可�
   await installLiveProbe(page)
   await page.setViewportSize(VIEWPORT_1440)
   await page.goto(`/#/results/${resultId}`, { waitUntil: 'load', timeout: 60_000 })
-  await expect(page.getByTestId('v6-result-topbar')).toBeVisible({ timeout: 60_000 })
+  await expect(page.getByTestId('app-global-header')).toBeVisible({ timeout: 60_000 })
   await expect(page.getByTestId('v6-result-summary')).toBeVisible()
 
   const createAsset = page.getByTestId('create-asset')
