@@ -2,6 +2,10 @@
 
 from geomodeling.modeling.contracts import Fold, GridDefinition, MetricSummary
 from geomodeling.modeling.dsi_like import DSILikeInterpolator, DSIParameters
+from geomodeling.modeling.random_forest import (
+    RandomForestSpatialInterpolator,
+    RandomForestSpatialParameters,
+)
 from geomodeling.modeling.grid import derive_grid
 from geomodeling.modeling.metrics import common_valid_mask, compute_metrics
 from geomodeling.modeling.splits import build_spatial_splits
