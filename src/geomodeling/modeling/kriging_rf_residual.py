@@ -18,7 +18,7 @@ from geomodeling.modeling.random_forest import (
 )
 from geomodeling.modeling.splits import build_spatial_splits
 from geomodeling.platform.errors import PlatformError
-from geomodeling.platform.schemas import ContractModel, Dimension, SpatialValidationSpec
+from geomodeling.platform.schemas import Algorithm, ContractModel, Dimension, SpatialValidationSpec
 
 ML_INNER_SPLIT_FAILED = "ML_INNER_SPLIT_FAILED"
 ML_RESIDUAL_COVERAGE_INSUFFICIENT = "ML_RESIDUAL_COVERAGE_INSUFFICIENT"
@@ -34,6 +34,24 @@ class KrigingRFResidualParameters(ContractModel):
     min_oof_residuals: int = Field(default=30, ge=20, le=10_000)
     min_oof_coverage: float = Field(default=0.8, ge=0.5, le=1.0)
     inner_seed: int = 20260813
+
+
+class KrigingRFResidualInterpolator:
+    algorithm = Algorithm.KRIGING_RF_RESIDUAL
+
+    def validate_parameters(
+        self, parameters: dict[str, Any], dimension: Dimension | str
+    ) -> KrigingRFResidualParameters:
+        Dimension(dimension)
+        return KrigingRFResidualParameters.model_validate(parameters or {})
+
+    def fit(
+        self,
+        coordinates: np.ndarray,
+        values: np.ndarray,
+        parameters: KrigingRFResidualParameters,
+    ) -> "KrigingRFResidualFitted":
+        return fit_kriging_rf_residual(coordinates, values, parameters)
 
 
 def _fingerprint(folds) -> str:
@@ -121,6 +139,7 @@ def fit_kriging_rf_residual(
     )
     baseline_fitted = kriging.fit(points, target, final_kriging_parameters)
     diagnostics = {
+        "feature_version": parameters.feature_version,
         "inner_fold_count": len(folds),
         "inner_validation_fingerprint": _fingerprint(folds),
         "oof_residual_count": residual_count,

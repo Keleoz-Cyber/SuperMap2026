@@ -47,6 +47,8 @@ from geomodeling.modeling.fold_artifacts import (
 )
 from geomodeling.modeling.idw import IDWInterpolator
 from geomodeling.modeling.kriging import OrdinaryKrigingInterpolator
+from geomodeling.modeling.kriging_rf_residual import KrigingRFResidualInterpolator
+from geomodeling.modeling.random_forest import RandomForestSpatialInterpolator
 from geomodeling.modeling.metrics import common_valid_mask, compute_metrics
 from geomodeling.modeling.professional_contracts import capabilities_for
 from geomodeling.modeling.provenance import (
@@ -77,6 +79,8 @@ _INTERPOLATORS = {
     Algorithm.IDW.value: IDWInterpolator(),
     Algorithm.ORDINARY_KRIGING.value: OrdinaryKrigingInterpolator(),
     Algorithm.DSI_LIKE.value: DSILikeInterpolator(),
+    Algorithm.RANDOM_FOREST_SPATIAL.value: RandomForestSpatialInterpolator(),
+    Algorithm.KRIGING_RF_RESIDUAL.value: KrigingRFResidualInterpolator(),
 }
 
 
@@ -220,6 +224,43 @@ def _evaluate_candidate(
         }
     metrics["runtime_seconds"] = runtime_seconds
     metrics["fold_metrics"] = fold_metrics
+    if interpolator.algorithm in {
+        Algorithm.RANDOM_FOREST_SPATIAL,
+        Algorithm.KRIGING_RF_RESIDUAL,
+    }:
+        diagnostics = [entry["diagnostics"] for entry in fold_diagnostics]
+        first = diagnostics[0] if diagnostics else {}
+        ml_diagnostics: dict[str, Any] = {
+            "feature_version": first.get("feature_version"),
+            "sklearn_version": first.get("sklearn_version")
+            or (first.get("residual_model") or {}).get("sklearn_version"),
+            "outer_fold_count": len(diagnostics),
+        }
+        if interpolator.algorithm == Algorithm.KRIGING_RF_RESIDUAL:
+            ml_diagnostics.update(
+                {
+                    "residual_target_semantics": first.get("residual_target_semantics"),
+                    "inner_fold_count": first.get("inner_fold_count"),
+                    "inner_validation_fingerprints": [
+                        item.get("inner_validation_fingerprint") for item in diagnostics
+                    ],
+                    "oof_residual_count": sum(
+                        int(item.get("oof_residual_count") or 0) for item in diagnostics
+                    ),
+                    "oof_residual_coverage_min": min(
+                        (float(item.get("oof_residual_coverage") or 0.0) for item in diagnostics),
+                        default=0.0,
+                    ),
+                }
+            )
+        else:
+            ml_diagnostics.update(
+                {
+                    "tree_count": first.get("tree_count"),
+                    "dispersion_semantics": first.get("dispersion_semantics"),
+                }
+            )
+        metrics["ml_diagnostics"] = ml_diagnostics
     return {"predictions": predictions, "metrics": metrics, "fold_diagnostics": fold_diagnostics}
 
 
