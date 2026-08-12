@@ -54,6 +54,14 @@ const dockTabModel = defineModel<'overview' | 'slices' | 'model' | 'provenance'>
 // 右侧研判区：规则研判（默认）/ AI 辅助切换；AI 不可用不拖垮规则研判
 const sideTab = ref<'rules' | 'ai'>('rules')
 const evidenceExpanded = ref(false)
+const focusMode = ref<'all' | 'scene' | 'controls' | 'analysis'>('all')
+
+function setFocus(mode: typeof focusMode.value) {
+  focusMode.value = mode
+  if (mode === 'scene' || mode === 'controls') {
+    requestAnimationFrame(() => window.dispatchEvent(new Event('resize')))
+  }
+}
 
 // AI evidence ref 联动：组件/层段向上聚焦；全局证据切到对应证据标签
 function onFocusEvidence(ref: string) {
@@ -82,10 +90,40 @@ function onFocusEvidence(ref: string) {
 </script>
 
 <template>
-  <div class="result-workbench" data-test="result-analysis-workbench">
+  <div
+    class="result-workbench"
+    :class="`focus-${focusMode}`"
+    data-test="result-analysis-workbench"
+  >
     <p v-if="selectionNotice" class="selection-notice" data-test="selection-notice" role="status">
       {{ selectionNotice }}
     </p>
+    <div class="focus-switcher" role="group" aria-label="成果工作台视图">
+      <button
+        type="button"
+        data-test="workbench-focus-all"
+        :aria-pressed="focusMode === 'all'"
+        @click="setFocus('all')"
+      >全览</button>
+      <button
+        type="button"
+        data-test="workbench-focus-scene"
+        :aria-pressed="focusMode === 'scene'"
+        @click="setFocus('scene')"
+      >场景</button>
+      <button
+        type="button"
+        data-test="workbench-focus-controls"
+        :aria-pressed="focusMode === 'controls'"
+        @click="setFocus('controls')"
+      >控制</button>
+      <button
+        type="button"
+        data-test="workbench-focus-analysis"
+        :aria-pressed="focusMode === 'analysis'"
+        @click="setFocus('analysis')"
+      >分析</button>
+    </div>
     <div class="workbench-grid" data-test="v6-main-stage">
       <div class="workbench-scene" data-test="result-scene">
         <slot name="scene" />
@@ -205,6 +243,33 @@ function onFocusEvidence(ref: string) {
   flex: none;
 }
 
+.focus-switcher {
+  display: flex;
+  gap: 2px;
+  align-self: flex-end;
+  margin: 0 var(--s1-space-3);
+  padding: 3px;
+  border: 1px solid var(--s1-border);
+  border-radius: var(--s1-radius-sm);
+  background: var(--s1-surface-2);
+}
+
+.focus-switcher button {
+  min-width: 62px;
+  padding: 5px 10px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--s1-text-dim);
+  cursor: pointer;
+}
+
+.focus-switcher button[aria-pressed='true'] {
+  background: var(--s1-cyan-ghost);
+  color: var(--s1-cyan-strong);
+  font-weight: 600;
+}
+
 .workbench-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 390px;
@@ -313,6 +378,42 @@ function onFocusEvidence(ref: string) {
   height: 100%;
 }
 
+.focus-scene .workbench-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.focus-scene .workbench-side,
+.focus-scene .workbench-dock,
+.focus-controls .workbench-side,
+.focus-controls .workbench-dock {
+  display: none;
+}
+
+.focus-scene .workbench-scene :deep(.native-volume-panel.workbench .panel-body) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.focus-scene .workbench-scene :deep(.native-volume-panel.workbench .tools-rail) {
+  display: none;
+}
+
+.focus-analysis .workbench-grid {
+  grid-template-columns: minmax(320px, 0.8fr) minmax(420px, 1.2fr);
+}
+
+.focus-analysis .workbench-dock {
+  height: clamp(380px, 44vh, 500px);
+}
+
+.focus-controls .workbench-scene :deep(.native-volume-panel.workbench .panel-body) {
+  grid-template-columns: minmax(320px, 520px) minmax(0, 1fr);
+}
+
+.focus-controls .workbench-scene :deep(.native-volume-panel.workbench .scene-column) {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
 @media (max-width: 1199px) {
   .workbench-grid {
     grid-template-columns: 1fr;
@@ -329,6 +430,66 @@ function onFocusEvidence(ref: string) {
 
   .dock-size-toggle {
     display: none;
+  }
+
+  .focus-switcher {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    align-self: stretch;
+    justify-content: center;
+    margin: 0;
+  }
+
+  .focus-switcher button:first-child {
+    display: none;
+  }
+
+  .result-workbench.focus-all {
+    --mobile-default: scene;
+  }
+
+  .focus-all .workbench-side,
+  .focus-all .workbench-dock {
+    display: none;
+  }
+
+  .focus-all .workbench-scene :deep(.native-volume-panel.workbench .panel-body) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .focus-all .workbench-scene :deep(.native-volume-panel.workbench .tools-rail) {
+    display: none;
+  }
+
+  .focus-analysis .workbench-grid,
+  .focus-scene .workbench-grid,
+  .focus-controls .workbench-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .focus-scene .workbench-side,
+  .focus-scene .workbench-dock,
+  .focus-controls .workbench-side,
+  .focus-controls .workbench-dock {
+    display: none;
+  }
+
+  .focus-analysis .workbench-scene {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  .focus-analysis .workbench-dock,
+  .focus-analysis .workbench-side {
+    display: flex;
+  }
+
+  .focus-analysis .workbench-dock {
+    height: auto;
   }
 }
 </style>

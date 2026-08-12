@@ -50,7 +50,7 @@ const formalText = computed(() => {
         {{ algorithmLabel(metadata.algorithm) }}
       </h1>
       <p class="summary-meta">
-        {{ shapeText }} 网格 · {{ dimensionText }} · local_linear（局部线性坐标）·
+        {{ shapeText }} 网格 · {{ dimensionText }} · 局部线性坐标 ·
         {{ variable?.name ?? metadata.algorithm
         }}<template v-if="variable?.unit">（{{ variable.unit }}）</template>
       </p>

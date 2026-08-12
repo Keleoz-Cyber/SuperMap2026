@@ -640,12 +640,12 @@ onMounted(() => {
       <li>辅助采样点：不参与连续体渲染</li>
     </ul>
 
-    <!-- V6 workbench 变体：一行轻量状态条（相位/渲染器/坐标契约），调试块移入数据溯源 -->
+    <!-- 工作台主层只显示用户可理解的状态，具体渲染器与坐标合同进入数据溯源。 -->
     <p v-if="isWorkbench" class="volume-status-line" data-test="volume-status-line">
       <span class="volume-phase" data-test="volume-phase">{{ phaseText }}</span>
-      <span>SuperMap3D VoxelGridLayer3D</span>
-      <span v-if="capability">坐标契约：{{ capability.geolocation_status }}</span>
-      <span>辅助采样点不参与连续体渲染</span>
+      <span>连续体成果</span>
+      <span v-if="capability">局部坐标展示</span>
+      <span>辅助采样点默认隐藏</span>
     </p>
 
     <div v-if="capabilityLoading" class="panel-note" data-test="capability-loading">能力检查中…</div>

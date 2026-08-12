@@ -149,6 +149,25 @@ describe('ResultAnalysisWorkbench（V6 一屏布局）', () => {
     expect(dock.classes()).not.toContain('dock-overview')
   })
 
+  it('场景 / 控制 / 分析切换只改变焦点，不重新挂载三维场景', async () => {
+    const wrapper = mountWorkbench()
+    await flushPromises()
+    const sceneElement = wrapper.get('[data-test="slot-scene"]').element
+
+    expect(wrapper.get('[data-test="workbench-focus-all"]').attributes('aria-pressed')).toBe('true')
+    await wrapper.get('[data-test="workbench-focus-scene"]').trigger('click')
+    expect(wrapper.get('[data-test="result-analysis-workbench"]').classes()).toContain('focus-scene')
+    expect(wrapper.get('[data-test="slot-scene"]').element).toBe(sceneElement)
+
+    await wrapper.get('[data-test="workbench-focus-controls"]').trigger('click')
+    expect(wrapper.get('[data-test="result-analysis-workbench"]').classes()).toContain('focus-controls')
+    expect(wrapper.get('[data-test="slot-scene"]').element).toBe(sceneElement)
+
+    await wrapper.get('[data-test="workbench-focus-analysis"]').trigger('click')
+    expect(wrapper.get('[data-test="result-analysis-workbench"]').classes()).toContain('focus-analysis')
+    expect(wrapper.get('[data-test="slot-scene"]').element).toBe(sceneElement)
+  })
+
   it('dataset-level findings live only under the provenance input-sample cell', async () => {
     const wrapper = mountWorkbench()
     await flushPromises()
