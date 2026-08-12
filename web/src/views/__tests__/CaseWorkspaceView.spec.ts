@@ -372,8 +372,30 @@ describe('CaseWorkspaceView', () => {
 
     expect(wrapper.find('[data-test="recent-experiment-exp-1"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="recent-experiments"]').text()).toContain('IDW')
+    expect(wrapper.find('[data-test="recent-experiments"]').text()).toContain('验证完成')
+    expect(wrapper.find('[data-test="recent-experiments"]').text()).not.toContain('succeeded')
     expect(wrapper.find('[data-test="recent-result-r-1"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="recent-results"]').text()).toContain('已物化')
+    expect(wrapper.find('[data-test="recent-results"]').text()).toContain('三维网格已生成')
+    expect(wrapper.find('[data-test="recent-results"]').text()).not.toContain('物化')
+    wrapper.unmount()
+  })
+
+  it('放弃版本历史与主阅读层不暴露数据 UUID，身份只在技术详情中', async () => {
+    const ws = workspaceOf('user_upload')
+    ws.abandoned_datasets = [{
+      id: 'ds-abandoned-secret',
+      case_id: 'up-1',
+      version: 2,
+      status: 'abandoned',
+      profile: {},
+      created_at: '2026-08-05T00:00:00+00:00',
+    }]
+    vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(ws)
+    const { wrapper } = await mountWorkspace('/cases/up-1')
+
+    expect(wrapper.get('[data-test="abandoned-datasets"]').text()).toContain('数据版本 v2')
+    expect(wrapper.get('[data-test="abandoned-datasets"]').text()).not.toContain('ds-abandoned-secret')
+    expect(wrapper.get('[data-test="dataset-technical-details"]').text()).toContain('ds-1')
     wrapper.unmount()
   })
 

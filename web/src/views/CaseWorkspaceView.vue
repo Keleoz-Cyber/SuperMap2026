@@ -234,6 +234,18 @@ function algorithmLabel(id: string): string {
   return ALGORITHM_LABELS[id] ?? id
 }
 
+function runStatusLabel(status: string): string {
+  const labels: Record<string, string> = {
+    succeeded: '验证完成',
+    running: '运行中',
+    queued: '排队中',
+    failed: '运行失败',
+    interrupted: '已中断',
+    canceled: '已取消',
+  }
+  return labels[status] ?? '状态待确认'
+}
+
 async function loadDiagnosisStatuses() {
   const datasets = workspace.value?.validated_datasets ?? []
   const targetCaseId = caseId.value
@@ -433,7 +445,7 @@ onBeforeUnmount(clearShellContext)
                 :key="ds.id"
                 class="abandoned-item"
               >
-                v{{ ds.version }} · {{ ds.id }}
+                数据版本 v{{ ds.version }}
               </span>
             </div>
             <div
@@ -508,7 +520,7 @@ onBeforeUnmount(clearShellContext)
                 </router-link>
                 <span class="recent-meta">
                   {{ algorithmLabel(exp.algorithm) }}
-                  <template v-if="exp.latest_run_status"> · {{ exp.latest_run_status }}</template>
+                  <template v-if="exp.latest_run_status"> · {{ runStatusLabel(exp.latest_run_status) }}</template>
                   <template v-if="exp.succeeded_candidate_count"> · 成功 {{ exp.succeeded_candidate_count }} 候选</template>
                 </span>
               </div>
@@ -544,7 +556,7 @@ onBeforeUnmount(clearShellContext)
                   {{ algorithmLabel(res.algorithm) }} 成果
                 </router-link>
                 <span class="recent-meta">
-                  {{ res.materialized ? '已物化' : '未物化' }}
+                  {{ res.materialized ? '三维网格已生成' : '等待生成三维网格' }}
                   <template v-if="res.featured"> · 主打</template>
                 </span>
               </div>

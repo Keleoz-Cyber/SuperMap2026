@@ -655,9 +655,11 @@ describe('不可变确认', () => {
     expect(payload.anisotropy.azimuth_deg).toBe(0)
     expect(payload.anisotropy.major_minor_ratio).toBe(1.8)
 
-    // 快照只读展示：确认 ID/指纹可见，编辑表单不再出现（确认只新建、永不编辑）
-    expect(wrapper.find('[data-test="confirmation-id"]').text()).toContain('conf1')
-    expect(wrapper.find('[data-test="confirmation-fingerprint"]').text()).toContain('fp-conf1')
+    // 快照只读展示：用户结论在主层，确认 ID/指纹仅位于技术详情。
+    const technical = wrapper.get('[data-test="confirmation-technical-details"]')
+    expect(technical.find('[data-test="confirmation-id"]').text()).toContain('conf1')
+    expect(technical.find('[data-test="confirmation-fingerprint"]').text()).toContain('fp-conf1')
+    expect(wrapper.get('[data-test="confirmation-snapshot"]').find('h2').text()).toContain('参数建议已确认')
     expect(wrapper.find('[data-test="confirm-submit"]').exists()).toBe(false)
 
     const goto = wrapper.find('[data-test="goto-experiment"]')

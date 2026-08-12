@@ -508,19 +508,20 @@ onBeforeUnmount(stopPolling)
         <VariogramPanel :evidence="evidence" />
 
         <section v-if="confirmation" class="confirmation-snapshot" data-test="confirmation-snapshot">
-          <h2 class="section-heading">不可变确认快照</h2>
-          <p data-test="confirmation-id">确认 ID：<span class="mono">{{ confirmation.id }}</span></p>
-          <p data-test="confirmation-fingerprint">
-            指纹：<span class="mono">{{ confirmation.fingerprint }}</span>
-          </p>
+          <h2 class="section-heading">参数建议已确认</h2>
           <p v-if="confirmation.note">说明：{{ confirmation.note }}</p>
-          <p class="snapshot-hint">快照已创建且永不修改；如需调整，请创建新的确认。</p>
+          <p class="snapshot-hint">这组建议将锁定到新建的克里金实验；如需调整，请重新分析并创建新的确认。</p>
           <button v-if="confirmationFromExisting" class="gmp-btn primary" data-test="apply-confirmation" @click="gotoExperiment">
             采用建议并创建克里金实验
           </button>
           <button v-else class="gmp-btn primary" data-test="goto-experiment" @click="gotoExperiment">
-            用于新建 Kriging 实验
+            用于新建克里金实验
           </button>
+          <details class="confirmation-technical" data-test="confirmation-technical-details">
+            <summary>技术详情</summary>
+            <p data-test="confirmation-id">确认标识：<span class="mono">{{ confirmation.id }}</span></p>
+            <p data-test="confirmation-fingerprint">指纹：<span class="mono">{{ confirmation.fingerprint }}</span></p>
+          </details>
         </section>
 
         <AnisotropyPanel

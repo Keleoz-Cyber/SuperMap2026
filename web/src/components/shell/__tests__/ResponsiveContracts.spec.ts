@@ -166,6 +166,11 @@ describe('responsive & accessibility contracts', () => {
     expect(motionCss).toContain('transition-duration: 1ms !important')
   })
 
+  it('native interactive elements receive a shared visible keyboard focus treatment', () => {
+    expect(globalCss).toContain(':where(a, button, input, select, textarea, summary):focus-visible')
+    expect(globalCss).toContain('outline: 2px solid var(--s1-cyan-strong)')
+  })
+
   it('design tokens define the four case accents and elevation levels', () => {
     for (const accent of ['--s1-accent-gold', '--s1-accent-violet', '--s1-accent-jade', '--s1-accent-cyan']) {
       expect(tokensCss).toContain(accent)
