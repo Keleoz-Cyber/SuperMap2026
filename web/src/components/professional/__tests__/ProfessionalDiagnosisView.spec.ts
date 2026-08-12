@@ -420,6 +420,21 @@ describe('数据集入口与质量门禁', () => {
     wrapper.unmount()
   })
 
+  it('初始态解释是否需要诊断、预期输出和对实验的影响', async () => {
+    vi.mocked(client.fetchDataset).mockResolvedValue(DATASET)
+    const { wrapper } = await mountDiagnosis('/datasets/ds1/professional-diagnosis?case=c1')
+
+    const guide = wrapper.get('[data-test="diagnosis-purpose-guide"]')
+    expect(guide.text()).toContain('普通克里金')
+    expect(guide.text()).toContain('IDW 不需要')
+    expect(guide.text()).toContain('DSI-like 也可直接跳过')
+    expect(guide.text()).toContain('主方向')
+    expect(guide.text()).toContain('变程')
+    expect(guide.text()).toContain('应用到新实验')
+    expect(wrapper.get('[data-test="diagnosis-config"]').text()).toContain('推荐设置')
+    wrapper.unmount()
+  })
+
   it('数据集未过质量门禁：诊断页显示门禁提示且无开始按钮，导航保留', async () => {
     vi.mocked(client.fetchDataset).mockResolvedValue(UNGATED_DATASET)
     const { wrapper } = await mountDiagnosis('/datasets/ds1/professional-diagnosis?case=c1')
@@ -497,6 +512,17 @@ describe('数据集入口与质量门禁', () => {
 })
 
 describe('诊断运行与证据展示', () => {
+  it('成功态先展示可执行结论，诊断身份收进技术详情', async () => {
+    mockHappyPath()
+    const { wrapper } = await mountDiagnosis('/datasets/ds1/professional-diagnosis?case=c1')
+    await runToSuccess(wrapper)
+
+    expect(wrapper.get('[data-test="diagnosis-conclusion"]').text()).toContain('用于普通克里金')
+    expect(wrapper.get('[data-test="diagnosis-technical-details"]').text()).toContain('diag1')
+    expect(wrapper.get('[data-test="diagnosis-conclusion"]').text()).not.toContain('diag1')
+    wrapper.unmount()
+  })
+
   it('轮询至成功：点对模式、采样率与种子披露可见，诊断指纹可见', async () => {
     mockHappyPath()
     const { wrapper } = await mountDiagnosis('/datasets/ds1/professional-diagnosis?case=c1')
@@ -812,7 +838,7 @@ describe('诊断恢复（query.diagnosis）', () => {
       '/datasets/ds1/professional-diagnosis?case=c1&diagnosis=diag1',
     )
     expect(wrapper.find('[data-test="quality-gate-blocked"]').exists()).toBe(false)
-    expect(wrapper.text()).toContain('DIAGNOSIS_DATASET_MISMATCH')
+    expect(wrapper.text()).toContain('诊断不属于当前数据集')
     wrapper.unmount()
   })
 
