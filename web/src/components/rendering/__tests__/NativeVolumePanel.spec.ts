@@ -316,7 +316,8 @@ describe('NativeVolumePanel 能力与资产', () => {
     expect(api.fetchCapability).toHaveBeenCalledTimes(1)
     const createBtn = wrapper.find('[data-test="create-asset"]')
     expect(createBtn.exists()).toBe(true)
-    expect(createBtn.text()).toContain('生成 NetCDF 体渲染资产')
+    expect(createBtn.text()).toContain('准备体渲染数据')
+    expect(createBtn.text()).not.toContain('NetCDF')
 
     const text = wrapper.text()
     expect(text).toContain('渲染器：SuperMap3D VoxelGridLayer3D')

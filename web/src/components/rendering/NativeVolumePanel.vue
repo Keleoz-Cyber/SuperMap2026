@@ -629,7 +629,7 @@ onMounted(() => {
 <template>
   <section class="native-volume-panel" :class="{ workbench: isWorkbench }" data-test="native-volume-panel">
     <header v-if="!isWorkbench" class="panel-header">
-      <h3 class="panel-title">NetCDF 原生体渲染</h3>
+      <h3 class="panel-title">三维体渲染</h3>
       <span class="volume-phase" data-test="volume-phase">{{ phaseText }}</span>
     </header>
 
@@ -743,7 +743,7 @@ onMounted(() => {
                 :disabled="creating"
                 @click="create(false)"
               >
-                {{ creating ? '正在生成…' : '生成 NetCDF 体渲染资产' }}
+                {{ creating ? '正在准备…' : '准备体渲染数据' }}
               </button>
               <button
                 v-if="asset && (asset.status === 'failed' || asset.status === 'interrupted')"

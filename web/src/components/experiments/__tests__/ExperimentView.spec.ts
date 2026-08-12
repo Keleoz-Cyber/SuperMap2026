@@ -574,14 +574,16 @@ describe('ExperimentView 成果状态区（v0.6.1）', () => {
     wrapper.unmount()
   })
 
-  it('四阶段分层：验证完成 / 网格物化 / NetCDF 资产 / 浏览器渲染互不混同，succeeded 不被表述为已渲染', async () => {
+  it('四阶段分层使用用户语言，验证完成不被表述为已渲染', async () => {
     mockSucceeded([makeCandidate('cand1', 'succeeded', 1.25)])
     const { wrapper } = await mountAt('/experiments/exp1')
 
     expect(wrapper.get('[data-test="stage-validation"]').text()).toContain('验证完成')
     expect(wrapper.get('[data-test="stage-validation"]').text()).toContain(T)
-    expect(wrapper.get('[data-test="stage-materialize"]').text()).toContain('未物化')
+    expect(wrapper.get('[data-test="stage-materialize"]').text()).toContain('等待生成')
+    expect(wrapper.get('[data-test="stage-materialize"]').text()).not.toContain('物化')
     expect(wrapper.get('[data-test="stage-netcdf"]').text()).toContain('待')
+    expect(wrapper.get('[data-test="stage-netcdf"]').text()).not.toContain('NetCDF')
     expect(wrapper.get('[data-test="stage-render"]').text()).toContain('成果工作台')
     const panelText = wrapper.get('[data-test="result-status"]').text()
     expect(panelText).not.toContain('已渲染')
@@ -597,7 +599,7 @@ describe('ExperimentView 成果状态区（v0.6.1）', () => {
     await flushPromises()
 
     expect(client.materializeResult).toHaveBeenCalledWith('cand1')
-    expect(wrapper.get('[data-test="stage-materialize"]').text()).toContain('已物化')
+    expect(wrapper.get('[data-test="stage-materialize"]').text()).toContain('三维网格已生成')
     expect(client.fetchResultRenderCapability).toHaveBeenCalledWith('cand1')
     expect(wrapper.find('[data-test="create-netcdf-asset"]').exists()).toBe(true)
     wrapper.unmount()
@@ -617,7 +619,7 @@ describe('ExperimentView 成果状态区（v0.6.1）', () => {
     await wrapper.get('[data-test="materialize-retry"]').trigger('click')
     await flushPromises()
     expect(client.materializeResult).toHaveBeenCalledTimes(2)
-    expect(wrapper.get('[data-test="stage-materialize"]').text()).toContain('已物化')
+    expect(wrapper.get('[data-test="stage-materialize"]').text()).toContain('三维网格已生成')
     wrapper.unmount()
   })
 
@@ -707,7 +709,7 @@ describe('ExperimentView 成果状态区（v0.6.1）', () => {
     // 直接以 URL 打开详情页（等价刷新/深链），状态区照常完成探测
     const { wrapper } = await mountAt('/experiments/exp1')
 
-    expect(wrapper.get('[data-test="stage-materialize"]').text()).toContain('已物化')
+    expect(wrapper.get('[data-test="stage-materialize"]').text()).toContain('三维网格已生成')
     expect(wrapper.get('[data-test="stage-netcdf"]').text()).toContain('已生成')
     expect(wrapper.find('[data-test="materialize-result"]').exists()).toBe(false)
     expect(wrapper.get('[data-test="stage-render"]').text()).toContain('成果工作台')
