@@ -78,6 +78,7 @@ const api = computed<NativeVolumeRenderApi | null>(() => {
         v-else-if="api"
         :key="resultId"
         :api="api"
+        variant="presentation"
         :show-ready-diagnostics="false"
       />
     </div>

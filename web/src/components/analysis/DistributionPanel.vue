@@ -50,7 +50,7 @@ const logNote = computed(() => {
     const method = log10.value.method ?? '对数尺度分箱仅使用严格正值有限值'
     return `对数尺度展示：${method}；已排除非正值样本 ${formatNumber(log10.value.excludedNonPositiveCount)} 个。`
   }
-  return 'RHO 当前展示原始值分箱；对数尺度展示将在电阻率专业模块就位后提供。'
+  return '电阻率当前展示原始值分箱；对数尺度展示将在电阻率专业模块就位后提供。'
 })
 
 const binLabels = computed(() =>

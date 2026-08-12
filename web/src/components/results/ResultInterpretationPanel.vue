@@ -12,6 +12,7 @@ import type {
 } from '../../api/types'
 import { formatNumber } from '../analysis/analysisTypes'
 import AsyncState from '../states/AsyncState.vue'
+import { algorithmLabel, propertyLabel, unitLabel } from '../../utils/modelingLabels'
 
 const props = withDefaults(
   defineProps<{
@@ -69,9 +70,15 @@ const modelMetrics = computed(() => {
   const evidence = props.analysis?.model_evidence
   if (!evidence) return []
   return Object.entries(evidence.metrics)
-    .filter(([key, value]) => key !== 'common_valid_count' && value !== null && Number.isFinite(value))
-    .map(([key, value]) => ({ label: METRIC_LABELS[key] ?? key, value: value as number }))
+    .filter(([key, value]) => key in METRIC_LABELS && value !== null && Number.isFinite(value))
+    .map(([key, value]) => ({ label: METRIC_LABELS[key], value: value as number }))
 })
+
+function productFindingCopy(text: string): string {
+  return text
+    .replaceAll('volume_coordinate_unit3', '网格坐标单位³')
+    .replaceAll('area_coordinate_unit2', '网格坐标单位²')
+}
 
 // 不确定性状态：直接引用后端 uncertainty_availability 发现的陈述，不自行生成结论
 const uncertaintyStatement = computed(() => {
@@ -102,6 +109,28 @@ function onFindingLocate(finding: NonNullable<ResultAnalysisSummary['findings']>
   } else if (target.kind === 'depth_bin' && target.depth_bin_index !== null) {
     emit('focus-depth-bin', target.depth_bin_index)
   }
+}
+
+function findingTitle(finding: NonNullable<ResultAnalysisSummary['findings']>[number]): string {
+  if (finding.kind === 'formal_model') {
+    return `正式模型：${algorithmLabel(props.analysis?.model_evidence.algorithm ?? '')}`
+  }
+  if (finding.kind === 'uncertainty_availability') return '不确定性证据'
+  return finding.title
+}
+
+function findingStatement(finding: NonNullable<ResultAnalysisSummary['findings']>[number]): string {
+  if (finding.kind !== 'formal_model') return productFindingCopy(finding.statement)
+  const metrics = props.analysis?.model_evidence.metrics ?? {}
+  const parts = [
+    props.analysis?.model_evidence.common_valid_count !== null
+      ? `公共有效点 ${props.analysis?.model_evidence.common_valid_count?.toLocaleString() ?? '—'}`
+      : null,
+    metrics.rmse !== null && Number.isFinite(metrics.rmse) ? `RMSE ${formatNumber(metrics.rmse)}` : null,
+    metrics.mae !== null && Number.isFinite(metrics.mae) ? `MAE ${formatNumber(metrics.mae)}` : null,
+    metrics.r2 !== null && Number.isFinite(metrics.r2) ? `R² ${formatNumber(metrics.r2)}` : null,
+  ].filter(Boolean)
+  return parts.join(' · ')
 }
 </script>
 
@@ -141,12 +170,12 @@ function onFindingLocate(finding: NonNullable<ResultAnalysisSummary['findings']>
           :data-test="`finding-${finding.id}`"
         >
           <header class="finding-head">
-            <span class="finding-title">{{ finding.title }}</span>
+            <span class="finding-title">{{ findingTitle(finding) }}</span>
             <span class="confidence" :data-confidence="finding.confidence">
               可信度 {{ CONFIDENCE_LABELS[finding.confidence] ?? finding.confidence }}
             </span>
           </header>
-          <p class="finding-statement">{{ finding.statement }}</p>
+          <p class="finding-statement">{{ findingStatement(finding) }}</p>
           <ul v-if="finding.limitations.length > 0" class="finding-limits">
             <li v-for="limit in finding.limitations" :key="limit">{{ limit }}</li>
           </ul>
@@ -166,7 +195,7 @@ function onFindingLocate(finding: NonNullable<ResultAnalysisSummary['findings']>
       <section class="block" data-test="interpretation-overview">
         <h3 class="block-title">成果概览 <span class="scope-badge">成果网格</span></h3>
         <p class="scope-note">
-          {{ analysis.variable.name }}（{{ analysis.variable.unit }}）·
+          {{ propertyLabel(analysis.variable.name) }}（{{ unitLabel(analysis.variable.unit) }}）·
           有效体元 {{ analysis.grid.valid_count.toLocaleString() }}，NoData
           {{ analysis.grid.nodata_count.toLocaleString() }}
         </p>
@@ -265,7 +294,7 @@ function onFindingLocate(finding: NonNullable<ResultAnalysisSummary['findings']>
       <!-- 模型与不确定性 -->
       <section class="block" data-test="interpretation-model">
         <h3 class="block-title">模型与不确定性</h3>
-        <p class="scope-note">算法 {{ analysis.model_evidence.algorithm }}</p>
+        <p class="scope-note">算法 {{ algorithmLabel(analysis.model_evidence.algorithm) }}</p>
         <div v-if="modelMetrics.length > 0" class="metric-row">
           <div v-for="metric in modelMetrics" :key="metric.label" class="metric">
             <span class="metric-label">{{ metric.label }}</span>
@@ -277,7 +306,7 @@ function onFindingLocate(finding: NonNullable<ResultAnalysisSummary['findings']>
         </p>
         <p class="scope-note">
           <template v-if="analysis.model_evidence.formal_selection_id">
-            正式模型：{{ analysis.model_evidence.formal_selection_note ?? analysis.model_evidence.formal_selection_id }}
+            正式模型已登记
           </template>
           <template v-else>未选择正式模型</template>
         </p>

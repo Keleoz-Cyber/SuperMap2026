@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { ApiError, fetchFormalSelections, selectFormal } from '../../api/client'
 import type { FormalSelectionRecord } from '../../api/types'
+import { formatDateTime } from '../../utils/datetime'
 
 const props = defineProps<{
   resultId: string
@@ -58,18 +59,27 @@ async function submit() {
 <template>
   <section class="panel" data-test="formal-selection-panel">
     <h3>正式模型选择</h3>
-    <ul v-if="selections.length" class="selection-list">
-      <li v-for="item in selections" :key="item.id" data-test="selection-item">
-        <span class="when">{{ item.created_at.slice(0, 19).replace('T', ' ') }}</span>
-        <span class="who">{{ item.selected_by ?? '未署名' }}</span>
-        <span class="why">{{ item.note }}</span>
-      </li>
-    </ul>
+    <template v-if="selections.length">
+      <p class="selection-summary" data-test="selection-summary">正式模型已登记，可在成果分析中查看验证指标。</p>
+      <details class="selection-details" data-test="selection-technical-details">
+        <summary>技术详情</summary>
+        <ul class="selection-list">
+          <li v-for="item in selections" :key="item.id" data-test="selection-item">
+            <span class="when">{{ formatDateTime(item.created_at) }}</span>
+            <span class="who">{{ item.selected_by ?? '未署名' }}</span>
+            <span class="why">{{ item.note }}</span>
+          </li>
+        </ul>
+      </details>
+    </template>
     <p v-else class="empty">尚未选择正式模型</p>
 
     <div v-if="selectionAllowed" class="selection-form">
       <input
         v-model="note"
+        aria-label="正式模型选择理由"
+        name="formal-selection-note"
+        autocomplete="off"
         class="gmp-input"
         data-test="selection-note"
         placeholder="选择理由（必填）：如 公共验证 RMSE 最低且覆盖率最高"
@@ -77,6 +87,9 @@ async function submit() {
       />
       <input
         v-model="selectedBy"
+        aria-label="正式模型选择人"
+        name="formal-selection-by"
+        autocomplete="off"
         class="gmp-input who"
         data-test="selection-by"
         placeholder="选择人（可选）"
@@ -113,6 +126,28 @@ async function submit() {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+.selection-summary {
+  margin: 0 0 8px;
+  color: var(--gmp-text);
+  font-size: 13px;
+}
+
+.selection-details {
+  margin-bottom: 12px;
+  color: var(--gmp-text-faint);
+  font-size: 12px;
+}
+
+.selection-details summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--gmp-text-dim);
+}
+
+.selection-details[open] summary {
+  margin-bottom: 8px;
 }
 
 .selection-list li {

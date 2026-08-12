@@ -269,9 +269,13 @@ function makeApi(overrides: Partial<FakeApi> = {}): FakeApi {
   }
 }
 
-function mountPanel(api: FakeApi, auxPoints: typeof AUX_POINTS | null = null) {
+function mountPanel(
+  api: FakeApi,
+  auxPoints: typeof AUX_POINTS | null = null,
+  extraProps: Record<string, unknown> = {},
+) {
   return mount(NativeVolumePanel, {
-    props: { api, auxPoints },
+    props: { api, auxPoints, ...extraProps },
     global: {
       plugins: [ElementPlus],
       stubs: { SuperMapVolumeFrame: FrameStub, SliceHeatmap: HeatmapStub },
@@ -308,6 +312,19 @@ afterEach(() => {
 })
 
 describe('NativeVolumePanel 能力与资产', () => {
+  it('展示舞台只显示用户可理解的渲染状态，技术身份不占据主阅读层', async () => {
+    const api = makeApi({ fetchAsset: vi.fn().mockResolvedValue(ASSET) })
+    const wrapper = mountPanel(api, null, { variant: 'presentation' })
+    await flushPromises()
+
+    const text = wrapper.text()
+    expect(text).toContain('三维体渲染')
+    expect(text).not.toContain('VoxelGridLayer3D')
+    expect(text).not.toContain('display_anchor_only')
+    expect(text).not.toContain('坐标契约')
+    wrapper.unmount()
+  })
+
   it('支持但未生成资产：显示生成按钮与三句真值标签，工具栏禁用', async () => {
     const api = makeApi()
     const wrapper = mountPanel(api)

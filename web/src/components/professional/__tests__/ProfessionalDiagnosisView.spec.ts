@@ -539,7 +539,7 @@ describe('诊断运行与证据展示', () => {
     expect(wrapper.find('[data-test="sampling-rate"]').text()).toContain('50.0%')
     expect(wrapper.find('[data-test="sampling-pairs"]').text()).toContain('2475')
     expect(wrapper.find('[data-test="sampling-pairs"]').text()).toContain('4950')
-    expect(wrapper.find('[data-test="sampling-seed"]').text()).toContain('42')
+    expect(wrapper.find('[data-test="sampling-technical-details"]').text()).toContain('42')
     expect(wrapper.find('[data-test="diagnosis-fingerprint"]').text()).toContain('fp-diag1')
     wrapper.unmount()
   })

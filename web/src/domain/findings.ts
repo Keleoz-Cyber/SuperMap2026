@@ -5,7 +5,7 @@
 
 import type { AnalysisModuleResult, AnalysisSummaryResponse } from '../api/types'
 import { comparisonCandidatesOf, formatNumber, spatialAnomalyOf } from '../components/analysis/analysisTypes'
-import { algorithmLabel } from '../utils/modelingLabels'
+import { algorithmLabel, propertyLabel } from '../utils/modelingLabels'
 
 export type FindingConfidence = 'verified' | 'exploratory' | 'insufficient' | 'unavailable'
 
@@ -205,7 +205,7 @@ export function strongestProfileFinding(
       id: 'profile-depth-slices',
       title: profile === 'resistivity' ? '深度分层' : 'Z 向分层',
       statement: `Z ∈ [${formatNumber(best.z0)}, ${formatNumber(best.z1)}] 层${wording}（${formatPercent(best.ratio)}）`,
-      evidence: [`变量 ${summary.variable.name}${unit}`, '层内占比以样本计数为口径'],
+      evidence: [`属性 ${propertyLabel(summary.variable.name)}${unit}`, '层内占比以样本计数为口径'],
       source: sourceOf(summary),
       confidence: 'exploratory',
       limitations:

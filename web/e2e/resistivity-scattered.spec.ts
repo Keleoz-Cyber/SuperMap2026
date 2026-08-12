@@ -34,7 +34,6 @@ test.describe('v0.8.0 电阻率散点预置与 DSI-like（mock API）', () => {
     await expect(card).toHaveCount(1)
     await expect(card).toContainText('标准化散点 · 17,549 个节点')
     await expect(card).toContainText('散点预置 · 官方普通克里金成果')
-    await expect(card).toContainText('X/Y/Z/RHO')
     await expect(card).toContainText('Ω·m')
     await expect(card).not.toContainText('S3M')
     await expect(card).not.toContainText('DAT')
@@ -46,26 +45,30 @@ test.describe('v0.8.0 电阻率散点预置与 DSI-like（mock API）', () => {
     await expect(page.getByTestId('case-workspace-header')).toContainText('地下电阻率')
     await expect(page.getByTestId('case-workspace-header')).toContainText('CSV 预置')
     await expect(page.getByTestId('workspace-overview')).toBeVisible()
-    // 数据摘要：只读预置数据版本（17,549 行 X/Y/Z -> RHO）
-    await expect(page.getByTestId('workspace-data')).toContainText('行数 17549')
-    await expect(page.getByTestId('workspace-data')).toContainText('X/Y/Z -> RHO')
-    await expect(page.getByTestId('workspace-data')).toContainText('validated')
+    // 数据摘要：只读预置数据版本，主阅读层使用用户语言。
+    await expect(page.getByTestId('workspace-data')).toContainText('17,549')
+    await expect(page.getByTestId('workspace-data')).toContainText('电阻率')
+    await expect(page.getByTestId('workspace-data')).not.toContainText('RHO')
+    await expect(page.getByTestId('workspace-data')).toContainText('质量检查通过')
     // 官方成果与新建实验两条命令并存
     await expect(page.getByTestId('open-official-result')).toContainText('查看官方成果')
+    await page.getByTestId('stage-nav-experiments').click()
     await expect(page.getByTestId('workspace-experiments')).toBeVisible()
     await expect(page.getByTestId('new-experiment')).toBeVisible()
-    await expect(page.getByTestId('workspace-results')).toContainText('官方成果')
-    await expect(page.getByTestId('workspace-results')).toContainText('已物化')
+    await page.getByTestId('stage-nav-results').click()
+    await expect(page.getByTestId('workspace-results')).toContainText('官方成果已就绪')
     // 旧 legacy 页面嵌入块与导入入口不存在
     await expect(page.getByTestId('workspace-rho-block')).toHaveCount(0)
     await expect(page.getByTestId('legacy-import')).toHaveCount(0)
 
     // ---- 新建 DSI-like 实验：算法标签、免责声明与固定合同 ----
+    await page.getByTestId('stage-nav-experiments').click()
     await page.getByTestId('new-experiment').click()
     await expect(page).toHaveURL(/#\/cases\/resistivity\/experiments\/new\?dataset=ds-rho/)
     await expect(page.getByTestId('param-editor')).toBeVisible()
     await page.getByTestId('algo-dsi-like').check()
-    await expect(page.getByTestId('param-editor')).toContainText('DSI-like 离散平滑插值')
+    await expect(page.getByTestId('param-editor')).toContainText('DSI-like')
+    await expect(page.getByTestId('param-editor')).toContainText('三维平滑')
     await expect(page.getByTestId('dsi-like-note')).toContainText('不等同于 GOCAD DSI')
     // 硬约束恒开、收敛容差固定（只读展示，不可关闭/编辑）
     await expect(page.getByTestId('dsi-hard-constraints')).toBeVisible()
@@ -74,7 +77,7 @@ test.describe('v0.8.0 电阻率散点预置与 DSI-like（mock API）', () => {
 
     // ---- 运行到终态：恰好一个成功候选 ----
     await expect(page).toHaveURL(/#\/experiments\/exp-rho-dsi/)
-    await expect(page.getByTestId('run-progress')).toContainText('succeeded', { timeout: 15000 })
+    await expect(page.getByTestId('run-progress')).toContainText('验证完成', { timeout: 15000 })
     await expect(page.getByTestId('candidate-row')).toHaveCount(1)
     await expect(page.getByTestId('candidate-row')).toContainText('成功')
     await expect(page.getByTestId('candidate-row')).toContainText('neighbor_connectivity')

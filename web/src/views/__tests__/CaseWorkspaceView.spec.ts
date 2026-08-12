@@ -54,6 +54,7 @@ async function mountWorkspace(path: string) {
       { path: '/cases/:caseId', name: 'case-workspace', component: CaseWorkspaceView },
       { path: '/', name: 'home', component: { template: '<div />' } },
       { path: '/results/:resultId', name: 'result-workbench', component: { template: '<div />' } },
+      { path: '/results/:resultId/evaluation', name: 'model-evaluation', component: { template: '<div />' } },
       {
         path: '/cases/:caseId/experiments/new',
         name: 'experiment-create',
@@ -901,15 +902,63 @@ describe('CaseWorkspaceView v0.9 阶段导航与唯一主动作', () => {
   })
 
   it('禁用阶段保留可见并说明原因，不静默消失', async () => {
-    // 预置案例无成果（官方成果能力关闭）→ 成果分析阶段禁用且带原因
-    const ws = workspaceOf('builtin_preset')
-    ws.official_result = null
-    ws.capabilities.official_result = false
+    // 无已验证数据且无成果时，成果分析阶段禁用且带原因。
+    const ws = workspaceOf('user_upload')
+    ws.primary_dataset = null
+    ws.validated_datasets = []
+    ws.recent_results = []
     vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(ws)
-    const { wrapper } = await mountWorkspace(`/cases/${PRESET_ID}`)
+    const { wrapper } = await mountWorkspace('/cases/up-1')
     const results = wrapper.get('[data-test="stage-nav-results"]')
     expect(results.attributes('disabled')).toBeDefined()
-    expect(results.text()).toContain('暂无成果')
+    expect(results.text()).toContain('数据尚未通过验证')
+    wrapper.unmount()
+  })
+
+  it('已验证数据即使暂无三维成果也可进入成果分析并打开统计中心', async () => {
+    const ws = workspaceOf('user_upload')
+    ws.official_result = null
+    ws.recent_results = []
+    vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(ws)
+    const { wrapper } = await mountWorkspace('/cases/up-1')
+
+    const results = wrapper.get('[data-test="stage-nav-results"]')
+    expect(results.attributes('disabled')).toBeUndefined()
+    await results.trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="stage-panel-results"]').classes()).not.toContain('is-hidden')
+    expect(wrapper.get('[data-test="analysis-center-entry"]').isVisible()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('四个阶段提供任务密度，不退化为单行说明或单按钮空卡', async () => {
+    vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(workspaceOf('builtin_preset'))
+    const { wrapper } = await mountWorkspace(`/cases/${PRESET_ID}`)
+
+    expect(wrapper.get('[data-test="data-readiness-grid"]').findAll('.task-item')).toHaveLength(3)
+
+    await wrapper.get('[data-test="stage-nav-experiments"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="algorithm-paths"]').findAll('.algorithm-path')).toHaveLength(3)
+
+    await wrapper.get('[data-test="stage-nav-results"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="result-destinations"]').findAll('.destination-item')).toHaveLength(3)
+
+    await wrapper.get('[data-test="stage-nav-evidence"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="evidence-boundaries"]').findAll('li').length).toBeGreaterThanOrEqual(3)
+    wrapper.unmount()
+  })
+
+  it('成果阶段的三维、统计、模型评估都是明确可达的导航入口', async () => {
+    vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(workspaceOf('builtin_preset'))
+    const { wrapper } = await mountWorkspace(`/cases/${PRESET_ID}?stage=results`)
+
+    const destinations = wrapper.get('[data-test="result-destinations"]')
+    expect(destinations.get('[data-test="open-result-workbench"]').attributes('href')).toContain('/results/r-1')
+    expect(destinations.get('[data-test="analysis-center-entry"]').attributes('href')).toContain('/datasets/ds-1/analysis')
+    expect(destinations.get('[data-test="model-evaluation-entry"]').attributes('href')).toContain('/results/r-1/evaluation')
     wrapper.unmount()
   })
 })

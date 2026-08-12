@@ -250,6 +250,15 @@ describe('CandidateComparisonView', () => {
     wrapper.unmount()
   })
 
+  it('数据版本 UUID 不出现在主标题区，只保留于技术详情', async () => {
+    const { wrapper } = await mountView()
+    const header = wrapper.get('[data-test="page-context-header"]')
+    expect(header.get('h1').text()).not.toContain('ds-1')
+    expect(header.get('.page-context__subtitle').text()).not.toContain('ds-1')
+    expect(wrapper.get('[data-test="comparison-technical-details"]').text()).toContain('ds-1')
+    wrapper.unmount()
+  })
+
   it('比较完成后先展示推荐结论、指标差异和主要参数差异', async () => {
     const { wrapper } = await mountView()
     await wrapper.get('[data-test="compare-btn"]').trigger('click')

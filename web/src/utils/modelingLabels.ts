@@ -9,12 +9,30 @@ const COORDINATES: Record<string, string> = {
   local_projected: '局部投影坐标',
 }
 
+const PROPERTIES: Record<string, string> = {
+  RHO: '电阻率',
+  Vx: '微震速度',
+  CH4_content: '瓦斯含量',
+}
+
+const UNITS: Record<string, string> = {
+  ohm_m: 'Ω·m',
+}
+
 export function algorithmLabel(id: string): string {
   return ALGORITHMS[id] ?? id.slice(0, 64)
 }
 
 export function coordinateLabel(id: string): string {
   return COORDINATES[id] ?? '局部坐标'
+}
+
+export function propertyLabel(id: string): string {
+  return PROPERTIES[id] ?? id.slice(0, 64)
+}
+
+export function unitLabel(id: string): string {
+  return UNITS[id] ?? id.slice(0, 32)
 }
 
 const PARAM_LABELS: Record<string, string> = {
@@ -26,6 +44,12 @@ const PARAM_LABELS: Record<string, string> = {
   variogram_range: '变程',
   z_scale: 'Z 缩放',
   search_radius: '搜索半径',
+  init_power: '初始场幂次',
+  neighbor_connectivity: '邻域连接数',
+  smoothing_strength: '平滑强度',
+  max_iterations: '最大迭代次数',
+  convergence_tolerance: '收敛容差',
+  hard_constraints: '观测点约束',
 }
 
 const VARIOGRAM_MODELS: Record<string, string> = {

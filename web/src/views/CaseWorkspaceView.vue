@@ -98,8 +98,14 @@ const formattedRows = computed(() => {
 })
 const valueLabel = computed(() => {
   const name = typeof mapping.value?.value_name === 'string' ? mapping.value.value_name : '建模属性'
+  const displayNames: Record<string, string> = {
+    CH4_content: '瓦斯含量',
+    RHO: '电阻率',
+    Vx: '微震速度',
+  }
+  const displayName = displayNames[name] ?? name
   const unit = typeof mapping.value?.value_unit === 'string' ? mapping.value.value_unit : ''
-  return unit ? `${name}（${unit}）` : name
+  return unit ? `${displayName}（${unit}）` : displayName
 })
 
 const abandonedDatasets = computed(() => {
@@ -136,8 +142,8 @@ const stages = computed<CaseStage[]>(() => [
   },
   {
     id: 'results',
-    enabled: hasResults.value,
-    reason: hasResults.value ? null : '暂无成果',
+    enabled: hasResults.value || canOpenAnalysisCenter.value,
+    reason: hasResults.value || canOpenAnalysisCenter.value ? null : '数据尚未通过验证',
   },
   { id: 'evidence', enabled: true },
 ])
@@ -424,6 +430,20 @@ onBeforeUnmount(clearShellContext)
                 <div><dt>有效样本</dt><dd>{{ formattedRows }}</dd></div>
                 <div><dt>建模属性</dt><dd>{{ valueLabel }}</dd></div>
               </dl>
+              <div class="task-grid" data-test="data-readiness-grid">
+                <article class="task-item">
+                  <span class="task-index">01</span>
+                  <div><strong>数据质量已确认</strong><p>{{ formattedRows }} 个有效样本可参与插值，无效记录不会进入建模。</p></div>
+                </article>
+                <article class="task-item">
+                  <span class="task-index">02</span>
+                  <div><strong>空间口径已登记</strong><p>{{ coordinateLabel }}，当前用于局部工程场景的相对位置分析。</p></div>
+                </article>
+                <article class="task-item">
+                  <span class="task-index">03</span>
+                  <div><strong>下一步可执行</strong><p>进入建模实验比较插值方案，或先做空间结构诊断与统计分析。</p></div>
+                </article>
+              </div>
             </template>
             <p v-else>当前没有可查看的数据版本。</p>
             <!-- v0.8.0：builtin_preset 的 data_preparation 是固定 validated 摘要，
@@ -507,6 +527,23 @@ onBeforeUnmount(clearShellContext)
                 <el-button v-if="workspace.primary_dataset" data-test="model-comparison" @click="gotoComparisonForDataset(workspace.primary_dataset.id)">比较已有模型</el-button>
               </div>
             </div>
+            <div class="algorithm-paths" data-test="algorithm-paths">
+              <article class="algorithm-path">
+                <span class="path-tag">快速基线</span>
+                <strong>IDW 反距离加权</strong>
+                <p>适合快速形成基线并检查局部数据影响，参数少、计算开销较低。</p>
+              </article>
+              <article class="algorithm-path recommended">
+                <span class="path-tag">推荐比较</span>
+                <strong>普通克里金</strong>
+                <p>结合空间相关结构进行估计，可配合空间诊断与交叉验证选择参数。</p>
+              </article>
+              <article class="algorithm-path">
+                <span class="path-tag">工程对照</span>
+                <strong>DSI-like 离散平滑</strong>
+                <p>以观测点约束连续场并进行邻域平滑，适合作为工程近似对照。</p>
+              </article>
+            </div>
             <p v-if="!canCreateExperiment" class="muted-line">当前案例不开放新建建模实验。</p>
             <div v-if="recentExperiments.length" class="recent-list" data-test="recent-experiments">
               <div
@@ -540,7 +577,6 @@ onBeforeUnmount(clearShellContext)
           <div class="workspace-section" data-test="workspace-results">
             <div v-if="workspace.official_result" class="section-intro">
               <div><strong>{{ workspace.workspace_kind === 'builtin_preset' ? '官方成果已就绪' : '主打成果已就绪' }}</strong><p>可进入三维成果工作台进行体渲染、切片、剖面和评价。</p></div>
-              <router-link :to="workspace.official_result.url" class="analysis-entry">打开三维成果</router-link>
             </div>
             <p v-else-if="workspace.workspace_kind !== 'builtin_legacy'" data-test="results-empty">
               暂无成果。
@@ -561,15 +597,39 @@ onBeforeUnmount(clearShellContext)
                 </span>
               </div>
             </div>
-            <template v-if="workspace.primary_dataset">
+            <div v-if="workspace.primary_dataset" class="destination-grid" data-test="result-destinations">
+              <router-link
+                v-if="workspace.official_result"
+                :to="workspace.official_result.url"
+                class="destination-item primary"
+                data-test="open-result-workbench"
+              >
+                <span class="destination-label">三维成果工作台</span>
+                <strong>体渲染、切片与剖面</strong>
+                <small>在连续体中查看空间分布，并导出当前剖面证据。</small>
+              </router-link>
               <router-link
                 v-if="canOpenAnalysisCenter"
-                class="analysis-entry"
+                class="destination-item"
                 data-test="analysis-center-entry"
                 :to="`/datasets/${workspace.primary_dataset.id}/analysis`"
               >
-                打开统计与空间分析中心
+                <span class="destination-label">统计与空间分析</span>
+                <strong>分布、异常与深度分层</strong>
+                <small>查看与当前地质属性对应的专属统计结论和空间证据。</small>
               </router-link>
+              <router-link
+                v-if="workspace.official_result"
+                class="destination-item"
+                data-test="model-evaluation-entry"
+                :to="`/results/${workspace.official_result.result_id}/evaluation`"
+              >
+                <span class="destination-label">模型评估</span>
+                <strong>误差指标与限制</strong>
+                <small>核对交叉验证指标、残差证据、适用范围与决策建议。</small>
+              </router-link>
+            </div>
+            <template v-if="workspace.primary_dataset">
               <p v-if="!canOpenAnalysisCenter" class="analysis-unavailable" data-test="analysis-center-unavailable">
                 数据版本尚未通过验证：完成质量验证后，统计与空间分析才可用。
               </p>
@@ -597,6 +657,11 @@ onBeforeUnmount(clearShellContext)
             <p v-else-if="workspace.workspace_kind === 'user_upload'" class="provenance-line">
               成果的正式选择、导出与发布登记在成果工作台内完成。
             </p>
+            <ul class="evidence-boundaries" data-test="evidence-boundaries">
+              <li><strong>数据依据</strong><span>样本数量、字段映射和质量状态来自当前数据版本。</span></li>
+              <li><strong>模型依据</strong><span>误差指标采用公共有效集空间验证口径，不代表区域外推精度。</span></li>
+              <li><strong>空间边界</strong><span>当前为局部工程坐标展示，不能替代真实地理配准或安全规范结论。</span></li>
+            </ul>
             <details v-if="workspace.primary_dataset" class="dataset-technical" data-test="dataset-technical-details">
               <summary>技术详情</summary>
               <dl>
@@ -761,6 +826,115 @@ onBeforeUnmount(clearShellContext)
   min-width: 0;
   padding: var(--s1-space-3);
   background: var(--s1-surface-2);
+}
+
+.task-grid,
+.algorithm-paths,
+.destination-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--s1-space-3);
+  margin-top: var(--s1-space-4);
+}
+
+.task-item,
+.algorithm-path,
+.destination-item {
+  min-width: 0;
+  padding: var(--s1-space-4);
+  border: 1px solid var(--s1-border-soft);
+  background: var(--s1-surface-2);
+}
+
+.task-item {
+  display: flex;
+  gap: var(--s1-space-3);
+  align-items: flex-start;
+}
+
+.task-index,
+.path-tag,
+.destination-label {
+  color: var(--s1-case-accent);
+  font-size: var(--s1-font-xs);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.task-item strong,
+.algorithm-path strong,
+.destination-item strong {
+  display: block;
+  margin-top: 4px;
+  color: var(--s1-text-strong);
+  font-size: var(--s1-font-md);
+}
+
+.task-item p,
+.algorithm-path p,
+.destination-item small {
+  display: block;
+  margin: 6px 0 0;
+  color: var(--s1-text-dim);
+  font-size: var(--s1-font-sm);
+  line-height: var(--s1-leading);
+}
+
+.algorithm-path.recommended,
+.destination-item.primary {
+  border-color: var(--s1-case-accent);
+  box-shadow: inset 3px 0 0 var(--s1-case-accent);
+}
+
+.destination-item {
+  color: inherit;
+  text-decoration: none;
+  transition:
+    border-color var(--s1-motion-fast) var(--s1-ease-out),
+    background var(--s1-motion-fast) var(--s1-ease-out);
+}
+
+.destination-item:hover,
+.destination-item:focus-visible {
+  border-color: var(--s1-case-accent);
+  background: var(--s1-case-accent-soft);
+}
+
+.destination-item:focus-visible {
+  outline: 2px solid var(--s1-case-accent);
+  outline-offset: 2px;
+}
+
+.evidence-boundaries {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--s1-space-3);
+  margin: var(--s1-space-4) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.evidence-boundaries li {
+  padding: var(--s1-space-3);
+  border-top: 2px solid var(--s1-case-accent);
+  background: var(--s1-surface-2);
+}
+
+.evidence-boundaries strong,
+.evidence-boundaries span {
+  display: block;
+}
+
+.evidence-boundaries strong {
+  color: var(--s1-text-strong);
+  font-size: var(--s1-font-md);
+}
+
+.evidence-boundaries span {
+  margin-top: 6px;
+  color: var(--s1-text-dim);
+  font-size: var(--s1-font-sm);
+  line-height: var(--s1-leading);
 }
 
 .section-intro {
@@ -937,7 +1111,11 @@ onBeforeUnmount(clearShellContext)
   .workspace-summary,
   .summary-metrics,
   .data-summary-grid,
-  .dataset-technical dl {
+  .dataset-technical dl,
+  .task-grid,
+  .algorithm-paths,
+  .destination-grid,
+  .evidence-boundaries {
     grid-template-columns: 1fr;
   }
 

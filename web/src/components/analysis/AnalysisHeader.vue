@@ -17,6 +17,12 @@ const PROFILE_LABELS: Record<AnalysisProfileId, string> = {
 }
 
 const profileLabel = computed(() => PROFILE_LABELS[props.summary.analysis_profile])
+const variableDisplayName = computed(() => {
+  if (props.summary.analysis_profile === 'gas_content') return '瓦斯含量'
+  if (props.summary.analysis_profile === 'resistivity') return '电阻率'
+  if (props.summary.analysis_profile === 'microseismic_velocity') return '微震速度'
+  return props.summary.variable.name
+})
 
 const unitSuffix = computed(() =>
   props.summary.variable.unit ? `（${props.summary.variable.unit}）` : '',
@@ -68,12 +74,13 @@ const qualityBadge = computed<QualityBadge>(() => {
         </el-tag>
       </div>
       <p class="identity-line">
-        <span data-test="analysis-variable">分析属性：{{ summary.variable.name }}{{ unitSuffix }}</span>
+        <span data-test="analysis-variable">分析属性：{{ variableDisplayName }}{{ unitSuffix }}</span>
         · <span data-test="analysis-coord-type">{{ coordType }}</span>
       </p>
       <details class="identity-technical" data-test="analysis-identity">
         <summary>技术详情</summary>
         <p>案例 <span class="mono">{{ summary.case_id }}</span> · 数据集 <span class="mono">{{ summary.dataset_id }}</span></p>
+        <p>源字段 <span class="mono">{{ summary.variable.name }}</span></p>
         <p>数据版本 v{{ summary.provenance.dataset_version }} · 计算版本 <span class="mono">{{ summary.provenance.calculation_version }}</span></p>
       </details>
     </div>

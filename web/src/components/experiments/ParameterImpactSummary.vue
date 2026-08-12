@@ -85,7 +85,7 @@ const overCap = computed(() => props.combinationCount > 50)
       <div class="impact-row">
         <dt>空间验证</dt>
         <dd v-if="validation" data-test="impact-folds">
-          {{ validation.method === 'spatial_kfold' ? `${validation.folds} 折` : '留出法' }} · 种子 {{ validation.seed }}
+          {{ validation.method === 'spatial_kfold' ? `${validation.folds} 折空间分组验证` : '空间留出验证' }}
         </dd>
         <dd v-else>—</dd>
       </div>

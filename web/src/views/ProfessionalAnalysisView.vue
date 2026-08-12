@@ -24,6 +24,7 @@ import UncertaintyPanel from '../components/professional/UncertaintyPanel.vue'
 import AnomalyPanel from '../components/professional/AnomalyPanel.vue'
 import CandidateComparison from '../components/professional/CandidateComparison.vue'
 import PageNavigation from '../components/navigation/PageNavigation.vue'
+import { algorithmLabel } from '../utils/modelingLabels'
 
 const route = useRoute()
 const router = useRouter()
@@ -223,13 +224,45 @@ watch(
 const provenance = computed(() => professional.value?.parameter_provenance ?? null)
 const capabilities = computed(() => professional.value?.capabilities ?? null)
 
+const CAPABILITY_LABELS: Record<string, string> = {
+  algorithm: '评估算法',
+  empirical_variogram: '经验变异函数',
+  model_anisotropy: '空间各向异性',
+  empirical_error_scale: '经验误差尺度',
+  native_kriging_std: '克里金标准差',
+  anomaly_extraction: '异常区域提取',
+  candidate_comparison: '候选成果比较',
+}
+
+const CAPABILITY_STATE_LABELS: Record<string, string> = {
+  supported: '可用',
+  not_applicable: '不适用',
+  unavailable: '未生成',
+  unsupported: '不可用',
+}
+
 const capabilityEntries = computed(() => {
   const caps = capabilities.value
   if (!caps) return []
   return (Object.entries(caps) as Array<[string, string | Record<string, string> | undefined]>)
     .filter(([key, value]) => key !== 'notes' && typeof value === 'string')
-    .map(([key, value]) => ({ key, state: value as string }))
+    .map(([key, value]) => ({
+      key,
+      state: value as string,
+      label: CAPABILITY_LABELS[key] ?? '其他能力',
+      stateLabel: CAPABILITY_STATE_LABELS[value as string] ?? '状态未知',
+    }))
 })
+
+const ORIGIN_LABELS: Record<string, string> = {
+  automatic_candidate: '交叉验证候选',
+  fold_training_subsets: '各折训练数据',
+  final_full_data_fit: '全量有效数据拟合',
+}
+
+function originLabel(value: string): string {
+  return ORIGIN_LABELS[value] ?? '已登记计算流程'
+}
 </script>
 
 <template>
@@ -295,7 +328,8 @@ const capabilityEntries = computed(() => {
           :data-test="`candidate-option-${candidate.id}`"
           @click="selectCandidate(candidate.id)"
         >
-          <span class="mono">{{ candidate.id }}</span>
+          <span>候选 {{ candidateOptions.indexOf(candidate) + 1 }}</span>
+          <small>RMSE {{ fmtMetric(candidate.metrics.rmse ?? null) }}</small>
         </button>
       </section>
 
@@ -329,24 +363,38 @@ const capabilityEntries = computed(() => {
         <section class="summary-section" data-test="professional-summary">
           <h3>结构诊断摘要</h3>
           <div class="summary-grid">
-            <span data-test="summary-algorithm">算法 {{ professional?.algorithm }}</span>
+            <span data-test="summary-algorithm">算法 {{ professional ? algorithmLabel(professional.algorithm) : '-' }}</span>
             <span data-test="summary-confirmation">
-              确认 {{ professional?.confirmation_id ?? '无（非 Kriging 确认流程）' }}
+              {{ professional?.confirmation_id ? '已采用空间结构建议' : '无需空间结构确认' }}
             </span>
             <span
               v-for="entry in capabilityEntries"
               :key="entry.key"
               :data-test="`capability-${entry.key.replaceAll('_', '-')}`"
             >
-              {{ entry.key }}: {{ entry.state }}
+              {{ entry.label }}：{{ entry.stateLabel }}
             </span>
           </div>
+          <details class="professional-technical" data-test="professional-technical-details">
+            <summary>技术详情</summary>
+            <p class="mono">algorithm: {{ professional?.algorithm }}</p>
+            <p class="mono">confirmation_id: {{ professional?.confirmation_id ?? 'null' }}</p>
+            <p v-for="entry in capabilityEntries" :key="`technical-${entry.key}`" class="mono">
+              {{ entry.key }}: {{ entry.state }}
+            </p>
+            <template v-if="provenance">
+              <p class="mono">validation.origin: {{ provenance.validation.origin }}</p>
+              <p class="mono">validation.scope: {{ provenance.validation.scope }}</p>
+              <p class="mono">final.origin: {{ provenance.final.origin }}</p>
+              <p class="mono">final.scope: {{ provenance.final.scope }}</p>
+            </template>
+          </details>
           <div v-if="provenance" class="provenance" data-test="param-provenance">
             <span data-test="param-origin-validation">
-              验证参数来源 {{ provenance.validation.origin }}（{{ provenance.validation.scope }}）
+              验证参数来源：{{ originLabel(provenance.validation.origin) }}
             </span>
             <span data-test="param-origin-final">
-              最终参数来源 {{ provenance.final.origin }}（{{ provenance.final.scope }}）
+              最终参数来源：{{ originLabel(provenance.final.origin) }}
             </span>
             <span v-if="provenance.final.variogram" data-test="param-variogram">
               最终变异函数 {{ provenance.final.variogram.model }}

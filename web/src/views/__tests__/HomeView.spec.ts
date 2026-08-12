@@ -171,7 +171,7 @@ function workspaceOf(c: CaseSummary): CaseWorkspaceSummary {
   } as CaseWorkspaceSummary
 }
 
-async function mountHome(cases: CaseSummary[]) {
+async function mountHome(cases: CaseSummary[], initialUrl = '/') {
   vi.mocked(client.fetchCases).mockResolvedValue({ cases })
   vi.mocked(client.fetchCaseWorkspace).mockImplementation(async (caseId) => {
     const found = cases.find((c) => c.case_id === caseId)
@@ -197,7 +197,7 @@ async function mountHome(cases: CaseSummary[]) {
       { path: '/:pathMatch(.*)*', component: stub },
     ],
   })
-  await router.push('/')
+  await router.push(initialUrl)
   const wrapper = mount(HomeView, {
     global: { plugins: [router, ElementPlus] },
     attachTo: document.body,
@@ -233,6 +233,26 @@ describe('HomeView 指挥舱骨架', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('案例列表加载失败')
     expect(wrapper.get('[role="status"]').attributes('data-state')).toBe('error')
+  })
+
+  it('消费顶栏 focus=cases：案例轨获得焦点并滚动到可见位置', async () => {
+    const { wrapper, router } = await mountHome([RESISTIVITY_PRESET_CARD])
+    const rail = wrapper.get('[data-test="case-rail"]').element as HTMLElement
+    const focusSpy = vi.spyOn(rail, 'focus')
+    const scrollSpy = vi.fn()
+    Object.defineProperty(rail, 'scrollIntoView', { configurable: true, value: scrollSpy })
+
+    await router.push({ path: '/', query: { focus: 'cases' } })
+    await flushPromises()
+
+    expect(focusSpy).toHaveBeenCalled()
+    expect(scrollSpy).toHaveBeenCalled()
+  })
+
+  it('直接进入 focus=cases：等待案例列表渲染后再聚焦案例轨', async () => {
+    const { wrapper } = await mountHome([RESISTIVITY_PRESET_CARD], '/?focus=cases')
+    expect((document.activeElement as HTMLElement | null)?.getAttribute('data-test')).toBe('case-rail')
+    wrapper.unmount()
   })
 })
 

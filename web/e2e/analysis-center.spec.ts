@@ -46,6 +46,7 @@ async function expectCanvasRendered(host: Locator): Promise<void> {
 /** 从工作台进入分析中心并等待主区就绪 */
 async function enterAnalysisCenter(page: Page, caseUrl: string, datasetId: string): Promise<void> {
   await page.goto(caseUrl)
+  await page.getByTestId('stage-nav-results').click()
   await page.getByTestId('analysis-center-entry').click()
   await expect(page).toHaveURL(new RegExp(`#\\/datasets\\/${datasetId}\\/analysis`))
   await expect(page.getByTestId('analysis-profile-badge')).toBeVisible()
@@ -61,13 +62,14 @@ test.describe('v0.8.0 第二批：统计与空间分析中心（mock API）', ()
     // ---- 案例工作台 → 统计与空间分析入口 ----
     await page.goto(MICRO_CASE_URL)
     await expect(page.getByTestId('case-workspace-header')).toContainText('微震速度')
+    await page.getByTestId('stage-nav-results').click()
     await page.getByTestId('analysis-center-entry').click()
     await expect(page).toHaveURL(/#\/datasets\/ds-preset\/analysis/)
 
     // ---- 徽标与案例身份 ----
     await expect(page.getByTestId('analysis-profile-badge')).toContainText('微震速度')
     await expect(page.getByTestId('analysis-quality-badge')).toContainText('数据全部有效')
-    await expect(page.getByTestId('analysis-variable')).toContainText('Vx')
+    await expect(page.getByTestId('analysis-variable')).toContainText('微震速度')
     await expect(page.getByTestId('analysis-variable')).toContainText('km/s')
 
     // ---- 默认主区 = 空间异常（速度高/低值区域），echarts 真实渲染非空图 ----
@@ -78,9 +80,8 @@ test.describe('v0.8.0 第二批：统计与空间分析中心（mock API）', ()
     await expect(page.getByTestId('spatial-anomaly-legend')).toContainText('速度低值区域')
     await expectCanvasRendered(page.getByTestId('spatial-chart'))
 
-    // ---- 右栏：质量摘要（带单位与样本数）+ 模型对比表含候选 ----
-    await expect(page.getByTestId('numeric-summary')).toContainText('km/s')
-    await expect(page.getByTestId('numeric-summary')).toContainText('样本数')
+    // ---- 模型证据为独立模块，不与当前空间结论争夺主阅读区 ----
+    await page.getByTestId('module-nav-item-model_comparison').click()
     const comparison = page.getByTestId('model-comparison-panel')
     await expect(comparison.getByTestId('model-candidate-row')).toHaveCount(1)
     await expect(comparison).toContainText('普通克里金')
@@ -102,6 +103,7 @@ test.describe('v0.8.0 第二批：统计与空间分析中心（mock API）', ()
     await expect(page.getByTestId('profile-summary')).toContainText('Z 轴剖面')
 
     // ---- 点击模型对比候选行 → /results/{id} ----
+    await page.getByTestId('module-nav-item-model_comparison').click()
     await page.getByTestId('model-candidate-row').first().click()
     await expect(page).toHaveURL(/#\/results\/cand-1/)
   })
@@ -114,6 +116,7 @@ test.describe('v0.8.0 第二批：统计与空间分析中心（mock API）', ()
 
     await page.goto(RHO_CASE_URL)
     await expect(page.getByTestId('case-workspace-header')).toContainText('地下电阻率')
+    await page.getByTestId('stage-nav-results').click()
     await page.getByTestId('analysis-center-entry').click()
     await expect(page).toHaveURL(/#\/datasets\/ds-rho\/analysis/)
     await expect(page.getByTestId('analysis-profile-badge')).toContainText('电阻率')
@@ -165,15 +168,17 @@ test.describe('v0.8.0 第二批：统计与空间分析中心（mock API）', ()
     await expect(page).toHaveURL(/#\/cases\/case-e2e$/)
 
     // ---- 分析中心：通用三维徽标 + 缺失原因说明 ----
+    await page.getByTestId('stage-nav-results').click()
     await page.getByTestId('analysis-center-entry').click()
     await expect(page).toHaveURL(/#\/datasets\/ds-e2e\/analysis/)
     await expect(page.getByTestId('analysis-profile-badge')).toContainText('通用三维')
     const fallback = page.getByTestId('analysis-generic-fallback')
     await expect(fallback).toBeVisible()
-    await expect(fallback).toContainText('generic_3d')
-    await expect(fallback).toContainText('Vx')
-    await expect(fallback).toContainText('km/s')
-    await expect(fallback).toContainText('RHO')
+    await expect(fallback).toContainText('通用分析模板')
+    await expect(fallback).toContainText('尚未识别出')
+    await expect(fallback).not.toContainText('generic_3d')
+    await expect(fallback).not.toContainText('CH4_content')
+    await expect(fallback).not.toContainText('RHO')
 
     // ---- 通用模块在，专属模块一律不出现 ----
     await expect(page.getByTestId('module-nav-item-spatial_extent')).toBeVisible()
@@ -187,6 +192,7 @@ test.describe('v0.8.0 第二批：统计与空间分析中心（mock API）', ()
     // ---- 默认主区 = 空间视图，echarts 真实渲染；模型对比为解释性空状态 ----
     await expect(page.getByTestId('spatial-feature-panel')).toBeVisible()
     await expectCanvasRendered(page.getByTestId('spatial-chart'))
+    await page.getByTestId('module-nav-item-model_comparison').click()
     await expect(page.getByTestId('model-comparison-empty')).toBeVisible()
   })
 
@@ -245,7 +251,7 @@ test.describe('v0.8.0 第二批：统计与空间分析中心（mock API）', ()
     await page.screenshot({ path: 'test-results/analysis-center-390x844.png', fullPage: true })
   })
 
-  test('桌面 1440×900：中央主区与右侧信息栏并存且水平不重叠', async ({ page }) => {
+  test('桌面 1440×900：当前分析与上下文证据并存且水平不重叠', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await installMockApi(page)
     await installVolumeFrameMock(page)
@@ -254,7 +260,7 @@ test.describe('v0.8.0 第二批：统计与空间分析中心（mock API）', ()
     await expect(page.getByTestId('analysis-profile-badge')).toContainText('微震速度')
 
     const primary = page.getByTestId('primary-area')
-    const side = page.getByTestId('side-area')
+    const side = page.getByTestId('context-evidence')
     await expect(primary).toBeVisible()
     await expect(side).toBeVisible()
     const primaryBox = await primary.boundingBox()

@@ -213,14 +213,17 @@ onBeforeUnmount(() => {
 <template>
   <section class="variogram-panel" data-test="variogram-panel">
     <h3>经验半变异函数</h3>
-    <div class="sampling-line">
+    <div class="sampling-line" data-test="sampling-line">
       <span data-test="sampling-mode">点对模式：{{ sampling.sampled ? '分层抽样' : '全量' }}</span>
       <span data-test="sampling-rate">采样率 {{ (sampling.sampling_rate * 100).toFixed(1) }}%</span>
       <span data-test="sampling-pairs">
         点对 {{ sampling.used_pair_count }} / {{ sampling.total_pair_count }}
       </span>
-      <span data-test="sampling-seed">抽样种子 {{ sampling.seed }}</span>
     </div>
+    <details class="sampling-technical" data-test="sampling-technical-details">
+      <summary>技术详情</summary>
+      <span data-test="sampling-seed">抽样种子 {{ sampling.seed }}</span>
+    </details>
 
     <div ref="chartEl" class="chart" data-test="variogram-chart" />
 
@@ -239,7 +242,7 @@ onBeforeUnmount(() => {
           :checked="selectedDirections.includes(entry.id)"
           @change="toggleDirection(entry.id)"
         />
-        {{ entry.id }}（方位 {{ entry.azimuth_deg }}°<template v-if="entry.dip_deg !== null">
+        方向 {{ entry.azimuth_deg }}°<template v-if="entry.dip_deg !== null">
           / 倾角 {{ entry.dip_deg }}°</template
         >）
         <span v-if="entry.unsupported" class="unsupported-note">点对支持不足，不参与比较</span>
@@ -250,7 +253,7 @@ onBeforeUnmount(() => {
         class="active-tag"
         :data-test="`active-direction-${id}`"
       >
-        {{ id }} 已加入对比
+        该方向已加入对比
       </span>
     </div>
 

@@ -248,6 +248,7 @@ describe('V6 成果工作台结构合同', () => {
     const summary = wrapper.get('[data-test="v6-result-summary"]')
     expect(summary.get('[data-test="result-case-select"]').text()).toContain('地下电阻率')
     expect(summary.find('[data-test="result-export-report"]').exists()).toBe(true)
+    expect(summary.get('[data-test="result-back-experiment"]').attributes('href')).toBe('/experiments/exp1')
     expect(wrapper.findAll('h1')).toHaveLength(1)
   })
 

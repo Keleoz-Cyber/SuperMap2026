@@ -36,14 +36,14 @@ test.describe('v0.9.0 指挥舱（mock API）', () => {
     await expect(page.getByTestId('command-center')).toHaveAttribute('data-case-accent', 'gold')
 
     // 微震：冰紫辅助色 + km/s
-    await page.getByTestId('case-rail-item').filter({ hasText: '微震速度' }).click()
+    await page.locator('[data-test="case-rail-item"][data-case-id="builtin-microseismic-vx-1911"]').click()
     await expect(scene).toContainText('微震速度')
     await expect(scene).toContainText('km/s')
     await expect(scene).not.toContainText('Ω·m')
     await expect(page.getByTestId('command-center')).toHaveAttribute('data-case-accent', 'violet')
 
     // 瓦斯：翡翠绿 + ml/g + 含量叙事
-    await page.getByTestId('case-rail-item').filter({ hasText: '煤层瓦斯' }).click()
+    await page.locator('[data-test="case-rail-item"][data-case-id="gas"]').click()
     await expect(scene).toContainText('煤层瓦斯')
     await expect(scene).toContainText('ml/g')
     await expect(page.getByTestId('command-center')).toHaveAttribute('data-case-accent', 'jade')
@@ -66,12 +66,12 @@ test.describe('v0.9.0 指挥舱（mock API）', () => {
 
   test('官方卡主命令进入案例分析；官方成果直达成果页', async ({ page }) => {
     await boot(page)
-    await page.getByTestId('case-rail-item').filter({ hasText: '煤层瓦斯' }).click()
+    await page.locator('[data-test="case-rail-item"][data-case-id="gas"]').click()
     await page.getByTestId('command-primary-action').click()
     await expect(page).toHaveURL(/#\/cases\/gas/)
 
     await page.goto('/')
-    const gasCard = page.getByTestId('case-rail-item').filter({ hasText: '煤层瓦斯' }).locator('..')
+    const gasCard = page.locator('.case-card', { has: page.locator('[data-test="case-rail-item"][data-case-id="gas"]') })
     await gasCard.getByTestId('open-official-result').click()
     await expect(page).toHaveURL(/#\/results\/cand-gas-official/)
   })

@@ -298,7 +298,10 @@ watch(datasetId, (next, prev) => {
       :dataset-id="datasetId"
     >
       <template #meta>
-        <p class="page-sub">当前数据版本：<span class="mono">{{ datasetId }}</span></p>
+        <details class="comparison-technical" data-test="comparison-technical-details">
+          <summary>技术详情</summary>
+          <span class="mono">数据版本标识：{{ datasetId }}</span>
+        </details>
       </template>
     </PageContextHeader>
 

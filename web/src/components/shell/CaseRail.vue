@@ -60,7 +60,12 @@ function dataFormOf(c: CaseSummary): string | null {
 </script>
 
 <template>
-  <aside class="case-rail" data-test="case-rail" aria-label="案例列表">
+  <aside
+    class="case-rail"
+    data-test="case-rail"
+    aria-label="案例列表"
+    tabindex="-1"
+  >
     <div class="rail-section">
       <h3 class="rail-title">官方案例</h3>
       <div
@@ -206,6 +211,7 @@ function dataFormOf(c: CaseSummary): string | null {
 
 <style scoped>
 .case-rail {
+  scroll-margin-top: 16px;
   display: flex;
   flex-direction: column;
   gap: var(--s1-space-4);
@@ -459,8 +465,15 @@ function dataFormOf(c: CaseSummary): string | null {
     padding: var(--s1-space-2) var(--s1-space-3);
   }
 
-  .rail-item .item-meta,
+  .rail-item .item-meta {
+    display: none;
+  }
+
   .rail-item .item-actions {
+    display: flex;
+  }
+
+  .rail-item .item-btn:not(.preview) {
     display: none;
   }
 

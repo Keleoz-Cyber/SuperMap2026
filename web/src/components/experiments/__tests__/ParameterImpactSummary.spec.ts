@@ -18,6 +18,7 @@ describe('ParameterImpactSummary', () => {
     const text = wrapper.text()
     expect(text).toContain('1,089') // 11×9×11（逐轴间距 → 节点数）
     expect(text).toContain('5') // 折数
+    expect(text).not.toContain('20260723') // 随机种子属于高级技术设置
     expect(text).toContain('27') // 组合数
     expect(text).toContain('exponential')
   })

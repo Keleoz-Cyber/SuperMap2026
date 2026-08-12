@@ -491,13 +491,19 @@ describe('单候选联动与参数快照', () => {
     mockKrigingPath()
     const { wrapper } = await mountAnalysis()
 
-    expect(wrapper.find('[data-test="summary-algorithm"]').text()).toContain('ordinary_kriging')
-    expect(wrapper.find('[data-test="summary-confirmation"]').text()).toContain('conf1')
-    expect(wrapper.find('[data-test="capability-native-kriging-std"]').text()).toContain('supported')
-    expect(wrapper.find('[data-test="param-origin-validation"]').text()).toContain(
-      'automatic_candidate',
-    )
-    expect(wrapper.find('[data-test="param-origin-final"]').text()).toContain('final_full_data_fit')
+    expect(wrapper.find('[data-test="summary-algorithm"]').text()).toContain('普通克里金')
+    expect(wrapper.find('[data-test="summary-algorithm"]').text()).not.toContain('ordinary_kriging')
+    expect(wrapper.find('[data-test="summary-confirmation"]').text()).toContain('已采用空间结构建议')
+    expect(wrapper.find('[data-test="summary-confirmation"]').text()).not.toContain('conf1')
+    expect(wrapper.find('[data-test="capability-native-kriging-std"]').text()).toContain('克里金标准差：可用')
+    expect(wrapper.get('[data-test="professional-technical-details"]').text()).toContain('native_kriging_std')
+    expect(wrapper.find('[data-test="param-origin-validation"]').text()).toContain('交叉验证候选')
+    expect(wrapper.find('[data-test="param-origin-final"]').text()).toContain('全量有效数据拟合')
+    const technical = wrapper.get('[data-test="professional-technical-details"]').text()
+    expect(technical).toContain('ordinary_kriging')
+    expect(technical).toContain('conf1')
+    expect(technical).toContain('automatic_candidate')
+    expect(technical).toContain('final_full_data_fit')
     wrapper.unmount()
   })
 
@@ -728,6 +734,9 @@ describe('AnomalyPanel 异常提取', () => {
 
     expect(wrapper.find('[data-test="extraction-identity"]').text()).toContain('ext1')
     expect(wrapper.find('[data-test="extraction-fingerprint"]').text()).toContain('fp-ext1')
+    expect(wrapper.find('[data-test="extraction-technical-details"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="extraction-technical-details"] .extraction-meta').exists()).toBe(true)
+    expect(wrapper.find('[data-test="anomaly-panel"] > .extraction-meta').exists()).toBe(false)
     const rows = wrapper.findAll('[data-test="component-row"]')
     expect(rows).toHaveLength(1)
     expect(rows[0].text()).toContain('1')

@@ -4,7 +4,7 @@
 import { computed } from 'vue'
 import type { AnalysisSummaryResponse } from '../../api/types'
 import { comparisonCandidatesOf, formatNumber, spatialAnomalyOf } from '../analysis/analysisTypes'
-import { algorithmLabel } from '../../utils/modelingLabels'
+import { algorithmLabel, propertyLabel } from '../../utils/modelingLabels'
 
 const props = defineProps<{
   summary: AnalysisSummaryResponse | null
@@ -115,9 +115,14 @@ const variable = computed(() => props.summary?.variable ?? null)
     <div class="evidence-cell">
       <h4 class="cell-title">溯源</h4>
       <div v-if="provenance" class="provenance">
-        <p><span>变量</span>{{ variable?.name ?? '—' }}<template v-if="variable?.unit">（{{ variable.unit }}）</template></p>
-        <p><span>源哈希</span><code class="mono">{{ provenance.source_sha256.slice(0, 8) }}</code></p>
-        <p><span>数据版本</span>v{{ provenance.dataset_version }} · {{ provenance.calculation_version }}</p>
+        <p data-test="evidence-property">
+          {{ variable ? propertyLabel(variable.name) : '—' }}<template v-if="variable?.unit">（{{ variable.unit }}）</template>
+        </p>
+        <details data-test="evidence-technical-details" class="technical-details">
+          <summary>技术详情</summary>
+          <p><span>源哈希</span><code class="mono">{{ provenance.source_sha256.slice(0, 8) }}</code></p>
+          <p><span>数据版本</span>v{{ provenance.dataset_version }} · {{ provenance.calculation_version }}</p>
+        </details>
       </div>
       <p v-else class="cell-empty">{{ loading ? '加载中…' : '暂无溯源信息' }}</p>
     </div>
@@ -332,6 +337,20 @@ const variable = computed(() => props.summary?.variable ?? null)
   display: inline-block;
   width: 52px;
   color: var(--s1-text-faint);
+}
+
+.technical-details {
+  color: var(--s1-text-faint);
+}
+
+.technical-details summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--s1-text-dim);
+}
+
+.technical-details[open] summary {
+  margin-bottom: 4px;
 }
 
 @media (max-width: 900px) {

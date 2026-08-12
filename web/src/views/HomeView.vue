@@ -2,8 +2,8 @@
 // v0.9.0：首页综合指挥舱。案例轨 + 中央三维主舞台 + 关键发现 + 底部证据带。
 // 数据流：fetchCases → 选中案例 fetchCaseWorkspace → 主数据版本已验证时
 // fetchAnalysisSummary；身份一律来自所选案例的 DTO，绝不跨案例取用。
-import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ArrowRight } from '@element-plus/icons-vue'
 import { ApiError, fetchAnalysisSummary, fetchCases, fetchCaseWorkspace, trashCase } from '../api/client'
 import type {
@@ -23,6 +23,7 @@ import AsyncState from '../components/states/AsyncState.vue'
 import { coordinateLabel } from '../utils/modelingLabels'
 
 const router = useRouter()
+const route = useRoute()
 
 const cases = ref<CaseSummary[]>([])
 const loading = ref(true)
@@ -145,6 +146,14 @@ async function selectCase(caseId: string) {
   }
 }
 
+async function focusCasesRail() {
+  await nextTick()
+  const rail = document.querySelector<HTMLElement>('[data-test="case-rail"]')
+  if (!rail) return
+  rail.focus({ preventScroll: true })
+  rail.scrollIntoView?.({ block: 'start', behavior: 'smooth' })
+}
+
 async function handleTrashCase(caseId: string) {
   try {
     await trashCase(caseId)
@@ -178,6 +187,14 @@ function locateFinding(finding: PresentationFinding) {
 }
 
 onMounted(loadCases)
+
+watch(
+  [() => route.query.focus, cases],
+  ([focus, availableCases]) => {
+    if (focus === 'cases' && availableCases.length > 0) void focusCasesRail()
+  },
+  { immediate: true },
+)
 
 // 壳上下文：选中案例身份登记到全局头；离开首页即清理
 watch(

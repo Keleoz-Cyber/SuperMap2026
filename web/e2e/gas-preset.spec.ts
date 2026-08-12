@@ -59,7 +59,6 @@ test.describe('v0.8.0 第三批瓦斯含量预置（mock API）', () => {
     await expect(card).not.toHaveClass(/disabled/)
     await expect(card).toContainText('散点预置 · 官方基线成果')
     await expect(card).toContainText('标准化散点 · 58 个合格样品')
-    await expect(card).toContainText('X/Y/Z/CH4_content')
     await expect(card).toContainText('局部线性米制坐标')
     await expect(card).toContainText('ml/g')
     // 旧 legacy 瓦斯卡与旧流程语样绝不出现
@@ -75,18 +74,18 @@ test.describe('v0.8.0 第三批瓦斯含量预置（mock API）', () => {
     await expect(page.getByTestId('case-workspace-header')).toContainText('煤层瓦斯')
     await expect(page.getByTestId('case-workspace-header')).toContainText('CSV 预置')
     await expect(page.getByTestId('workspace-overview')).toBeVisible()
-    // 数据摘要：只读预置数据版本（58 行 X/Y/Z -> CH4_content，ml/g）
-    await expect(page.getByTestId('workspace-data')).toContainText('状态 validated')
-    await expect(page.getByTestId('workspace-data')).toContainText('行数 58')
-    await expect(page.getByTestId('workspace-data')).toContainText('有效 58')
-    await expect(page.getByTestId('workspace-data')).toContainText('字段：X/Y/Z -> CH4_content')
+    // 数据摘要：主阅读层使用用户语言，不暴露状态枚举或字段映射实现。
+    await expect(page.getByTestId('workspace-data')).toContainText('质量检查通过')
+    await expect(page.getByTestId('workspace-data')).toContainText('58')
+    await expect(page.getByTestId('workspace-data')).toContainText('瓦斯含量')
     await expect(page.getByTestId('workspace-data')).toContainText('ml/g')
     // 官方成果与新建实验两条命令并存
     await expect(page.getByTestId('open-official-result')).toContainText('查看官方成果')
+    await page.getByTestId('stage-nav-experiments').click()
     await expect(page.getByTestId('workspace-experiments')).toBeVisible()
     await expect(page.getByTestId('new-experiment')).toBeVisible()
-    await expect(page.getByTestId('workspace-results')).toContainText('官方成果')
-    await expect(page.getByTestId('workspace-results')).toContainText('已物化')
+    await page.getByTestId('stage-nav-results').click()
+    await expect(page.getByTestId('workspace-results')).toContainText('官方成果已就绪')
     // 旧 legacy 页面嵌入块与导入入口不存在
     await expect(page.getByTestId('workspace-rho-block')).toHaveCount(0)
     await expect(page.getByTestId('legacy-import')).toHaveCount(0)
@@ -135,6 +134,7 @@ test.describe('v0.8.0 第三批瓦斯含量预置（mock API）', () => {
     // ---- 案例工作台 → 统计与空间分析入口 ----
     await page.goto('/#/cases/gas')
     await expect(page.getByTestId('case-workspace-header')).toContainText('煤层瓦斯')
+    await page.getByTestId('stage-nav-results').click()
     await page.getByTestId('analysis-center-entry').click()
     await expect(page).toHaveURL(/#\/datasets\/ds-gas\/analysis/)
 
@@ -142,7 +142,8 @@ test.describe('v0.8.0 第三批瓦斯含量预置（mock API）', () => {
     await expect(page.getByTestId('analysis-profile-badge')).toContainText('瓦斯含量')
     await expect(page.getByTestId('analysis-quality-badge')).toContainText('数据全部有效')
     await expect(page.getByTestId('analysis-quality-badge')).toContainText('行')
-    await expect(page.getByTestId('analysis-variable')).toContainText('CH4_content')
+    await expect(page.getByTestId('analysis-variable')).toContainText('瓦斯含量')
+    await expect(page.getByTestId('analysis-variable')).not.toContainText('CH4_content')
     await expect(page.getByTestId('analysis-variable')).toContainText('ml/g')
 
     // ---- 默认主区 = 高/低含量区域（探索性分位口径），echarts 真实渲染非空图 ----
@@ -171,8 +172,8 @@ test.describe('v0.8.0 第三批瓦斯含量预置（mock API）', () => {
     await expect(page.getByTestId('distribution-summary')).toContainText('ml/g')
     await expectCanvasRendered(page.getByTestId('distribution-chart'))
 
-    // ---- 右栏：质量摘要带单位 + 模型对比官方普通克里金候选 ----
-    await expect(page.getByTestId('numeric-summary')).toContainText('ml/g')
+    // ---- 模型证据模块：官方普通克里金候选 ----
+    await page.getByTestId('module-nav-item-model_comparison').click()
     const comparison = page.getByTestId('model-comparison-panel')
     await expect(comparison.getByTestId('model-candidate-row')).toHaveCount(1)
     await expect(comparison).toContainText('普通克里金')
@@ -208,7 +209,7 @@ test.describe('v0.8.0 第三批瓦斯含量预置（mock API）', () => {
     await page.goto('/')
     const card = page.locator(GAS_CARD)
     await expect(card).toHaveCount(1)
-    await card.click()
+    await page.locator('[data-test="case-rail-item"][data-case-id="gas"]').click()
     await expect(page.getByTestId('command-center-scene')).toContainText('煤层瓦斯')
     await expect(page.getByTestId('command-center-scene')).toContainText('ml/g')
     const homeScrollWidth = await page.evaluate(() => document.documentElement.scrollWidth)
@@ -217,12 +218,13 @@ test.describe('v0.8.0 第三批瓦斯含量预置（mock API）', () => {
     // 工作台：数据摘要与官方成果命令可见
     await page.getByTestId('command-primary-action').click()
     await expect(page.getByTestId('case-workspace-header')).toContainText('煤层瓦斯')
-    await expect(page.getByTestId('workspace-data')).toContainText('行数 58')
+    await expect(page.getByTestId('workspace-data')).toContainText('58')
     await expect(page.getByTestId('open-official-result')).toBeVisible()
     const wsScrollWidth = await page.evaluate(() => document.documentElement.scrollWidth)
     expect(wsScrollWidth, '工作台 390×844 不得有页面级横向溢出').toBeLessThanOrEqual(390)
 
     // 分析中心：徽标/空间异常图非空且图表宽度不超视口
+    await page.getByTestId('stage-nav-results').click()
     await page.getByTestId('analysis-center-entry').click()
     await expect(page).toHaveURL(/#\/datasets\/ds-gas\/analysis/)
     await expect(page.getByTestId('analysis-profile-badge')).toContainText('瓦斯含量')

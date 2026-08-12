@@ -24,8 +24,10 @@ test.describe('v0.7.0 微震预置案例（mock API）', () => {
     await expect(page.getByTestId('case-workspace-header')).toContainText('微震速度')
     await expect(page.getByTestId('workspace-overview')).toBeVisible()
     await expect(page.getByTestId('workspace-data')).toBeVisible()
+    await page.getByTestId('stage-nav-experiments').click()
     await expect(page.getByTestId('workspace-experiments')).toBeVisible()
-    await expect(page.getByTestId('workspace-data')).toContainText('Vx')
+    await expect(page.getByTestId('workspace-data')).toContainText('微震速度')
+    await expect(page.getByTestId('workspace-data')).not.toContainText('Vx')
 
     // 阶段标签只展示当前内容；显式切到成果分析后再检查成果区。
     await page.getByTestId('stage-nav-results').click()
@@ -43,6 +45,7 @@ test.describe('v0.7.0 微震预置案例（mock API）', () => {
     await page.goto('/#/cases/builtin-microseismic-vx-1911')
 
     await expect(page.getByTestId('case-workspace-header')).toContainText('微震速度')
+    await page.getByTestId('stage-nav-experiments').click()
     await page.getByTestId('new-experiment').click()
     await expect(page).toHaveURL(
       /#\/cases\/builtin-microseismic-vx-1911\/experiments\/new/,

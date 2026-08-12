@@ -42,6 +42,8 @@ describe('ResultInterpretationPanel', () => {
     expect(wrapper.find('[data-test="finding-locate-finding-boundary-contact"]').exists()).toBe(false)
     // 限制文案如实展示（网格支持量非真实地质体积）
     expect(findings.text()).toContain('网格支持体积估计非真实地质体积')
+    expect(findings.text()).toContain('正式模型：普通克里金')
+    expect(findings.text()).not.toContain('Ordinary Kriging')
   })
 
   it('renders overview with backend composition and thresholds under explicit result-grid label', async () => {
@@ -50,6 +52,8 @@ describe('ResultInterpretationPanel', () => {
     const overview = wrapper.get('[data-test="interpretation-overview"]')
     // 成果网格身份标签必须明确（与输入样本区分）
     expect(overview.text()).toContain('成果网格')
+    expect(overview.text()).toContain('电阻率（Ω·m）')
+    expect(overview.text()).not.toContain('RHO')
     // 组成比例逐字来自 DTO（25% / 50% / 25%），前端不得重算
     expect(overview.text()).toContain('25.0%')
     expect(overview.text()).toContain('50.0%')
@@ -123,15 +127,47 @@ describe('ResultInterpretationPanel', () => {
     const wrapper = mountPanel()
     await flushPromises()
     const model = wrapper.get('[data-test="interpretation-model"]')
-    expect(model.text()).toContain('ordinary_kriging')
+    expect(model.text()).toContain('普通克里金')
+    expect(model.text()).not.toContain('ordinary_kriging')
     expect(model.text()).toContain('5.2')
     expect(model.text()).toContain('0.92')
     expect(model.text()).toContain('公共有效点 50')
-    expect(model.text()).toContain('最佳候选')
+    expect(model.text()).toContain('正式模型已登记')
+    expect(model.text()).not.toContain('最佳候选')
+    expect(model.text()).not.toContain('candidate_valid_count')
+    expect(model.text()).not.toContain('candidate_nodata_count')
+    expect(model.text()).not.toContain('total_count')
     // 无 null/NaN/undefined 文本泄漏
     expect(model.text()).not.toContain('NaN')
     expect(model.text()).not.toContain('undefined')
     expect(model.text()).not.toContain('null')
+  })
+
+  it('normalizes internal grid support units in backend finding copy', async () => {
+    const analysis = structuredClone(RESULT_ANALYSIS_MOCK_3D)
+    analysis.findings[0].statement = 'A 区网格支持量 500（volume_coordinate_unit3）'
+    const wrapper = mountPanel({ analysis })
+    await flushPromises()
+
+    const findings = wrapper.get('[data-test="interpretation-findings"]')
+    expect(findings.text()).toContain('网格坐标单位³')
+    expect(findings.text()).not.toContain('volume_coordinate_unit3')
+  })
+
+  it('only presents defined product metrics in the primary model summary', async () => {
+    const analysis = structuredClone(RESULT_ANALYSIS_MOCK_3D)
+    Object.assign(analysis.model_evidence.metrics, {
+      candidate_valid_count: 50,
+      candidate_nodata_count: 0,
+      total_count: 50,
+    })
+    const wrapper = mountPanel({ analysis })
+    await flushPromises()
+
+    const model = wrapper.get('[data-test="interpretation-model"]')
+    expect(model.text()).not.toContain('candidate_valid_count')
+    expect(model.text()).not.toContain('candidate_nodata_count')
+    expect(model.text()).not.toContain('total_count')
   })
 
   it('renders formal-selection and 2D depth typed states', async () => {

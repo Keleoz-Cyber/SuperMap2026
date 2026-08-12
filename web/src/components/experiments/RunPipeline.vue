@@ -109,9 +109,13 @@ const estimated = computed(() => props.run?.status === 'running')
         {{ node.label }}
       </li>
     </ol>
-    <p v-if="stage === 'failed' && run.error_code" class="pipeline-error" data-test="pipeline-error">
-      失败：{{ run.error_code }}
+    <p v-if="stage === 'failed'" class="pipeline-error" data-test="pipeline-error">
+      运行失败：可查看技术详情，修正参数后可重试。
     </p>
+    <details v-if="stage === 'failed' && run.error_code" class="pipeline-technical" data-test="pipeline-technical-details">
+      <summary>技术详情</summary>
+      <p class="mono">错误码：{{ run.error_code }}</p>
+    </details>
     <p v-else-if="stage === 'canceled' || stage === 'interrupted'" class="pipeline-error">
       {{ stage === 'canceled' ? '已取消' : '已中断' }}：可重试，已完成的候选结果保留。
     </p>
@@ -221,5 +225,23 @@ const estimated = computed(() => props.run?.status === 'running')
   margin: var(--s1-space-2) 0 0;
   font-size: var(--s1-font-sm);
   color: var(--s1-error);
+}
+
+.pipeline-technical {
+  margin-top: var(--s1-space-2);
+  color: var(--s1-text-faint);
+  font-size: var(--s1-font-sm);
+}
+
+.pipeline-technical summary {
+  cursor: pointer;
+}
+
+.pipeline-technical p {
+  margin: var(--s1-space-1) 0 0;
+}
+
+.mono {
+  font-family: ui-monospace, monospace;
 }
 </style>

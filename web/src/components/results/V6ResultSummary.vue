@@ -40,6 +40,17 @@ const formalText = computed(() => {
   if (props.formalSelected === null) return '正式成果状态未知'
   return props.formalSelected ? '正式成果已登记' : '未登记正式成果'
 })
+
+const VARIABLE_LABELS: Record<string, string> = {
+  RHO: '电阻率',
+  Vx: '微震速度',
+  CH4_content: '瓦斯含量',
+}
+
+const variableLabel = computed(() => {
+  const name = props.variable?.name ?? ''
+  return VARIABLE_LABELS[name] ?? (name || '建模属性')
+})
 </script>
 
 <template>
@@ -51,8 +62,7 @@ const formalText = computed(() => {
       </h1>
       <p class="summary-meta">
         {{ shapeText }} 网格 · {{ dimensionText }} · 局部线性坐标 ·
-        {{ variable?.name ?? metadata.algorithm
-        }}<template v-if="variable?.unit">（{{ variable.unit }}）</template>
+        {{ variableLabel }}<template v-if="variable?.unit">（{{ variable.unit }}）</template>
       </p>
     </div>
     <div class="summary-right">
@@ -87,6 +97,13 @@ const formalText = computed(() => {
         <span class="metric-label">成果状态</span>
         <span class="metric-value" :class="{ verified: formalSelected === true }">{{ formalText }}</span>
       </div>
+      <RouterLink
+        class="eval-link"
+        data-test="result-back-experiment"
+        :to="{ name: 'experiment-detail', params: { experimentId: metadata.experiment_id } }"
+      >
+        返回实验
+      </RouterLink>
       <RouterLink
         class="eval-link"
         data-test="model-evaluation-entry"

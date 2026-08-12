@@ -349,7 +349,7 @@ const AXES = ['x', 'y', 'z'] as const
     <template v-if="searchMode === 'manual'">
       <div v-if="algorithm === 'idw'" class="editor-grid">
         <label class="field">
-          <span>幂次 power</span>
+          <span>幂次</span>
           <input v-model.number="idwPower" type="number" step="0.5" min="0.5" max="8" class="gmp-input" data-test="idw-power" />
         </label>
         <label class="field">
@@ -357,7 +357,7 @@ const AXES = ['x', 'y', 'z'] as const
           <input v-model.number="idwNeighbors" type="number" step="1" min="1" max="128" class="gmp-input" data-test="idw-neighbors" />
         </label>
         <label v-if="preset" class="field">
-          <span>垂向距离缩放 z_scale</span>
+          <span>垂向距离缩放</span>
           <input v-model.number="zScale" type="number" step="0.1" min="0.1" max="20" class="gmp-input" data-test="z-scale-manual" :disabled="zScaleLock !== null && zScaleLock !== undefined" />
         </label>
       </div>
@@ -374,20 +374,20 @@ const AXES = ['x', 'y', 'z'] as const
           <span>变异函数模式</span>
           <select v-model="krigingMode" class="gmp-select" data-test="kriging-mode">
             <option value="auto">自动拟合（仅训练折）</option>
-            <option value="manual">手动 nugget/sill/range</option>
+            <option value="manual">手动设置块金、基台与变程</option>
           </select>
         </label>
         <template v-if="krigingMode === 'manual'">
           <label class="field">
-            <span>块金 nugget</span>
+          <span>块金</span>
             <input v-model.number="krigingNugget" type="number" step="0.1" min="0" class="gmp-input" data-test="kriging-nugget" />
           </label>
           <label class="field">
-            <span>基台 sill</span>
+          <span>基台</span>
             <input v-model.number="krigingSill" type="number" step="0.1" min="0.1" class="gmp-input" data-test="kriging-sill" />
           </label>
           <label class="field">
-            <span>变程 range</span>
+          <span>变程</span>
             <input v-model.number="krigingRange" type="number" step="1" min="1" class="gmp-input" data-test="kriging-range" />
           </label>
         </template>
@@ -396,57 +396,57 @@ const AXES = ['x', 'y', 'z'] as const
           <input v-model.number="krigingNeighbors" type="number" step="1" min="4" max="128" class="gmp-input" data-test="kriging-neighbors" />
         </label>
         <label v-if="preset" class="field">
-          <span>垂向距离缩放 z_scale</span>
+          <span>垂向距离缩放</span>
           <input v-model.number="zScale" type="number" step="0.1" min="0.1" max="20" class="gmp-input" data-test="z-scale-manual" :disabled="zScaleLock !== null && zScaleLock !== undefined" />
         </label>
       </div>
       <div v-else class="editor-grid">
         <label class="field">
-          <span>IDW 初始场幂次 init_power</span>
+          <span>IDW 初始场幂次</span>
           <select v-model.number="dsiInitPower" class="gmp-select" data-test="dsi-init-power">
             <option v-for="p in DSI_INIT_POWER_OPTIONS" :key="p" :value="p">{{ p.toFixed(1) }}</option>
           </select>
         </label>
         <label class="field">
-          <span>邻域连通性 neighbor_connectivity</span>
+          <span>邻域连接数</span>
           <select v-model.number="dsiConnectivity" class="gmp-select" data-test="dsi-connectivity">
             <option v-for="c in DSI_CONNECTIVITY_OPTIONS" :key="c" :value="c">{{ c }}</option>
           </select>
         </label>
         <label class="field">
-          <span>平滑强度 smoothing_strength</span>
+          <span>平滑强度</span>
           <select v-model.number="dsiSmoothing" class="gmp-select" data-test="dsi-smoothing">
             <option v-for="s in DSI_SMOOTHING_OPTIONS" :key="s" :value="s">{{ s }}</option>
           </select>
         </label>
         <label class="field">
-          <span>最大迭代次数 max_iterations</span>
+          <span>最大迭代次数</span>
           <select v-model.number="dsiIterations" class="gmp-select" data-test="dsi-iterations">
             <option v-for="m in DSI_ITERATION_OPTIONS" :key="m" :value="m">{{ m }}</option>
           </select>
         </label>
         <p class="field fixed-field" data-test="dsi-convergence-tolerance">
-          <span>收敛容差 convergence_tolerance</span>
+          <span>收敛容差</span>
           <span class="fixed-value">固定 1e-4（只读）</span>
         </p>
         <p class="field fixed-field" data-test="dsi-hard-constraints">
-          <span>观测点硬约束 hard_constraints</span>
+          <span>观测点约束</span>
           <span class="fixed-value">始终开启，不可关闭</span>
         </p>
       </div>
       <p v-if="preset && algorithm !== 'dsi_like'" class="editor-hint" data-test="z-scale-hint">{{ zScaleHint }}</p>
       <p v-if="manualKrigingInvalid" class="editor-error" data-test="kriging-manual-invalid">
-        手动变异函数要求 sill &gt; nugget ≥ 0 且 range &gt; 0
+        手动变异函数要求基台大于块金（块金不小于 0），且变程大于 0
       </p>
       <p v-if="manualZScaleInvalid" class="editor-error" data-test="z-scale-invalid">
-        z_scale 需满足 0 &lt; z_scale ≤ 20
+        垂向距离缩放需大于 0 且不超过 20
       </p>
     </template>
 
     <template v-else>
       <div v-if="algorithm === 'idw'" class="editor-grid">
         <label class="field wide">
-          <span>power 候选（逗号分隔）</span>
+          <span>幂次候选（逗号分隔）</span>
           <input v-model="gridPower" class="gmp-input" data-test="grid-power" placeholder="如：1.5, 2, 3" />
         </label>
         <label class="field wide">
@@ -454,7 +454,7 @@ const AXES = ['x', 'y', 'z'] as const
           <input v-model="gridNeighbors" class="gmp-input" data-test="grid-neighbors" placeholder="如：8, 16, 32" />
         </label>
         <label v-if="preset" class="field wide">
-          <span>z_scale 候选</span>
+          <span>垂向距离缩放候选</span>
           <input v-model="gridZScale" class="gmp-input" data-test="grid-z-scale" placeholder="如：0.5, 1, 2" :disabled="zScaleLock !== null && zScaleLock !== undefined" />
         </label>
       </div>
@@ -471,14 +471,14 @@ const AXES = ['x', 'y', 'z'] as const
           <input v-model="gridKrigingNeighbors" class="gmp-input" data-test="grid-kriging-neighbors" placeholder="如：16, 24, 32" />
         </label>
         <label v-if="preset" class="field wide">
-          <span>z_scale 候选</span>
+          <span>垂向距离缩放候选</span>
           <input v-model="gridZScale" class="gmp-input" data-test="grid-z-scale" placeholder="如：0.5, 1, 2" :disabled="zScaleLock !== null && zScaleLock !== undefined" />
         </label>
         <p class="editor-hint">网格搜索固定使用自动变异函数拟合（每折独立，防泄漏）。</p>
       </div>
       <div v-else class="editor-grid">
         <div class="field wide">
-          <span>init_power 候选</span>
+          <span>初始场幂次候选</span>
           <label v-for="p in DSI_INIT_POWER_OPTIONS" :key="p" class="radio inline">
             <input v-model="dsiGridInitPower" type="checkbox" :value="p" :data-test="`grid-dsi-init-power-${p}`" />
             {{ p.toFixed(1) }}
@@ -506,7 +506,7 @@ const AXES = ['x', 'y', 'z'] as const
           </label>
         </div>
         <p class="editor-hint">
-          网格搜索同样固定 convergence_tolerance = 1e-4 与 hard_constraints = 开启（每个组合一份）。
+          每个组合均使用固定收敛精度 1e-4，并保持观测点约束开启。
         </p>
       </div>
       <p v-if="preset && algorithm !== 'dsi_like'" class="editor-hint" data-test="z-scale-hint">{{ zScaleHint }}</p>

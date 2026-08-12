@@ -14,8 +14,8 @@ test('自定义数据完整链：上传 → 映射 → 质量 → 实验 → 成
   await page.getByTestId('create-case-card').click()
   await expect(page).toHaveURL(/#\/cases\/new/)
 
-  // 创建案例 + 上传（页面文案为「数据接入与准备」）
-  await expect(page.locator('body')).toContainText('数据接入与准备')
+  // 创建案例 + 上传（统一数据接入工作台）
+  await expect(page.locator('body')).toContainText('创建案例并接入数据')
   await page.getByTestId('case-name').fill('v0.9 演示项目')
   await page.getByTestId('case-file').setInputFiles({
     name: 'platform_demo_3d.csv',
@@ -50,6 +50,7 @@ test('自定义数据完整链：上传 → 映射 → 质量 → 实验 → 成
   await expect(page.getByTestId('stage-nav-evidence')).toContainText('证据与报告')
 
   // 新建实验 → 提交 → 运行流水线
+  await page.getByTestId('stage-nav-experiments').click()
   await page.getByTestId('new-experiment').click()
   await expect(page).toHaveURL(/#\/cases\/case-e2e\/experiments\/new\?dataset=ds-e2e/)
   await expect(page.getByTestId('lab-layout')).toBeVisible()

@@ -67,7 +67,7 @@ const props = withDefaults(
     focusedComponentId?: number | null
     // v0.9.0 V6：workbench 变体隐藏调试性外壳（标题/真值标签/资产身份块），
     // 场景只保留一行轻量状态条与 fail-closed 错误/动作
-    variant?: 'default' | 'workbench'
+    variant?: 'default' | 'workbench' | 'presentation'
     // 首页等展示面只保留失败诊断；ready 资产不暴露刷新按钮、哈希和内部身份。
     showReadyDiagnostics?: boolean
   }>(),
@@ -320,6 +320,8 @@ const phaseText = computed(() => {
 })
 
 const isWorkbench = computed(() => props.variant === 'workbench')
+const isPresentation = computed(() => props.variant === 'presentation')
+const isProductSurface = computed(() => isWorkbench.value || isPresentation.value)
 
 async function refreshAsset() {
   // 状态刷新是纯 GET：绝不隐式 POST
@@ -627,14 +629,14 @@ onMounted(() => {
 </script>
 
 <template>
-  <section class="native-volume-panel" :class="{ workbench: isWorkbench }" data-test="native-volume-panel">
+  <section class="native-volume-panel" :class="{ workbench: isWorkbench, presentation: isPresentation }" data-test="native-volume-panel">
     <header v-if="!isWorkbench" class="panel-header">
       <h3 class="panel-title">三维体渲染</h3>
       <span class="volume-phase" data-test="volume-phase">{{ phaseText }}</span>
     </header>
 
     <!-- 固定真值标签：渲染器 / 坐标状态 / 辅助点定位（默认变体恒显） -->
-    <ul v-if="!isWorkbench" class="truth-labels" data-test="truth-labels">
+    <ul v-if="!isProductSurface" class="truth-labels" data-test="truth-labels">
       <li>渲染器：SuperMap3D VoxelGridLayer3D</li>
       <li>坐标状态：显示锚点（非真实地理配准）</li>
       <li>辅助采样点：不参与连续体渲染</li>
@@ -655,7 +657,7 @@ onMounted(() => {
     </div>
 
     <template v-else-if="capability">
-      <div v-if="!isWorkbench" class="panel-note" data-test="geo-status">坐标契约：{{ capability.geolocation_status }}</div>
+      <div v-if="!isProductSurface" class="panel-note" data-test="geo-status">坐标契约：{{ capability.geolocation_status }}</div>
 
       <!-- v0.9.0 Task 9：左栏显示工具 + 中央三维场景双列布局 -->
       <div class="panel-body">
@@ -771,7 +773,7 @@ onMounted(() => {
             <div v-if="createError" class="panel-error" data-test="create-error">{{ createError }}</div>
 
             <div
-              v-if="asset && !isWorkbench && showReadyDiagnostics"
+              v-if="asset && !isProductSurface && showReadyDiagnostics"
               class="asset-identity"
               data-test="asset-identity"
             >

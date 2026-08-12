@@ -99,7 +99,10 @@ watch(
   <section class="candidate-comparison" data-test="candidate-comparison">
     <header class="panel-head">
       <h3>双候选比较</h3>
-      <span class="first-label">基准候选 <span class="mono">{{ firstResultId }}</span></span>
+      <details class="first-technical" data-test="comparison-technical-details">
+        <summary>技术详情</summary>
+        <span class="mono">基准候选标识：{{ firstResultId }}</span>
+      </details>
     </header>
 
     <div class="second-picker">
@@ -123,13 +126,15 @@ watch(
     </div>
 
     <div class="external-picker">
-      <span class="picker-label">跨实验成果 ID：</span>
+      <label class="picker-label" for="comparison-external-input">跨实验成果标识：</label>
       <input
         v-model="externalId"
+        id="comparison-external-input"
+        name="comparison-external-result"
         class="external-input mono"
         data-test="comparison-external-input"
         type="text"
-        placeholder="粘贴任意成果 ID（UUID 形态）"
+        placeholder="粘贴成果标识…"
         spellcheck="false"
       />
       <button
@@ -216,7 +221,7 @@ watch(
   font-size: 15px;
 }
 
-.first-label {
+.first-technical {
   font-size: 12px;
   color: var(--gmp-text-dim);
 }
@@ -259,9 +264,10 @@ watch(
   width: 340px;
 }
 
-.external-input:focus {
+.external-input:focus-visible {
   outline: none;
   border-color: var(--gmp-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--gmp-accent) 28%, transparent);
 }
 
 .external-invalid {

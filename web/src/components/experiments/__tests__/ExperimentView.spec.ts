@@ -368,7 +368,7 @@ describe('ExperimentView 微震预设', () => {
     expect(zScale.exists()).toBe(true)
     expect((zScale.element as HTMLInputElement).value).toBe('1')
     expect(wrapper.find('[data-test="z-scale-hint"]').text()).toContain(
-      '距离计算使用 Z × z_scale；它是实验参数，不是已确认地质各向异性。',
+      '垂向距离缩放只影响实验中的距离计算，不代表已经确认地质各向异性。',
     )
 
     await wrapper.find('[data-test="exp-submit"]').trigger('click')
@@ -451,14 +451,17 @@ describe('ExperimentView 详情模式', () => {
       .mockResolvedValue(makeRun('succeeded', { completed: 1, total: 1 }))
 
     const { wrapper } = await mountAt('/experiments/exp1')
-    expect(wrapper.text()).toContain('queued')
+    expect(wrapper.text()).toContain('排队中')
+    expect(wrapper.text()).not.toContain('queued')
 
     await vi.advanceTimersByTimeAsync(1000)
     expect(client.fetchRun).toHaveBeenCalledWith('run1')
-    expect(wrapper.text()).toContain('running')
+    expect(wrapper.text()).toContain('运行中')
+    expect(wrapper.text()).not.toContain('running')
 
     await vi.advanceTimersByTimeAsync(1000)
-    expect(wrapper.text()).toContain('succeeded')
+    expect(wrapper.text()).toContain('验证完成')
+    expect(wrapper.text()).not.toContain('succeeded')
     const callsAfterTerminal = vi.mocked(client.fetchRun).mock.calls.length
     // 终态后排行榜刷新且轮询停止
     expect(vi.mocked(client.fetchCandidates).mock.calls.length).toBeGreaterThanOrEqual(2)
@@ -508,7 +511,8 @@ describe('ExperimentView 详情模式', () => {
     vi.mocked(client.fetchRun).mockResolvedValue(makeRun('succeeded', { completed: 1, total: 1 }, 'run2'))
 
     const { wrapper } = await mountAt('/experiments/exp1')
-    expect(wrapper.text()).toContain('interrupted')
+    expect(wrapper.text()).toContain('已中断')
+    expect(wrapper.text()).not.toContain('interrupted')
     expect(wrapper.text()).toContain('PROCESS_RESTARTED')
 
     await wrapper.find('[data-test="retry-run"]').trigger('click')

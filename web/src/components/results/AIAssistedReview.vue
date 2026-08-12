@@ -214,7 +214,10 @@ watch(
       <div v-else-if="record?.status === 'error'" class="ai-state" data-test="ai-error">
         <p class="state-title">{{ activeMode.label }}生成失败</p>
         <p>{{ record.error_message }}</p>
-        <p class="mono error-code">{{ record.error_code }}</p>
+        <details class="technical-details">
+          <summary>技术详情</summary>
+          <p class="mono error-code">{{ record.error_code }}</p>
+        </details>
         <button type="button" class="action-button" data-test="ai-retry" :disabled="generating" @click="generate(true)">
           {{ generating ? '正在重试…' : '重新生成' }}
         </button>
