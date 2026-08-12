@@ -3,7 +3,7 @@
 // 标记差异；绝不隐藏差异制造“看起来一致”。
 import { computed } from 'vue'
 import type { ComparisonCandidateSummary } from '../../api/types'
-import { algorithmLabel } from '../../utils/modelingLabels'
+import { algorithmLabel, parameterLabel, parameterValueLabel } from '../../utils/modelingLabels'
 
 const props = defineProps<{
   candidates: ComparisonCandidateSummary[]
@@ -19,14 +19,14 @@ const allKeys = computed(() => {
   return keys.sort()
 })
 
-function display(value: unknown): string {
+function display(key: string, value: unknown): string {
   if (value === null || value === undefined) return '—'
-  if (Array.isArray(value)) return value.join(', ')
-  return String(value)
+  if (Array.isArray(value)) return value.map((item) => parameterValueLabel(key, item)).join(', ')
+  return parameterValueLabel(key, value)
 }
 
 function differs(key: string): boolean {
-  const values = props.candidates.map((c) => display(c.parameters[key]))
+  const values = props.candidates.map((c) => display(key, c.parameters[key]))
   return new Set(values).size > 1
 }
 
@@ -52,9 +52,9 @@ function candidateLabel(c: ComparisonCandidateSummary): string {
           :data-differs="differs(key) ? 'true' : 'false'"
           :class="{ differs: differs(key) }"
         >
-          <td class="param-key mono">{{ key }}</td>
+          <td class="param-key">{{ parameterLabel(key) }}</td>
           <td v-for="c in candidates" :key="c.candidate_result_id">
-            {{ display(c.parameters[key]) }}
+            {{ display(key, c.parameters[key]) }}
           </td>
         </tr>
       </tbody>

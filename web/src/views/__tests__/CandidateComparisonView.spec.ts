@@ -170,6 +170,11 @@ async function mountView(): Promise<{ wrapper: ReturnType<typeof mount>; router:
         name: 'model-evaluation',
         component: { template: '<div />' },
       },
+      {
+        path: '/cases/:caseId/experiments/new',
+        name: 'experiment-create',
+        component: { template: '<div />' },
+      },
     ],
   })
   await router.push('/datasets/ds-1/candidate-comparison')
@@ -232,9 +237,57 @@ describe('CandidateComparisonView', () => {
     wrapper.unmount()
   })
 
+  it('默认选择 RMSE 最低的两个不同配置候选，并说明仍需校验兼容性', async () => {
+    const { wrapper } = await mountView()
+    const selected = checkboxes(wrapper).filter((item) =>
+      (item.find('input').element as HTMLInputElement).checked,
+    )
+
+    expect(selected).toHaveLength(2)
+    expect(wrapper.get('[data-test="comparison-start-summary"]').text()).toContain('已为你选择')
+    expect(wrapper.get('[data-test="comparison-start-summary"]').text()).toContain('兼容性')
+    expect(wrapper.find('[data-test="compare-btn"]').attributes('disabled')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('比较完成后先展示推荐结论、指标差异和主要参数差异', async () => {
+    const { wrapper } = await mountView()
+    await wrapper.get('[data-test="compare-btn"]').trigger('click')
+    await flushPromises()
+
+    const summary = wrapper.get('[data-test="comparison-summary"]')
+    expect(summary.text()).toContain('普通克里金')
+    expect(summary.text()).toContain('RMSE')
+    expect(summary.text()).toContain('主要参数差异')
+    expect(summary.text()).not.toContain('r-2')
+    wrapper.unmount()
+  })
+
+  it('单候选状态不显示空比较表，并引导创建参数网格实验', async () => {
+    vi.mocked(client.fetchComparisonCandidates).mockResolvedValue({
+      dataset_id: 'ds-1',
+      groups: [{
+        experiment_id: 'exp-1',
+        experiment_name: '实验 A',
+        candidates: [makeCandidate('r-only', 'exp-1', 'idw')],
+      }],
+    })
+    const { wrapper, router } = await mountView()
+
+    expect(wrapper.find('[data-test="candidate-table"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="single-candidate-state"]').text()).toContain('参数网格')
+    await wrapper.get('[data-test="create-grid-experiment"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.name).toBe('experiment-create')
+    expect(router.currentRoute.value.query.dataset).toBe('ds-1')
+    wrapper.unmount()
+  })
+
   it('checkbox selection enforces 2 minimum / 4 maximum limit', async () => {
     const { wrapper } = await mountView()
 
+    await uncheck(wrapper, 0)
+    await uncheck(wrapper, 1)
     expect(wrapper.find('[data-test="compare-btn"]').attributes('disabled')).toBeDefined()
 
     await check(wrapper, 0)
@@ -293,6 +346,7 @@ describe('CandidateComparisonView', () => {
     vi.mocked(client.compareCandidates).mockResolvedValue(INCOMPARABLE)
     const { wrapper } = await mountView()
 
+    await uncheck(wrapper, 1)
     await check(wrapper, 0)
     await check(wrapper, 3)
 

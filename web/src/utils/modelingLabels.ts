@@ -35,6 +35,17 @@ const VARIOGRAM_MODELS: Record<string, string> = {
   linear: '线性',
 }
 
+export function parameterLabel(key: string): string {
+  return PARAM_LABELS[key] ?? key.replaceAll('_', ' ')
+}
+
+export function parameterValueLabel(key: string, value: unknown): string {
+  if (key === 'variogram_model' && typeof value === 'string' && value in VARIOGRAM_MODELS) {
+    return VARIOGRAM_MODELS[value]
+  }
+  return formatParamValue(value)
+}
+
 const numberFormatter = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 12 })
 
 function formatParamValue(value: unknown): string {
@@ -54,12 +65,9 @@ export function parameterSummary(
   const knownKeys = Object.keys(params).filter((k) => k in PARAM_LABELS)
   if (knownKeys.length > 0) {
     return knownKeys.sort().map((key) => {
-      const label = PARAM_LABELS[key]
+      const label = parameterLabel(key)
       const raw = params[key]
-      if (key === 'variogram_model' && typeof raw === 'string' && raw in VARIOGRAM_MODELS) {
-        return `${label} ${VARIOGRAM_MODELS[raw]}`
-      }
-      return `${label} ${formatParamValue(raw)}`
+      return `${label} ${parameterValueLabel(key, raw)}`
     })
   }
   return Object.keys(params)
