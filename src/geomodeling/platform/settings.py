@@ -150,6 +150,12 @@ class PlatformSettings:
     def result_grid(self, result_id: str) -> Path:
         return self.results_dir / result_id / "grid.npz"
 
+    def ml_fields(self, result_id: str) -> Path:
+        return self.results_dir / result_id / "ml_fields.npz"
+
+    def ml_fields_manifest(self, result_id: str) -> Path:
+        return self.results_dir / result_id / "ml_fields.json"
+
     def professional_result_dir(self, result_id: str) -> Path:
         """Per-candidate professional artifact directory (fold/OOF evidence)."""
 
