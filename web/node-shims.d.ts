@@ -9,6 +9,7 @@ declare module 'node:crypto' {
 declare module 'node:fs' {
   export function existsSync(path: string): boolean
   export function readFileSync(path: string): Uint8Array
+  export function readdirSync(path: string): string[]
 }
 declare module 'node:path' {
   export function resolve(...segments: string[]): string

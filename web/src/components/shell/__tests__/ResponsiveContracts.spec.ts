@@ -6,7 +6,7 @@ import * as client from '../../../api/client'
 import type { CaseSummary } from '../../../api/types'
 import AppShell from '../AppShell.vue'
 import HomeView from '../../../views/HomeView.vue'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 
 // vitest 的 CSS ?raw 导入会被裁剪为空串；样式规则断言直接读文件（vitest 以 web/ 为 cwd）
 const motionCss = String(readFileSync('src/styles/motion.css'))
@@ -111,6 +111,21 @@ describe('responsive & accessibility contracts', () => {
   it('mobile case actions keep clear space below the sticky global header', () => {
     expect(caseRailSource).toContain('scroll-margin-top: 72px')
   })
+
+  it('browser flows do not reference retired v6 navigation hooks', () => {
+    const specFiles = ['e2e', 'e2e-live'].flatMap((dir) =>
+      readdirSync(dir)
+        .filter((name) => name.endsWith('.spec.ts'))
+        .map((name) => `${dir}/${name}`),
+    )
+    for (const path of specFiles) {
+      const source = String(readFileSync(path))
+      for (const retiredId of ['v6-nav-experiment', 'v6-nav-home', 'shell-home-link']) {
+        expect(source, `${path} 仍引用退役导航 ${retiredId}`).not.toContain(retiredId)
+      }
+    }
+  })
+
   it('app shell exposes exactly one main landmark', async () => {
     const wrapper = await mountHome()
     expect(wrapper.findAll('main')).toHaveLength(1)
