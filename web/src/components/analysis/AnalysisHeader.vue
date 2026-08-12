@@ -67,15 +67,15 @@ const qualityBadge = computed<QualityBadge>(() => {
           {{ qualityBadge.text }}
         </el-tag>
       </div>
-      <p class="identity-line" data-test="analysis-identity">
-        案例 <span class="mono">{{ summary.case_id }}</span> · 数据集
-        <span class="mono">{{ summary.dataset_id }}</span> · 数据版本 v{{ summary.provenance.dataset_version }} ·
-        计算版本 {{ summary.provenance.calculation_version }}
-      </p>
       <p class="identity-line">
-        <span data-test="analysis-variable">变量：{{ summary.variable.name }}{{ unitSuffix }}</span>
+        <span data-test="analysis-variable">分析属性：{{ summary.variable.name }}{{ unitSuffix }}</span>
         · <span data-test="analysis-coord-type">{{ coordType }}</span>
       </p>
+      <details class="identity-technical" data-test="analysis-identity">
+        <summary>技术详情</summary>
+        <p>案例 <span class="mono">{{ summary.case_id }}</span> · 数据集 <span class="mono">{{ summary.dataset_id }}</span></p>
+        <p>数据版本 v{{ summary.provenance.dataset_version }} · 计算版本 <span class="mono">{{ summary.provenance.calculation_version }}</span></p>
+      </details>
     </div>
     <div class="header-actions">
       <el-button type="primary" plain data-test="analysis-export-command" @click="emit('export')">
@@ -120,6 +120,19 @@ const qualityBadge = computed<QualityBadge>(() => {
   margin: 0;
   font-size: 13px;
   color: var(--gmp-text-dim);
+}
+
+.identity-technical {
+  color: var(--gmp-text-faint);
+  font-size: 12px;
+}
+
+.identity-technical summary {
+  cursor: pointer;
+}
+
+.identity-technical p {
+  margin: 5px 0 0;
 }
 
 .mono {

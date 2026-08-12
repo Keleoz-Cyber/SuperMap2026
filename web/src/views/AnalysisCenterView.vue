@@ -62,13 +62,13 @@ const GENERIC_FALLBACK_TEXT =
 // 通用视图模块按固定顺序在前，其余（专属）模块按响应顺序在后
 // ---------------------------------------------------------------------------
 
-const RIGHTBAR_MODULE_IDS = new Set(['quality', 'statistics', 'model_comparison'])
+const RIGHTBAR_MODULE_IDS = new Set(['quality', 'statistics'])
 // 主区可承载的模块（顺序即导航优先级）：spatial_extent/spatial_anomaly 由
 // SpatialFeaturePanel 承载（Task 6 起 spatial_anomaly 为专属 profile 的默认
 // 空间视图——这些 profile 无 spatial_extent），distribution/profile_slices
 // 各有专属面板；其余专属模块（axis_trends/gradient/depth_slices）暂无面板，
 // ok 状态不生成占位导航入口（Task 8），disabled 状态保留导航并标记不可用
-const PRIMARY_MODULE_ORDER = ['spatial_extent', 'spatial_anomaly', 'distribution', 'profile_slices']
+const PRIMARY_MODULE_ORDER = ['spatial_extent', 'spatial_anomaly', 'distribution', 'profile_slices', 'model_comparison']
 
 interface NavItem {
   module: AnalysisModuleResult
@@ -125,11 +125,6 @@ function moduleOf(moduleId: string): AnalysisModuleResult | null {
   return summary.value?.modules.find((module) => module.module_id === moduleId) ?? null
 }
 
-// 底部折叠区剖面模块（仅在未被提升为主焦点时渲染，避免双图表实例）
-const profileModule = computed<AnalysisModuleResult | null>(() =>
-  activeModuleId.value === 'profile_slices' ? null : moduleOf('profile_slices'),
-)
-
 // ---------------------------------------------------------------------------
 // 选择 → 成果导航：正式选择且已物化的候选优先，否则首个已物化候选
 // ---------------------------------------------------------------------------
@@ -142,6 +137,37 @@ const materializedResultId = computed<string | null>(() => {
 })
 
 const selectionHint = ref<string | null>(null)
+
+const profileConclusion = computed(() => {
+  if (!summary.value) return { title: '', body: '' }
+  const valid = summary.value.quality.valid_count?.toLocaleString('zh-CN') ?? '未知'
+  const unit = summary.value.variable.unit ? ` ${summary.value.variable.unit}` : ''
+  const median = summary.value.statistics?.median
+  const medianText = median === null || median === undefined ? '' : `，中位数 ${median.toLocaleString('zh-CN')}${unit}`
+  const profile = summary.value.analysis_profile
+  if (profile === 'resistivity') {
+    return { title: '电阻率空间差异已形成可定位证据', body: `基于 ${valid} 个有效样本${medianText}；先查看高低值区域，再回到三维成果核对其空间连续性。` }
+  }
+  if (profile === 'microseismic_velocity') {
+    return { title: '微震速度的空间变化可分层查看', body: `基于 ${valid} 个有效样本${medianText}；结合空间分布与剖面趋势判断局部速度变化。` }
+  }
+  if (profile === 'gas_content') {
+    return { title: '瓦斯含量的高低值区域可进一步核查', body: `基于 ${valid} 个有效样本${medianText}；结论仅描述样本分布与空间位置，不延伸为规范判断。` }
+  }
+  return { title: '已生成通用数据分布与空间证据', body: `基于 ${valid} 个有效样本${medianText}；当前字段未匹配专属地质分析口径。` }
+})
+
+const contextEvidence = computed(() => {
+  if (activeModuleId.value === 'model_comparison') return '模型证据：比较同一数据版本下已有候选的公共验证指标。'
+  if (activeModuleId.value === 'distribution') return '分布证据：查看取值集中区间、偏态和长尾，不替代空间位置判断。'
+  if (activeModuleId.value === 'profile_slices') return '剖面证据：沿 X/Y/Z 方向检查属性变化，并可定位到三维成果。'
+  return '空间证据：查看样本或属性在 XY 平面的聚集与高低值位置，并与三维成果互相核对。'
+})
+
+function openMaterializedResult() {
+  if (!materializedResultId.value) return
+  void router.push(`/results/${materializedResultId.value}`)
+}
 
 function handleSelection(selection: AnalysisSelection) {
   selectionHint.value = null
@@ -248,6 +274,22 @@ watch(datasetId, (next, prev) => {
     <template v-else-if="summary">
       <AnalysisHeader :summary="summary" @export="openExport" />
 
+      <section class="analysis-conclusion" data-test="analysis-conclusion">
+        <div>
+          <span class="conclusion-kicker">本次分析结论</span>
+          <h2>{{ profileConclusion.title }}</h2>
+          <p>{{ profileConclusion.body }}</p>
+        </div>
+        <el-button
+          v-if="materializedResultId"
+          type="primary"
+          data-test="analysis-open-result"
+          @click="openMaterializedResult"
+        >
+          在三维成果中核对
+        </el-button>
+      </section>
+
       <el-alert
         v-if="summary.analysis_profile === 'generic_3d'"
         type="info"
@@ -266,23 +308,23 @@ watch(datasetId, (next, prev) => {
         @close="selectionHint = null"
       />
 
-      <div class="analysis-layout" data-test="analysis-content">
-        <nav class="module-nav" data-test="module-nav" aria-label="分析模块导航">
-          <button
-            v-for="item in navItems"
-            :key="item.module.module_id"
-            type="button"
-            class="nav-item"
-            :class="{ active: item.module.module_id === activeModuleId }"
-            :data-test="`module-nav-item-${item.module.module_id}`"
-            @click="selectModule(item.module.module_id)"
-          >
-            <span class="nav-label">{{ item.label }}</span>
-            <span v-if="item.module.status !== 'ok'" class="nav-flag">不可用</span>
-          </button>
-          <p v-if="navItems.length === 0" class="nav-empty">当前数据版本未提供分析模块。</p>
-        </nav>
+      <nav class="module-nav" data-test="module-nav" aria-label="分析模块导航">
+        <button
+          v-for="item in navItems"
+          :key="item.module.module_id"
+          type="button"
+          class="nav-item"
+          :class="{ active: item.module.module_id === activeModuleId }"
+          :data-test="`module-nav-item-${item.module.module_id}`"
+          @click="selectModule(item.module.module_id)"
+        >
+          <span class="nav-label">{{ item.label }}</span>
+          <span v-if="item.module.status !== 'ok'" class="nav-flag">不可用</span>
+        </button>
+        <p v-if="navItems.length === 0" class="nav-empty">当前数据版本未提供分析模块。</p>
+      </nav>
 
+      <div class="analysis-layout" data-test="analysis-content">
         <main class="primary-area" data-test="primary-area">
           <SpatialFeaturePanel
             v-if="
@@ -311,6 +353,10 @@ watch(datasetId, (next, prev) => {
             :result-id="materializedResultId"
             @select="handleSelection"
           />
+          <ModelComparisonPanel
+            v-else-if="activeNavItem?.usable && activeModuleId === 'model_comparison'"
+            :module="activeModule"
+          />
           <section v-else class="module-disabled" data-test="module-disabled-state">
             <h3>{{ activeNavItem?.label ?? '分析模块' }}</h3>
             <p>
@@ -321,28 +367,22 @@ watch(datasetId, (next, prev) => {
             </p>
           </section>
         </main>
+        <aside class="context-evidence" data-test="context-evidence">
+          <span>如何阅读</span>
+          <p>{{ contextEvidence }}</p>
+          <button v-if="materializedResultId" type="button" @click="openMaterializedResult">查看对应三维成果 →</button>
+        </aside>
+      </div>
 
-        <aside class="side-area" data-test="side-area">
+      <el-collapse v-model="lowerActive" class="lower-area" data-test="lower-area">
+        <el-collapse-item title="数据质量与统计口径" name="quality">
           <QualitySummaryPanel
             :quality="summary.quality"
             :statistics="summary.statistics"
             :variable="summary.variable"
           />
-          <ModelComparisonPanel :module="moduleOf('model_comparison')" />
-        </aside>
-      </div>
-
-      <el-collapse v-model="lowerActive" class="lower-area" data-test="lower-area">
-        <el-collapse-item v-if="profileModule" title="剖面统计" name="profile">
-          <ProfileAnalysisPanel
-            :module="profileModule"
-            :variable="summary.variable"
-            :dataset-id="datasetId"
-            :result-id="materializedResultId"
-            @select="handleSelection"
-          />
         </el-collapse-item>
-        <el-collapse-item title="导出与数据溯源" name="export">
+        <el-collapse-item title="方法、导出与技术溯源" name="export">
           <AnalysisExportPanel
             :provenance="summary.provenance"
             :dataset-id="datasetId"
@@ -371,15 +411,16 @@ watch(datasetId, (next, prev) => {
 
 .analysis-layout {
   display: grid;
-  grid-template-columns: 168px minmax(0, 1fr) 340px;
+  grid-template-columns: minmax(0, 1fr) 280px;
   gap: 16px;
   align-items: start;
 }
 
 .module-nav {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
 }
 
 .nav-item {
@@ -396,6 +437,7 @@ watch(datasetId, (next, prev) => {
   cursor: pointer;
   text-align: left;
   white-space: nowrap;
+  flex: 0 0 auto;
 }
 
 .nav-item:hover {
@@ -443,11 +485,48 @@ watch(datasetId, (next, prev) => {
   color: var(--gmp-text-dim);
 }
 
-.side-area {
+.analysis-conclusion {
   display: flex;
-  flex-direction: column;
-  gap: 16px;
-  min-width: 0;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--s1-space-6);
+  padding: var(--s1-space-5) 0;
+  border-block: 1px solid var(--s1-border);
+}
+
+.conclusion-kicker,
+.context-evidence > span {
+  color: var(--s1-cyan-strong);
+  font-size: var(--s1-font-xs);
+  font-weight: 600;
+}
+
+.analysis-conclusion h2 {
+  margin: 6px 0;
+  font-size: var(--s1-font-xl);
+}
+
+.analysis-conclusion p,
+.context-evidence p {
+  margin: 0;
+  color: var(--s1-text-dim);
+  line-height: var(--s1-leading);
+}
+
+.context-evidence {
+  position: sticky;
+  top: var(--s1-space-4);
+  padding: var(--s1-space-4);
+  border-left: 2px solid var(--s1-border-strong);
+}
+
+.context-evidence button {
+  margin-top: var(--s1-space-4);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--s1-cyan-strong);
+  cursor: pointer;
 }
 
 .lower-area {
@@ -460,11 +539,13 @@ watch(datasetId, (next, prev) => {
 
 @media (max-width: 900px) {
   .analysis-layout {
-    grid-template-columns: 148px minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .side-area {
-    grid-column: 1 / -1;
+  .context-evidence {
+    position: static;
+    border-left: 0;
+    border-top: 1px solid var(--s1-border);
   }
 }
 
@@ -477,10 +558,9 @@ watch(datasetId, (next, prev) => {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .module-nav {
-    flex-direction: row;
-    overflow-x: auto;
-    padding-bottom: 4px;
+  .analysis-conclusion {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .nav-item {

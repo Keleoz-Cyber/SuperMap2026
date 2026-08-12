@@ -251,20 +251,48 @@ describe('AnalysisCenterView（三态）', () => {
 })
 
 describe('AnalysisCenterView（A+B 壳）', () => {
-  it('布局骨架：模块导航 / 中央主区 / 右侧信息栏 / 底部可折叠区', async () => {
+  it('布局骨架：结论优先 / 分析视角 / 当前证据 / 方法折叠区', async () => {
     vi.mocked(client.fetchAnalysisSummary).mockResolvedValue(fullSummary('microseismic_velocity'))
     const { wrapper } = await mountAnalysisCenter('/datasets/ds-1/analysis')
 
     expect(wrapper.find('[data-test="analysis-header"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="analysis-conclusion"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="module-nav"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="primary-area"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="side-area"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="context-evidence"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="side-area"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="lower-area"]').exists()).toBe(true)
     // 默认主焦点为空间视图
     expect(wrapper.find('[data-test="spatial-feature-panel"]').exists()).toBe(true)
-    // 右栏：质量摘要 + 模型对比
-    expect(wrapper.find('[data-test="quality-summary-panel"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="model-comparison-panel"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('结论先说明数据与当前分析意义，并提供三维成果动作，技术身份不进入结论', async () => {
+    vi.mocked(client.fetchAnalysisSummary).mockResolvedValue(fullSummary('resistivity'))
+    const { wrapper, router } = await mountAnalysisCenter('/datasets/ds-1/analysis')
+
+    const conclusion = wrapper.get('[data-test="analysis-conclusion"]')
+    expect(conclusion.text()).toContain('电阻率')
+    expect(conclusion.text()).toContain('有效样本')
+    expect(conclusion.text()).not.toContain('ds-1')
+    expect(conclusion.text()).not.toContain('analysis.v1')
+    await conclusion.get('[data-test="analysis-open-result"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/results/cand-1')
+    wrapper.unmount()
+  })
+
+  it('模型证据是独立分析视角，选择后才显示候选指标', async () => {
+    vi.mocked(client.fetchAnalysisSummary).mockResolvedValue(fullSummary('microseismic_velocity'))
+    const { wrapper } = await mountAnalysisCenter('/datasets/ds-1/analysis')
+
+    expect(wrapper.find('[data-test="module-nav-item-model_comparison"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="model-comparison-panel"]').exists()).toBe(false)
+    await wrapper.get('[data-test="module-nav-item-model_comparison"]').trigger('click')
+    await flushPromises()
     expect(wrapper.find('[data-test="model-comparison-panel"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="context-evidence"]').text()).toContain('模型证据')
     wrapper.unmount()
   })
 
@@ -297,7 +325,7 @@ describe('AnalysisCenterView（A+B 壳）', () => {
     wrapper.unmount()
   })
 
-  it('单位显示：头部与右栏统计均带变量单位与样本数', async () => {
+  it('单位显示：头部与方法区统计均带变量单位与样本数', async () => {
     vi.mocked(client.fetchAnalysisSummary).mockResolvedValue(fullSummary('microseismic_velocity'))
     const { wrapper } = await mountAnalysisCenter('/datasets/ds-1/analysis')
 
@@ -327,7 +355,7 @@ describe('AnalysisCenterView（A+B 壳）', () => {
     const exportHeader = () =>
       wrapper
         .findAll('.el-collapse-item__header')
-        .find((header) => header.text().includes('导出与数据溯源'))
+        .find((header) => header.text().includes('方法、导出与技术溯源'))
     expect(exportHeader()?.classes()).not.toContain('is-active')
     await wrapper.find('[data-test="analysis-export-command"]').trigger('click')
     await flushPromises()
@@ -384,7 +412,9 @@ describe('AnalysisCenterView（A+B 壳）', () => {
     vi.mocked(client.fetchAnalysisSummary).mockResolvedValue(fullSummary('microseismic_velocity'))
     const { wrapper, router } = await mountAnalysisCenter('/datasets/ds-1/analysis')
 
-    await wrapper.find('[data-test="model-candidate-row"]').trigger('click')
+    await wrapper.get('[data-test="module-nav-item-model_comparison"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-test="model-candidate-row"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.path).toBe('/results/cand-1')
     wrapper.unmount()
