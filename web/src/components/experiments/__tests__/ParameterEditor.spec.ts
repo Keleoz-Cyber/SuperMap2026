@@ -2,6 +2,7 @@ import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import ParameterEditor, { type ParameterSubmit } from '../ParameterEditor.vue'
 import { MICROSEISMIC_EXPERIMENT_PRESET } from '../searchSpace'
+import type { MLCapability } from '../../../api/types'
 
 // v0.8.0：DSI-like 离散平滑插值（工程近似，仅 3D）在统一参数编辑器中的暴露合同。
 // 允许值与固定项以后端 DSIParameters 合同为唯一事实来源：
@@ -32,10 +33,25 @@ function selectValue(wrapper: ReturnType<typeof mountEditor>, test: string): str
   return (wrapper.get(`[data-test="${test}"]`).element as HTMLSelectElement).value
 }
 
+const SUPPORTED_ML: MLCapability = {
+  dataset_id: 'ds-ml',
+  level: 'supported',
+  valid_sample_count: 240,
+  spatial_group_count: 40,
+  available_algorithms: ['random_forest_spatial', 'kriging_rf_residual'],
+  confirmation_required: false,
+  reason_code: null,
+  message: '样本量和独立空间分组满足机器学习空间验证要求。',
+  validation_requirement: 'spatial_cross_validation',
+  dispersion_semantics: 'model_dispersion_reference',
+}
+
 describe('ParameterEditor 用户决策层', () => {
   it('用可比较的算法说明展示适用场景、成本和限制', () => {
     const wrapper = mountEditor()
-    const choices = wrapper.findAll('[data-test^="algorithm-choice-"]')
+    const choices = wrapper
+      .get('[data-test="traditional-algorithm-group"]')
+      .findAll('[data-test^="algorithm-choice-"]')
     expect(choices).toHaveLength(3)
     expect(wrapper.get('[data-test="algorithm-choice-idw"]').text()).toContain('快速基线')
     expect(wrapper.get('[data-test="algorithm-choice-ordinary_kriging"]').text()).toContain('空间相关性')
@@ -198,5 +214,95 @@ describe('ParameterEditor dsi_like（v0.8.0）', () => {
 
     await wrapper.get('[data-test="exp-submit"]').trigger('click')
     expect(lastSubmit(wrapper).parameters).not.toHaveProperty('z_scale')
+  })
+})
+
+describe('ParameterEditor 机器学习空间预测', () => {
+  it('按传统建模与机器学习预测分组展示五种算法', () => {
+    const wrapper = mountEditor({ mlCapability: SUPPORTED_ML })
+
+    expect(wrapper.get('[data-test="traditional-algorithm-group"]').text()).toContain('传统空间建模')
+    expect(wrapper.get('[data-test="ml-algorithm-group"]').text()).toContain('机器学习预测')
+    expect(wrapper.findAll('[data-test^="algorithm-choice-"]')).toHaveLength(5)
+    expect(wrapper.get('[data-test="algorithm-choice-random_forest_spatial"]').text()).toContain('模型离散度')
+    expect(wrapper.get('[data-test="algorithm-choice-kriging_rf_residual"]').text()).toContain('折外残差')
+  })
+
+  it('supported 数据允许两种 ML 算法并提交确定性 RF 默认参数', async () => {
+    const wrapper = mountEditor({ mlCapability: SUPPORTED_ML })
+
+    await wrapper.get('[data-test="algo-random-forest"]').setValue(true)
+    expect(wrapper.get('[data-test="ml-capability-notice"]').text()).toContain('240')
+    expect(wrapper.get('[data-test="ml-capability-notice"]').text()).toContain('40')
+    await wrapper.get('[data-test="exp-submit"]').trigger('click')
+
+    const submit = lastSubmit(wrapper)
+    expect(submit.algorithm).toBe('random_forest_spatial')
+    expect(submit.parameters).toEqual({
+      n_estimators: 160,
+      max_depth: 18,
+      min_samples_leaf: 2,
+      max_features: 0.8,
+      random_state: 20260813,
+    })
+    expect(submit.ml_experimental_confirmed).toBe(false)
+  })
+
+  it('experimental 数据只允许 RF，且确认前不能提交', async () => {
+    const experimental: MLCapability = {
+      ...SUPPORTED_ML,
+      level: 'experimental',
+      valid_sample_count: 100,
+      spatial_group_count: 20,
+      available_algorithms: ['random_forest_spatial'],
+      confirmation_required: true,
+      reason_code: 'ML_EXPERIMENTAL_DATASET',
+      message: '样本规模有限，仅建议将随机森林作为实验性对照。',
+    }
+    const wrapper = mountEditor({ mlCapability: experimental })
+
+    expect((wrapper.get('[data-test="algo-random-forest"]').element as HTMLInputElement).disabled).toBe(false)
+    expect((wrapper.get('[data-test="algo-kriging-rf-residual"]').element as HTMLInputElement).disabled).toBe(true)
+    await wrapper.get('[data-test="algo-random-forest"]').setValue(true)
+    expect((wrapper.get('[data-test="exp-submit"]').element as HTMLButtonElement).disabled).toBe(true)
+    expect(wrapper.get('[data-test="ml-experimental-confirmation"]').text()).toContain('实验性对照')
+
+    await wrapper.get('[data-test="ml-experimental-confirmation-input"]').setValue(true)
+    expect((wrapper.get('[data-test="exp-submit"]').element as HTMLButtonElement).disabled).toBe(false)
+    await wrapper.get('[data-test="exp-submit"]').trigger('click')
+    expect(lastSubmit(wrapper).ml_experimental_confirmed).toBe(true)
+  })
+
+  it('not_recommended 数据禁用 ML 并显示具体样本原因', () => {
+    const capability: MLCapability = {
+      ...SUPPORTED_ML,
+      level: 'not_recommended',
+      valid_sample_count: 58,
+      spatial_group_count: 58,
+      available_algorithms: [],
+      confirmation_required: false,
+      reason_code: 'ML_DATASET_TOO_SMALL',
+      message: '样本量或独立空间分组不足，不建议运行机器学习空间预测。',
+    }
+    const wrapper = mountEditor({ mlCapability: capability })
+
+    expect((wrapper.get('[data-test="algo-random-forest"]').element as HTMLInputElement).disabled).toBe(true)
+    expect((wrapper.get('[data-test="algo-kriging-rf-residual"]').element as HTMLInputElement).disabled).toBe(true)
+    expect(wrapper.get('[data-test="ml-capability-notice"]').text()).toContain('58 个有效样本')
+    expect(wrapper.get('[data-test="ml-capability-notice"]').text()).toContain('不建议')
+  })
+
+  it('残差校正提交嵌套克里金与随机森林参数', async () => {
+    const wrapper = mountEditor({ mlCapability: SUPPORTED_ML })
+    await wrapper.get('[data-test="algo-kriging-rf-residual"]').setValue(true)
+    await wrapper.get('[data-test="exp-submit"]').trigger('click')
+
+    const submit = lastSubmit(wrapper)
+    expect(submit.algorithm).toBe('kriging_rf_residual')
+    expect(submit.parameters).toMatchObject({
+      kriging: { variogram_model: 'spherical', neighbor_count: 24 },
+      random_forest: { n_estimators: 160, max_depth: 18, random_state: 20260813 },
+      inner_folds: 3,
+    })
   })
 })

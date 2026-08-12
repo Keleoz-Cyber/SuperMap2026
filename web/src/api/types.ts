@@ -316,7 +316,25 @@ export interface GridSpecPayload {
 }
 
 // v0.8.0：dsi_like 离散平滑插值（工程近似，仅 3D，不等同 GOCAD DSI）
-export type Algorithm = 'idw' | 'ordinary_kriging' | 'dsi_like'
+export type Algorithm =
+  | 'idw'
+  | 'ordinary_kriging'
+  | 'dsi_like'
+  | 'random_forest_spatial'
+  | 'kriging_rf_residual'
+
+export interface MLCapability {
+  dataset_id: string
+  level: 'supported' | 'experimental' | 'not_recommended'
+  valid_sample_count: number
+  spatial_group_count: number
+  available_algorithms: Algorithm[]
+  confirmation_required: boolean
+  reason_code: string | null
+  message: string
+  validation_requirement: 'spatial_cross_validation'
+  dispersion_semantics: 'model_dispersion_reference'
+}
 
 export interface ExperimentCreatePayload {
   case_id: string
@@ -333,6 +351,7 @@ export interface ExperimentCreatePayload {
   professional_confirmation_id?: string
   neighborhood?: NeighborhoodPayload
   empirical_uncertainty?: EmpiricalUncertaintyPayload
+  ml_experimental_confirmed?: boolean
 }
 
 export interface ExperimentRecord {

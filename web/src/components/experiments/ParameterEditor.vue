@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import type { Algorithm, GridSpecPayload, ValidationSpecPayload } from '../../api/types'
+import type {
+  Algorithm,
+  GridSpecPayload,
+  MLCapability,
+  ValidationSpecPayload,
+} from '../../api/types'
+import MLCapabilityNotice from './MLCapabilityNotice.vue'
 import {
   combinationCount,
   parseNumberList,
@@ -15,6 +21,7 @@ export interface ParameterSubmit {
   parameters: Record<string, unknown>
   validation: ValidationSpecPayload
   grid: GridSpecPayload | null
+  ml_experimental_confirmed: boolean
 }
 
 const props = defineProps<{
@@ -24,6 +31,7 @@ const props = defineProps<{
   algorithmLock?: Algorithm | null
   zScaleLock?: number | null
   datasetLocked?: boolean
+  mlCapability?: MLCapability | null
 }>()
 const emit = defineEmits<{
   (e: 'submit', payload: ParameterSubmit): void
@@ -33,6 +41,15 @@ const emit = defineEmits<{
 
 const algorithm = ref<Algorithm>('idw')
 const searchMode = ref<'manual' | 'grid'>('manual')
+const mlExperimentalConfirmed = ref(false)
+
+const isMLAlgorithm = computed(
+  () =>
+    algorithm.value === 'random_forest_spatial' ||
+    algorithm.value === 'kriging_rf_residual',
+)
+const mlAlgorithmAvailable = (name: Algorithm) =>
+  Boolean(props.mlCapability?.available_algorithms.includes(name))
 
 watch(
   () => props.algorithmLock,
@@ -71,6 +88,15 @@ const dsiConnectivity = ref(6)
 const dsiSmoothing = ref(0.5)
 const dsiIterations = ref(25)
 
+// ML 推荐参数：默认即可运行；高级项只暴露有明确工程意义的边界。
+const rfTrees = ref(160)
+const rfMaxDepth = ref(18)
+const rfMinLeaf = ref(2)
+const rfMaxFeatures = ref(0.8)
+const rfSeed = ref(20260813)
+const residualVariogram = ref<'spherical' | 'exponential' | 'gaussian'>('spherical')
+const residualNeighbors = ref(24)
+
 // DSI-like 网格候选（默认仅勾选合同默认值 → 1 组合）
 const dsiGridInitPower = ref<number[]>([2])
 const dsiGridConnectivity = ref<number[]>([6])
@@ -79,6 +105,10 @@ const dsiGridIterations = ref<number[]>([25])
 
 // 切入 dsi_like 时回到合同默认值，避免上一次选择的参数静默残留
 watch(algorithm, (val) => {
+  mlExperimentalConfirmed.value = false
+  if (val === 'kriging_rf_residual' && searchMode.value === 'grid') {
+    searchMode.value = 'manual'
+  }
   if (val !== 'dsi_like') return
   dsiInitPower.value = 2
   dsiConnectivity.value = 6
@@ -131,6 +161,15 @@ const boundsText = ref<Array<{ min: number | null; max: number | null }>>([
 ])
 
 const gridParameters = computed<Record<string, unknown>>(() => {
+  if (algorithm.value === 'random_forest_spatial') {
+    return {
+      n_estimators: [80, 160],
+      max_depth: [12, 18],
+      min_samples_leaf: [2],
+      max_features: [0.8],
+      random_state: [20260813],
+    }
+  }
   if (algorithm.value === 'dsi_like') {
     // 固定项以单元素列表随网格提交（后端 grid 合同要求全值为离散列表）
     return {
@@ -190,11 +229,35 @@ const canSubmit = computed(
     countState.value !== 'blocked' &&
     !manualKrigingInvalid.value &&
     !manualZScaleInvalid.value &&
-    !customGridInvalid.value,
+    !customGridInvalid.value &&
+    (!isMLAlgorithm.value ||
+      (mlAlgorithmAvailable(algorithm.value) &&
+        (!props.mlCapability?.confirmation_required || mlExperimentalConfirmed.value))),
 )
 
 function buildParameters(): Record<string, unknown> {
   if (searchMode.value === 'grid') return gridParameters.value
+  const rf = {
+    n_estimators: rfTrees.value,
+    max_depth: rfMaxDepth.value,
+    min_samples_leaf: rfMinLeaf.value,
+    max_features: rfMaxFeatures.value,
+    random_state: rfSeed.value,
+  }
+  if (algorithm.value === 'random_forest_spatial') return rf
+  if (algorithm.value === 'kriging_rf_residual') {
+    return {
+      kriging: {
+        variogram_model: residualVariogram.value,
+        neighbor_count: residualNeighbors.value,
+      },
+      random_forest: rf,
+      inner_folds: 3,
+      min_oof_residuals: 30,
+      min_oof_coverage: 0.8,
+      inner_seed: 20260813,
+    }
+  }
   if (algorithm.value === 'dsi_like') {
     return {
       init_power: dsiInitPower.value,
@@ -245,6 +308,7 @@ function submit() {
       holdout_fraction: holdout.value,
     },
     grid: buildGrid(),
+    ml_experimental_confirmed: mlExperimentalConfirmed.value,
   })
 }
 
@@ -260,6 +324,7 @@ const payloadSnapshot = computed<ParameterSubmit>(() => ({
     holdout_fraction: holdout.value,
   },
   grid: buildGrid(),
+  ml_experimental_confirmed: mlExperimentalConfirmed.value,
 }))
 
 watch(
@@ -279,7 +344,11 @@ const AXES = ['x', 'y', 'z'] as const
       <div><span class="section-kicker">第一步</span><h3>选择插值思路</h3></div>
       <p>先按数据特征选择算法；不确定时可先用 IDW 建立快速基线，再用模型比较验证提升。</p>
     </div>
-    <div class="algorithm-grid" role="radiogroup" aria-label="插值算法">
+    <div class="algorithm-group" data-test="traditional-algorithm-group">
+      <div class="algorithm-group-heading">
+        <strong>传统空间建模</strong><span>IDW、克里金与三维离散平滑</span>
+      </div>
+      <div class="algorithm-grid" role="radiogroup" aria-label="传统空间建模算法">
       <label class="algorithm-choice" :class="{ selected: algorithm === 'idw' }" data-test="algorithm-choice-idw">
         <input type="radio" name="algo" data-test="algo-idw" :checked="algorithm === 'idw'" :disabled="!!algorithmLock" @change="algorithm = 'idw'" />
         <span class="choice-title">IDW <small>快速基线</small></span>
@@ -316,6 +385,56 @@ const AXES = ['x', 'y', 'z'] as const
         基于 IDW 初始场和离散邻域平滑的工程近似方法，不等同于 GOCAD DSI。
       </span>
       <span v-if="algorithmLock" class="lock-hint" data-test="algorithm-lock">已锁定</span>
+      </div>
+    </div>
+
+    <MLCapabilityNotice v-if="mlCapability" :capability="mlCapability" />
+    <div class="algorithm-group" data-test="ml-algorithm-group">
+      <div class="algorithm-group-heading">
+        <strong>机器学习预测</strong><span>与传统算法使用同一空间验证和公共有效集比较</span>
+      </div>
+      <div class="algorithm-grid ml-grid" role="radiogroup" aria-label="机器学习预测算法">
+        <label
+          class="algorithm-choice"
+          :class="{
+            selected: algorithm === 'random_forest_spatial',
+            disabled: !mlAlgorithmAvailable('random_forest_spatial'),
+          }"
+          data-test="algorithm-choice-random_forest_spatial"
+        >
+          <input
+            type="radio"
+            name="algo"
+            data-test="algo-random-forest"
+            :checked="algorithm === 'random_forest_spatial'"
+            :disabled="!!algorithmLock || !mlAlgorithmAvailable('random_forest_spatial')"
+            @change="algorithm = 'random_forest_spatial'"
+          />
+          <span class="choice-title">随机森林空间预测 <small>非线性对照</small></span>
+          <span>只使用坐标派生的确定性空间特征，输出预测值与模型离散度参考。</span>
+          <em>适合检验非线性空间关系；不保证优于普通克里金。</em>
+        </label>
+        <label
+          class="algorithm-choice"
+          :class="{
+            selected: algorithm === 'kriging_rf_residual',
+            disabled: !mlAlgorithmAvailable('kriging_rf_residual'),
+          }"
+          data-test="algorithm-choice-kriging_rf_residual"
+        >
+          <input
+            type="radio"
+            name="algo"
+            data-test="algo-kriging-rf-residual"
+            :checked="algorithm === 'kriging_rf_residual'"
+            :disabled="!!algorithmLock || !mlAlgorithmAvailable('kriging_rf_residual')"
+            @change="algorithm = 'kriging_rf_residual'"
+          />
+          <span class="choice-title">克里金残差校正 <small>混合模型</small></span>
+          <span>以普通克里金为基线，用折外残差训练随机森林校正场。</span>
+          <em>需要足够空间分组；残差必须来自折外预测，避免训练泄漏。</em>
+        </label>
+      </div>
     </div>
 
     <div class="mode-selector">
@@ -336,6 +455,7 @@ const AXES = ['x', 'y', 'z'] as const
           name="mode"
           data-test="mode-grid"
           :checked="searchMode === 'grid'"
+          :disabled="algorithm === 'kriging_rf_residual'"
           @change="searchMode = 'grid'"
         />
         <span><strong>参数网格</strong><small>自动组合多个候选，用于系统比较</small></span>
@@ -347,7 +467,37 @@ const AXES = ['x', 'y', 'z'] as const
     </div>
 
     <template v-if="searchMode === 'manual'">
-      <div v-if="algorithm === 'idw'" class="editor-grid">
+      <div v-if="algorithm === 'random_forest_spatial'" class="ml-parameter-block">
+        <div class="parameter-intro">
+          <strong>随机森林推荐配置</strong>
+          <span>固定随机种子、单线程训练；离散度是树间预测差异参考，不是置信区间。</span>
+        </div>
+        <div class="editor-grid">
+          <label class="field"><span>决策树数量</span><input v-model.number="rfTrees" type="number" min="40" max="400" step="20" class="gmp-input" data-test="rf-trees" /></label>
+          <label class="field"><span>最大深度</span><input v-model.number="rfMaxDepth" type="number" min="4" max="40" class="gmp-input" data-test="rf-max-depth" /></label>
+        </div>
+        <details class="ml-advanced" data-test="ml-advanced-parameters">
+          <summary>高级参数</summary>
+          <div class="editor-grid">
+            <label class="field"><span>叶节点最少样本</span><input v-model.number="rfMinLeaf" type="number" min="1" max="20" class="gmp-input" data-test="rf-min-leaf" /></label>
+            <label class="field"><span>单棵树特征比例</span><input v-model.number="rfMaxFeatures" type="number" min="0.3" max="1" step="0.1" class="gmp-input" data-test="rf-max-features" /></label>
+            <label class="field"><span>随机种子</span><input v-model.number="rfSeed" type="number" class="gmp-input" data-test="rf-seed" /></label>
+          </div>
+        </details>
+      </div>
+      <div v-else-if="algorithm === 'kriging_rf_residual'" class="ml-parameter-block">
+        <div class="parameter-intro">
+          <strong>基线 + 折外残差校正</strong>
+          <span>先建立克里金基线，再用 3 折空间折外残差训练校正模型。</span>
+        </div>
+        <div class="editor-grid">
+          <label class="field"><span>基线变异函数</span><select v-model="residualVariogram" class="gmp-select" data-test="residual-variogram"><option value="spherical">球状 spherical</option><option value="exponential">指数 exponential</option><option value="gaussian">高斯 gaussian</option></select></label>
+          <label class="field"><span>克里金邻域点数</span><input v-model.number="residualNeighbors" type="number" min="4" max="128" class="gmp-input" data-test="residual-neighbors" /></label>
+          <label class="field"><span>残差森林树数量</span><input v-model.number="rfTrees" type="number" min="40" max="400" step="20" class="gmp-input" data-test="rf-trees" /></label>
+          <label class="field"><span>残差森林最大深度</span><input v-model.number="rfMaxDepth" type="number" min="4" max="40" class="gmp-input" data-test="rf-max-depth" /></label>
+        </div>
+      </div>
+      <div v-else-if="algorithm === 'idw'" class="editor-grid">
         <label class="field">
           <span>幂次</span>
           <input v-model.number="idwPower" type="number" step="0.5" min="0.5" max="8" class="gmp-input" data-test="idw-power" />
@@ -441,10 +591,31 @@ const AXES = ['x', 'y', 'z'] as const
       <p v-if="manualZScaleInvalid" class="editor-error" data-test="z-scale-invalid">
         垂向距离缩放需大于 0 且不超过 20
       </p>
+      <label
+        v-if="isMLAlgorithm && mlCapability?.confirmation_required"
+        class="ml-confirmation"
+        data-test="ml-experimental-confirmation"
+      >
+        <input
+          v-model="mlExperimentalConfirmed"
+          type="checkbox"
+          data-test="ml-experimental-confirmation-input"
+        />
+        <span>
+          <strong>确认按实验性对照运行</strong>
+          <small>当前样本规模有限，结果只用于与传统方法比较，不作为稳定提升结论。</small>
+        </span>
+      </label>
     </template>
 
     <template v-else>
-      <div v-if="algorithm === 'idw'" class="editor-grid">
+      <div v-if="algorithm === 'random_forest_spatial'" class="editor-grid">
+        <div class="field wide">
+          <span>推荐参数网格</span>
+          <p class="editor-hint">自动比较 80/160 棵树与 12/18 最大深度，共 4 个候选。</p>
+        </div>
+      </div>
+      <div v-else-if="algorithm === 'idw'" class="editor-grid">
         <label class="field wide">
           <span>幂次候选（逗号分隔）</span>
           <input v-model="gridPower" class="gmp-input" data-test="grid-power" placeholder="如：1.5, 2, 3" />
@@ -594,7 +765,12 @@ const AXES = ['x', 'y', 'z'] as const
 .decision-heading h3 { margin: 4px 0 0; font-size: 18px; }
 .decision-heading p { margin: 0; max-width: 480px; color: var(--gmp-text-dim); font-size: 12px; line-height: 1.55; }
 .section-kicker { color: var(--s1-cyan-strong); font-size: 11px; font-weight: 600; }
+.algorithm-group { display: flex; flex-direction: column; gap: 8px; }
+.algorithm-group-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; }
+.algorithm-group-heading strong { color: var(--gmp-text); font-size: 13px; }
+.algorithm-group-heading span { color: var(--gmp-text-faint); font-size: 11px; text-align: right; }
 .algorithm-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.algorithm-grid.ml-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .algorithm-choice { min-width: 0; display: flex; flex-direction: column; gap: 8px; padding: 14px; border: 1px solid var(--gmp-border); background: var(--gmp-bg-soft); cursor: pointer; }
 .algorithm-choice input { position: absolute; opacity: 0; }
 .algorithm-choice.selected { border-color: var(--s1-cyan); background: var(--s1-cyan-ghost); box-shadow: inset 0 2px 0 var(--s1-cyan); }
@@ -765,9 +941,22 @@ const AXES = ['x', 'y', 'z'] as const
   color: var(--gmp-text);
 }
 
+.ml-parameter-block { display: flex; flex-direction: column; gap: 12px; }
+.parameter-intro { display: flex; align-items: baseline; justify-content: space-between; gap: 18px; padding-bottom: 8px; border-bottom: 1px dashed var(--gmp-border); }
+.parameter-intro strong { color: var(--gmp-text); font-size: 13px; }
+.parameter-intro span { color: var(--gmp-text-faint); font-size: 11px; line-height: 1.5; text-align: right; }
+.ml-advanced { font-size: 12px; color: var(--gmp-text-dim); }
+.ml-advanced summary { margin-bottom: 10px; cursor: pointer; }
+.ml-confirmation { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border: 1px solid #a27a35; background: rgba(162, 122, 53, .1); cursor: pointer; }
+.ml-confirmation span { display: flex; flex-direction: column; gap: 4px; }
+.ml-confirmation strong { color: var(--gmp-text); font-size: 13px; }
+.ml-confirmation small { color: var(--gmp-text-dim); font-size: 11px; line-height: 1.5; }
+
 @media (max-width: 720px) {
   .decision-heading { align-items: flex-start; flex-direction: column; gap: 8px; }
-  .algorithm-grid, .mode-selector { grid-template-columns: 1fr; }
+  .algorithm-grid, .algorithm-grid.ml-grid, .mode-selector { grid-template-columns: 1fr; }
+  .algorithm-group-heading, .parameter-intro { align-items: flex-start; flex-direction: column; gap: 4px; }
+  .algorithm-group-heading span, .parameter-intro span { text-align: left; }
   .mode-selector > .section-kicker { margin: 4px 0 0; }
 }
 </style>

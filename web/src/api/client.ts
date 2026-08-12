@@ -20,6 +20,7 @@ import type {
   ExperimentRecord,
   FoldEvidence,
   MultiCandidateComparison,
+  MLCapability,
   ProfessionalConfirmationSummary,
   ProfessionalDiagnosticList,
   ProfessionalResultEvidence,
@@ -153,6 +154,10 @@ export function uploadDataset(caseId: string, file: File): Promise<DatasetVersio
 
 export function fetchDataset(datasetId: string): Promise<DatasetVersionRecord> {
   return getJson<DatasetVersionRecord>(`/datasets/${datasetId}`)
+}
+
+export function fetchMLCapability(datasetId: string): Promise<MLCapability> {
+  return getJson<MLCapability>(`/datasets/${datasetId}/ml-capability`)
 }
 
 export function fetchInspection(datasetId: string, sheet?: string | null): Promise<InspectionResult> {
