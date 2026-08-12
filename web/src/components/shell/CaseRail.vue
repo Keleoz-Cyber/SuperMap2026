@@ -1,10 +1,10 @@
 <script setup lang="ts">
-// v0.9.0：首页案例轨。官方案例与用户项目分区展示；点击条目只切换
-// 指挥舱选中案例（不导航），进入工作台/查看成果走显式按钮。
+// v0.9.0：首页案例轨。卡片主体进入工作台；指挥舱预览由独立按钮切换，
+// 避免用户必须寻找卡片底部的小字入口。
 // 自定义数据入口固定在轨道底部（设计：顶部固定入口 + 项目列表入口）。
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
-import { ArrowRight, MoreFilled, Plus } from '@element-plus/icons-vue'
+import { ArrowRight, MoreFilled, Plus, View } from '@element-plus/icons-vue'
 import type { CaseSummary } from '../../api/types'
 import { PLATFORM_DEMO_3D_DOWNLOAD_URL } from '../../api/client'
 import { CASE_PRESENTATION, resolveCaseProfile } from '../../domain/casePresentation'
@@ -32,13 +32,6 @@ const userCases = computed(() => props.cases.filter((c) => kindOf(c) === 'user_u
 
 function presentationOf(c: CaseSummary) {
   return CASE_PRESENTATION[resolveCaseProfile(c.provenance_summary)]
-}
-
-function fieldsOf(c: CaseSummary): string | null {
-  const fields = c.provenance_summary?.fields
-  if (!Array.isArray(fields) || fields.length === 0) return null
-  if (fields.some((f) => typeof f !== 'string')) return null
-  return fields.join('/')
 }
 
 function badgeOf(c: CaseSummary): string {
@@ -77,13 +70,12 @@ function dataFormOf(c: CaseSummary): string | null {
         :class="{ selected: c.case_id === selectedCaseId }"
         :data-case-accent="presentationOf(c).accent"
       >
-        <button
-          type="button"
+        <RouterLink
+          :to="`/cases/${c.case_id}`"
           class="item-select"
-          data-test="case-rail-item"
+          data-test="enter-case-workspace"
           :data-case-id="c.case_id"
-          :aria-label="`选择案例 ${c.title}`"
-          @click="emit('select', c.case_id)"
+          :aria-label="`进入案例 ${c.title}`"
         >
           <span class="item-head">
             <span class="accent-dot" aria-hidden="true" />
@@ -92,20 +84,22 @@ function dataFormOf(c: CaseSummary): string | null {
           <span class="item-meta">
             <span v-if="unitOf(c)" class="meta-chip">{{ unitOf(c) }}</span>
             <span v-if="dataFormOf(c)" class="meta-line">{{ dataFormOf(c) }}</span>
-            <span v-if="fieldsOf(c)" class="meta-line">字段 {{ fieldsOf(c) }}</span>
             <span v-if="coordinateOf(c)" class="meta-line">坐标 {{ coordinateOf(c) }}</span>
             <span class="meta-badge">{{ badgeOf(c) }}</span>
           </span>
-        </button>
+        </RouterLink>
         <div class="item-actions" @click.stop>
-          <RouterLink
-            :to="`/cases/${c.case_id}`"
-            class="item-btn primary"
-            data-test="enter-case-workspace"
+          <button
+            type="button"
+            class="item-btn preview"
+            data-test="case-rail-item"
+            :data-case-id="c.case_id"
+            :aria-pressed="c.case_id === selectedCaseId"
+            @click="emit('select', c.case_id)"
           >
-            进入案例分析
-            <el-icon :size="12"><ArrowRight /></el-icon>
-          </RouterLink>
+            <el-icon :size="12"><View /></el-icon>
+            {{ c.case_id === selectedCaseId ? '正在预览' : '在首页预览' }}
+          </button>
           <RouterLink
             v-if="c.official_result"
             :to="c.official_result.url"
@@ -127,13 +121,12 @@ function dataFormOf(c: CaseSummary): string | null {
         :class="{ selected: c.case_id === selectedCaseId }"
         data-case-accent="cyan"
       >
-        <button
-          type="button"
+        <RouterLink
+          :to="`/cases/${c.case_id}`"
           class="item-select"
-          data-test="case-rail-item"
+          data-test="enter-case-workspace"
           :data-case-id="c.case_id"
-          :aria-label="`选择案例 ${c.title}`"
-          @click="emit('select', c.case_id)"
+          :aria-label="`进入案例 ${c.title}`"
         >
           <span class="item-head">
             <span class="accent-dot" aria-hidden="true" />
@@ -142,7 +135,7 @@ function dataFormOf(c: CaseSummary): string | null {
           <span class="item-meta">
             <span class="meta-badge">{{ badgeOf(c) }}</span>
           </span>
-        </button>
+        </RouterLink>
         <span class="card-overflow" @click.stop>
           <el-dropdown data-test="trash-case-btn" @command="emit('trash', c.case_id)">
             <el-icon
@@ -161,6 +154,17 @@ function dataFormOf(c: CaseSummary): string | null {
           </el-dropdown>
         </span>
         <div class="item-actions" @click.stop>
+          <button
+            type="button"
+            class="item-btn preview"
+            data-test="case-rail-item"
+            :data-case-id="c.case_id"
+            :aria-pressed="c.case_id === selectedCaseId"
+            @click="emit('select', c.case_id)"
+          >
+            <el-icon :size="12"><View /></el-icon>
+            {{ c.case_id === selectedCaseId ? '正在预览' : '在首页预览' }}
+          </button>
           <template v-if="c.featured_result">
             <RouterLink
               :to="c.featured_result.url"
@@ -178,10 +182,6 @@ function dataFormOf(c: CaseSummary): string | null {
               新建建模实验
             </RouterLink>
           </template>
-          <RouterLink v-else :to="`/cases/${c.case_id}`" class="item-btn primary" data-test="enter-case-workspace">
-            继续建模
-            <el-icon :size="12"><ArrowRight /></el-icon>
-          </RouterLink>
         </div>
       </div>
     </div>
@@ -295,6 +295,7 @@ function dataFormOf(c: CaseSummary): string | null {
   color: inherit;
   text-align: left;
   cursor: pointer;
+  text-decoration: none;
 }
 
 .item-select:focus-visible {
@@ -351,6 +352,8 @@ function dataFormOf(c: CaseSummary): string | null {
   padding: 4px 10px;
   text-decoration: none;
   border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
   transition:
     color var(--s1-motion-fast) var(--s1-ease-out),
     border-color var(--s1-motion-fast) var(--s1-ease-out);
@@ -359,6 +362,18 @@ function dataFormOf(c: CaseSummary): string | null {
 .item-btn.primary {
   color: var(--s1-case-accent);
   border-color: var(--s1-case-accent);
+}
+
+.item-btn.preview {
+  color: var(--s1-case-accent);
+  border-color: var(--s1-border);
+}
+
+.item-btn.preview:hover,
+.item-btn.preview[aria-pressed='true'] {
+  color: var(--s1-text-strong);
+  border-color: var(--s1-case-accent);
+  background: var(--s1-case-accent-soft);
 }
 
 .item-btn.primary:hover {

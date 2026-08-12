@@ -8,9 +8,7 @@ import HomeView from '../HomeView.vue'
 import homeViewSource from '../HomeView.vue?raw'
 
 // v0.9.0：首页综合指挥舱形态下的入口合同回归。
-// 入口 data-test 与 v0.8 保持一致（case-card/enter-case-workspace/
-// open-official-result/open-featured-result/new-experiment/create-case-card/
-// trash-case-btn/download-demo-data），交互模型改为「点击选中 + 显式按钮进入」。
+// 首页案例卡主区域进入工作台，预览切换使用独立按钮。
 
 vi.mock('../../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../api/client')>()
@@ -274,8 +272,13 @@ describe('HomeView 用户项目入口', () => {
     expect(router.currentRoute.value.path).toBe('/cases/case-plain')
   })
 
-  it('轨条目点击只切换选中案例，不离开首页', async () => {
+  it('案例卡主区域进入工作台，预览按钮只切换首页案例', async () => {
     const { wrapper, router } = await mountHome([BENCH_CASE])
+    await wrapper.find('[data-test="enter-case-workspace"][data-case-id="case-bench-32"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/cases/case-bench-32')
+
+    await router.push('/')
     await wrapper.find('[data-test="case-rail-item"][data-case-id="case-bench-32"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.path).toBe('/')
@@ -311,7 +314,7 @@ describe('HomeView 官方案例入口', () => {
     expect(text).toContain('散点预置 · 官方普通克里金成果')
     expect(text).toContain('标准化散点 · 17,549 个节点')
     expect(text).toContain('Ω·m')
-    expect(text).toContain('X/Y/Z/RHO')
+    expect(text).not.toContain('字段 X/Y/Z/RHO')
     expect(text).not.toContain('S3M')
     expect(text).not.toContain('DAT')
     expect(text).not.toContain('v0.3.1')
@@ -327,7 +330,7 @@ describe('HomeView 官方案例入口', () => {
     expect(text).toContain('散点预置 · 官方基线成果')
     expect(text).toContain('标准化散点 · 58 个合格样品')
     expect(text).toContain('ml/g')
-    expect(text).toContain('X/Y/Z/CH4_content')
+    expect(text).not.toContain('CH4_content')
     expect(text).not.toContain('暂缓')
     expect(text).not.toContain('parked')
     expect(text).not.toContain('DAT')
