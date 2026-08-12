@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowLeft } from '@element-plus/icons-vue'
 import { ApiError, fetchCaseWorkspace, fetchProfessionalDiagnostics } from '../api/client'
 import type { CaseWorkspaceSummary, ProfessionalDiagnosticListItem } from '../api/types'
 import DataPreparationPanel from '../components/cases/DataPreparationPanel.vue'
@@ -74,6 +73,33 @@ const rowCounts = computed(() => {
     | { row_count?: number; valid_row_count?: number; invalid_row_count?: number }
     | undefined
   return profile ?? null
+})
+const coordinateLabel = computed(() => {
+  const kind = workspace.value?.provenance_summary.coordinate_kind
+  if (kind === 'local_linear') return '局部线性米制坐标'
+  if (kind === 'projected') return '投影坐标'
+  if (kind === 'geographic') return '地理坐标'
+  return kind || '坐标口径未登记'
+})
+const datasetReadyLabel = computed(() => {
+  const status = workspace.value?.primary_dataset?.status
+  const labels: Record<string, string> = {
+    uploaded: '等待字段确认',
+    mapped: '等待质量检查',
+    validated: '质量检查通过',
+    blocked: '存在阻断问题',
+    abandoned: '已放弃',
+  }
+  return status ? (labels[status] ?? '状态待确认') : '尚未接入数据'
+})
+const formattedRows = computed(() => {
+  const value = rowCounts.value?.valid_row_count ?? rowCounts.value?.row_count
+  return typeof value === 'number' ? value.toLocaleString('zh-CN') : '—'
+})
+const valueLabel = computed(() => {
+  const name = typeof mapping.value?.value_name === 'string' ? mapping.value.value_name : '建模属性'
+  const unit = typeof mapping.value?.value_unit === 'string' ? mapping.value.value_unit : ''
+  return unit ? `${name}（${unit}）` : name
 })
 
 const abandonedDatasets = computed(() => {
@@ -323,68 +349,43 @@ onBeforeUnmount(clearShellContext)
       <template v-if="workspace">
         <PageNavigation :case-id="caseId" :case-name="workspace.title" current-label="案例工作台" />
         <header class="workspace-header" data-test="case-workspace-header">
-          <div class="header-left">
-            <el-button :icon="ArrowLeft" circle title="返回首页" aria-label="返回首页" @click="router.push('/')" />
-            <div class="header-title">
-              <h1>{{ workspace.title }} · 案例工作台</h1>
-              <p class="header-sub">
-                <el-tag size="small" effect="dark" round>{{ kindLabel }}</el-tag>
-                <span v-if="workspace.provenance_summary.data_form">
-                  {{ workspace.provenance_summary.data_form }}
-                </span>
-                <span v-if="workspace.provenance_summary.value_unit">
-                  单位：{{ workspace.provenance_summary.value_unit }}
-                </span>
-                <span v-if="workspace.provenance_summary.coordinate_kind">
-                  坐标：{{ workspace.provenance_summary.coordinate_kind }}
-                </span>
-              </p>
-            </div>
+          <div class="header-title">
+            <span class="workspace-kicker">{{ kindLabel }}</span>
+            <h1>{{ workspace.title }}</h1>
+            <p class="header-sub">
+              <span v-if="workspace.provenance_summary.data_form">{{ workspace.provenance_summary.data_form }}</span>
+              <span>{{ coordinateLabel }}</span>
+            </p>
           </div>
         </header>
+
+        <section class="workspace-summary" data-test="workspace-summary">
+          <div class="summary-status">
+            <span class="summary-label">当前状态</span>
+            <strong>{{ workspace.primary_dataset ? '数据可用于建模' : '等待数据接入' }}</strong>
+            <p>{{ datasetReadyLabel }}<template v-if="workspace.primary_dataset">，可继续开展实验、诊断与成果分析。</template></p>
+          </div>
+          <dl class="summary-metrics">
+            <div><dt>有效样本</dt><dd>{{ formattedRows }}</dd></div>
+            <div><dt>建模属性</dt><dd>{{ valueLabel }}</dd></div>
+            <div><dt>可用成果</dt><dd>{{ hasResults ? '已生成' : '暂无' }}</dd></div>
+          </dl>
+          <el-button
+            v-if="canOpenOfficial"
+            type="primary"
+            data-test="open-official-result"
+            :data-primary-action="primaryKind === 'official' ? 'true' : undefined"
+            @click="openOfficialResult"
+          >
+            {{ workspace.workspace_kind === 'builtin_preset' ? '查看官方成果' : '查看成果' }}
+          </el-button>
+        </section>
 
         <CaseStageNav
           :stages="stages"
           :current="currentStage"
           @navigate="onStageNavigate"
         />
-
-        <!-- 跨阶段常用入口始终可达；阶段标签仍只负责切换对应内容。 -->
-        <div class="workspace-section workspace-shortcuts" data-test="workspace-experiments">
-          <div class="shortcut-label">
-            <strong>常用操作</strong>
-            <span>从这里直接进入下一步，不必先猜阶段标签。</span>
-          </div>
-          <div class="command-row">
-            <el-button
-              v-if="canCreateExperiment"
-              type="primary"
-              data-test="new-experiment"
-              :data-primary-action="primaryKind === 'experiment' ? 'true' : undefined"
-              @click="createExperiment"
-            >
-              新建建模实验
-            </el-button>
-            <el-button
-              v-if="workspace.primary_dataset"
-              data-test="model-comparison"
-              @click="gotoComparisonForDataset(workspace.primary_dataset.id)"
-            >
-              模型比较
-            </el-button>
-            <router-link
-              v-if="canOpenAnalysisCenter"
-              class="analysis-entry"
-              data-test="analysis-center-entry"
-              :to="`/datasets/${workspace.primary_dataset?.id}/analysis`"
-            >
-              统计与空间分析
-            </router-link>
-            <span v-else-if="workspace.primary_dataset" class="analysis-unavailable">
-              数据版本通过验证后可使用统计与空间分析
-            </span>
-          </div>
-        </div>
 
         <!-- 阶段一：数据概览 -->
         <section
@@ -396,41 +397,21 @@ onBeforeUnmount(clearShellContext)
         >
           <h2 class="stage-heading">数据概览</h2>
 
-          <div class="workspace-section" data-test="workspace-overview">
+          <div class="workspace-section overview-notice" data-test="workspace-overview">
             <p v-if="officialAbnormal" class="warn-line" data-test="official-abnormal">
               官方成果准备异常：已声明官方成果能力但缺少可用成果链接。
             </p>
-            <div class="command-row">
-              <el-button
-                v-if="canOpenOfficial"
-                type="primary"
-                data-test="open-official-result"
-                :data-primary-action="primaryKind === 'official' ? 'true' : undefined"
-                @click="openOfficialResult"
-              >
-                {{ workspace.workspace_kind === 'builtin_preset' ? '查看官方成果' : '查看成果' }}
-              </el-button>
-            </div>
+            <p v-else>这里确认当前建模数据的质量、属性与历史版本；参数实验在“建模实验”中进行。</p>
           </div>
 
           <div class="workspace-section" data-test="workspace-data">
             <template v-if="workspace.primary_dataset">
-              <p>
-                数据版本 v{{ workspace.primary_dataset.version }} · 状态
-                {{ workspace.primary_dataset.status }}
-                <template v-if="rowCounts?.row_count">
-                  · 行数 {{ rowCounts.row_count }}
-                  <template v-if="rowCounts.valid_row_count !== undefined">
-                    （有效 {{ rowCounts.valid_row_count }}）
-                  </template>
-                </template>
-              </p>
-              <p v-if="mapping">
-                字段：{{ mapping.x }}/{{ mapping.y }}/{{ mapping.z }} -> {{ mapping.value }}（
-                {{ mapping.value_name }}<template v-if="mapping.value_unit">
-                  ，{{ mapping.value_unit }}</template
-                >）
-              </p>
+              <dl class="data-summary-grid">
+                <div><dt>数据版本</dt><dd>v{{ workspace.primary_dataset.version }}</dd></div>
+                <div><dt>质量状态</dt><dd>{{ datasetReadyLabel }}</dd></div>
+                <div><dt>有效样本</dt><dd>{{ formattedRows }}</dd></div>
+                <div><dt>建模属性</dt><dd>{{ valueLabel }}</dd></div>
+              </dl>
             </template>
             <p v-else>当前没有可查看的数据版本。</p>
             <!-- v0.8.0：builtin_preset 的 data_preparation 是固定 validated 摘要，
@@ -466,9 +447,7 @@ onBeforeUnmount(clearShellContext)
                 class="dataset-row"
                 :data-test="`validated-dataset-${ds.id}`"
               >
-                <span class="dataset-label">
-                  数据版本 v{{ ds.version }} · {{ ds.id }}
-                </span>
+                <span class="dataset-label">数据版本 v{{ ds.version }}</span>
                 <span
                   v-if="diagnosisStatusText(ds.id)"
                   class="diagnosis-status"
@@ -483,7 +462,7 @@ onBeforeUnmount(clearShellContext)
                     data-test="diagnosis-detail-btn"
                     @click="gotoDiagnosisDetail(ds.id)"
                   >
-                    查看分析详情
+                    查看诊断结论
                   </el-button>
                   <el-button
                     v-if="ds.status === 'validated'"
@@ -491,7 +470,7 @@ onBeforeUnmount(clearShellContext)
                     data-test="reanalyze-btn"
                     @click="reanalyzeDataset(ds.id)"
                   >
-                    空间结构分析
+                    {{ diagnosisHasDetail(ds.id) ? '重新计算' : '开始空间结构诊断' }}
                   </el-button>
                 </div>
               </div>
@@ -508,9 +487,15 @@ onBeforeUnmount(clearShellContext)
           role="tabpanel"
         >
           <h2 class="stage-heading">建模实验</h2>
-          <div class="workspace-section" data-test="workspace-experiments-panel">
-            <p v-if="canCreateExperiment" class="muted-line">常用建模操作已固定在工作台上方。</p>
-            <p v-else class="muted-line">当前案例不开放新建建模实验。</p>
+          <div class="workspace-section" data-test="workspace-experiments">
+            <div class="section-intro">
+              <div><strong>构建与比较插值方案</strong><p>选择 IDW、普通克里金或 DSI-like，运行一个或多个参数组合并比较结果。</p></div>
+              <div class="command-row">
+                <el-button v-if="canCreateExperiment" type="primary" data-test="new-experiment" :data-primary-action="primaryKind === 'experiment' ? 'true' : undefined" @click="createExperiment">新建建模实验</el-button>
+                <el-button v-if="workspace.primary_dataset" data-test="model-comparison" @click="gotoComparisonForDataset(workspace.primary_dataset.id)">比较已有模型</el-button>
+              </div>
+            </div>
+            <p v-if="!canCreateExperiment" class="muted-line">当前案例不开放新建建模实验。</p>
             <div v-if="recentExperiments.length" class="recent-list" data-test="recent-experiments">
               <div
                 v-for="exp in recentExperiments"
@@ -541,13 +526,10 @@ onBeforeUnmount(clearShellContext)
         >
           <h2 class="stage-heading">成果分析</h2>
           <div class="workspace-section" data-test="workspace-results">
-            <p v-if="workspace.official_result">
-              {{ workspace.workspace_kind === 'builtin_preset' ? '官方成果' : '主打成果' }}：
-              <router-link :to="workspace.official_result.url" class="recent-link">
-                {{ workspace.official_result.url }}
-              </router-link>
-              （{{ workspace.official_result.materialized ? '已物化' : '未物化' }}）
-            </p>
+            <div v-if="workspace.official_result" class="section-intro">
+              <div><strong>{{ workspace.workspace_kind === 'builtin_preset' ? '官方成果已就绪' : '主打成果已就绪' }}</strong><p>可进入三维成果工作台进行体渲染、切片、剖面和评价。</p></div>
+              <router-link :to="workspace.official_result.url" class="analysis-entry">打开三维成果</router-link>
+            </div>
             <p v-else-if="workspace.workspace_kind !== 'builtin_legacy'" data-test="results-empty">
               暂无成果。
             </p>
@@ -568,6 +550,14 @@ onBeforeUnmount(clearShellContext)
               </div>
             </div>
             <template v-if="workspace.primary_dataset">
+              <router-link
+                v-if="canOpenAnalysisCenter"
+                class="analysis-entry"
+                data-test="analysis-center-entry"
+                :to="`/datasets/${workspace.primary_dataset.id}/analysis`"
+              >
+                打开统计与空间分析中心
+              </router-link>
               <p v-if="!canOpenAnalysisCenter" class="analysis-unavailable" data-test="analysis-center-unavailable">
                 数据版本尚未通过验证：完成质量验证后，统计与空间分析才可用。
               </p>
@@ -588,15 +578,23 @@ onBeforeUnmount(clearShellContext)
             <p v-if="workspace.provenance_summary.badge" class="provenance-line">
               {{ workspace.provenance_summary.badge }}
             </p>
-            <p class="provenance-line">
-              坐标语义：{{ workspace.provenance_summary.coordinate_kind ?? 'local_linear' }}（局部坐标，显示锚点仅为展示变换，非真实地理配准）
-            </p>
+            <p class="provenance-line">坐标口径：{{ coordinateLabel }}（显示锚点仅为展示变换，非真实地理配准）</p>
             <p v-if="workspace.workspace_kind === 'builtin_preset'" class="provenance-line">
               官方案例正式选择只读；用户可基于预置数据版本新建建模实验并登记自己的正式成果。
             </p>
             <p v-else-if="workspace.workspace_kind === 'user_upload'" class="provenance-line">
               成果的正式选择、导出与发布登记在成果工作台内完成。
             </p>
+            <details v-if="workspace.primary_dataset" class="dataset-technical" data-test="dataset-technical-details">
+              <summary>技术详情</summary>
+              <dl>
+                <div><dt>案例标识</dt><dd class="mono">{{ workspace.case_id }}</dd></div>
+                <div><dt>数据版本标识</dt><dd class="mono">{{ workspace.primary_dataset.id }}</dd></div>
+                <div><dt>服务端状态</dt><dd class="mono">{{ workspace.primary_dataset.status }}</dd></div>
+                <div v-if="mapping"><dt>字段映射</dt><dd class="mono">{{ mapping.x }}/{{ mapping.y }}/{{ mapping.z }} -&gt; {{ mapping.value }}</dd></div>
+                <div><dt>坐标枚举</dt><dd class="mono">{{ workspace.provenance_summary.coordinate_kind ?? 'local_linear' }}</dd></div>
+              </dl>
+            </details>
           </div>
         </section>
       </template>
@@ -619,10 +617,12 @@ onBeforeUnmount(clearShellContext)
   justify-content: space-between;
 }
 
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: var(--s1-space-3);
+.workspace-kicker {
+  display: inline-block;
+  margin-bottom: 5px;
+  color: var(--s1-case-accent);
+  font-size: var(--s1-font-sm);
+  font-weight: 600;
 }
 
 .header-title h1 {
@@ -638,6 +638,68 @@ onBeforeUnmount(clearShellContext)
   margin: 6px 0 0;
   color: var(--s1-text-dim);
   font-size: var(--s1-font-md);
+}
+
+.workspace-summary {
+  display: grid;
+  grid-template-columns: minmax(240px, 1.1fr) minmax(360px, 1fr) auto;
+  gap: var(--s1-space-5);
+  align-items: center;
+  padding: var(--s1-space-5) 0;
+  border-block: 1px solid var(--s1-border);
+}
+
+.summary-status,
+.section-intro > div:first-child {
+  min-width: 0;
+}
+
+.summary-label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--s1-text-faint);
+  font-size: var(--s1-font-xs);
+}
+
+.summary-status strong {
+  color: var(--s1-text-strong);
+  font-size: var(--s1-font-xl);
+}
+
+.summary-status p,
+.section-intro p,
+.overview-notice p {
+  margin: 6px 0 0;
+  color: var(--s1-text-dim);
+  font-size: var(--s1-font-sm);
+  line-height: var(--s1-leading);
+}
+
+.summary-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+}
+
+.summary-metrics div {
+  min-width: 0;
+  padding: 0 var(--s1-space-4);
+  border-left: 1px solid var(--s1-border);
+}
+
+.summary-metrics dt,
+.data-summary-grid dt,
+.dataset-technical dt {
+  color: var(--s1-text-faint);
+  font-size: var(--s1-font-xs);
+}
+
+.summary-metrics dd,
+.data-summary-grid dd {
+  margin: 5px 0 0;
+  color: var(--s1-text-strong);
+  font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
 .stage-block {
@@ -667,33 +729,63 @@ onBeforeUnmount(clearShellContext)
   padding: var(--s1-space-3) var(--s1-space-4);
 }
 
-.workspace-shortcuts {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--s1-space-4);
-  flex-wrap: wrap;
-  border-color: var(--s1-case-accent);
-}
-
-.shortcut-label {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  color: var(--s1-text-dim);
-  font-size: var(--s1-font-sm);
-}
-
-.shortcut-label strong {
-  color: var(--s1-text-strong);
-  font-size: var(--s1-font-md);
-}
-
 .command-row {
   display: flex;
   gap: 10px;
   align-items: center;
   flex-wrap: wrap;
+}
+
+.data-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0;
+  border: 1px solid var(--s1-border);
+  background: var(--s1-border);
+}
+
+.data-summary-grid div {
+  min-width: 0;
+  padding: var(--s1-space-3);
+  background: var(--s1-surface-2);
+}
+
+.section-intro {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s1-space-4);
+}
+
+.section-intro strong {
+  color: var(--s1-text-strong);
+  font-size: var(--s1-font-lg);
+}
+
+.dataset-technical {
+  margin-top: var(--s1-space-4);
+  padding-top: var(--s1-space-3);
+  border-top: 1px solid var(--s1-border);
+  color: var(--s1-text-dim);
+  font-size: var(--s1-font-sm);
+}
+
+.dataset-technical summary {
+  width: fit-content;
+  cursor: pointer;
+}
+
+.dataset-technical dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--s1-space-3);
+  margin: var(--s1-space-3) 0 0;
+}
+
+.dataset-technical dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
 }
 
 .warn-line {
@@ -828,6 +920,29 @@ onBeforeUnmount(clearShellContext)
   }
   .command-row {
     flex-wrap: wrap;
+  }
+
+  .workspace-summary,
+  .summary-metrics,
+  .data-summary-grid,
+  .dataset-technical dl {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-summary {
+    align-items: stretch;
+    gap: var(--s1-space-3);
+  }
+
+  .summary-metrics div {
+    padding: var(--s1-space-2) 0;
+    border-left: 0;
+    border-top: 1px solid var(--s1-border);
+  }
+
+  .section-intro {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 </style>

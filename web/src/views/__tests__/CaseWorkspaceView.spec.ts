@@ -253,7 +253,7 @@ describe('CaseWorkspaceView', () => {
 
     const results = wrapper.find('[data-test="workspace-results"]')
     expect(results.text()).toContain('主打成果')
-    expect(results.text()).toContain('已物化')
+    expect(results.text()).toContain('已就绪')
     expect(wrapper.find('[data-test="new-experiment"]').exists()).toBe(true)
   })
 
@@ -505,7 +505,7 @@ describe('CaseWorkspaceView 电阻率散点预置（v0.8.0）', () => {
 
     const results = wrapper.find('[data-test="workspace-results"]')
     expect(results.text()).toContain('官方成果')
-    expect(results.text()).toContain('已物化')
+    expect(results.text()).toContain('已就绪')
     expect(wrapper.find('[data-test="open-official-result"]').text()).toContain('查看官方成果')
     wrapper.unmount()
   })
@@ -717,7 +717,7 @@ describe('CaseWorkspaceView 瓦斯散点预置（v0.8.0 第三批）', () => {
     expect(text).toContain('散点预置 · 官方基线成果')
     expect(text).toContain('ml/g')
     expect(text).toContain('X/Y/Z -> CH4_content')
-    expect(text).toContain('行数 58')
+    expect(text).toContain('有效样本58')
 
     // 操作一：查看官方成果直达
     await wrapper.find('[data-test="open-official-result"]').trigger('click')
@@ -797,16 +797,32 @@ describe('CaseWorkspaceView v0.9 阶段导航与唯一主动作', () => {
     expect(wrapper.get('[data-test="stage-panel-experiments"]').classes()).not.toContain('is-hidden')
   })
 
-  it('默认工作台保留跨阶段常用入口，用户无需先猜阶段', async () => {
+  it('默认工作台用案例摘要和唯一推荐动作替代重复快捷操作区', async () => {
     vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(workspaceOf('builtin_preset'))
     const { wrapper } = await mountWorkspace(`/cases/${PRESET_ID}`)
 
-    expect(wrapper.find('.workspace-shortcuts').exists()).toBe(true)
-    expect(wrapper.find('.workspace-shortcuts [data-test="new-experiment"]').exists()).toBe(true)
-    expect(wrapper.find('.workspace-shortcuts [data-test="analysis-center-entry"]').exists()).toBe(true)
+    expect(wrapper.find('.workspace-shortcuts').exists()).toBe(false)
+    expect(wrapper.get('[data-test="workspace-summary"]').text()).toContain('数据可用于建模')
+    expect(wrapper.findAll('[data-test="open-official-result"]')).toHaveLength(1)
+    expect(wrapper.findAll('[data-test="new-experiment"]')).toHaveLength(1)
     expect(wrapper.get('[data-test="stage-panel-data"]').isVisible()).toBe(true)
     expect(wrapper.get('[data-test="stage-panel-experiments"]').classes()).toContain('is-hidden')
     wrapper.unmount()
+  })
+
+  it('主阅读层使用用户术语，技术状态和标识只出现在证据页', async () => {
+    vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(workspaceOf('builtin_preset'))
+    const { wrapper } = await mountWorkspace(`/cases/${PRESET_ID}`)
+
+    const dataPanel = wrapper.get('[data-test="stage-panel-data"]').text()
+    expect(dataPanel).toContain('质量检查通过')
+    expect(dataPanel).not.toContain('validated')
+    expect(dataPanel).not.toContain('local_linear')
+    expect(dataPanel).not.toContain('ds-1')
+
+    await wrapper.get('[data-test="stage-nav-evidence"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="dataset-technical-details"]').text()).toContain('ds-1')
   })
 
   it('可从 URL 直接恢复成果分析页签', async () => {
