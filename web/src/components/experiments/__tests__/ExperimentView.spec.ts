@@ -226,6 +226,18 @@ afterEach(() => {
 })
 
 describe('ExperimentView 创建模式', () => {
+  it('主层说明数据用途但不暴露案例和数据 UUID', async () => {
+    vi.mocked(client.fetchDataset).mockResolvedValue(DATASET)
+    const { wrapper } = await mountAt('/cases/c1/experiments/new?dataset=ds1')
+
+    const context = wrapper.get('[data-test="experiment-dataset-summary"]')
+    expect(context.text()).toContain('已通过质量检查')
+    expect(context.text()).not.toContain('ds1')
+    expect(context.text()).not.toContain('c1')
+    expect(wrapper.get('[data-test="experiment-technical-details"]').text()).toContain('ds1')
+    wrapper.unmount()
+  })
+
   it('manual IDW：提交后创建实验、启动运行并跳到详情路由轮询', async () => {
     vi.mocked(client.fetchDataset).mockResolvedValue(DATASET)
     vi.mocked(client.createExperiment).mockResolvedValue(EXP)

@@ -81,7 +81,7 @@ function stopPolling() {
 }
 
 function describeError(e: unknown): string {
-  if (e instanceof ApiError) return `${e.code}：${e.message}`
+  if (e instanceof ApiError) return e.message
   return e instanceof Error ? e.message : String(e)
 }
 
@@ -90,6 +90,10 @@ const dimension = computed<'2d' | '3d'>(() =>
 )
 
 const preset = computed(() => resolveDatasetPreset(dataset.value?.profile ?? null))
+const datasetDisplayName = computed(() => {
+  const filename = dataset.value?.profile?.original_filename
+  return typeof filename === 'string' && filename ? filename : '已验证数据版本'
+})
 
 // 候选摘要组合数：与 ParameterEditor 同一纯函数口径（手动恒 1，网格按离散候选乘积）
 const snapshotCombinationCount = computed(() => {
@@ -422,18 +426,22 @@ onBeforeUnmount(stopPolling)
     />
 
     <template v-else-if="isCreate">
-      <div class="experiment-context">
-        <p v-if="dataset" class="page-sub">
-          数据集 <b>{{ dataset.profile?.original_filename ?? dataset.id }}</b> ·
-          {{ dimension === '3d' ? '三维' : '二维' }} · 案例
-          <span class="mono">{{ caseId }}</span>
-        </p>
+      <div v-if="dataset" class="experiment-context" data-test="experiment-dataset-context">
+        <div class="experiment-context-summary" data-test="experiment-dataset-summary">
+          <div><span class="context-label">建模数据</span><strong>{{ datasetDisplayName }}</strong></div>
+          <div><span class="context-label">质量状态</span><strong>已通过质量检查</strong></div>
+          <div><span class="context-label">空间维度</span><strong>{{ dimension === '3d' ? '三维点数据' : '二维点数据' }}</strong></div>
+        </div>
+        <details data-test="experiment-technical-details">
+          <summary>技术详情</summary>
+          <span class="mono">案例 {{ caseId }} · 数据版本 {{ dataset.id }}</span>
+        </details>
       </div>
       <div v-if="actionError" class="action-error" role="alert" data-test="action-error">{{ actionError }}</div>
       <ExperimentLabLayout
         v-if="dataset"
         :title="name.trim() || '插值实验'"
-        :dataset-label="`${dataset.profile?.original_filename ?? dataset.id} · ${dimension === '3d' ? '三维' : '二维'}`"
+        :dataset-label="`${datasetDisplayName} · ${dimension === '3d' ? '三维' : '二维'}`"
       >
         <template #actions>
           <label class="name-field">
@@ -643,6 +651,47 @@ onBeforeUnmount(stopPolling)
   color: var(--gmp-text-faint);
 }
 
+.experiment-context {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 0;
+  border-block: 1px solid var(--s1-border);
+}
+
+.experiment-context-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.experiment-context-summary > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.context-label {
+  color: var(--s1-text-faint);
+  font-size: var(--s1-font-xs);
+}
+
+.experiment-context-summary strong {
+  color: var(--s1-text-strong);
+  overflow-wrap: anywhere;
+}
+
+.experiment-context details {
+  color: var(--s1-text-faint);
+  font-size: var(--s1-font-xs);
+}
+
+.experiment-context summary {
+  width: fit-content;
+  cursor: pointer;
+}
+
 .mono {
   font-family: ui-monospace, monospace;
 }
@@ -786,5 +835,11 @@ onBeforeUnmount(stopPolling)
 .gmp-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+@media (max-width: 640px) {
+  .experiment-context-summary {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

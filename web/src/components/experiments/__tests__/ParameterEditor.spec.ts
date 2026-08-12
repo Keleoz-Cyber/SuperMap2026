@@ -32,6 +32,25 @@ function selectValue(wrapper: ReturnType<typeof mountEditor>, test: string): str
   return (wrapper.get(`[data-test="${test}"]`).element as HTMLSelectElement).value
 }
 
+describe('ParameterEditor 用户决策层', () => {
+  it('用可比较的算法说明展示适用场景、成本和限制', () => {
+    const wrapper = mountEditor()
+    const choices = wrapper.findAll('[data-test^="algorithm-choice-"]')
+    expect(choices).toHaveLength(3)
+    expect(wrapper.get('[data-test="algorithm-choice-idw"]').text()).toContain('快速基线')
+    expect(wrapper.get('[data-test="algorithm-choice-ordinary_kriging"]').text()).toContain('空间相关性')
+    expect(wrapper.get('[data-test="algorithm-choice-dsi_like"]').text()).toContain('工程近似')
+    expect(wrapper.get('[data-test="advanced-experiment-settings"]').text()).toContain('空间验证')
+  })
+
+  it('默认使用单组推荐配置，并明确参数网格会产生多个候选', () => {
+    const wrapper = mountEditor()
+    expect(wrapper.get('[data-test="mode-manual-label"]').text()).toContain('推荐配置')
+    expect(wrapper.get('[data-test="mode-grid-label"]').text()).toContain('自动组合')
+    expect(wrapper.get('[data-test="count-preview"]').text()).toContain('1 个候选组合')
+  })
+})
+
 describe('ParameterEditor dsi_like（v0.8.0）', () => {
   it('3D 预置下 dsi_like 出现在 IDW/普通 Kriging 旁，并附工程近似免责声明', () => {
     const wrapper = mountEditor()
