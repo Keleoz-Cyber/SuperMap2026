@@ -41,6 +41,10 @@ from geomodeling.platform.netcdf_volume import (
     read_package_manifest,
     write_netcdf_package,
 )
+from geomodeling.platform.ml_artifacts import (
+    load_ml_field,
+    read_ml_fields_manifest,
+)
 from geomodeling.platform.render_contracts import (
     DisplayAnchor,
     RenderGridSource,
@@ -77,6 +81,14 @@ RENDER_NO_VALID_VALUES = "RENDER_NO_VALID_VALUES"
 RENDER_GRID_IDENTITY_MISMATCH = "RENDER_GRID_IDENTITY_MISMATCH"
 RENDER_ASSET_IN_PROGRESS = "RENDER_ASSET_IN_PROGRESS"
 RENDER_ASSET_PUBLISH_FAILED = "RENDER_ASSET_PUBLISH_FAILED"
+ML_FIELD_NOT_AVAILABLE = "ML_FIELD_NOT_AVAILABLE"
+
+ML_RENDER_FIELDS = (
+    "prediction",
+    "model_dispersion",
+    "kriging_baseline",
+    "residual_correction",
+)
 
 # 近似规则网格判定（与 modeling/grid.py 的 derive_grid 落盘轴一致：节点即
 # linspace，允许浮点回算误差）：每轴与首尾等距参考轴比较，容差随轴跨度缩放。
@@ -156,6 +168,14 @@ def validate_regular_grid(grid_path: Path, expected_sha256: str) -> ValidatedGri
         axes = tuple(np.asarray(a, dtype="float64") for a in bundle["axes"])
         values = np.asarray(bundle["values"], dtype="float64")
         is_nodata = np.asarray(bundle["is_nodata"], dtype=bool)
+    return validate_grid_arrays(axes, values, is_nodata)
+
+
+def validate_grid_arrays(
+    axes: tuple[np.ndarray, ...], values: np.ndarray, is_nodata: np.ndarray
+) -> ValidatedGrid:
+    """Validate in-memory arrays using the same regular-grid contract."""
+
     if len(axes) != 3:
         raise PlatformError(
             RENDER_REQUIRES_3D,
@@ -261,15 +281,66 @@ def _resolve_candidate_grid(
         units=semantics["units"],
         coordinate_kind=semantics["coordinate_kind"],
         dimension="3d",
+        candidate_result_id=result_id,
     )
     return source, grid
 
 
-def resolve_candidate_render_source(runtime, result_id: str) -> RenderGridSource:
+def _ml_field_error(field: str, *, unavailable: bool) -> PlatformError:
+    return PlatformError(
+        ML_FIELD_NOT_AVAILABLE,
+        "该成果不提供请求的机器学习字段" if unavailable else "不支持的机器学习字段",
+        {"field": field, "available_fields": list(ML_RENDER_FIELDS)},
+        http_status=409 if unavailable else 422,
+    )
+
+
+def resolve_candidate_render_source(
+    runtime, result_id: str, *, field: str = "prediction"
+) -> RenderGridSource:
     """解析候选成果的渲染源（纯查询：绝不物化、绝不创建文件、绝不改行）。"""
 
-    source, _ = _resolve_candidate_grid(runtime, result_id)
-    return source
+    if field not in ML_RENDER_FIELDS:
+        raise _ml_field_error(field, unavailable=False)
+    source, main_grid = _resolve_candidate_grid(runtime, result_id)
+    if field == "prediction":
+        return source
+
+    directory = source.grid_path.parent
+    try:
+        manifest = read_ml_fields_manifest(
+            directory, expected_grid_sha256=source.grid_sha256
+        )
+    except PlatformError as exc:
+        if not (directory / "ml_fields.json").is_file():
+            raise _ml_field_error(field, unavailable=True) from exc
+        raise
+    details = manifest.get("fields", {}).get(field)
+    if not isinstance(details, dict):
+        raise _ml_field_error(field, unavailable=True)
+    values, is_nodata = load_ml_field(
+        directory, field, expected_grid_sha256=source.grid_sha256
+    )
+    grid = validate_grid_arrays(main_grid.axes, values, is_nodata)
+    property_suffix = {
+        "model_dispersion": "模型离散度",
+        "kriging_baseline": "克里金基线",
+        "residual_correction": "残差校正",
+    }[field]
+    return RenderGridSource(
+        source_kind="candidate_result",
+        source_id=f"{result_id}::{field}",
+        grid_path=directory / "ml_fields.npz",
+        grid_sha256=str(details["sha256"]),
+        property_name=f"{source.property_name} {property_suffix}",
+        units=str(details.get("unit") or source.units),
+        coordinate_kind=source.coordinate_kind,
+        dimension="3d",
+        candidate_result_id=result_id,
+        field_name=field,
+        palette_intent=str(details.get("palette_intent") or "property_default"),
+        validated_grid=grid,
+    )
 
 
 def _best_effort_semantics(runtime, result_id: str):
@@ -376,9 +447,7 @@ def _require_package_identity(
         )
 
 
-def verify_ready_asset(
-    runtime, record: RenderAssetRecord
-) -> RenderAssetRecord:
+def verify_ready_asset(runtime, record: RenderAssetRecord) -> RenderAssetRecord:
     """ready 行的文件侧复核：重算校验清单 + 期望身份比对，全对才返回记录。
 
     目录缺失/文件哈希不符/manifest 身份被篡改都 fail-closed，抛
@@ -482,7 +551,9 @@ def create_render_asset(
       任何异常清理 stage 并 ``mark_failed``，清理异常绝不覆盖业务异常。
     """
 
-    grid = validate_regular_grid(source.grid_path, source.grid_sha256)
+    grid = source.validated_grid or validate_regular_grid(
+        source.grid_path, source.grid_sha256
+    )
     with runtime.session() as session:
         record, created = RenderAssetRepository(session).claim(
             source, retry_failed=retry_failed

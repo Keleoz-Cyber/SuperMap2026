@@ -17,6 +17,7 @@ from typing import Any
 import numpy as np
 
 from geomodeling.modeling.slices import GridResult, SliceResult, extract_slice
+from geomodeling.platform import tables
 from geomodeling.platform.errors import PlatformError
 
 SLICE_AXIS_INVALID = "SLICE_AXIS_INVALID"
@@ -51,8 +52,7 @@ class GridSliceAnalysis:
 
         masked = np.where(self.nodata_mask, np.nan, self.values)
         values_json = [
-            [None if not np.isfinite(v) else float(v) for v in row]
-            for row in masked
+            [None if not np.isfinite(v) else float(v) for v in row] for row in masked
         ]
         return {
             "fixed_axis": self.fixed_axis,
@@ -76,7 +76,12 @@ def _validate_axis_index(axis: str, index: int, axis_length: int) -> None:
             {"axis": axis},
             http_status=422,
         )
-    if not isinstance(index, (int, np.integer)) or isinstance(index, bool) or index < 0 or index >= axis_length:
+    if (
+        not isinstance(index, (int, np.integer))
+        or isinstance(index, bool)
+        or index < 0
+        or index >= axis_length
+    ):
         raise PlatformError(
             SLICE_INDEX_OUT_OF_RANGE,
             f"剖面索引 {index} 超出轴 {axis} 的范围 [0, {axis_length})",
@@ -126,53 +131,70 @@ def _statistics(
         "nodata_count": int(total - valid.size),
     }
     if valid.size == 0:
-        base.update({
-            "min": None, "max": None, "mean": None,
-            "std_population": None, "p10": None, "p50": None, "p90": None,
-            "low_count": 0, "normal_count": 0, "high_count": 0,
-            "low_ratio": 0.0, "normal_ratio": 0.0, "high_ratio": 0.0,
-            "thresholds": None,
-        })
+        base.update(
+            {
+                "min": None,
+                "max": None,
+                "mean": None,
+                "std_population": None,
+                "p10": None,
+                "p50": None,
+                "p90": None,
+                "low_count": 0,
+                "normal_count": 0,
+                "high_count": 0,
+                "low_ratio": 0.0,
+                "normal_ratio": 0.0,
+                "high_ratio": 0.0,
+                "thresholds": None,
+            }
+        )
         return base
     q = np.quantile(valid, [0.1, 0.5, 0.9], method="linear")
-    base.update({
-        "min": float(valid.min()),
-        "max": float(valid.max()),
-        "mean": float(valid.mean()),
-        "std_population": float(valid.std(ddof=0)),
-        "p10": float(q[0]),
-        "p50": float(q[1]),
-        "p90": float(q[2]),
-    })
+    base.update(
+        {
+            "min": float(valid.min()),
+            "max": float(valid.max()),
+            "mean": float(valid.mean()),
+            "std_population": float(valid.std(ddof=0)),
+            "p10": float(q[0]),
+            "p50": float(q[1]),
+            "p90": float(q[2]),
+        }
+    )
     if full_grid_thresholds is not None:
         low, high = full_grid_thresholds
         low_count = int((valid < low).sum())
         high_count = int((valid >= high).sum())
         normal_count = int(valid.size) - low_count - high_count
-        base.update({
-            "low_count": low_count,
-            "normal_count": normal_count,
-            "high_count": high_count,
-            "low_ratio": low_count / valid.size,
-            "normal_ratio": normal_count / valid.size,
-            "high_ratio": high_count / valid.size,
-            "thresholds": {
-                "low": float(low),
-                "high": float(high),
-                "source": "full_grid_quartile",
-                "method": "numpy_linear_p25_p75",
-            },
-        })
+        base.update(
+            {
+                "low_count": low_count,
+                "normal_count": normal_count,
+                "high_count": high_count,
+                "low_ratio": low_count / valid.size,
+                "normal_ratio": normal_count / valid.size,
+                "high_ratio": high_count / valid.size,
+                "thresholds": {
+                    "low": float(low),
+                    "high": float(high),
+                    "source": "full_grid_quartile",
+                    "method": "numpy_linear_p25_p75",
+                },
+            }
+        )
     else:
-        base.update({
-            "low_count": None,
-            "normal_count": None,
-            "high_count": None,
-            "low_ratio": None,
-            "normal_ratio": None,
-            "high_ratio": None,
-            "thresholds": None,
-        })
+        base.update(
+            {
+                "low_count": None,
+                "normal_count": None,
+                "high_count": None,
+                "low_ratio": None,
+                "normal_ratio": None,
+                "high_ratio": None,
+                "thresholds": None,
+            }
+        )
     return base
 
 
@@ -190,7 +212,9 @@ def analyze_grid_slice(
     固定轴/索引先经 422 合同校验（设计 §5.4），再复用公共抽取。
     """
 
-    axis_length = len(axes[{"x": 0, "y": 1, "z": 2}[axis]]) if axis in _PLANE_AXES else 0
+    axis_length = (
+        len(axes[{"x": 0, "y": 1, "z": 2}[axis]]) if axis in _PLANE_AXES else 0
+    )
     _validate_axis_index(axis, index, axis_length)
     plane = extract_grid_plane(axes, values, is_nodata, axis, index)
     row_axis, column_axis = _PLANE_AXES[plane.fixed_axis]
@@ -207,11 +231,17 @@ def analyze_grid_slice(
         sdk_relative_position=index / (axis_length - 1),
         row_axis=row_axis,
         column_axis=column_axis,
-        row_coordinates=np.asarray(plane.axes[old_names.index(row_axis)], dtype="float64"),
-        column_coordinates=np.asarray(plane.axes[old_names.index(column_axis)], dtype="float64"),
+        row_coordinates=np.asarray(
+            plane.axes[old_names.index(row_axis)], dtype="float64"
+        ),
+        column_coordinates=np.asarray(
+            plane.axes[old_names.index(column_axis)], dtype="float64"
+        ),
         values=matrix,
         nodata_mask=effective_mask,
-        statistics=_statistics(matrix, effective_mask, full_grid_thresholds=full_grid_thresholds),
+        statistics=_statistics(
+            matrix, effective_mask, full_grid_thresholds=full_grid_thresholds
+        ),
     )
 
 
@@ -239,13 +269,31 @@ def load_ready_asset_grid(runtime, asset_id: str):
     from geomodeling.platform.legacy_render_sources import (
         resolve_legacy_render_source as _resolve_legacy_render_source,
     )
-    from geomodeling.platform.repositories import RenderAssetRepository as _RenderAssetRepository
+    from geomodeling.platform.repositories import (
+        RenderAssetRepository as _RenderAssetRepository,
+    )
 
     with runtime.session() as session:
         record = _RenderAssetRepository(session).get_ready(asset_id)
+        row = session.get(tables.RenderAsset, asset_id)
     _render_assets.verify_ready_asset(runtime, record)
     if record.source_kind == "candidate_result":
-        source = _render_assets.resolve_candidate_render_source(runtime, record.source_id)
+        candidate_result_id = row.candidate_result_id if row is not None else None
+        if candidate_result_id is None:
+            raise PlatformError(
+                RENDER_ASSET_SOURCE_UNSUPPORTED,
+                "候选渲染资产缺少成果归属",
+                {"asset_id": asset_id},
+                http_status=409,
+            )
+        field = (
+            record.source_id.removeprefix(f"{candidate_result_id}::")
+            if record.source_id != candidate_result_id
+            else "prediction"
+        )
+        source = _render_assets.resolve_candidate_render_source(
+            runtime, candidate_result_id, field=field
+        )
     elif record.source_kind == "builtin_legacy":
         source = _resolve_legacy_render_source(runtime, record.source_id)
     else:
@@ -262,11 +310,15 @@ def load_ready_asset_grid(runtime, asset_id: str):
             {"asset_id": asset_id},
             http_status=409,
         )
-    grid = _render_assets.validate_regular_grid(source.grid_path, source.grid_sha256)
+    grid = source.validated_grid or _render_assets.validate_regular_grid(
+        source.grid_path, source.grid_sha256
+    )
     return record, source, grid
 
 
-def _profile(source_kind: str, valid_min: float, valid_max: float, *, property_name: str, unit):
+def _profile(
+    source_kind: str, valid_min: float, valid_max: float, *, property_name: str, unit
+):
     from geomodeling.platform.render_profiles import build_render_profile
 
     return build_render_profile(
@@ -274,16 +326,41 @@ def _profile(source_kind: str, valid_min: float, valid_max: float, *, property_n
     ).to_public()
 
 
-def analyze_render_asset_slice(runtime, asset_id: str, axis: str, index: int) -> dict[str, Any]:
+def _field_profile(source, grid) -> dict[str, Any]:
+    profile = _profile(
+        source.source_kind,
+        grid.valid_min,
+        grid.valid_max,
+        property_name=source.property_name,
+        unit=source.units,
+    )
+    if source.palette_intent == "diverging_zero_centered":
+        profile["default_palette"] = "coolwarm"
+    elif source.palette_intent == "sequential_nonnegative":
+        profile["default_palette"] = "viridis"
+    profile["palette_intent"] = source.palette_intent
+    return profile
+
+
+def analyze_render_asset_slice(
+    runtime, asset_id: str, axis: str, index: int
+) -> dict[str, Any]:
     """公开剖面分析：资产身份 + 三轴坐标 + 图表方向剖面 + 权威统计 + render_profile。"""
 
-    from geomodeling.platform.result_analysis import finite_valid_values, result_thresholds
+    from geomodeling.platform.result_analysis import (
+        finite_valid_values,
+        result_thresholds,
+    )
 
     record, source, grid = load_ready_asset_grid(runtime, asset_id)
     valid = finite_valid_values(grid.values, grid.is_nodata)
     thresholds = result_thresholds(valid) if valid.size > 0 else None
     analysis = analyze_grid_slice(
-        grid.axes, grid.values, grid.is_nodata, axis, index,
+        grid.axes,
+        grid.values,
+        grid.is_nodata,
+        axis,
+        index,
         full_grid_thresholds=thresholds,
     )
     slice_payload = analysis.to_json_slice()
@@ -292,6 +369,8 @@ def analyze_render_asset_slice(runtime, asset_id: str, axis: str, index: int) ->
             "asset_id": record.id,
             "source_kind": record.source_kind,
             "source_id": record.source_id,
+            "candidate_result_id": source.candidate_result_id,
+            "field": source.field_name,
             "grid_sha256": record.grid_sha256,
             "netcdf_sha256": record.netcdf_sha256,
         },
@@ -306,11 +385,5 @@ def analyze_render_asset_slice(runtime, asset_id: str, axis: str, index: int) ->
         },
         "slice": slice_payload,
         "statistics": analysis.statistics,
-        "render_profile": _profile(
-            record.source_kind,
-            grid.valid_min,
-            grid.valid_max,
-            property_name=source.property_name,
-            unit=source.units,
-        ),
+        "render_profile": _field_profile(source, grid),
     }

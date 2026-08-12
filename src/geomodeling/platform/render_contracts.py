@@ -31,6 +31,10 @@ class RenderGridSource:
     units: str
     coordinate_kind: str
     dimension: Literal["3d"]
+    candidate_result_id: str | None = None
+    field_name: str = "prediction"
+    palette_intent: str = "property_default"
+    validated_grid: ValidatedGrid | None = None
 
 
 @dataclass(frozen=True)
