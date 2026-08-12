@@ -20,6 +20,7 @@ import CommandCenterScene from '../components/home/CommandCenterScene.vue'
 import CommandCenterEvidence from '../components/home/CommandCenterEvidence.vue'
 import FindingPanel from '../components/findings/FindingPanel.vue'
 import AsyncState from '../components/states/AsyncState.vue'
+import { coordinateLabel } from '../utils/modelingLabels'
 
 const router = useRouter()
 
@@ -87,7 +88,7 @@ const primaryAction = computed<PrimaryAction | null>(() => {
 
 const coordinateNote = computed(() => {
   const kind = selectedCase.value?.provenance_summary?.coordinate_kind
-  return kind === 'local_linear' ? '局部线性米制 · 显示锚点' : '局部坐标'
+  return typeof kind === 'string' ? coordinateLabel(kind) : '局部坐标'
 })
 
 async function loadCases() {

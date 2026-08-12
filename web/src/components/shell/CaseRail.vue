@@ -8,6 +8,7 @@ import { ArrowRight, MoreFilled, Plus } from '@element-plus/icons-vue'
 import type { CaseSummary } from '../../api/types'
 import { PLATFORM_DEMO_3D_DOWNLOAD_URL } from '../../api/client'
 import { CASE_PRESENTATION, resolveCaseProfile } from '../../domain/casePresentation'
+import { coordinateLabel } from '../../utils/modelingLabels'
 
 const props = defineProps<{
   cases: CaseSummary[]
@@ -56,7 +57,7 @@ function unitOf(c: CaseSummary): string | null {
 // 局部坐标如实标注（display_anchor_only，非真实地理配准）
 function coordinateOf(c: CaseSummary): string | null {
   const kind = c.provenance_summary?.coordinate_kind
-  return typeof kind === 'string' ? kind : null
+  return typeof kind === 'string' ? coordinateLabel(kind) : null
 }
 
 function dataFormOf(c: CaseSummary): string | null {
@@ -75,24 +76,27 @@ function dataFormOf(c: CaseSummary): string | null {
         class="case-card rail-item"
         :class="{ selected: c.case_id === selectedCaseId }"
         :data-case-accent="presentationOf(c).accent"
-        data-test="case-rail-item"
-        :data-case-id="c.case_id"
-        role="button"
-        tabindex="0"
-        @click="emit('select', c.case_id)"
-        @keydown.enter="emit('select', c.case_id)"
       >
-        <div class="item-head">
-          <span class="accent-dot" aria-hidden="true" />
-          <span class="item-title">{{ c.title }}</span>
-        </div>
-        <div class="item-meta">
-          <span v-if="unitOf(c)" class="meta-chip">{{ unitOf(c) }}</span>
-          <span v-if="dataFormOf(c)" class="meta-line">{{ dataFormOf(c) }}</span>
-          <span v-if="fieldsOf(c)" class="meta-line">字段 {{ fieldsOf(c) }}</span>
-          <span v-if="coordinateOf(c)" class="meta-line">坐标 {{ coordinateOf(c) }}</span>
-          <span class="meta-badge">{{ badgeOf(c) }}</span>
-        </div>
+        <button
+          type="button"
+          class="item-select"
+          data-test="case-rail-item"
+          :data-case-id="c.case_id"
+          :aria-label="`选择案例 ${c.title}`"
+          @click="emit('select', c.case_id)"
+        >
+          <span class="item-head">
+            <span class="accent-dot" aria-hidden="true" />
+            <span class="item-title">{{ c.title }}</span>
+          </span>
+          <span class="item-meta">
+            <span v-if="unitOf(c)" class="meta-chip">{{ unitOf(c) }}</span>
+            <span v-if="dataFormOf(c)" class="meta-line">{{ dataFormOf(c) }}</span>
+            <span v-if="fieldsOf(c)" class="meta-line">字段 {{ fieldsOf(c) }}</span>
+            <span v-if="coordinateOf(c)" class="meta-line">坐标 {{ coordinateOf(c) }}</span>
+            <span class="meta-badge">{{ badgeOf(c) }}</span>
+          </span>
+        </button>
         <div class="item-actions" @click.stop>
           <RouterLink
             :to="`/cases/${c.case_id}`"
@@ -122,37 +126,40 @@ function dataFormOf(c: CaseSummary): string | null {
         class="case-card rail-item"
         :class="{ selected: c.case_id === selectedCaseId }"
         data-case-accent="cyan"
-        data-test="case-rail-item"
-        :data-case-id="c.case_id"
-        role="button"
-        tabindex="0"
-        @click="emit('select', c.case_id)"
-        @keydown.enter="emit('select', c.case_id)"
       >
-        <div class="item-head">
-          <span class="accent-dot" aria-hidden="true" />
-          <span class="item-title">{{ c.title }}</span>
-          <span class="card-overflow" @click.stop>
-            <el-dropdown data-test="trash-case-btn" @command="emit('trash', c.case_id)">
-              <el-icon
-                :size="16"
-                class="overflow-trigger"
-                role="button"
-                aria-label="案例操作菜单"
-                tabindex="0"
-                @keydown.enter.prevent="($event.target as HTMLElement).click()"
-              ><MoreFilled /></el-icon>
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item command="trash">移入回收站</el-dropdown-item>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
+        <button
+          type="button"
+          class="item-select"
+          data-test="case-rail-item"
+          :data-case-id="c.case_id"
+          :aria-label="`选择案例 ${c.title}`"
+          @click="emit('select', c.case_id)"
+        >
+          <span class="item-head">
+            <span class="accent-dot" aria-hidden="true" />
+            <span class="item-title">{{ c.title }}</span>
           </span>
-        </div>
-        <div class="item-meta">
-          <span class="meta-badge">{{ badgeOf(c) }}</span>
-        </div>
+          <span class="item-meta">
+            <span class="meta-badge">{{ badgeOf(c) }}</span>
+          </span>
+        </button>
+        <span class="card-overflow" @click.stop>
+          <el-dropdown data-test="trash-case-btn" @command="emit('trash', c.case_id)">
+            <el-icon
+              :size="16"
+              class="overflow-trigger"
+              role="button"
+              aria-label="案例操作菜单"
+              tabindex="0"
+              @keydown.enter.prevent="($event.target as HTMLElement).click()"
+            ><MoreFilled /></el-icon>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="trash">移入回收站</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </span>
         <div class="item-actions" @click.stop>
           <template v-if="c.featured_result">
             <RouterLink
@@ -274,6 +281,25 @@ function dataFormOf(c: CaseSummary): string | null {
 .card-overflow {
   display: flex;
   align-items: center;
+}
+
+.item-select {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1-space-2);
+  min-width: 0;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.item-select:focus-visible {
+  outline: 2px solid var(--s1-case-accent);
+  outline-offset: 3px;
 }
 
 .card-overflow :deep(.el-dropdown) {

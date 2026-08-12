@@ -60,7 +60,7 @@ test.describe('v0.8.0 第三批瓦斯含量预置（mock API）', () => {
     await expect(card).toContainText('散点预置 · 官方基线成果')
     await expect(card).toContainText('标准化散点 · 58 个合格样品')
     await expect(card).toContainText('X/Y/Z/CH4_content')
-    await expect(card).toContainText('local_linear')
+    await expect(card).toContainText('局部线性米制坐标')
     await expect(card).toContainText('ml/g')
     // 旧 legacy 瓦斯卡与旧流程语样绝不出现
     await expect(card).not.toContainText('暂缓')

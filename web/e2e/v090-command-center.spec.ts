@@ -71,11 +71,8 @@ test.describe('v0.9.0 指挥舱（mock API）', () => {
     await expect(page).toHaveURL(/#\/cases\/gas/)
 
     await page.goto('/')
-    await page
-      .getByTestId('case-rail-item')
-      .filter({ hasText: '煤层瓦斯' })
-      .getByTestId('open-official-result')
-      .click()
+    const gasCard = page.getByTestId('case-rail-item').filter({ hasText: '煤层瓦斯' }).locator('..')
+    await gasCard.getByTestId('open-official-result').click()
     await expect(page).toHaveURL(/#\/results\/cand-gas-official/)
   })
 })

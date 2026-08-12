@@ -5,6 +5,7 @@
 
 import type { AnalysisModuleResult, AnalysisSummaryResponse } from '../api/types'
 import { comparisonCandidatesOf, formatNumber, spatialAnomalyOf } from '../components/analysis/analysisTypes'
+import { algorithmLabel } from '../utils/modelingLabels'
 
 export type FindingConfidence = 'verified' | 'exploratory' | 'insufficient' | 'unavailable'
 
@@ -109,7 +110,7 @@ export function formalModelFinding(summary: AnalysisSummaryResponse): Presentati
   return {
     id: 'formal-model',
     title: '正式模型',
-    statement: `正式成果算法：${formal.algorithm}`,
+    statement: `正式成果采用${algorithmLabel(formal.algorithm)}`,
     evidence,
     source: sourceOf(summary),
     confidence: 'verified',

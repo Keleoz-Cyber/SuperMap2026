@@ -4,8 +4,17 @@ const ALGORITHMS: Record<string, string> = {
   dsi_like: 'DSI-like 离散平滑插值',
 }
 
+const COORDINATES: Record<string, string> = {
+  local_linear: '局部线性米制坐标',
+  local_projected: '局部投影坐标',
+}
+
 export function algorithmLabel(id: string): string {
   return ALGORITHMS[id] ?? id.slice(0, 64)
+}
+
+export function coordinateLabel(id: string): string {
+  return COORDINATES[id] ?? '局部坐标'
 }
 
 const PARAM_LABELS: Record<string, string> = {

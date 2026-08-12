@@ -4,6 +4,7 @@
 import { computed } from 'vue'
 import type { AnalysisSummaryResponse } from '../../api/types'
 import { comparisonCandidatesOf, formatNumber, spatialAnomalyOf } from '../analysis/analysisTypes'
+import { algorithmLabel } from '../../utils/modelingLabels'
 
 const props = defineProps<{
   summary: AnalysisSummaryResponse | null
@@ -75,7 +76,7 @@ const variable = computed(() => props.summary?.variable ?? null)
       <h4 class="cell-title">模型指标（RMSE）</h4>
       <div v-if="candidates.length > 0" class="metric-bars">
         <div v-for="c in candidates.slice(0, 4)" :key="c.result_id" class="metric-row">
-          <span class="metric-name" :class="{ formal: c.formal_selection }">{{ c.algorithm }}</span>
+          <span class="metric-name" :class="{ formal: c.formal_selection }">{{ algorithmLabel(c.algorithm) }}</span>
           <span class="metric-track">
             <span
               class="metric-fill"

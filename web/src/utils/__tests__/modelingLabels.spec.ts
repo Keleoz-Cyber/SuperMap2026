@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { algorithmLabel, parameterSummary } from '../modelingLabels'
+import { algorithmLabel, coordinateLabel, parameterSummary } from '../modelingLabels'
 
 describe('algorithmLabel', () => {
   it('idw -> IDW（反距离加权）', () => {
@@ -17,6 +17,12 @@ describe('algorithmLabel', () => {
   it('very long unknown algorithm is truncated to 64 chars', () => {
     const long = 'x'.repeat(100)
     expect(algorithmLabel(long)).toHaveLength(64)
+  })
+})
+
+describe('coordinateLabel', () => {
+  it('local_linear uses user-facing Chinese wording', () => {
+    expect(coordinateLabel('local_linear')).toBe('局部线性米制坐标')
   })
 })
 

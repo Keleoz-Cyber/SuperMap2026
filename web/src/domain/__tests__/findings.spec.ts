@@ -118,7 +118,8 @@ describe('buildPresentationFindings', () => {
   it('formal model uses only the formal_selection candidate with finite metrics', () => {
     const findings = buildPresentationFindings(SUMMARY)
     const formal = findings.find((x) => x.id === 'formal-model')
-    expect(formal?.statement).toContain('ordinary_kriging')
+    expect(formal?.statement).toContain('普通克里金')
+    expect(formal?.statement).not.toContain('ordinary_kriging')
     expect(formal?.evidence.join(' ')).toContain('RMSE')
     expect(formal?.confidence).toBe('verified')
   })
