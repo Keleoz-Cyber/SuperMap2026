@@ -5,6 +5,7 @@ import { ArrowLeft } from '@element-plus/icons-vue'
 import { ApiError, uploadDataset } from '../api/client'
 import type { DatasetVersionRecord } from '../api/types'
 import PageContextHeader from '../components/navigation/PageContextHeader.vue'
+import DatasetIntakeStart from '../components/upload/DatasetIntakeStart.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -22,7 +23,7 @@ function onFileChange(event: Event) {
 }
 
 function describeError(e: unknown): string {
-  if (e instanceof ApiError) return `${e.code}：${e.message}`
+  if (e instanceof ApiError) return e.message
   return e instanceof Error ? e.message : String(e)
 }
 
@@ -47,8 +48,8 @@ async function submit() {
 <template>
   <div class="upload-page product-page product-page--form">
     <PageContextHeader
-      title="数据接入"
-      subtitle="上传 CSV 或 XLSX 点数据；系统会先校验字段和坐标，再进入建模准备。"
+      title="新增数据版本"
+      subtitle="保留既有版本和成果，为当前案例接入一份新的点数据。"
       :case-id="caseId"
       current-label="数据接入"
     >
@@ -59,32 +60,11 @@ async function submit() {
       </template>
     </PageContextHeader>
 
-    <div class="upload-form">
-      <label class="field">
-        <span>数据文件（CSV / XLSX，≤ 50 MiB、≤ 50 万行）</span>
-        <input
-          class="gmp-file"
-          data-test="dataset-file"
-          type="file"
-          accept=".csv,.xlsx"
-          @change="onFileChange"
-        />
-      </label>
-
-      <div v-if="error" class="upload-error" data-test="upload-error">{{ error }}</div>
-
-      <div class="upload-actions">
-        <el-button
-          type="primary"
-          data-test="dataset-submit"
-          :loading="busy"
-          :disabled="!canSubmit"
-          @click="submit"
-        >
-          {{ busy ? '上传中…' : '上传并进入数据准备' }}
-        </el-button>
-      </div>
-    </div>
+    <DatasetIntakeStart
+      mode="version" :file="file" input-test="dataset-file" :busy="busy" :can-submit="canSubmit"
+      :error="error" error-test="upload-error" submit-test="dataset-submit"
+      @file-change="onFileChange" @submit="submit"
+    />
   </div>
 </template>
 
@@ -92,58 +72,7 @@ async function submit() {
 .upload-page {
   min-height: 100%;
   padding: var(--s1-space-4) var(--s1-space-6) var(--s1-space-8);
-  max-width: var(--s1-page-form);
+  max-width: var(--s1-page-workflow);
   margin: 0 auto;
-}
-.upload-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-.header-title h1 {
-  margin: 0;
-  font-size: var(--s1-font-2xl);
-  color: var(--s1-text-strong);
-}
-.header-sub {
-  margin: 6px 0 0;
-  color: var(--s1-text-dim);
-  font-size: var(--s1-font-md);
-}
-.mono {
-  font-family: ui-monospace, monospace;
-}
-.upload-form {
-  background: var(--s1-surface-1);
-  border: 1px solid var(--s1-border);
-  border-radius: var(--s1-radius-md);
-  padding: 22px;
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-}
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  font-size: var(--s1-font-md);
-  color: var(--s1-text-dim);
-}
-.gmp-file {
-  color: var(--s1-text);
-  font-size: var(--s1-font-md);
-}
-.upload-error {
-  border: 1px solid rgba(224, 104, 94, 0.5);
-  background: rgba(224, 104, 94, 0.12);
-  color: var(--s1-error);
-  border-radius: var(--s1-radius-sm);
-  padding: 10px 14px;
-  font-size: var(--s1-font-md);
-}
-.upload-actions {
-  display: flex;
-  gap: 12px;
 }
 </style>

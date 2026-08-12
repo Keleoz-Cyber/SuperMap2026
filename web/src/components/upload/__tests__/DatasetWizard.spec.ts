@@ -265,6 +265,25 @@ describe('DatasetWizardView', () => {
 })
 
 describe('CaseCreateView', () => {
+  it('presents case creation as a three-step intake workflow with a selected file summary', async () => {
+    const router = makeTestRouter()
+    await router.push('/cases/new')
+    const wrapper = mount(CaseCreateView, { global: { plugins: [router, ElementPlus] } })
+
+    expect(wrapper.get('[data-test="intake-mode-title"]').text()).toContain('创建案例')
+    expect(wrapper.findAll('[data-test^="intake-step-"]')).toHaveLength(3)
+    expect(wrapper.text()).toContain('上传首个数据版本')
+
+    const file = new File(['x,y,z,v\n1,2,3,4\n'], 'borehole.csv', { type: 'text/csv' })
+    const input = wrapper.find('[data-test="case-file"]')
+    Object.defineProperty(input.element, 'files', { value: [file], configurable: true })
+    await input.trigger('change')
+
+    const summary = wrapper.get('[data-test="selected-file-summary"]')
+    expect(summary.text()).toContain('borehole.csv')
+    expect(summary.text()).toContain('CSV')
+  })
+
   it('creates the case, uploads the file and navigates to the wizard', async () => {
     vi.mocked(client.createCase).mockResolvedValue({
       id: 'c9',
