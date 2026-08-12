@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 from typing import Any
+from pathlib import Path
+
+import pandas as pd
 
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy import func, select
@@ -13,6 +16,7 @@ from geomodeling.platform.errors import PlatformError, RUN_ALREADY_ACTIVE
 from geomodeling.platform.experiments import (
     assert_algorithm_dimension,
     resolve_professional_context,
+    validate_ml_experiment,
 )
 from geomodeling.platform.jobs import assert_quality_gate
 from geomodeling.platform.repositories import (
@@ -38,11 +42,31 @@ def create_experiment(
         assert_quality_gate(dataset.profile)
         # v0.8.0：算法-维度创建期门（DSI-like 仅 3D，422 类型化拒绝）
         assert_algorithm_dimension(request.algorithm, dataset.profile)
+        ml_capability = None
+        if request.algorithm in {"random_forest_spatial", "kriging_rf_residual"}:
+            standardized_path = dataset.standardized_path or dataset.profile.get("standardized_path")
+            if not standardized_path or not Path(standardized_path).is_file():
+                raise PlatformError(
+                    "DATASET_NOT_FOUND",
+                    "标准化数据不存在，无法评估机器学习适用性",
+                    {"dataset_id": dataset.id},
+                    http_status=404,
+                )
+            mapping = dataset.profile.get("mapping") or {}
+            dimension = "3d" if mapping.get("dimension") == "3d" else "2d"
+            ml_capability = validate_ml_experiment(
+                request, pd.read_parquet(standardized_path), dimension
+            )
         # v0.6：专业输入（确认快照/搜索邻域/经验不确定性）前置校验与解析；
         # legacy 请求（三字段全缺）返回 None，行为逐位不变。
         professional = resolve_professional_context(session, request, dataset)
         return ExperimentRepository(session).create(
-            request.case_id, request, professional=professional
+            request.case_id,
+            request,
+            professional=professional,
+            ml_capability=(
+                ml_capability.model_dump(mode="json") if ml_capability is not None else None
+            ),
         )
 
 

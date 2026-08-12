@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 import sklearn
@@ -20,6 +20,7 @@ RUN_CANCELED = "RUN_CANCELED"
 
 
 class RandomForestSpatialParameters(ContractModel):
+    feature_version: Literal["spatial_features.v1"] = "spatial_features.v1"
     n_estimators: int = Field(default=160, ge=40, le=400)
     max_depth: int | None = Field(default=18, ge=4, le=40)
     min_samples_leaf: int = Field(default=2, ge=1, le=20)
@@ -110,4 +111,3 @@ class _RandomForestSpatialFitted:
             },
             auxiliary={"model_dispersion": dispersion},
         )
-

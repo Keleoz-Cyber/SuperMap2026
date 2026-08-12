@@ -429,6 +429,7 @@ class ExperimentRepository:
         request: ExperimentCreateRequest,
         *,
         professional: dict[str, Any] | None = None,
+        ml_capability: dict[str, Any] | None = None,
     ) -> ExperimentRecord:
         if request.case_id != case_id:
             raise PlatformError(
@@ -459,6 +460,9 @@ class ExperimentRepository:
             # v0.6：规范化专业上下文随实验参数落库；legacy 实验不写该键，
             # params_json 与 v0.5 逐位一致。
             params["professional"] = professional
+        if ml_capability is not None:
+            params["ml_capability"] = ml_capability
+            params["ml_experimental_confirmed"] = request.ml_experimental_confirmed
         row = Experiment(
             id=_new_id(),
             case_id=case_id,

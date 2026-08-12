@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 from pydantic import Field
@@ -25,6 +25,7 @@ ML_RESIDUAL_COVERAGE_INSUFFICIENT = "ML_RESIDUAL_COVERAGE_INSUFFICIENT"
 
 
 class KrigingRFResidualParameters(ContractModel):
+    feature_version: Literal["spatial_features.v1"] = "spatial_features.v1"
     kriging: KrigingParameters = Field(default_factory=KrigingParameters)
     random_forest: RandomForestSpatialParameters = Field(
         default_factory=RandomForestSpatialParameters
@@ -174,4 +175,3 @@ class KrigingRFResidualFitted:
             },
             auxiliary=auxiliary,
         )
-

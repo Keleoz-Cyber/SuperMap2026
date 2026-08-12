@@ -194,6 +194,7 @@ class ExperimentCreateRequest(ContractModel):
     professional_confirmation_id: str | None = Field(default=None, min_length=1, max_length=128)
     neighborhood: dict[str, Any] | None = None
     empirical_uncertainty: dict[str, Any] | None = None
+    ml_experimental_confirmed: bool = False
 
 
 class FormalSelectionRequest(ContractModel):
