@@ -43,6 +43,8 @@ from geomodeling.modeling.dsi_like import DSILikeInterpolator
 from geomodeling.modeling.grid import derive_grid
 from geomodeling.modeling.idw import IDWInterpolator
 from geomodeling.modeling.kriging import OrdinaryKrigingInterpolator
+from geomodeling.modeling.kriging_rf_residual import KrigingRFResidualInterpolator
+from geomodeling.modeling.random_forest import RandomForestSpatialInterpolator
 from geomodeling.modeling.professional_contracts import (
     CapabilityState,
     EmpiricalUncertaintySpec,
@@ -53,6 +55,7 @@ from geomodeling.modeling.slices import GridResult, extract_slice
 from geomodeling.platform.slice_analysis import extract_grid_plane
 from geomodeling.modeling.uncertainty import empirical_error_scale, identity_transform
 from geomodeling.platform import tables
+from geomodeling.platform.ml_artifacts import read_ml_fields_manifest, write_ml_fields
 from geomodeling.platform.errors import PlatformError
 from geomodeling.platform.experiments import PROFESSIONAL_CAPABILITY_NOT_APPLICABLE
 from geomodeling.platform.schemas import Algorithm, GridSpec
@@ -89,6 +92,13 @@ _INTERPOLATORS = {
     Algorithm.IDW.value: IDWInterpolator(),
     Algorithm.ORDINARY_KRIGING.value: OrdinaryKrigingInterpolator(),
     Algorithm.DSI_LIKE.value: DSILikeInterpolator(),
+    Algorithm.RANDOM_FOREST_SPATIAL.value: RandomForestSpatialInterpolator(),
+    Algorithm.KRIGING_RF_RESIDUAL.value: KrigingRFResidualInterpolator(),
+}
+
+_ML_ALGORITHMS = {
+    Algorithm.RANDOM_FOREST_SPATIAL.value,
+    Algorithm.KRIGING_RF_RESIDUAL.value,
 }
 
 
@@ -323,6 +333,11 @@ def materialize(runtime: PlatformRuntime, result_id: str) -> dict[str, Any]:
         if professional is not None and runtime.settings.professional_result_manifest(result_id).is_file():
             # 幂等重读：回读既有专业工件并验证（manifest 哈希 + 网格形状），不盲目重算
             _verify_professional_materialization(runtime, result_id, metadata)
+        if params["algorithm"] in _ML_ALGORITHMS:
+            read_ml_fields_manifest(
+                grid_path.parent,
+                expected_grid_sha256=metadata.get("grid_sha256"),
+            )
         return metadata
 
     profile = tables.loads_canonical(dataset.profile_json)
@@ -370,6 +385,22 @@ def materialize(runtime: PlatformRuntime, result_id: str) -> dict[str, Any]:
             result_id=result_id,
         )
 
+    if params["algorithm"] in _ML_ALGORITHMS:
+        return _write_ml_materialization(
+            runtime,
+            candidate=candidate,
+            run=run,
+            experiment=experiment,
+            params=params,
+            candidate_params=candidate_params,
+            profile=profile,
+            dataset_version_id=dataset_version_id,
+            dimension=dimension,
+            grid=grid,
+            batch=batch,
+            result_id=result_id,
+        )
+
     # 原子落盘：临时目录写齐 → 校验 → 目录替换（legacy 路径逐字节不变）
     final_dir = grid_path.parent
     final_dir.mkdir(parents=True, exist_ok=True)
@@ -404,6 +435,116 @@ def materialize(runtime: PlatformRuntime, result_id: str) -> dict[str, Any]:
     with runtime.session() as session:
         row = session.get(tables.CandidateResult, result_id)
         row.grid_path = str(grid_path)
+        session.commit()
+    return metadata
+
+
+def _write_ml_materialization(
+    runtime: PlatformRuntime,
+    *,
+    candidate,
+    run,
+    experiment,
+    params: dict[str, Any],
+    candidate_params: dict[str, Any],
+    profile: dict[str, Any],
+    dataset_version_id: str,
+    dimension: str,
+    grid: GridDefinition,
+    batch,
+    result_id: str,
+) -> dict[str, Any]:
+    """Write the primary ML field and all auxiliary fields as one verified set."""
+
+    algorithm = params["algorithm"]
+    shape = grid.shape
+    grid_values = batch.values.reshape(shape)
+    nodata = batch.is_nodata.reshape(shape)
+    result_dir = runtime.settings.result_grid(result_id).parent
+    result_dir.mkdir(parents=True, exist_ok=True)
+    tmp_dir = Path(tempfile.mkdtemp(prefix="ml-result-", dir=result_dir.parent))
+    try:
+        tmp_grid = tmp_dir / "grid.npz"
+        np.savez_compressed(
+            tmp_grid,
+            axes=np.array(grid.axes, dtype=object),
+            values=grid_values,
+            is_nodata=nodata,
+        )
+        grid_sha = _sha256(tmp_grid)
+        if algorithm == Algorithm.RANDOM_FOREST_SPATIAL.value:
+            field_names = ("model_dispersion",)
+        else:
+            field_names = (
+                "model_dispersion",
+                "kriging_baseline",
+                "residual_correction",
+            )
+        fields: dict[str, np.ndarray] = {}
+        field_nodata: dict[str, np.ndarray] = {}
+        for name in field_names:
+            values = batch.auxiliary.get(name)
+            if values is None:
+                raise PlatformError(
+                    "ML_ARTIFACT_INVALID",
+                    "机器学习候选缺少必需辅助场",
+                    {"algorithm": algorithm, "field": name},
+                    http_status=409,
+                )
+            reshaped = np.asarray(values, dtype="float64").reshape(shape)
+            fields[name] = reshaped
+            field_nodata[name] = nodata | ~np.isfinite(reshaped)
+        ml_manifest = write_ml_fields(
+            tmp_dir,
+            algorithm=algorithm,
+            axes=grid.axes,
+            fields=fields,
+            nodata=field_nodata,
+            main_grid_sha256=grid_sha,
+            property_unit=_mapping_property_semantics(profile).get("units"),
+        )
+        metadata = _result_metadata(
+            result_id=result_id,
+            run=run,
+            experiment=experiment,
+            dataset_version_id=dataset_version_id,
+            params=params,
+            candidate_params=candidate_params,
+            dimension=dimension,
+            grid=grid,
+            grid_values=grid_values,
+            nodata=nodata,
+            grid_sha=grid_sha,
+            profile=profile,
+            fingerprint=candidate.fingerprint,
+        )
+        metadata["ml_fields"] = ml_manifest["fields"]
+        metadata["ml"] = {
+            "feature_version": candidate_params.get("feature_version"),
+            "sklearn_version": (batch.diagnostics or {}).get("sklearn_version")
+            or ((batch.diagnostics or {}).get("residual_model") or {}).get("sklearn_version"),
+            "limitations": [
+                "模型离散度为树间预测标准差参考，不是严格概率置信区间。",
+                "机器学习结果必须结合空间交叉验证指标和地质背景解释。",
+            ],
+        }
+        tmp_metadata = tmp_dir / "metadata.json"
+        tmp_metadata.write_text(
+            json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        with np.load(tmp_grid, allow_pickle=True) as probe:
+            if probe["values"].shape != tuple(shape):
+                raise PlatformError(RESULT_ARTIFACT_INVALID, "成果网格形状校验失败")
+        read_ml_fields_manifest(tmp_dir, expected_grid_sha256=grid_sha)
+
+        for name in ("grid.npz", "ml_fields.npz", "ml_fields.json", "metadata.json"):
+            os.replace(tmp_dir / name, result_dir / name)
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    with runtime.session() as session:
+        row = session.get(tables.CandidateResult, result_id)
+        row.grid_path = str(runtime.settings.result_grid(result_id))
         session.commit()
     return metadata
 

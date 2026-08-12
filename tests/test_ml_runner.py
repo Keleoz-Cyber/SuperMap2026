@@ -47,6 +47,7 @@ def _prepare(runtime: PlatformRuntime, algorithm: str, parameters: dict) -> str:
                         "mapping": {"dimension": "3d", "x": "x", "y": "y", "z": "z", "value": "value"},
                         "quality": {"status": "passed", "confirmed": True},
                         "standardized_sha256": "b" * 64,
+                        "standardized_path": str(target),
                     }
                 ),
             )
@@ -122,4 +123,3 @@ def test_kriging_residual_runner_uses_composite_path_and_writes_diagnostics(tmp_
     assert metrics["ml_diagnostics"]["residual_target_semantics"] == "observed_minus_out_of_fold_kriging"
     assert metrics["ml_diagnostics"]["inner_fold_count"] == 3
     assert metrics["ml_diagnostics"]["oof_residual_count"] > 0
-
