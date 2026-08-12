@@ -137,6 +137,33 @@ beforeEach(() => {
 })
 
 describe('DatasetWizardView', () => {
+  it('does not inspect a validated builtin preset and shows a read-only summary', async () => {
+    const preset = makeDataset('validated')
+    preset.profile = {
+      source_kind: 'builtin_preset',
+      row_count: 17549,
+      valid_row_count: 17549,
+      invalid_row_count: 0,
+      mapping: {
+        value_name: '电阻率',
+        value_unit: 'Ω·m',
+        coordinate_kind: 'local_linear',
+      },
+    }
+
+    const { wrapper } = await mountWizard(preset, null)
+
+    expect(client.fetchInspection).not.toHaveBeenCalled()
+    const completed = wrapper.get('[data-test="wizard-step-validated"]')
+    expect(completed.text()).toContain('17,549')
+    expect(completed.text()).toContain('电阻率')
+    expect(completed.text()).toContain('Ω·m')
+    expect(wrapper.get('[data-test="dataset-technical-details"]').text()).toContain('ds1')
+    expect(wrapper.get('[data-test="dataset-technical-details"]').text()).toContain('c1')
+    expect(wrapper.get('.wizard-header').text()).not.toContain('ds1')
+    expect(wrapper.get('.wizard-header').text()).not.toContain('c1')
+  })
+
   it('renders file step with original name, size, hash and preview', async () => {
     const { wrapper } = await mountWizard(makeDataset('uploaded'), null)
     const text = wrapper.text()
