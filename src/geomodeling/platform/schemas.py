@@ -91,6 +91,8 @@ class Algorithm(str, Enum):
     ORDINARY_KRIGING = "ordinary_kriging"
     # v0.8.0：DSI-like 离散平滑插值（工程近似，不等同 GOCAD DSI），仅 3D
     DSI_LIKE = "dsi_like"
+    RANDOM_FOREST_SPATIAL = "random_forest_spatial"
+    KRIGING_RF_RESIDUAL = "kriging_rf_residual"
 
 
 # ---------------------------------------------------------------------------
