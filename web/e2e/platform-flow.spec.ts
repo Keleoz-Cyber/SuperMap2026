@@ -524,18 +524,18 @@ test.describe('v0.7 生命周期与比较流程（mock API）', () => {
     // Navigate to trash
     await page.goto('/#/trash')
     await expect(page.getByTestId('trash-list')).toBeVisible()
-    await expect(page.getByTestId('trash-row')).toBeVisible()
+    await expect(page.getByTestId('trash-mobile-item')).toBeVisible()
 
     // Assert no page-level horizontal overflow
     const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth)
     expect(scrollWidth).toBeLessThanOrEqual(390)
 
-    // Assert table wrapper handles internal scroll
-    const wrap = page.locator('.trash-table-wrap')
-    const wrapBox = await wrap.boundingBox()
-    expect(wrapBox!.width).toBeLessThanOrEqual(390)
+    // Mobile uses stacked items instead of squeezing a desktop table.
+    await expect(page.locator('.trash-table-wrap')).toBeHidden()
+    const itemBox = await page.getByTestId('trash-mobile-item').boundingBox()
+    expect(itemBox!.width).toBeLessThanOrEqual(366)
 
-    // Assert purge button is not clipped (visible within viewport)
-    await expect(page.getByTestId('purge-case-open').first()).toBeVisible()
+    // Assert purge button is not clipped (visible within viewport).
+    await expect(page.getByTestId('purge-case-open-mobile').first()).toBeVisible()
   })
 })
