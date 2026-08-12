@@ -85,6 +85,7 @@ test('真实链路：上传 → 映射 → 质量 → IDW → 排行榜 → 成�
   await page.getByTestId('enter-workspace').click()
   await expect(page).toHaveURL(/#\/cases\/[0-9a-f-]+$/)
   await expect(page.getByTestId('case-workspace-header')).toBeVisible({ timeout: 30_000 })
+  await page.getByTestId('stage-nav-experiments').click()
   await page.getByTestId('new-experiment').click()
   await expect(page).toHaveURL(/#\/cases\/[0-9a-f-]+\/experiments\/new\?dataset=[0-9a-f-]+/)
 
@@ -94,7 +95,9 @@ test('真实链路：上传 → 映射 → 质量 → IDW → 排行榜 → 成�
   await expect(page).toHaveURL(/#\/experiments\/[0-9a-f-]+/)
 
   // 5. 有界轮询至成功；排行榜出现公共有效数与有限 RMSE
-  await expect(page.getByTestId('run-progress')).toContainText('succeeded', { timeout: 60_000 })
+  await expect(page.getByTestId('run-progress-primary')).toContainText('验证完成', {
+    timeout: 60_000,
+  })
   const board = page.getByTestId('leaderboard')
   await expect(board).toContainText('公共有效点 144', { timeout: 30_000 })
   const firstRow = page.getByTestId('candidate-row').first()
@@ -230,9 +233,7 @@ test('真实链路：上传 → 映射 → 质量 → IDW → 排行榜 → 成�
   expect(zipBytes.length).toBeGreaterThan(100)
   expect(zipBytes.subarray(0, 2).toString()).toBe('PK')
 
-  // 9. 返回实验 → 返回首页；案例卡持久化可见
-  await page.getByTestId('enter-case-workspace').first().click()
-  await expect(page).toHaveURL(/#\/experiments\/[0-9a-f-]+/)
+  // 9. 成果页通过全局首页返回；案例卡持久化可见
   await page.getByTestId('shell-brand').click()
   await expect(page).toHaveURL(/#\/$/)
   await expect(page.getByText(caseName)).toBeVisible()
@@ -330,7 +331,9 @@ test.describe('v0.6 专业建模流程（真实链路）', () => {
     await page.getByTestId('exp-name').fill('Live 专业 Kriging')
     await page.getByTestId('exp-submit').click()
     await expect(page).toHaveURL(/#\/experiments\/[0-9a-f-]+/)
-    await expect(page.getByTestId('run-progress')).toContainText('succeeded', { timeout: 90_000 })
+    await expect(page.getByTestId('run-progress-primary')).toContainText('验证完成', {
+      timeout: 90_000,
+    })
     await expect(page.getByTestId('candidate-row')).toHaveCount(2, { timeout: 30_000 })
 
     // 8. 成果工作台 -> 模型评估（真实物化：值场 + 原生标准差 + 经验误差尺度）
@@ -339,10 +342,12 @@ test.describe('v0.6 专业建模流程（真实链路）', () => {
     const resultUrl = page.url()
     await page.getByTestId('model-evaluation-entry').click()
     await expect(page).toHaveURL(/#\/results\/[0-9a-f-]+\/evaluation/)
-    await expect(page.getByTestId('summary-algorithm')).toContainText('ordinary_kriging', {
+    await expect(page.getByTestId('summary-algorithm')).toContainText('普通克里金', {
       timeout: 30_000,
     })
-    await expect(page.getByTestId('capability-native-kriging-std')).toContainText('supported')
+    await expect(page.getByTestId('capability-native-kriging-std')).toContainText(
+      '克里金标准差：可用',
+    )
 
     // 9. 折分检查 + 不确定性图层切换（真实折证据与不确定性格网）
     await expect(page.getByTestId('fold-inspector')).toBeVisible()
@@ -357,6 +362,8 @@ test.describe('v0.6 专业建模流程（真实链路）', () => {
     await page.getByTestId('anomaly-threshold').fill('100')
     await expect(page.getByTestId('anomaly-preview-count')).toContainText('预计合格节点')
     await page.getByTestId('anomaly-save').click()
+    await expect(page.getByTestId('extraction-technical-details')).toBeVisible({ timeout: 60_000 })
+    await page.getByTestId('extraction-technical-details').locator('summary').click()
     await expect(page.getByTestId('extraction-identity')).toBeVisible({ timeout: 60_000 })
     await expect(page.getByTestId('component-count')).toContainText(/连通区 [1-9]\d* \/ [1-9]\d* 个/)
 

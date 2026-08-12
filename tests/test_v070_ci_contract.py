@@ -202,10 +202,11 @@ GAS_MOCK_SPEC_MARKERS = (
     "煤层瓦斯",
     "散点预置 · 官方基线成果",
     "标准化散点 · 58 个合格样品",
-    "X/Y/Z/CH4_content",
+    "局部线性米制坐标",
     # gas 统一工作台（validated 58 行/官方成果已物化）
     "case-workspace-header",
-    "行数 58",
+    "质量检查通过",
+    "瓦斯含量",
     "open-official-result",
     # 官方成果页（算法/网格/NetCDF 面板/X/Y/Z 控件）
     "cand-gas-official",
