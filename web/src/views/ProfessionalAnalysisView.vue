@@ -24,6 +24,7 @@ import UncertaintyPanel from '../components/professional/UncertaintyPanel.vue'
 import AnomalyPanel from '../components/professional/AnomalyPanel.vue'
 import CandidateComparison from '../components/professional/CandidateComparison.vue'
 import PageNavigation from '../components/navigation/PageNavigation.vue'
+import { algorithmLabel } from '../utils/modelingLabels'
 
 const route = useRoute()
 const router = useRouter()
@@ -74,6 +75,42 @@ const showEnhanced = computed(
     !leakageDetected.value &&
     professional.value?.available === true,
 )
+
+const evaluationConclusion = computed(() => {
+  if (leakageDetected.value) {
+    return {
+      title: '基线指标可读，但增强证据已被泄漏检查阻断',
+      body: '训练与验证空间组存在重叠，逐折、残差和不确定性证据不应继续用于决策。',
+      tone: 'warning',
+    }
+  }
+  if (showEnhanced.value) {
+    return {
+      title: '增强评估证据可用',
+      body: '基线指标、逐折验证、残差与不确定性证据已登记，且未检测到空间折分泄漏。',
+      tone: 'success',
+    }
+  }
+  return {
+    title: '基线指标已生成',
+    body: '可查看总体误差、拟合度与覆盖率；逐折与残差证据未生成，当前结论仅限基线评估。',
+    tone: 'info',
+  }
+})
+
+function gotoComparison() {
+  const datasetId = metadata.value?.dataset_version_id
+  if (!datasetId) return
+  void router.push({
+    name: 'candidate-comparison',
+    params: { datasetId },
+    query: { case: experiment.value?.case_id ?? undefined },
+  })
+}
+
+function printEvaluation() {
+  window.print()
+}
 
 function fmtMetric(value: number | null, digits = 4): string {
   return value === null ? '-' : value.toFixed(digits)
@@ -187,17 +224,49 @@ watch(
 const provenance = computed(() => professional.value?.parameter_provenance ?? null)
 const capabilities = computed(() => professional.value?.capabilities ?? null)
 
+const CAPABILITY_LABELS: Record<string, string> = {
+  algorithm: '评估算法',
+  empirical_variogram: '经验变异函数',
+  model_anisotropy: '空间各向异性',
+  empirical_error_scale: '经验误差尺度',
+  native_kriging_std: '克里金标准差',
+  anomaly_extraction: '异常区域提取',
+  candidate_comparison: '候选成果比较',
+}
+
+const CAPABILITY_STATE_LABELS: Record<string, string> = {
+  supported: '可用',
+  not_applicable: '不适用',
+  unavailable: '未生成',
+  unsupported: '不可用',
+}
+
 const capabilityEntries = computed(() => {
   const caps = capabilities.value
   if (!caps) return []
   return (Object.entries(caps) as Array<[string, string | Record<string, string> | undefined]>)
     .filter(([key, value]) => key !== 'notes' && typeof value === 'string')
-    .map(([key, value]) => ({ key, state: value as string }))
+    .map(([key, value]) => ({
+      key,
+      state: value as string,
+      label: CAPABILITY_LABELS[key] ?? '其他能力',
+      stateLabel: CAPABILITY_STATE_LABELS[value as string] ?? '状态未知',
+    }))
 })
+
+const ORIGIN_LABELS: Record<string, string> = {
+  automatic_candidate: '交叉验证候选',
+  fold_training_subsets: '各折训练数据',
+  final_full_data_fit: '全量有效数据拟合',
+}
+
+function originLabel(value: string): string {
+  return ORIGIN_LABELS[value] ?? '已登记计算流程'
+}
 </script>
 
 <template>
-  <div class="analysis-page">
+  <div class="analysis-page product-page">
     <PageNavigation
       :case-id="experiment?.case_id"
       :experiment-id="metadata?.experiment_id"
@@ -207,17 +276,12 @@ const capabilityEntries = computed(() => {
     <header class="page-header">
       <h1>模型评估</h1>
       <p class="page-sub">
-        成果 <span class="mono" data-test="selected-candidate-id">{{ selectedResultId || routeResultId }}</span>
-        <template v-if="metadata"> · {{ metadata.dimension === '3d' ? '三维' : '二维' }}</template>
+        <template v-if="metadata">{{ metadata.dimension === '3d' ? '三维' : '二维' }}成果 · 只读评估</template>
       </p>
-      <button
-        type="button"
-        class="back-link"
-        data-test="back-to-workbench"
-        @click="gotoResultWorkbench"
-      >
-        返回成果工作台
-      </button>
+      <details class="page-technical">
+        <summary>技术详情</summary>
+        <span class="mono" data-test="selected-candidate-id">成果 {{ selectedResultId || routeResultId }}</span>
+      </details>
     </header>
 
     <el-result
@@ -237,6 +301,23 @@ const capabilityEntries = computed(() => {
     <div v-else-if="phase.kind === 'loading'" v-loading="true" class="page-loading" data-test="page-loading" />
 
     <main v-else class="analysis-main">
+      <section
+        class="evaluation-conclusion"
+        :data-tone="evaluationConclusion.tone"
+        data-test="evaluation-conclusion"
+      >
+        <div>
+          <span class="section-kicker">评估结论</span>
+          <h2>{{ evaluationConclusion.title }}</h2>
+          <p>{{ evaluationConclusion.body }}</p>
+        </div>
+        <div class="evaluation-actions" data-test="evaluation-next-actions">
+          <button type="button" class="gmp-btn primary" data-test="back-to-workbench" @click="gotoResultWorkbench">返回三维成果</button>
+          <button type="button" class="gmp-btn" data-test="evaluation-compare" @click="gotoComparison">比较候选</button>
+          <button type="button" class="gmp-btn" data-test="evaluation-export" @click="printEvaluation">导出 / 打印</button>
+        </div>
+      </section>
+
       <section v-if="candidateOptions.length > 1" class="candidate-switcher" data-test="candidate-switcher">
         <span class="switcher-label">候选（同一实验，仅成功候选）：</span>
         <button
@@ -247,26 +328,21 @@ const capabilityEntries = computed(() => {
           :data-test="`candidate-option-${candidate.id}`"
           @click="selectCandidate(candidate.id)"
         >
-          <span class="mono">{{ candidate.id }}</span>
+          <span>候选 {{ candidateOptions.indexOf(candidate) + 1 }}</span>
+          <small>RMSE {{ fmtMetric(candidate.metrics.rmse ?? null) }}</small>
         </button>
       </section>
 
       <section v-if="baseline" class="baseline-section" data-test="baseline-metrics">
-        <h2>基线评估</h2>
+        <h2>总体指标</h2>
         <div class="metrics-grid">
-          <span data-test="baseline-rmse">RMSE {{ fmtMetric(baseline.rmse) }}</span>
-          <span data-test="baseline-mae">MAE {{ fmtMetric(baseline.mae) }}</span>
-          <span data-test="baseline-r2">R² {{ fmtR2(baseline.r2) }}</span>
-          <span data-test="baseline-bias">Bias {{ fmtMetric(baseline.bias) }}</span>
-          <span v-if="baseline.coverage !== null" data-test="baseline-coverage">
-            覆盖率 {{ fmtMetric(baseline.coverage) }}
-          </span>
-          <span v-if="baseline.candidate_valid_count !== null" data-test="baseline-valid-count">
-            有效节点 {{ baseline.candidate_valid_count }}
-          </span>
-          <span v-if="baseline.candidate_nodata_count !== null" data-test="baseline-nodata-count">
-            NoData 节点 {{ baseline.candidate_nodata_count }}
-          </span>
+          <article data-test="baseline-rmse"><span>RMSE</span><strong>{{ fmtMetric(baseline.rmse) }}</strong><p>RMSE 反映典型误差尺度，适合在同一验证口径下比较候选。</p></article>
+          <article data-test="baseline-mae"><span>MAE</span><strong>{{ fmtMetric(baseline.mae) }}</strong><p>MAE 表示平均绝对偏差，对少量极端误差相对不敏感。</p></article>
+          <article data-test="baseline-r2"><span>R²</span><strong>{{ fmtR2(baseline.r2) }}</strong><p>{{ baseline.r2 === null ? 'R² 当前不可计算，不能据此评价解释度。' : 'R² 描述验证值变化被模型解释的比例，不等同于空间真实性。' }}</p></article>
+          <article data-test="baseline-bias"><span>Bias</span><strong>{{ fmtMetric(baseline.bias) }}</strong><p>Bias 用于判断整体高估或低估方向，接近零不代表局部无误差。</p></article>
+          <article v-if="baseline.coverage !== null" data-test="baseline-coverage"><span>覆盖率</span><strong>{{ fmtMetric(baseline.coverage) }}</strong><p>验证公共集上获得有限预测的比例。</p></article>
+          <article v-if="baseline.candidate_valid_count !== null" data-test="baseline-valid-count"><span>有效节点</span><strong>{{ baseline.candidate_valid_count }}</strong><p>本候选参与总体指标计算的有效预测数量。</p></article>
+          <article v-if="baseline.candidate_nodata_count !== null" data-test="baseline-nodata-count"><span>NoData 节点</span><strong>{{ baseline.candidate_nodata_count }}</strong><p>未形成有限预测的验证节点，需要结合覆盖率阅读。</p></article>
         </div>
       </section>
 
@@ -287,24 +363,38 @@ const capabilityEntries = computed(() => {
         <section class="summary-section" data-test="professional-summary">
           <h3>结构诊断摘要</h3>
           <div class="summary-grid">
-            <span data-test="summary-algorithm">算法 {{ professional?.algorithm }}</span>
+            <span data-test="summary-algorithm">算法 {{ professional ? algorithmLabel(professional.algorithm) : '-' }}</span>
             <span data-test="summary-confirmation">
-              确认 {{ professional?.confirmation_id ?? '无（非 Kriging 确认流程）' }}
+              {{ professional?.confirmation_id ? '已采用空间结构建议' : '无需空间结构确认' }}
             </span>
             <span
               v-for="entry in capabilityEntries"
               :key="entry.key"
               :data-test="`capability-${entry.key.replaceAll('_', '-')}`"
             >
-              {{ entry.key }}: {{ entry.state }}
+              {{ entry.label }}：{{ entry.stateLabel }}
             </span>
           </div>
+          <details class="professional-technical" data-test="professional-technical-details">
+            <summary>技术详情</summary>
+            <p class="mono">algorithm: {{ professional?.algorithm }}</p>
+            <p class="mono">confirmation_id: {{ professional?.confirmation_id ?? 'null' }}</p>
+            <p v-for="entry in capabilityEntries" :key="`technical-${entry.key}`" class="mono">
+              {{ entry.key }}: {{ entry.state }}
+            </p>
+            <template v-if="provenance">
+              <p class="mono">validation.origin: {{ provenance.validation.origin }}</p>
+              <p class="mono">validation.scope: {{ provenance.validation.scope }}</p>
+              <p class="mono">final.origin: {{ provenance.final.origin }}</p>
+              <p class="mono">final.scope: {{ provenance.final.scope }}</p>
+            </template>
+          </details>
           <div v-if="provenance" class="provenance" data-test="param-provenance">
             <span data-test="param-origin-validation">
-              验证参数来源 {{ provenance.validation.origin }}（{{ provenance.validation.scope }}）
+              验证参数来源：{{ originLabel(provenance.validation.origin) }}
             </span>
             <span data-test="param-origin-final">
-              最终参数来源 {{ provenance.final.origin }}（{{ provenance.final.scope }}）
+              最终参数来源：{{ originLabel(provenance.final.origin) }}
             </span>
             <span v-if="provenance.final.variogram" data-test="param-variogram">
               最终变异函数 {{ provenance.final.variogram.model }}
@@ -330,7 +420,7 @@ const capabilityEntries = computed(() => {
 <style scoped>
 .analysis-page {
   min-height: 100%;
-  max-width: 1080px;
+  max-width: var(--s1-page-standard);
   margin: 0 auto;
   padding: 28px 20px 48px;
   display: flex;
@@ -347,6 +437,16 @@ const capabilityEntries = computed(() => {
   margin: 8px 0 0;
   font-size: 12px;
   color: var(--gmp-text-faint);
+}
+
+.page-technical {
+  margin-top: 6px;
+  color: var(--gmp-text-faint);
+  font-size: 12px;
+}
+
+.page-technical summary {
+  cursor: pointer;
 }
 
 .mono {
@@ -396,6 +496,39 @@ const capabilityEntries = computed(() => {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.evaluation-conclusion {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--s1-space-6);
+  padding: var(--s1-space-5) 0;
+  border-block: 1px solid var(--s1-border);
+}
+
+.section-kicker {
+  color: var(--s1-cyan-strong);
+  font-size: var(--s1-font-xs);
+  font-weight: 600;
+}
+
+.evaluation-conclusion h2 {
+  margin: 6px 0;
+  font-size: var(--s1-font-xl);
+}
+
+.evaluation-conclusion p {
+  margin: 0;
+  color: var(--s1-text-dim);
+  line-height: var(--s1-leading);
+}
+
+.evaluation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1-space-2);
+  flex: 0 0 auto;
 }
 
 .candidate-switcher,
@@ -452,6 +585,56 @@ const capabilityEntries = computed(() => {
   gap: 6px 18px;
   font-size: 12px;
   color: var(--gmp-text-dim);
+}
+
+.baseline-section .metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--s1-border);
+  border: 1px solid var(--s1-border);
+}
+
+.baseline-section .metrics-grid article {
+  min-width: 0;
+  padding: var(--s1-space-4);
+  background: var(--s1-surface-2);
+}
+
+.baseline-section .metrics-grid article > span {
+  color: var(--s1-text-faint);
+}
+
+.baseline-section .metrics-grid strong {
+  display: block;
+  margin: 6px 0;
+  color: var(--s1-text-strong);
+  font-size: var(--s1-font-xl);
+}
+
+.baseline-section .metrics-grid p {
+  margin: 0;
+  color: var(--s1-text-dim);
+  line-height: 1.5;
+}
+
+@media (max-width: 760px) {
+  .evaluation-conclusion {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .baseline-section .metrics-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media print {
+  .page-nav,
+  .evaluation-actions,
+  .candidate-switcher {
+    display: none !important;
+  }
 }
 
 .provenance {

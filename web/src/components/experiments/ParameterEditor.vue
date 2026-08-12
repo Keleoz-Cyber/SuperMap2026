@@ -27,6 +27,8 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{
   (e: 'submit', payload: ParameterSubmit): void
+  // v0.9.0：参数变化实时快照（与提交载荷同形），驱动候选摘要；不触发任何 API
+  (e: 'change', payload: ParameterSubmit): void
 }>()
 
 const algorithm = ref<Algorithm>('idw')
@@ -246,18 +248,45 @@ function submit() {
   })
 }
 
+// 参数快照：任何参数/验证/网格变化后向父级同步（仅内存事件，无 API 副作用）
+const payloadSnapshot = computed<ParameterSubmit>(() => ({
+  algorithm: algorithm.value,
+  search_mode: searchMode.value,
+  parameters: buildParameters(),
+  validation: {
+    method: 'spatial_kfold',
+    folds: folds.value,
+    seed: seed.value,
+    holdout_fraction: holdout.value,
+  },
+  grid: buildGrid(),
+}))
+
+watch(
+  payloadSnapshot,
+  (payload) => {
+    emit('change', payload)
+  },
+  { immediate: true, deep: true },
+)
+
 const AXES = ['x', 'y', 'z'] as const
 </script>
 
 <template>
   <section class="editor" data-test="param-editor">
-    <div class="editor-row">
-      <span class="row-label">算法</span>
-      <label class="radio">
+    <div class="decision-heading">
+      <div><span class="section-kicker">第一步</span><h3>选择插值思路</h3></div>
+      <p>先按数据特征选择算法；不确定时可先用 IDW 建立快速基线，再用模型比较验证提升。</p>
+    </div>
+    <div class="algorithm-grid" role="radiogroup" aria-label="插值算法">
+      <label class="algorithm-choice" :class="{ selected: algorithm === 'idw' }" data-test="algorithm-choice-idw">
         <input type="radio" name="algo" data-test="algo-idw" :checked="algorithm === 'idw'" :disabled="!!algorithmLock" @change="algorithm = 'idw'" />
-        IDW（反距离加权）
+        <span class="choice-title">IDW <small>快速基线</small></span>
+        <span>距离越近权重越高，速度快、易解释，适合快速验证数据和参数范围。</span>
+        <em>限制：不显式建模空间相关结构。</em>
       </label>
-      <label class="radio">
+      <label class="algorithm-choice" :class="{ selected: algorithm === 'ordinary_kriging' }" data-test="algorithm-choice-ordinary_kriging">
         <input
           type="radio"
           name="algo"
@@ -266,9 +295,11 @@ const AXES = ['x', 'y', 'z'] as const
           :disabled="!!algorithmLock"
           @change="algorithm = 'ordinary_kriging'"
         />
-        普通克里金
+        <span class="choice-title">普通克里金 <small>空间相关性</small></span>
+        <span>利用变异函数描述空间连续性，可配合空间结构诊断形成更有依据的模型。</span>
+        <em>成本：拟合和交叉验证耗时更高。</em>
       </label>
-      <label class="radio">
+      <label class="algorithm-choice" :class="{ selected: algorithm === 'dsi_like', disabled: dimension !== '3d' }" data-test="algorithm-choice-dsi_like">
         <input
           type="radio"
           name="algo"
@@ -277,17 +308,19 @@ const AXES = ['x', 'y', 'z'] as const
           :disabled="dimension !== '3d' || !!algorithmLock"
           @change="algorithm = 'dsi_like'"
         />
-        DSI-like 离散平滑插值
+        <span class="choice-title">DSI-like <small>三维平滑</small></span>
+        <span>在 IDW 初始场上进行离散邻域平滑，并保持观测点硬约束。</span>
+        <em>工程近似，仅支持三维，不等同于 GOCAD DSI。</em>
       </label>
-      <span class="algo-note" data-test="dsi-like-note">
+      <span class="algo-note visually-hidden" data-test="dsi-like-note">
         基于 IDW 初始场和离散邻域平滑的工程近似方法，不等同于 GOCAD DSI。
       </span>
       <span v-if="algorithmLock" class="lock-hint" data-test="algorithm-lock">已锁定</span>
     </div>
 
-    <div class="editor-row">
-      <span class="row-label">参数模式</span>
-      <label class="radio">
+    <div class="mode-selector">
+      <span class="section-kicker">第二步</span>
+      <label class="mode-choice" :class="{ selected: searchMode === 'manual' }" data-test="mode-manual-label">
         <input
           type="radio"
           name="mode"
@@ -295,9 +328,9 @@ const AXES = ['x', 'y', 'z'] as const
           :checked="searchMode === 'manual'"
           @change="searchMode = 'manual'"
         />
-        单组参数（1 个候选）
+        <span><strong>推荐配置</strong><small>运行 1 个候选，适合快速得到成果</small></span>
       </label>
-      <label class="radio">
+      <label class="mode-choice" :class="{ selected: searchMode === 'grid' }" data-test="mode-grid-label">
         <input
           type="radio"
           name="mode"
@@ -305,14 +338,18 @@ const AXES = ['x', 'y', 'z'] as const
           :checked="searchMode === 'grid'"
           @change="searchMode = 'grid'"
         />
-        参数网格（自动组合）
+        <span><strong>参数网格</strong><small>自动组合多个候选，用于系统比较</small></span>
       </label>
+    </div>
+
+    <div class="count-line" :class="countState" data-test="count-preview">
+      当前将运行 {{ candidateCount }} 个候选组合
     </div>
 
     <template v-if="searchMode === 'manual'">
       <div v-if="algorithm === 'idw'" class="editor-grid">
         <label class="field">
-          <span>幂次 power</span>
+          <span>幂次</span>
           <input v-model.number="idwPower" type="number" step="0.5" min="0.5" max="8" class="gmp-input" data-test="idw-power" />
         </label>
         <label class="field">
@@ -320,7 +357,7 @@ const AXES = ['x', 'y', 'z'] as const
           <input v-model.number="idwNeighbors" type="number" step="1" min="1" max="128" class="gmp-input" data-test="idw-neighbors" />
         </label>
         <label v-if="preset" class="field">
-          <span>垂向距离缩放 z_scale</span>
+          <span>垂向距离缩放</span>
           <input v-model.number="zScale" type="number" step="0.1" min="0.1" max="20" class="gmp-input" data-test="z-scale-manual" :disabled="zScaleLock !== null && zScaleLock !== undefined" />
         </label>
       </div>
@@ -337,20 +374,20 @@ const AXES = ['x', 'y', 'z'] as const
           <span>变异函数模式</span>
           <select v-model="krigingMode" class="gmp-select" data-test="kriging-mode">
             <option value="auto">自动拟合（仅训练折）</option>
-            <option value="manual">手动 nugget/sill/range</option>
+            <option value="manual">手动设置块金、基台与变程</option>
           </select>
         </label>
         <template v-if="krigingMode === 'manual'">
           <label class="field">
-            <span>块金 nugget</span>
+          <span>块金</span>
             <input v-model.number="krigingNugget" type="number" step="0.1" min="0" class="gmp-input" data-test="kriging-nugget" />
           </label>
           <label class="field">
-            <span>基台 sill</span>
+          <span>基台</span>
             <input v-model.number="krigingSill" type="number" step="0.1" min="0.1" class="gmp-input" data-test="kriging-sill" />
           </label>
           <label class="field">
-            <span>变程 range</span>
+          <span>变程</span>
             <input v-model.number="krigingRange" type="number" step="1" min="1" class="gmp-input" data-test="kriging-range" />
           </label>
         </template>
@@ -359,57 +396,57 @@ const AXES = ['x', 'y', 'z'] as const
           <input v-model.number="krigingNeighbors" type="number" step="1" min="4" max="128" class="gmp-input" data-test="kriging-neighbors" />
         </label>
         <label v-if="preset" class="field">
-          <span>垂向距离缩放 z_scale</span>
+          <span>垂向距离缩放</span>
           <input v-model.number="zScale" type="number" step="0.1" min="0.1" max="20" class="gmp-input" data-test="z-scale-manual" :disabled="zScaleLock !== null && zScaleLock !== undefined" />
         </label>
       </div>
       <div v-else class="editor-grid">
         <label class="field">
-          <span>IDW 初始场幂次 init_power</span>
+          <span>IDW 初始场幂次</span>
           <select v-model.number="dsiInitPower" class="gmp-select" data-test="dsi-init-power">
             <option v-for="p in DSI_INIT_POWER_OPTIONS" :key="p" :value="p">{{ p.toFixed(1) }}</option>
           </select>
         </label>
         <label class="field">
-          <span>邻域连通性 neighbor_connectivity</span>
+          <span>邻域连接数</span>
           <select v-model.number="dsiConnectivity" class="gmp-select" data-test="dsi-connectivity">
             <option v-for="c in DSI_CONNECTIVITY_OPTIONS" :key="c" :value="c">{{ c }}</option>
           </select>
         </label>
         <label class="field">
-          <span>平滑强度 smoothing_strength</span>
+          <span>平滑强度</span>
           <select v-model.number="dsiSmoothing" class="gmp-select" data-test="dsi-smoothing">
             <option v-for="s in DSI_SMOOTHING_OPTIONS" :key="s" :value="s">{{ s }}</option>
           </select>
         </label>
         <label class="field">
-          <span>最大迭代次数 max_iterations</span>
+          <span>最大迭代次数</span>
           <select v-model.number="dsiIterations" class="gmp-select" data-test="dsi-iterations">
             <option v-for="m in DSI_ITERATION_OPTIONS" :key="m" :value="m">{{ m }}</option>
           </select>
         </label>
         <p class="field fixed-field" data-test="dsi-convergence-tolerance">
-          <span>收敛容差 convergence_tolerance</span>
+          <span>收敛容差</span>
           <span class="fixed-value">固定 1e-4（只读）</span>
         </p>
         <p class="field fixed-field" data-test="dsi-hard-constraints">
-          <span>观测点硬约束 hard_constraints</span>
+          <span>观测点约束</span>
           <span class="fixed-value">始终开启，不可关闭</span>
         </p>
       </div>
       <p v-if="preset && algorithm !== 'dsi_like'" class="editor-hint" data-test="z-scale-hint">{{ zScaleHint }}</p>
       <p v-if="manualKrigingInvalid" class="editor-error" data-test="kriging-manual-invalid">
-        手动变异函数要求 sill &gt; nugget ≥ 0 且 range &gt; 0
+        手动变异函数要求基台大于块金（块金不小于 0），且变程大于 0
       </p>
       <p v-if="manualZScaleInvalid" class="editor-error" data-test="z-scale-invalid">
-        z_scale 需满足 0 &lt; z_scale ≤ 20
+        垂向距离缩放需大于 0 且不超过 20
       </p>
     </template>
 
     <template v-else>
       <div v-if="algorithm === 'idw'" class="editor-grid">
         <label class="field wide">
-          <span>power 候选（逗号分隔）</span>
+          <span>幂次候选（逗号分隔）</span>
           <input v-model="gridPower" class="gmp-input" data-test="grid-power" placeholder="如：1.5, 2, 3" />
         </label>
         <label class="field wide">
@@ -417,7 +454,7 @@ const AXES = ['x', 'y', 'z'] as const
           <input v-model="gridNeighbors" class="gmp-input" data-test="grid-neighbors" placeholder="如：8, 16, 32" />
         </label>
         <label v-if="preset" class="field wide">
-          <span>z_scale 候选</span>
+          <span>垂向距离缩放候选</span>
           <input v-model="gridZScale" class="gmp-input" data-test="grid-z-scale" placeholder="如：0.5, 1, 2" :disabled="zScaleLock !== null && zScaleLock !== undefined" />
         </label>
       </div>
@@ -434,14 +471,14 @@ const AXES = ['x', 'y', 'z'] as const
           <input v-model="gridKrigingNeighbors" class="gmp-input" data-test="grid-kriging-neighbors" placeholder="如：16, 24, 32" />
         </label>
         <label v-if="preset" class="field wide">
-          <span>z_scale 候选</span>
+          <span>垂向距离缩放候选</span>
           <input v-model="gridZScale" class="gmp-input" data-test="grid-z-scale" placeholder="如：0.5, 1, 2" :disabled="zScaleLock !== null && zScaleLock !== undefined" />
         </label>
         <p class="editor-hint">网格搜索固定使用自动变异函数拟合（每折独立，防泄漏）。</p>
       </div>
       <div v-else class="editor-grid">
         <div class="field wide">
-          <span>init_power 候选</span>
+          <span>初始场幂次候选</span>
           <label v-for="p in DSI_INIT_POWER_OPTIONS" :key="p" class="radio inline">
             <input v-model="dsiGridInitPower" type="checkbox" :value="p" :data-test="`grid-dsi-init-power-${p}`" />
             {{ p.toFixed(1) }}
@@ -469,13 +506,12 @@ const AXES = ['x', 'y', 'z'] as const
           </label>
         </div>
         <p class="editor-hint">
-          网格搜索同样固定 convergence_tolerance = 1e-4 与 hard_constraints = 开启（每个组合一份）。
+          每个组合均使用固定收敛精度 1e-4，并保持观测点约束开启。
         </p>
       </div>
       <p v-if="preset && algorithm !== 'dsi_like'" class="editor-hint" data-test="z-scale-hint">{{ zScaleHint }}</p>
 
-      <div class="count-line" :class="countState" data-test="count-preview">
-        预计 {{ candidateCount }} 个候选组合
+      <div class="count-line count-warning-line" :class="countState">
         <span v-if="countState === 'warn'" class="count-note warn" data-test="count-warning">
           超过 30 组合将显著拉长运行时间
         </span>
@@ -485,24 +521,25 @@ const AXES = ['x', 'y', 'z'] as const
       </div>
     </template>
 
-    <div class="editor-row validation-row">
-      <span class="row-label">空间验证</span>
-      <label class="field small">
-        <span>折数</span>
-        <input v-model.number="folds" type="number" min="3" max="10" class="gmp-input" data-test="val-folds" />
-      </label>
-      <label class="field small">
-        <span>随机种子</span>
-        <input v-model.number="seed" type="number" class="gmp-input" data-test="val-seed" />
-      </label>
-      <label class="field small">
-        <span>留出比例</span>
-        <input v-model.number="holdout" type="number" step="0.05" min="0.1" max="0.4" class="gmp-input" data-test="val-holdout" />
-      </label>
-    </div>
-
-    <details class="advanced">
-      <summary>高级：自定义输出网格（默认按数据范围自动）</summary>
+    <details class="advanced" data-test="advanced-experiment-settings">
+      <summary>高级设置：空间验证与输出网格</summary>
+      <p class="advanced-intro">默认设置适合先建立可比较基线；只有在需要复现实验或指定网格范围时再调整。</p>
+      <div class="editor-row validation-row">
+        <span class="row-label">空间验证</span>
+        <label class="field small">
+          <span>折数</span>
+          <input v-model.number="folds" type="number" min="3" max="10" class="gmp-input" data-test="val-folds" />
+        </label>
+        <label class="field small">
+          <span>随机种子</span>
+          <input v-model.number="seed" type="number" class="gmp-input" data-test="val-seed" />
+        </label>
+        <label class="field small">
+          <span>留出比例</span>
+          <input v-model.number="holdout" type="number" step="0.05" min="0.1" max="0.4" class="gmp-input" data-test="val-holdout" />
+        </label>
+      </div>
+      <h4 class="advanced-title">自定义输出网格</h4>
       <div class="editor-grid">
         <label class="field small">
           <span>启用自定义</span>
@@ -546,6 +583,33 @@ const AXES = ['x', 'y', 'z'] as const
   flex-direction: column;
   gap: 14px;
 }
+
+.decision-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  align-items: end;
+}
+
+.decision-heading h3 { margin: 4px 0 0; font-size: 18px; }
+.decision-heading p { margin: 0; max-width: 480px; color: var(--gmp-text-dim); font-size: 12px; line-height: 1.55; }
+.section-kicker { color: var(--s1-cyan-strong); font-size: 11px; font-weight: 600; }
+.algorithm-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.algorithm-choice { min-width: 0; display: flex; flex-direction: column; gap: 8px; padding: 14px; border: 1px solid var(--gmp-border); background: var(--gmp-bg-soft); cursor: pointer; }
+.algorithm-choice input { position: absolute; opacity: 0; }
+.algorithm-choice.selected { border-color: var(--s1-cyan); background: var(--s1-cyan-ghost); box-shadow: inset 0 2px 0 var(--s1-cyan); }
+.algorithm-choice.disabled { opacity: .5; cursor: not-allowed; }
+.algorithm-choice > span:not(.choice-title), .algorithm-choice em { color: var(--gmp-text-dim); font-size: 12px; line-height: 1.5; font-style: normal; }
+.algorithm-choice em { color: var(--gmp-text-faint); }
+.choice-title { display: flex; justify-content: space-between; gap: 8px; color: var(--gmp-text); font-weight: 700; }
+.choice-title small { color: var(--s1-cyan-strong); font-size: 10px; font-weight: 600; }
+.mode-selector { display: grid; grid-template-columns: auto repeat(2, minmax(0, 1fr)); gap: 10px; align-items: stretch; }
+.mode-selector > .section-kicker { align-self: center; margin-right: 4px; }
+.mode-choice { display: flex; gap: 10px; align-items: center; padding: 10px 12px; border: 1px solid var(--gmp-border); cursor: pointer; }
+.mode-choice.selected { border-color: var(--s1-cyan-dim); background: var(--s1-cyan-ghost); }
+.mode-choice span { display: flex; flex-direction: column; gap: 3px; }
+.mode-choice small { color: var(--gmp-text-faint); font-size: 11px; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 .editor-row {
   display: flex;
@@ -608,6 +672,9 @@ const AXES = ['x', 'y', 'z'] as const
   border-top: 1px dashed var(--gmp-border);
   padding-top: 12px;
 }
+.advanced-intro { margin: 0 0 14px; color: var(--gmp-text-faint); font-size: 12px; }
+.advanced-title { margin: 16px 0 10px; color: var(--gmp-text); font-size: 13px; }
+.count-warning-line:empty { display: none; }
 
 .count-line {
   font-size: 13px;
@@ -696,5 +763,11 @@ const AXES = ['x', 'y', 'z'] as const
 .fixed-value {
   font-size: 13px;
   color: var(--gmp-text);
+}
+
+@media (max-width: 720px) {
+  .decision-heading { align-items: flex-start; flex-direction: column; gap: 8px; }
+  .algorithm-grid, .mode-selector { grid-template-columns: 1fr; }
+  .mode-selector > .section-kicker { margin: 4px 0 0; }
 }
 </style>

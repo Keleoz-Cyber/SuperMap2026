@@ -5,8 +5,10 @@ import { describe, expect, it } from 'vitest'
 import {
   VOLUME_FRAME_PROTOCOL,
   buildApplyRenderState,
-  buildInitMessage,
+  buildFocusAnnotation,
   buildFrameUrl,
+  buildInitMessage,
+  buildSetCameraPreset,
   isVolumeFrameEvent,
   parseChildMessage,
   validateRenderState,
@@ -220,13 +222,190 @@ describe('renderProtocol v2', () => {
     expect(url).toMatch(/[?&]sdk=([0-9a-f]{16}|unpinned)/)
   })
 
-  it('帧版本与 public/supermap-volume-frame 三文件内容哈希一致', () => {
+  it('帧版本与 public/supermap-volume-frame 全部运行时文件内容哈希一致', () => {
     const hash = createHash('sha256')
-    for (const name of ['index.html', 'app.js', 'styles.css']) {
+    for (const name of [
+      'index.html',
+      'app.js',
+      'styles.css',
+      'sceneAidsGeometry.js',
+      'cameraRangePolicy.js',
+    ]) {
       hash.update(
         readFileSync(resolve(__dirname, '../../../../public/supermap-volume-frame', name)),
       )
     }
     expect(buildFrameUrl('x')).toContain(`v=${hash.digest('hex').slice(0, 16)}`)
+  })
+})
+
+// v0.9.0 Task 7：异常标注与相机协议扩展（设计 §6）。
+// 标注进入完整渲染状态（INIT/APPLY 可选字段，v2 向后兼容）；相机预设与
+// 组件聚焦是带 commandId 的父命令；三维标注点击由子帧 ANNOTATION_SELECTED 回报。
+describe('renderProtocol v2 异常标注与相机（v0.9.0 Task 7）', () => {
+  const ANNOTATION = {
+    id: 'component-1',
+    label: 'A',
+    localPosition: [1, 2, 3],
+    bounds: [
+      [0, 2],
+      [1, 3],
+      [2, 4],
+    ],
+    valueMax: 10,
+    supportMeasure: 8,
+    supportUnit: 'volume_coordinate_unit3',
+    color: '#64dab1',
+    visible: true,
+  }
+
+  it('合法 annotations/focusedAnnotationId/sceneAids 通过校验且保持可选兼容', () => {
+    // 缺省（v2 旧形态）仍通过
+    expect(() => validateRenderState(makeState())).not.toThrow()
+    const state = {
+      ...makeState(),
+      annotations: [ANNOTATION, { ...ANNOTATION, id: 'component-2', label: 'B' }],
+      focusedAnnotationId: 'component-2',
+      sceneAids: { axes: true, depthTicks: false },
+    }
+    expect(validateRenderState(state as never)).toBe(state)
+  })
+
+  it('非法标注一律拒绝：非有限坐标/越界 bounds/负支持量/非法色值/未知单位', () => {
+    const bad = (mutate: (a: Record<string, unknown>) => void) => {
+      const annotation = JSON.parse(JSON.stringify(ANNOTATION)) as Record<string, unknown>
+      mutate(annotation)
+      return { ...makeState(), annotations: [annotation] }
+    }
+    expect(() => validateRenderState(bad((a) => (a.localPosition = [1, Number.NaN, 3])) as never)).toThrow()
+    expect(() => validateRenderState(bad((a) => (a.localPosition = [1, 2])) as never)).toThrow()
+    expect(() => validateRenderState(bad((a) => (a.bounds = [[0, 2], [5, 3], [2, 4]])) as never)).toThrow()
+    expect(() => validateRenderState(bad((a) => (a.bounds = [[0, Number.POSITIVE_INFINITY], [1, 3], [2, 4]])) as never)).toThrow()
+    expect(() => validateRenderState(bad((a) => (a.supportMeasure = -1)) as never)).toThrow()
+    expect(() => validateRenderState(bad((a) => (a.supportMeasure = Number.NaN)) as never)).toThrow()
+    expect(() => validateRenderState(bad((a) => (a.valueMax = Number.NaN)) as never)).toThrow()
+    expect(() => validateRenderState(bad((a) => (a.color = 'red')) as never)).toThrow()
+    expect(() => validateRenderState(bad((a) => (a.supportUnit = 'real_volume_m3')) as never)).toThrow()
+    expect(() => validateRenderState(bad((a) => (a.visible = 'yes')) as never)).toThrow()
+    expect(() => validateRenderState(bad((a) => (a.id = '')) as never)).toThrow()
+  })
+
+  it('重复标注 id 与悬空 focusedAnnotationId 拒绝', () => {
+    expect(() =>
+      validateRenderState({ ...makeState(), annotations: [ANNOTATION, ANNOTATION] } as never),
+    ).toThrow()
+    expect(() =>
+      validateRenderState({
+        ...makeState(),
+        annotations: [ANNOTATION],
+        focusedAnnotationId: 'component-99',
+      } as never),
+    ).toThrow()
+    // annotations 缺省时 focusedAnnotationId 不得非空
+    expect(() =>
+      validateRenderState({ ...makeState(), focusedAnnotationId: 'component-1' } as never),
+    ).toThrow()
+    // focusedAnnotationId: null 合法（清除聚焦）
+    expect(() =>
+      validateRenderState({ ...makeState(), annotations: [ANNOTATION], focusedAnnotationId: null } as never),
+    ).not.toThrow()
+  })
+
+  it('sceneAids 非布尔拒绝', () => {
+    expect(() =>
+      validateRenderState({ ...makeState(), sceneAids: { axes: 'yes', depthTicks: true } } as never),
+    ).toThrow()
+  })
+
+  it('SET_CAMERA_PRESET 父命令：四种预设合法，未知预设拒绝', () => {
+    for (const preset of ['isometric', 'top-xy', 'front-xz', 'front-yz'] as const) {
+      const msg = buildSetCameraPreset('r1', 'cmd-1', preset)
+      expect(msg).toMatchObject({
+        protocol: VOLUME_FRAME_PROTOCOL,
+        type: 'SET_CAMERA_PRESET',
+        requestId: 'r1',
+        commandId: 'cmd-1',
+        preset,
+      })
+    }
+    expect(() => buildSetCameraPreset('r1', 'cmd-1', 'orbit' as never)).toThrow()
+  })
+
+  it('FOCUS_ANNOTATION 父命令：合法 id 通过，空 id 拒绝', () => {
+    const msg = buildFocusAnnotation('r1', 'cmd-2', 'component-1')
+    expect(msg).toMatchObject({
+      protocol: VOLUME_FRAME_PROTOCOL,
+      type: 'FOCUS_ANNOTATION',
+      requestId: 'r1',
+      commandId: 'cmd-2',
+      annotationId: 'component-1',
+    })
+    expect(() => buildFocusAnnotation('r1', 'cmd-2', '')).toThrow()
+  })
+
+  it('ANNOTATION_SELECTED 子消息严格解析；COMMAND_APPLIED 扩展命令类型', () => {
+    const selected = parseChildMessage({
+      protocol: VOLUME_FRAME_PROTOCOL,
+      type: 'ANNOTATION_SELECTED',
+      requestId: 'r1',
+      annotationId: 'component-2',
+    })
+    expect(selected).toMatchObject({ type: 'ANNOTATION_SELECTED', annotationId: 'component-2' })
+    expect(
+      parseChildMessage({
+        protocol: VOLUME_FRAME_PROTOCOL,
+        type: 'ANNOTATION_SELECTED',
+        requestId: 'r1',
+        annotationId: '',
+      }),
+    ).toBeNull()
+    expect(
+      parseChildMessage({
+        protocol: VOLUME_FRAME_PROTOCOL,
+        type: 'ANNOTATION_SELECTED',
+        requestId: 'r1',
+      }),
+    ).toBeNull()
+
+    for (const commandType of ['SET_CAMERA_PRESET', 'FOCUS_ANNOTATION'] as const) {
+      const ack = parseChildMessage({
+        protocol: VOLUME_FRAME_PROTOCOL,
+        type: 'COMMAND_APPLIED',
+        requestId: 'r1',
+        commandId: 'cmd-3',
+        commandType,
+      })
+      expect(ack).toMatchObject({ type: 'COMMAND_APPLIED', commandType })
+    }
+    expect(
+      parseChildMessage({
+        protocol: VOLUME_FRAME_PROTOCOL,
+        type: 'COMMAND_APPLIED',
+        requestId: 'r1',
+        commandId: 'cmd-3',
+        commandType: 'FLY_TO_MOON',
+      }),
+    ).toBeNull()
+  })
+
+  it('STATE_APPLIED 回执中的扩展状态字段完整保留', () => {
+    const state = {
+      ...makeState(3),
+      annotations: [ANNOTATION],
+      focusedAnnotationId: null,
+      sceneAids: { axes: true, depthTicks: true },
+    }
+    const ack = parseChildMessage({
+      protocol: VOLUME_FRAME_PROTOCOL,
+      type: 'STATE_APPLIED',
+      requestId: 'r1',
+      commandId: 'cmd-1',
+      revision: 3,
+      appliedState: state,
+    })
+    expect(ack).toMatchObject({ type: 'STATE_APPLIED', revision: 3 })
+    const applied = (ack as { appliedState: RenderStateV2 }).appliedState
+    expect(applied.annotations).toHaveLength(1)
+    expect(applied.sceneAids).toEqual({ axes: true, depthTicks: true })
   })
 })

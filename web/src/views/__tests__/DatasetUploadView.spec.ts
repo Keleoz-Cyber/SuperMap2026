@@ -59,6 +59,18 @@ function setFile(wrapper: VueWrapper, filename = 'test.csv') {
 }
 
 describe('DatasetUploadView', () => {
+  it('uses the shared three-step workbench and explains that it adds a new version', async () => {
+    const { wrapper } = await mountView('case-7')
+
+    expect(wrapper.get('[data-test="intake-mode-title"]').text()).toContain('新增数据版本')
+    expect(wrapper.findAll('[data-test^="intake-step-"]')).toHaveLength(3)
+    expect(wrapper.text()).toContain('不会覆盖既有数据与成果')
+
+    setFile(wrapper, 'resistivity.csv')
+    await wrapper.find('[data-test="dataset-file"]').trigger('change')
+    expect(wrapper.get('[data-test="selected-file-summary"]').text()).toContain('resistivity.csv')
+  })
+
   it('upload succeeds and navigates to prepare page', async () => {
     vi.mocked(client.uploadDataset).mockResolvedValue(makeDataset({ id: 'ds-42' }))
     const { wrapper, router } = await mountView('case-7')
@@ -87,7 +99,6 @@ describe('DatasetUploadView', () => {
 
     const err = wrapper.find('[data-test="upload-error"]')
     expect(err.exists()).toBe(true)
-    expect(err.text()).toContain('UPLOAD_TOO_LARGE')
     expect(err.text()).toContain('文件超出大小限制')
   })
 })

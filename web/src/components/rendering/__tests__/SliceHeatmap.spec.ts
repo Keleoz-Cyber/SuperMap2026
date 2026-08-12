@@ -84,6 +84,13 @@ function makeAnalysis(): SliceAnalysisResponse {
       p10: 5,
       p50: 21,
       p90: 105,
+      low_count: null,
+      normal_count: null,
+      high_count: null,
+      low_ratio: null,
+      normal_ratio: null,
+      high_ratio: null,
+      thresholds: null,
     },
     render_profile: null,
   }

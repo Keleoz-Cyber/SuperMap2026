@@ -3,14 +3,18 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { DisplayTransform, PointLayerPayload, RenderAssetRecord, RenderIdentity } from '../../api/types'
 import {
   buildApplyRenderState,
+  buildFocusAnnotation,
   buildFrameUrl,
   buildInitMessage,
   buildResetView,
+  buildSetCameraPreset,
   buildSetPointLayer,
   isVolumeFrameEvent,
   newFrameRequestId,
   parseChildMessage,
+  type CameraPreset,
   type FrameCapabilities,
+  type FrameCommandType,
   type ParentMessageV2,
   type RenderStateV2,
 } from './renderProtocol'
@@ -30,7 +34,8 @@ const emit = defineEmits<{
   ready: [info: { sdkVersion: string; contextType: number; capabilities: FrameCapabilities }]
   rendered: [identity: RenderIdentity | null]
   applied: [ack: { commandId: string; revision: number; appliedState: RenderStateV2 }]
-  'command-applied': [ack: { commandId: string; commandType: 'SET_POINT_LAYER' | 'RESET_VIEW' }]
+  'command-applied': [ack: { commandId: string; commandType: FrameCommandType }]
+  'annotation-selected': [payload: { annotationId: string }]
   failed: [error: { code: string; message: string; commandId?: string; revision?: number }]
 }>()
 
@@ -128,6 +133,9 @@ function onMessage(event: MessageEvent) {
     case 'COMMAND_APPLIED':
       emit('command-applied', { commandId: msg.commandId, commandType: msg.commandType })
       return
+    case 'ANNOTATION_SELECTED':
+      emit('annotation-selected', { annotationId: msg.annotationId })
+      return
     case 'ERROR':
       // 子帧显式错误即终态信号：取消一切超时，直接上报
       clearAllTimers()
@@ -175,7 +183,16 @@ function resetView() {
   post(buildResetView(requestId, newCommandId()))
 }
 
-defineExpose({ requestId, applyRenderState, setPointLayer, resetView })
+// v0.9.0 Task 7：相机预设与组件聚焦命令（带 commandId；子帧回 COMMAND_APPLIED）
+function setCameraPreset(preset: CameraPreset) {
+  post(buildSetCameraPreset(requestId, newCommandId(), preset))
+}
+
+function focusAnnotation(annotationId: string) {
+  post(buildFocusAnnotation(requestId, newCommandId(), annotationId))
+}
+
+defineExpose({ requestId, applyRenderState, setPointLayer, resetView, setCameraPreset, focusAnnotation })
 </script>
 
 <template>

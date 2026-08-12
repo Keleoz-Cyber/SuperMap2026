@@ -43,9 +43,9 @@ export interface NativeVolumeAuxPoints {
 </script>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { ApiError } from '../../api/client'
-import type { PointLayerPayload, RenderIdentity } from '../../api/types'
+import type { PointLayerPayload, RenderIdentity, ResultComponentPreview } from '../../api/types'
 import SuperMapVolumeFrame from './SuperMapVolumeFrame.vue'
 import VolumeRenderToolbar from './VolumeRenderToolbar.vue'
 import OrthogonalSliceControls from './OrthogonalSliceControls.vue'
@@ -53,15 +53,55 @@ import type { SliceAxisMeta } from './OrthogonalSliceControls.vue'
 import SliceAnalysisPanel from './SliceAnalysisPanel.vue'
 import { buildColorStops } from './renderTransferFunctions'
 import type { RenderPaletteId, RenderScale } from './renderTransferFunctions'
-import type { RenderStateV2 } from './renderProtocol'
+import type { AnnotationWire, CameraPreset, RenderStateV2 } from './renderProtocol'
 
 const props = withDefaults(
   defineProps<{
     api: NativeVolumeRenderApi
     auxPoints?: NativeVolumeAuxPoints | null
+    // v0.9.0 Task 12：外部（图表/发现联动）请求的正交切片目标；
+    // token 单调递增，仅承载请求语义，面板仍从权威剖面响应确立 slice 状态
+    sliceRequest?: { axis: SliceAxis; range: [number, number]; token: number } | null
+    // v0.9.0 Task 9：成果级高值连通区（异常标注唯一事实源）与外部聚焦组件
+    components?: ResultComponentPreview[] | null
+    focusedComponentId?: number | null
+    // v0.9.0 V6：workbench 变体隐藏调试性外壳（标题/真值标签/资产身份块），
+    // 场景只保留一行轻量状态条与 fail-closed 错误/动作
+    variant?: 'default' | 'workbench' | 'presentation'
+    // 首页等展示面只保留失败诊断；ready 资产不暴露刷新按钮、哈希和内部身份。
+    showReadyDiagnostics?: boolean
   }>(),
-  { auxPoints: null },
+  {
+    auxPoints: null,
+    sliceRequest: null,
+    components: null,
+    focusedComponentId: null,
+    variant: 'default',
+    showReadyDiagnostics: true,
+  },
 )
+
+const emit = defineEmits<{
+  // 切片实际应用（含坐标）后向外通知，供证据带反向联动
+  (e: 'slice-change', payload: { axis: SliceAxis; index: number; coordinate: number }): void
+  // 请求无法落地（渲染器未就绪/区间越界）时必须显式失败，绝不伪报定位成功
+  (e: 'slice-request-failed', payload: { reason: string }): void
+  // v0.9.0 Task 9：三维标注点击反选组件；权威剖面响应外发（当前切片证据）
+  (e: 'annotation-selected', payload: { componentId: number }): void
+  (e: 'slice-analysis', response: SliceAnalysisResponse): void
+  // v0.9.0 V6：资产身份外发（成果页「数据溯源」展示；主舞台不再显示调试块）
+  (
+    e: 'asset-identity',
+    info: {
+      assetId: string
+      renderer: string
+      status: string
+      gridSha256: string
+      netcdfSha256: string | null
+      geolocationStatus: string
+    } | null,
+  ): void
+}>()
 
 type VolumePhase = 'idle' | 'loading' | 'rendered' | 'failed'
 
@@ -73,6 +113,9 @@ const assetChecked = ref(false)
 const asset = ref<RenderAssetRecord | null>(null)
 const creating = ref(false)
 const createError = ref<string | null>(null)
+const refreshing = ref(false)
+const refreshFeedback = ref<string | null>(null)
+const frameSession = ref(0)
 
 const frameRef = ref<InstanceType<typeof SuperMapVolumeFrame> | null>(null)
 const frameReady = ref(false)
@@ -81,6 +124,44 @@ const identity = ref<RenderIdentity | null>(null)
 const frameError = ref<{ code: string; message: string } | null>(null)
 
 const auxVisible = ref(false)
+
+// ---------------------------------------------------------------------------
+// v0.9.0 Task 9：成果异常标注编排（纯函数部分，必须在 renderState 初始化前
+// 声明——initialRenderState 在 setup 期同步调用，const 有 TDZ 限制）。
+// components prop（后端连通区预览）是标注唯一事实源；身份变化立即整体重建，
+// 绝不跨成果残留旧标注/旧聚焦。颜色按 rank 确定性分配，组件 ID 与研判面板一致。
+// ---------------------------------------------------------------------------
+const ANNOTATION_COLORS = ['#d9a84e', '#64dab1', '#e07a54', '#4d8de0', '#b37feb', '#5ec9e0']
+
+function componentToAnnotation(row: ResultComponentPreview, visible: boolean): AnnotationWire {
+  const pad = (pair: number[] | undefined): [number, number] =>
+    pair && pair.length === 2 ? [pair[0], pair[1]] : [0, 0]
+  return {
+    id: `component-${row.component_id}`,
+    label: row.label,
+    localPosition: [row.centroid[0] ?? 0, row.centroid[1] ?? 0, row.centroid[2] ?? 0],
+    bounds: [pad(row.bounds[0]), pad(row.bounds[1]), pad(row.bounds[2])],
+    valueMax: row.value_max,
+    supportMeasure: row.support_measure,
+    supportUnit: row.support_unit,
+    color: ANNOTATION_COLORS[(row.rank - 1) % ANNOTATION_COLORS.length],
+    visible,
+  }
+}
+
+function buildAnnotations(previous: AnnotationWire[]): AnnotationWire[] {
+  // 显隐沿用上一份状态同 id 成员（工具栏切换不被重建打回）；新组件默认可见
+  const prev = new Map(previous.map((a) => [a.id, a.visible]))
+  return (props.components ?? []).map((row) =>
+    componentToAnnotation(row, prev.get(`component-${row.component_id}`) ?? true),
+  )
+}
+
+const focusedAnnotationId = computed(() =>
+  props.focusedComponentId !== null && props.focusedComponentId !== undefined
+    ? `component-${props.focusedComponentId}`
+    : null,
+)
 
 // ---------------------------------------------------------------------------
 // v0.7.0 第二批 Task 11：完整 v2 渲染状态编排
@@ -103,14 +184,15 @@ function formatError(e: unknown): string {
 
 // 渲染默认值来自 capability.render_profile（色带/标度经纯函数展开）；
 // 缺省（不支持/点云专用初始化）使用固定安全默认
+// v0.9.0 V6：光照/渐变透明度在 profile 缺失降级路径同样默认关闭
 function profileDefaults() {
   const profile = capability.value?.render_profile ?? null
   const range: [number, number] = profile ? profile.value_range : [0, 1]
   return {
     range,
     stops: buildColorStops(profile?.default_palette ?? 'viridis', profile?.default_scale ?? 'linear', range),
-    lighting: profile?.lighting ?? true,
-    gradientOpacity: profile?.gradient_opacity ?? true,
+    lighting: profile?.lighting ?? false,
+    gradientOpacity: profile?.gradient_opacity ?? false,
     boundingBox: profile?.bounding_box ?? true,
     opacity: profile?.opacity ?? 1,
   }
@@ -118,6 +200,8 @@ function profileDefaults() {
 
 function initialRenderState(): RenderStateV2 {
   const defaults = profileDefaults()
+  const annotations = buildAnnotations([])
+  const focused = focusedAnnotationId.value
   return {
     revision: 1,
     mode: 'volume',
@@ -127,8 +211,34 @@ function initialRenderState(): RenderStateV2 {
     lighting: defaults.lighting,
     gradientOpacity: defaults.gradientOpacity,
     boundingBox: defaults.boundingBox,
+    annotations,
+    focusedAnnotationId: focused && annotations.some((a) => a.id === focused) ? focused : null,
+    sceneAids: { axes: true, depthTicks: true },
   }
 }
+
+// 外部聚焦变化（研判面板点击 / 三维反选经视图回填）→ 状态字段同步高亮
+watch(focusedAnnotationId, (id) => {
+  if ((renderState.value.focusedAnnotationId ?? null) === id) return
+  if (id && !(renderState.value.annotations ?? []).some((a) => a.id === id)) return
+  renderState.value = { ...renderState.value, focusedAnnotationId: id }
+  pushRenderState()
+})
+
+// 组件身份变化：标注整体重建；聚焦 id 不在新列表时立即清空（协议硬校验）
+watch(
+  () => props.components,
+  () => {
+    const annotations = buildAnnotations(renderState.value.annotations ?? [])
+    const focused = focusedAnnotationId.value
+    renderState.value = {
+      ...renderState.value,
+      annotations,
+      focusedAnnotationId: focused && annotations.some((a) => a.id === focused) ? focused : null,
+    }
+    pushRenderState()
+  },
+)
 
 function clearSliceDebounce() {
   if (sliceDebounce !== null) {
@@ -193,6 +303,11 @@ const controlsEnabled = computed(
     phase.value === 'rendered',
 )
 
+// 组件标注开关可用性：有真实连通区行 + 体渲染链就绪（标注经协议落地，绝不虚显）
+const annotationsAvailable = computed(
+  () => (props.components?.length ?? 0) > 0 && controlsEnabled.value,
+)
+
 const phaseText = computed(() => {
   if (capability.value && !capability.value.supported) return '不支持体渲染'
   switch (phase.value) {
@@ -207,16 +322,27 @@ const phaseText = computed(() => {
   }
 })
 
-async function refreshAsset() {
+const isWorkbench = computed(() => props.variant === 'workbench')
+const isPresentation = computed(() => props.variant === 'presentation')
+const isProductSurface = computed(() => isWorkbench.value || isPresentation.value)
+
+async function refreshAsset(userInitiated = false) {
   // 状态刷新是纯 GET：绝不隐式 POST
+  if (userInitiated) {
+    refreshing.value = true
+    refreshFeedback.value = null
+  }
   try {
     asset.value = await props.api.fetchAsset()
+    if (userInitiated) refreshFeedback.value = '状态已更新'
   } catch (e) {
     if (e instanceof ApiError && e.status === 404) {
       asset.value = null
     } else {
       createError.value = formatError(e)
     }
+  } finally {
+    if (userInitiated) refreshing.value = false
   }
 }
 
@@ -279,7 +405,30 @@ function onFrameReady() {
 function onFrameRendered(payload: RenderIdentity | null) {
   identity.value = payload
   phase.value = 'rendered'
+  frameError.value = null
 }
+
+// 资产身份外发：数据溯源页签展示（workbench 变体不在主舞台显示调试块）
+watch(
+  () => [asset.value?.id ?? null, capability.value?.geolocation_status ?? null] as const,
+  () => {
+    const record = asset.value
+    const cap = capability.value
+    if (!record || !cap) {
+      emit('asset-identity', null)
+      return
+    }
+    emit('asset-identity', {
+      assetId: record.id,
+      renderer: record.renderer,
+      status: record.status,
+      gridSha256: record.grid_sha256,
+      netcdfSha256: record.netcdf_sha256,
+      geolocationStatus: cap.geolocation_status,
+    })
+  },
+  { immediate: true },
+)
 
 function onFrameFailed(error: { code: string; message: string }) {
   // 原生失败保持显式错误：绝不切换到任何替代渲染
@@ -337,6 +486,12 @@ watch(
 function onAxesMetaLoaded(axes: Record<SliceAxis, SliceAxisMeta>) {
   axesMeta.value = axes
   sliceTarget.value = { axis: 'z', index: Math.floor((axes.z.length - 1) / 2) }
+  // 挂起的外部切片请求（图表/发现联动先于轴元数据到达）：现在解析
+  const pending = pendingSliceRequest
+  pendingSliceRequest = null
+  if (pending) {
+    nextTick(() => resolveSliceRequest(pending))
+  }
 }
 
 // 滑块拖动 150ms 防抖；轴切换/步进/松手 commit 立即生效
@@ -368,7 +523,68 @@ function onAnalysisLoaded(response: SliceAnalysisResponse) {
     },
   }
   pushRenderState()
+  emit('slice-change', { axis: s.fixed_axis, index: s.index, coordinate: s.coordinate })
+  // 权威响应外发：研判面板与证据带的「当前切片」与三维共用同一份
+  emit('slice-analysis', response)
 }
+
+// v0.9.0 Task 12：外部切片请求（图表区间/发现定位）→ 最近坐标索引。
+// 仅解析目标索引；slice 载荷仍由权威剖面分析响应确立（app.js 硬要求）。
+// 轴元数据未就绪（尚未进入过 slice 模式）时先切模式并挂起请求，
+// 待元数据到达后再解析，绝不伪报定位成功。
+let pendingSliceRequest: { axis: SliceAxis; range: [number, number]; token: number } | null = null
+
+function resolveSliceRequest(req: { axis: SliceAxis; range: [number, number] }) {
+  const axes = axesMeta.value
+  if (!axes) {
+    emit('slice-request-failed', { reason: '渲染器尚未就绪，无法定位切片' })
+    return
+  }
+  const coords = axes[req.axis].coordinates
+  if (coords.length === 0) {
+    emit('slice-request-failed', { reason: '当前轴无可用坐标' })
+    return
+  }
+  const mid = (req.range[0] + req.range[1]) / 2
+  const lo = Math.min(coords[0], coords[coords.length - 1])
+  const hi = Math.max(coords[0], coords[coords.length - 1])
+  if (mid < lo || mid > hi) {
+    emit('slice-request-failed', { reason: '选择区间超出数据范围' })
+    return
+  }
+  let best = 0
+  let bestDist = Infinity
+  coords.forEach((c, i) => {
+    const d = Math.abs(c - mid)
+    if (d < bestDist) {
+      bestDist = d
+      best = i
+    }
+  })
+  clearSliceDebounce()
+  // 模式切换的 watch 会把目标重置为 z 中位；在下一拍写入请求目标
+  nextTick(() => {
+    sliceTarget.value = { axis: req.axis, index: best }
+  })
+}
+
+watch(
+  () => props.sliceRequest,
+  (req) => {
+    if (!req) return
+    if (renderState.value.mode !== 'slice') {
+      pendingSliceRequest = req
+      renderState.value = { ...renderState.value, mode: 'slice' }
+      pushRenderState()
+      return
+    }
+    if (!axesMeta.value) {
+      pendingSliceRequest = req
+      return
+    }
+    resolveSliceRequest(req)
+  },
+)
 
 // 等值面输入只在 contour 模式显示；留空回落值域中点（不带 contourValue）。
 // 注意 type="number" 输入的 v-model 会被 Vue 自动转型为 number，这里统一按字符串处理
@@ -391,11 +607,50 @@ function onResetView() {
   frameRef.value?.resetView()
 }
 
+// ---------------------------------------------------------------------------
+// v0.9.0 Task 9：相机预设、组件聚焦与三维反选
+// ---------------------------------------------------------------------------
+function onCameraPreset(preset: CameraPreset) {
+  frameRef.value?.setCameraPreset(preset)
+}
+
+// 研判面板点击组件：子帧相机聚焦（高亮由 focusedComponentId prop 回流同步）
+function focusComponent(componentId: number) {
+  const annotationId = `component-${componentId}`
+  if (!(renderState.value.annotations ?? []).some((item) => item.id === annotationId)) return
+  frameRef.value?.focusAnnotation(annotationId)
+}
+
+const recoverableFrameError = computed(() => {
+  const code = frameError.value?.code ?? ''
+  return code.startsWith('FRAME_BOOT_') || code === 'FRAME_READY_TIMEOUT' || code === 'PAGE_ERROR'
+})
+
+const frameRecoveryMessage = computed(() => {
+  const code = frameError.value?.code
+  if (code === 'FRAME_BOOT_SDK_MISSING' || code === 'FRAME_READY_TIMEOUT') {
+    return '三维引擎没有正确加载，可能是浏览器仍在使用旧缓存或 SDK 资源短暂未就绪。'
+  }
+  return '三维场景启动时遇到临时错误，可以在当前页面重新加载场景。'
+})
+
+function reloadFrame() {
+  resetFrameState()
+  frameSession.value += 1
+}
+
+// 三维标注点击反选：只接受 component-N 形态，其他 id 一律忽略
+function onAnnotationSelected(payload: { annotationId: string }) {
+  const match = /^component-(\d+)$/.exec(payload.annotationId)
+  if (!match) return
+  emit('annotation-selected', { componentId: Number(match[1]) })
+}
+
 function sendPointLayer(layer: PointLayerPayload) {
   frameRef.value?.setPointLayer(layer)
 }
 
-defineExpose({ sendPointLayer })
+defineExpose({ sendPointLayer, focusComponent, setCameraPreset: onCameraPreset })
 
 onMounted(() => {
   void load()
@@ -403,18 +658,45 @@ onMounted(() => {
 </script>
 
 <template>
-  <section class="native-volume-panel" data-test="native-volume-panel">
-    <header class="panel-header">
-      <h3 class="panel-title">NetCDF 原生体渲染</h3>
+  <section class="native-volume-panel" :class="{ workbench: isWorkbench, presentation: isPresentation }" data-test="native-volume-panel">
+    <header v-if="!isWorkbench" class="panel-header">
+      <h3 class="panel-title">三维体渲染</h3>
       <span class="volume-phase" data-test="volume-phase">{{ phaseText }}</span>
     </header>
 
-    <!-- 固定真值标签：渲染器 / 坐标状态 / 辅助点定位，恒显 -->
-    <ul class="truth-labels" data-test="truth-labels">
+    <!-- 固定真值标签：渲染器 / 坐标状态 / 辅助点定位（默认变体恒显） -->
+    <ul v-if="!isProductSurface" class="truth-labels" data-test="truth-labels">
       <li>渲染器：SuperMap3D VoxelGridLayer3D</li>
       <li>坐标状态：显示锚点（非真实地理配准）</li>
       <li>辅助采样点：不参与连续体渲染</li>
     </ul>
+
+    <!-- 工作台主层只显示用户可理解的状态，具体渲染器与坐标合同进入数据溯源。 -->
+    <div v-if="isWorkbench" class="volume-status-bar" data-test="volume-status-bar">
+      <p class="volume-status-line" data-test="volume-status-line">
+        <span class="volume-phase" data-test="volume-phase">{{ phaseText }}</span>
+        <span>连续体成果</span>
+        <span v-if="capability">局部坐标展示</span>
+        <span>辅助采样点默认隐藏</span>
+      </p>
+      <div class="status-actions">
+        <span
+          v-if="refreshFeedback"
+          class="refresh-feedback"
+          data-test="refresh-feedback"
+          role="status"
+        >{{ refreshFeedback }}</span>
+        <button
+          v-if="capability && (showReadyDiagnostics || !asset || asset.status !== 'ready')"
+          class="link-button compact"
+          data-test="refresh-asset"
+          :disabled="creating || refreshing"
+          @click="refreshAsset(true)"
+        >
+          {{ refreshing ? '正在刷新…' : '刷新状态' }}
+        </button>
+      </div>
+    </div>
 
     <div v-if="capabilityLoading" class="panel-note" data-test="capability-loading">能力检查中…</div>
     <div v-else-if="capabilityError" class="panel-error" data-test="capability-error">
@@ -423,141 +705,190 @@ onMounted(() => {
     </div>
 
     <template v-else-if="capability">
-      <div class="panel-note" data-test="geo-status">坐标契约：{{ capability.geolocation_status }}</div>
+      <div v-if="!isProductSurface" class="panel-note" data-test="geo-status">坐标契约：{{ capability.geolocation_status }}</div>
 
-      <!-- 不支持：稳定原因码 + 原因；有显示变换时以 asset=null 进入点云专用初始化 -->
-      <div v-if="!capability.supported" class="panel-error" data-test="unsupported-reason">
-        <strong>{{ capability.reason_code }}</strong>
-        <span v-if="capability.reason">：{{ capability.reason }}</span>
-      </div>
-
-      <template v-else>
-        <div class="asset-actions">
-          <button
-            v-if="assetChecked && !asset"
-            class="primary-button"
-            data-test="create-asset"
-            :disabled="creating"
-            @click="create(false)"
+      <!-- v0.9.0 Task 9：左栏显示工具 + 中央三维场景双列布局 -->
+      <div class="panel-body">
+        <aside class="tools-rail" data-test="tools-rail">
+          <VolumeRenderToolbar
+            :model-value="renderState"
+            :profile="capability.render_profile ?? null"
+            :palette="activePalette"
+            :scale="activeScale"
+            :enabled="controlsEnabled"
+            :annotations-available="annotationsAvailable"
+            layout="rail"
+            @update:model-value="onToolbarUpdate"
+            @update:palette="onPaletteUpdate"
+            @update:scale="onScaleUpdate"
+            @reset-view="onResetView"
+            @camera-preset="onCameraPreset"
           >
-            {{ creating ? '正在生成…' : '生成 NetCDF 体渲染资产' }}
-          </button>
-          <button
-            v-if="asset && (asset.status === 'failed' || asset.status === 'interrupted')"
-            class="primary-button"
-            data-test="retry-asset"
-            :disabled="creating"
-            @click="create(true)"
-          >
-            {{ creating ? '正在重试…' : '重试生成渲染资产' }}
-          </button>
-          <button class="link-button" data-test="refresh-asset" :disabled="creating" @click="refreshAsset">
-            刷新状态
-          </button>
-        </div>
+            <template #spatial>
+              <!-- 等值面输入只在 contour 模式显示 -->
+              <div v-if="renderState.mode === 'contour'" class="control-row" data-test="contour-controls">
+                <label class="control-label" for="contour-value">等值面值</label>
+                <input
+                  id="contour-value"
+                  v-model="contourInput"
+                  class="number-input"
+                  data-test="contour-value"
+                  type="number"
+                  :disabled="!controlsEnabled"
+                  @change="applyContourValue"
+                />
+                <button
+                  class="link-button"
+                  data-test="contour-apply"
+                  :disabled="!controlsEnabled"
+                  @click="applyContourValue"
+                >
+                  应用等值面
+                </button>
+              </div>
 
-        <div v-if="asset && asset.error" class="panel-error" data-test="asset-error">
-          {{ asset.error.code }}：{{ asset.error.message }}
-        </div>
-        <div v-if="createError" class="panel-error" data-test="create-error">{{ createError }}</div>
+              <OrthogonalSliceControls
+                v-if="renderState.mode === 'slice' && axesMeta"
+                :mode="renderState.mode"
+                :axes="axesMeta"
+                @change="onSliceChange"
+                @commit="onSliceCommit"
+              />
+              <span
+                v-if="renderState.mode === 'volume'"
+                class="style-note"
+                data-test="spatial-hint"
+              >
+                切片或等值面模式下可沿轴定位
+              </span>
+            </template>
+            <template #aux-layer>
+              <el-checkbox
+                v-model="auxVisible"
+                size="small"
+                data-test="aux-points-toggle"
+                aria-label="显示辅助采样点"
+                :disabled="!auxPoints || !frameReady"
+                @change="pushPointLayer"
+              >
+                辅助采样点
+              </el-checkbox>
+            </template>
+          </VolumeRenderToolbar>
+        </aside>
 
-        <div v-if="asset" class="asset-identity" data-test="asset-identity">
-          <div>资产：{{ asset.id }}（{{ asset.renderer }}，状态 {{ asset.status }}）</div>
-          <div>网格 SHA-256：{{ asset.grid_sha256.slice(0, 16) }}…</div>
-          <div v-if="asset.netcdf_sha256">NetCDF SHA-256：{{ asset.netcdf_sha256.slice(0, 16) }}…</div>
-          <div>坐标契约：{{ capability.geolocation_status }}</div>
-          <div v-if="identity">
-            渲染身份：{{ identity.sourceKind }}/{{ identity.sourceId }}，网格
-            {{ identity.gridSha256.slice(0, 12) }}…，NetCDF {{ identity.netcdfSha256.slice(0, 12) }}…
+        <div class="scene-column">
+          <!-- 不支持：稳定原因码 + 原因；有显示变换时以 asset=null 进入点云专用初始化 -->
+          <div v-if="!capability.supported" class="panel-error" data-test="unsupported-reason">
+            <strong>{{ capability.reason_code }}</strong>
+            <span v-if="capability.reason">：{{ capability.reason }}</span>
           </div>
-        </div>
-      </template>
 
-      <div v-if="frameError" class="panel-error" data-test="frame-error">
-        {{ frameError.code }}：{{ frameError.message }}
-      </div>
+          <template v-else>
+            <div
+              v-if="
+                (assetChecked && !asset) ||
+                (asset && (asset.status === 'failed' || asset.status === 'interrupted')) ||
+                (!isWorkbench && (showReadyDiagnostics || !asset || asset.status !== 'ready'))
+              "
+              class="asset-actions"
+            >
+              <button
+                v-if="assetChecked && !asset"
+                class="primary-button"
+                data-test="create-asset"
+                :disabled="creating"
+                @click="create(false)"
+              >
+                {{ creating ? '正在准备…' : '准备体渲染数据' }}
+              </button>
+              <button
+                v-if="asset && (asset.status === 'failed' || asset.status === 'interrupted')"
+                class="primary-button"
+                data-test="retry-asset"
+                :disabled="creating"
+                @click="create(true)"
+              >
+                {{ creating ? '正在重试…' : '重试生成渲染资产' }}
+              </button>
+              <button
+                v-if="!isWorkbench && (showReadyDiagnostics || !asset || asset.status !== 'ready')"
+                class="link-button"
+                data-test="refresh-asset"
+                :disabled="creating || refreshing"
+                @click="refreshAsset(true)"
+              >
+                {{ refreshing ? '正在刷新…' : '刷新状态' }}
+              </button>
+              <span
+                v-if="!isWorkbench && refreshFeedback"
+                class="refresh-feedback"
+                data-test="refresh-feedback"
+                role="status"
+              >{{ refreshFeedback }}</span>
+            </div>
 
-      <SuperMapVolumeFrame
-        v-if="frameInit"
-        ref="frameRef"
-        :key="frameInit.asset ? frameInit.asset.id : 'point-only'"
-        :asset="frameInit.asset"
-        :display-transform="frameInit.transform"
-        :initial-state="frameInit.initialState"
-        @ready="onFrameReady"
-        @rendered="onFrameRendered"
-        @failed="onFrameFailed"
-      />
+            <div v-if="asset && asset.error" class="panel-error" data-test="asset-error">
+              {{ asset.error.code }}：{{ asset.error.message }}
+            </div>
+            <div v-if="createError" class="panel-error" data-test="create-error">{{ createError }}</div>
 
-      <!-- 体积控件：常驻工具栏 + 模式专属控件；只在 rendered 后启用 -->
-      <div class="volume-controls" data-test="volume-controls">
-        <VolumeRenderToolbar
-          :model-value="renderState"
-          :profile="capability.render_profile ?? null"
-          :palette="activePalette"
-          :scale="activeScale"
-          :enabled="controlsEnabled"
-          @update:model-value="onToolbarUpdate"
-          @update:palette="onPaletteUpdate"
-          @update:scale="onScaleUpdate"
-          @reset-view="onResetView"
-        />
+            <div
+              v-if="asset && !isProductSurface && showReadyDiagnostics"
+              class="asset-identity"
+              data-test="asset-identity"
+            >
+              <div>资产：{{ asset.id }}（{{ asset.renderer }}，状态 {{ asset.status }}）</div>
+              <div>网格 SHA-256：{{ asset.grid_sha256.slice(0, 16) }}…</div>
+              <div v-if="asset.netcdf_sha256">NetCDF SHA-256：{{ asset.netcdf_sha256.slice(0, 16) }}…</div>
+              <div>坐标契约：{{ capability.geolocation_status }}</div>
+              <div v-if="identity">
+                渲染身份：{{ identity.sourceKind }}/{{ identity.sourceId }}，网格
+                {{ identity.gridSha256.slice(0, 12) }}…，NetCDF {{ identity.netcdfSha256.slice(0, 12) }}…
+              </div>
+            </div>
+          </template>
 
-        <!-- 等值面输入只在 contour 模式显示 -->
-        <div v-if="renderState.mode === 'contour'" class="control-row" data-test="contour-controls">
-          <label class="control-label" for="contour-value">等值面值</label>
-          <input
-            id="contour-value"
-            v-model="contourInput"
-            class="number-input"
-            data-test="contour-value"
-            type="number"
-            :disabled="!controlsEnabled"
-            @change="applyContourValue"
+          <div v-if="frameError && !recoverableFrameError" class="panel-error" data-test="frame-error">
+            {{ frameError.code }}：{{ frameError.message }}
+          </div>
+
+          <div v-if="frameError && recoverableFrameError" class="frame-recovery" data-test="frame-recovery" role="alert">
+            <div>
+              <strong>三维场景暂未加载</strong>
+              <p>{{ frameRecoveryMessage }}</p>
+            </div>
+            <button type="button" class="primary-button" data-test="reload-frame" @click="reloadFrame">
+              重新加载三维场景
+            </button>
+          </div>
+
+          <SuperMapVolumeFrame
+            v-if="frameInit && !recoverableFrameError"
+            ref="frameRef"
+            :key="`${frameInit.asset ? frameInit.asset.id : 'point-only'}-${frameSession}`"
+            :asset="frameInit.asset"
+            :display-transform="frameInit.transform"
+            :initial-state="frameInit.initialState"
+            @ready="onFrameReady"
+            @rendered="onFrameRendered"
+            @failed="onFrameFailed"
+            @annotation-selected="onAnnotationSelected"
           />
-          <button
-            class="link-button"
-            data-test="contour-apply"
-            :disabled="!controlsEnabled"
-            @click="applyContourValue"
-          >
-            应用等值面
-          </button>
-          <span class="style-note">留空使用数据值域中点</span>
-        </div>
 
-        <OrthogonalSliceControls
-          v-if="renderState.mode === 'slice' && axesMeta"
-          :mode="renderState.mode"
-          :axes="axesMeta"
-          @change="onSliceChange"
-          @commit="onSliceCommit"
-        />
-        <SliceAnalysisPanel
-          v-if="renderState.mode === 'slice' && asset && asset.status === 'ready'"
-          :api="api"
-          :asset-id="asset.id"
-          :target="sliceTarget"
-          :axes-meta="axesMeta"
-          :palette="activePalette"
-          :scale="activeScale"
-          :enabled="controlsEnabled"
-          @analysis-loaded="onAnalysisLoaded"
-          @axes-meta-loaded="onAxesMetaLoaded"
-        />
-
-        <div class="control-row">
-          <label class="toggle-label">
-            <input
-              v-model="auxVisible"
-              data-test="aux-points-toggle"
-              type="checkbox"
-              :disabled="!auxPoints || !frameReady"
-              @change="pushPointLayer"
-            />
-            辅助采样点
-          </label>
-          <span class="style-note">默认关闭；仅作数据分布参考</span>
+          <SliceAnalysisPanel
+            v-if="renderState.mode === 'slice' && asset && asset.status === 'ready'"
+            :api="api"
+            :asset-id="asset.id"
+            :target="sliceTarget"
+            :axes-meta="axesMeta"
+            :palette="activePalette"
+            :scale="activeScale"
+            :enabled="controlsEnabled"
+            display="controller"
+            @analysis-loaded="onAnalysisLoaded"
+            @axes-meta-loaded="onAxesMetaLoaded"
+          />
         </div>
       </div>
     </template>
@@ -569,6 +900,124 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.panel-body {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  min-height: 0;
+}
+
+/* v0.9.0 V6 workbench：工具栏 328px + 中央场景 min 560px，填满舞台高度 */
+.native-volume-panel.workbench .panel-body {
+  grid-template-columns: 304px minmax(0, 1fr);
+  height: 100%;
+}
+
+.native-volume-panel.workbench {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.native-volume-panel.workbench .scene-column {
+  min-height: 0;
+  height: 100%;
+}
+
+.native-volume-panel.workbench .tools-rail {
+  overflow-y: auto;
+  min-height: 0;
+  max-height: 100%;
+}
+
+/* 工作台变体：场景画布吃掉剩余高度（不被 16/9 上限压小） */
+.native-volume-panel.workbench :deep(.volume-frame) {
+  aspect-ratio: auto;
+  flex: 1;
+  min-height: 300px;
+  max-height: none;
+}
+
+.tools-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid var(--gmp-border);
+  border-radius: 10px;
+  background: var(--gmp-bg-soft);
+  padding: 12px;
+}
+
+.scene-column {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+@media (max-width: 900px) {
+  .panel-body,
+  .native-volume-panel.workbench .panel-body {
+    grid-template-columns: 1fr;
+  }
+
+  .native-volume-panel.workbench .tools-rail {
+    max-height: none;
+    overflow: visible;
+  }
+}
+
+.refresh-feedback {
+  color: var(--s1-success, #64dab1);
+  font-size: var(--s1-font-sm, 13px);
+}
+
+.volume-status-bar {
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.status-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex: none;
+}
+
+.link-button.compact {
+  min-height: 28px;
+  padding: 3px 10px;
+}
+
+.frame-recovery {
+  min-height: 180px;
+  border: 1px solid rgba(217, 168, 78, 0.45);
+  border-radius: var(--s1-radius-md, 8px);
+  background: rgba(217, 168, 78, 0.08);
+  color: var(--s1-text, #e6f2ec);
+  padding: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 16px;
+  text-align: center;
+}
+
+.frame-recovery p {
+  max-width: 560px;
+  margin: 8px 0 0;
+  color: var(--s1-text-dim, #9eb5aa);
 }
 
 .panel-header {
@@ -599,8 +1048,9 @@ onMounted(() => {
   font-size: 12px;
   color: var(--gmp-text-dim);
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 4px 18px;
 }
 
 .panel-note {
@@ -706,8 +1156,28 @@ onMounted(() => {
   cursor: not-allowed;
 }
 
+.volume-status-line {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 12px;
+  color: var(--gmp-text-dim);
+}
+
+@media (max-width: 640px) {
+  .volume-status-bar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+.volume-status-line .volume-phase {
+  color: var(--gmp-accent);
+}
+
 .style-note {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--gmp-text-dim);
   opacity: 0.8;
 }

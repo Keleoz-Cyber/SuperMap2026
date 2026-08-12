@@ -43,8 +43,12 @@ describe('FormalSelectionPanel read_only 防护', () => {
     const notice = wrapper.find('[data-test="selection-readonly"]')
     expect(notice.exists()).toBe(true)
     expect(notice.text()).toContain('只读')
-    // 既有官方选择列表仍只读展示
-    expect(wrapper.find('[data-test="selection-item"]').exists()).toBe(true)
+    // 主层只展示登记状态；完整理由与选择人保留在折叠技术详情
+    expect(wrapper.get('[data-test="selection-summary"]').text()).toContain('正式模型已登记')
+    const details = wrapper.get('[data-test="selection-technical-details"]')
+    expect(details.attributes('open')).toBeUndefined()
+    expect(details.text()).toContain('preset-seed')
+    expect(details.text()).toContain('官方普通克里金基线')
     expect(client.selectFormal).not.toHaveBeenCalled()
   })
 
@@ -71,5 +75,7 @@ describe('FormalSelectionPanel read_only 防护', () => {
 
     expect(wrapper.find('[data-test="selection-submit"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="selection-readonly"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="selection-note"]').attributes('name')).toBe('formal-selection-note')
+    expect(wrapper.get('[data-test="selection-by"]').attributes('name')).toBe('formal-selection-by')
   })
 })

@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { algorithmLabel, parameterSummary } from '../modelingLabels'
+import {
+  algorithmLabel,
+  coordinateLabel,
+  parameterLabel,
+  parameterSummary,
+  propertyLabel,
+  unitLabel,
+} from '../modelingLabels'
 
 describe('algorithmLabel', () => {
   it('idw -> IDW（反距离加权）', () => {
@@ -17,6 +24,28 @@ describe('algorithmLabel', () => {
   it('very long unknown algorithm is truncated to 64 chars', () => {
     const long = 'x'.repeat(100)
     expect(algorithmLabel(long)).toHaveLength(64)
+  })
+})
+
+describe('coordinateLabel', () => {
+  it('local_linear uses user-facing Chinese wording', () => {
+    expect(coordinateLabel('local_linear')).toBe('局部线性米制坐标')
+  })
+})
+
+describe('propertyLabel', () => {
+  it('maps built-in property keys to user-facing names', () => {
+    expect(propertyLabel('RHO')).toBe('电阻率')
+    expect(propertyLabel('Vx')).toBe('微震速度')
+    expect(propertyLabel('CH4_content')).toBe('瓦斯含量')
+    expect(propertyLabel('density')).toBe('density')
+  })
+})
+
+describe('unitLabel', () => {
+  it('maps internal unit keys to scientific notation', () => {
+    expect(unitLabel('ohm_m')).toBe('Ω·m')
+    expect(unitLabel('km/s')).toBe('km/s')
   })
 })
 
@@ -51,5 +80,14 @@ describe('parameterSummary', () => {
 
   it('formats numbers with zh-CN locale', () => {
     expect(parameterSummary('idw', { power: 2.5 })).toEqual(['幂参数 2.5'])
+  })
+
+  it('DSI-like internal parameter keys map to user-facing labels', () => {
+    expect(parameterLabel('init_power')).toBe('初始场幂次')
+    expect(parameterLabel('neighbor_connectivity')).toBe('邻域连接数')
+    expect(parameterLabel('smoothing_strength')).toBe('平滑强度')
+    expect(parameterLabel('max_iterations')).toBe('最大迭代次数')
+    expect(parameterLabel('convergence_tolerance')).toBe('收敛容差')
+    expect(parameterLabel('hard_constraints')).toBe('观测点约束')
   })
 })

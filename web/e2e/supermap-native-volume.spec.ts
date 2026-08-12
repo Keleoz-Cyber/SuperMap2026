@@ -77,7 +77,10 @@ test('3D 成果工作台：物化 + 原生体渲染 + 工具栏完整状态 + �
   expect(assetPosts[0].body).toEqual({ retry_failed: false })
 
   // 协议握手：mock 子帧 FRAME_READY → INIT → RENDER_STATE rendered
-  await expect(page.getByTestId('asset-identity')).toContainText('supermap_voxelgrid_netcdf')
+  // v0.9.0 V6：资产身份在证据窗「数据溯源」标签
+  await page.getByTestId('ge-tab-provenance').click()
+  await expect(page.getByTestId('ge-asset-identity')).toContainText('supermap_voxelgrid_netcdf')
+  await page.getByTestId('ge-tab-overview').click()
   const frame = page.frames().find((f) => f.url().includes('/supermap-volume-frame/index.html'))
   expect(frame).toBeTruthy()
   const frameMessages = async () =>
@@ -92,7 +95,10 @@ test('3D 成果工作台：物化 + 原生体渲染 + 工具栏完整状态 + �
   expect((await frameMessages()).map((m) => m.type)).toContain('INIT')
 
   // ------------------------------------------------------------ 常驻工具栏
-  // 光照/渐变透明度/包围盒运行时切换
+  // v0.9.0 V6：INIT 初始状态光照/渐变透明度默认关闭，包围盒默认开启
+  const initMsg = (await frameMessages()).find((m) => m.type === 'INIT')
+  expect(initMsg?.state).toMatchObject({ lighting: false, gradientOpacity: false, boundingBox: true })
+  // 光照/渐变透明度/包围盒运行时切换（默认关 → 打开；包围盒默认开 → 关闭）
   await page.getByTestId('lighting-toggle').click()
   await page.getByTestId('gradient-opacity-toggle').click()
   await page.getByTestId('bounding-box-toggle').click()
@@ -127,8 +133,8 @@ test('3D 成果工作台：物化 + 原生体渲染 + 工具栏完整状态 + �
       mode: 'contour',
       contourValue: 30,
       filter: { min: 20, max: 50 },
-      lighting: false,
-      gradientOpacity: false,
+      lighting: true,
+      gradientOpacity: true,
       boundingBox: false,
     })
   const lastComplete = (await appliedStates()).at(-1)!
@@ -142,28 +148,28 @@ test('3D 成果工作台：物化 + 原生体渲染 + 工具栏完整状态 + �
   // ------------------------------------------------------------ 正交切片
   await page.getByTestId('mode-slice').click()
   // z 中位索引（z 长度 5 → 2）引导加载；剖面坐标标签来自权威响应
-  await expect(page.getByTestId('slice-coordinate-label')).toContainText('Z = -400')
+  await expect(page.getByTestId('slice-coordinate')).toContainText('Z = -400')
   await expect(page.getByTestId('slice-controls')).toBeVisible()
-  await expect(page.getByTestId('slice-statistics')).toContainText('有效 11 / NoData 1')
+  await expect(page.getByTestId('ge-slice-statistics')).toContainText('均值')
 
   // X/Y/Z 轴选择：3D slice 状态带权威 relativePosition
   await page.getByTestId('axis-x').click()
-  await expect(page.getByTestId('slice-coordinate-label')).toContainText('X = -141')
+  await expect(page.getByTestId('slice-coordinate')).toContainText('X = -141')
   await expect
     .poll(async () => (await appliedStates()).at(-1)?.slice)
     .toMatchObject({ axis: 'x', index: 1, coordinate: -141, relativePosition: 0.5 })
 
   await page.getByTestId('axis-y').click()
-  await expect(page.getByTestId('slice-coordinate-label')).toContainText('Y = 292')
+  await expect(page.getByTestId('slice-coordinate')).toContainText('Y = 292')
   await expect
     .poll(async () => (await appliedStates()).at(-1)?.slice)
     .toMatchObject({ axis: 'y', index: 1, coordinate: 292, relativePosition: 1 / 3 })
 
   await page.getByTestId('axis-z').click()
-  await expect(page.getByTestId('slice-coordinate-label')).toContainText('Z = -400')
+  await expect(page.getByTestId('slice-coordinate')).toContainText('Z = -400')
   // 步进到下一层：commit 立即生效
   await page.getByTestId('slice-next').click()
-  await expect(page.getByTestId('slice-coordinate-label')).toContainText('Z = -200')
+  await expect(page.getByTestId('slice-coordinate')).toContainText('Z = -200')
   await expect
     .poll(async () => (await appliedStates()).at(-1)?.slice)
     .toMatchObject({ axis: 'z', index: 3, coordinate: -200, relativePosition: 0.75 })
@@ -186,19 +192,23 @@ test('3D 成果工作台：物化 + 原生体渲染 + 工具栏完整状态 + �
 
   // 剖面导出：multipart POST（axis/index/image），保持在最后（触发下载语义）
   await page.getByTestId('mode-slice').click()
-  await expect(page.getByTestId('slice-coordinate-label')).toContainText('Z = -400')
-  await page.getByTestId('export-slice').click()
+  await expect(page.getByTestId('slice-coordinate')).toContainText('Z = -400')
+  await expect(page.getByTestId('ge-pane-slices')).toBeVisible()
+  await page.getByTestId('ge-export-slice').click()
   await expect.poll(() => sliceExportPosts.length).toBe(1)
   expect(sliceExportPosts[0].contentType).toContain('multipart/form-data')
 
   // 正式选择/导出控件保留；专业分析对 IDW 成果禁用
+  // v0.9.0：导出与发布归入证据与溯源抽屉，先展开再断言
   await expect(page.getByTestId('model-evaluation-entry')).toBeVisible()
   await expect(page.getByTestId('selection-submit')).toBeVisible()
+  await page.getByTestId('ge-tab-provenance').click()
   await expect(page.getByTestId('export-button')).toBeVisible()
 
-  // 切片 tab 保留既有行为
-  await page.getByTestId('tab-slices').click()
-  await expect(page.getByTestId('slice-label')).toContainText('Z = -800 m')
+  // 不再渲染第二套切片页签/热力图；当前切片只在成果证据窗展示
+  await expect(page.getByTestId('tab-slices')).toHaveCount(0)
+  await page.getByTestId('ge-tab-slices').click()
+  await expect(page.getByTestId('ge-slice-heatmap')).toBeVisible()
 
   // 无 /volume-demo 链接（旧自定义渲染入口已移除）
   expect(await page.locator('a[href*="volume-demo"]').count()).toBe(0)

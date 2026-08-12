@@ -162,6 +162,8 @@ interface MockState {
   caseTrashedAt: string | null
   // v0.7.0 batch 3：多候选比较调用计数（首次 comparable，后续 incompatible）
   comparisonCalls: number
+  // v0.9.0：AI 辅助研判按模式隔离（各模式 404 直到显式 POST 生成）
+  aiRecords: Partial<Record<'quick' | 'review', unknown>>
 }
 
 // ---------------------------------------------------------------- v0.6 专业建模
@@ -1224,6 +1226,7 @@ export async function installMockApi(page: Page): Promise<void> {
     casePurged: false,
     caseTrashedAt: null,
     comparisonCalls: 0,
+    aiRecords: {},
   }
 
   const runBody = (status: string, completed: number) => ({
@@ -1339,10 +1342,220 @@ export async function installMockApi(page: Page): Promise<void> {
         p10: 12,
         p50: 20,
         p90: 40,
+        // 与夹具自身值一致的三桶口径：11 个有效值（10..42，1 个 NoData）
+        // 阈值 [15, 35] → 低 3（10/11/12）/ 正常 5（20..32）/ 高 3（40/41/42）
+        low_count: 3,
+        normal_count: 5,
+        high_count: 3,
+        low_ratio: 3 / 11,
+        normal_ratio: 5 / 11,
+        high_ratio: 3 / 11,
+        thresholds: {
+          low: 15,
+          high: 35,
+          source: 'full_grid_quartile',
+          method: 'numpy_linear_p25_p75',
+        },
       },
       render_profile: null,
     }
   }
+
+  // -------------------------------------- v0.9.0：成果级分析 + AI 辅助研判 mock
+  // 与 sliceAnalysisBody 共用同一阈值 [15,35]（后端保证同口径）；坐标落在
+  // cand-1 网格 bounds 内；形态与 result_analysis_contracts.py 逐字段一致，
+  // 绝不添加合同外字段。
+  const RESULT_ANALYSIS_E2E = {
+    identity: {
+      result_id: 'cand-1',
+      grid_sha256: SHA,
+      analysis_version: 'result_analysis.v1',
+      dimension: '3d',
+      coordinate_type: 'local_linear',
+    },
+    variable: { name: '电阻率', unit: 'unknown' },
+    grid: {
+      shape: [11, 11, 11],
+      valid_count: 1296,
+      nodata_count: 35,
+      min: 10,
+      max: 60,
+      mean: 34.6,
+      median: 33.8,
+      p25: 15,
+      p75: 35,
+    },
+    thresholds: { low: 15, high: 35, source: 'full_grid_quartile', method: 'numpy_linear_p25_p75' },
+    composition: {
+      buckets: [
+        { category: 'low', count: 324, ratio: 0.25 },
+        { category: 'normal', count: 648, ratio: 0.5 },
+        { category: 'high', count: 324, ratio: 0.25 },
+      ],
+    },
+    depth_profile: {
+      status: 'applicable',
+      bins: [
+        { z_lower: -800, z_upper: -650, valid_count: 320, mean: 22.4, high_count: 26, high_ratio: 0.081 },
+        { z_lower: -650, z_upper: -500, valid_count: 328, mean: 38.9, high_count: 148, high_ratio: 0.451 },
+        { z_lower: -500, z_upper: -350, valid_count: 326, mean: 39.7, high_count: 118, high_ratio: 0.362 },
+        { z_lower: -350, z_upper: -200, valid_count: 322, mean: 36.2, high_count: 32, high_ratio: 0.099 },
+      ],
+    },
+    components_preview: {
+      threshold: 35,
+      connectivity_rule: 'face_2d4_3d6_v1',
+      total: 2,
+      returned: 2,
+      rows: [
+        {
+          rank: 1, label: 'A', component_id: 1,
+          support_node_count: 48, support_measure: 1200,
+          support_unit: 'volume_coordinate_unit3',
+          bounds: [[-120, -80], [350, 450], [-650, -550]],
+          centroid: [-100, 400, -600],
+          value_min: 35.2, value_max: 58, value_mean: 44.6,
+          touches_grid_boundary: false,
+        },
+        {
+          rank: 2, label: 'B', component_id: 2,
+          support_node_count: 26, support_measure: 640,
+          support_unit: 'volume_coordinate_unit3',
+          bounds: [[-90, -60], [260, 320], [-350, -250]],
+          centroid: [-70, 300, -300],
+          value_min: 35, value_max: 45, value_mean: 39.1,
+          touches_grid_boundary: true,
+        },
+      ],
+    },
+    model_evidence: {
+      algorithm: 'idw',
+      metrics: { rmse: 1.2, mae: 0.9, r2: 0.94, coverage: 0.96, common_valid_count: 96 },
+      common_valid_count: 96,
+      formal_selection_id: null,
+      formal_selection_note: null,
+    },
+    findings: [
+      {
+        id: 'finding-dominant-depth',
+        kind: 'dominant_depth_interval',
+        title: '高值主要集中在 -650–-500m 深度层段',
+        statement: '第二层段高值占比 45.1%，为所有层段最高',
+        evidence: [{ name: 'depth_bin_index', value: 1 }, { name: 'high_ratio', value: 0.451 }],
+        confidence: 'medium',
+        limitations: ['局部坐标系'],
+        spatial_target: { kind: 'depth_bin', component_id: null, depth_bin_index: 1 },
+      },
+      {
+        id: 'finding-largest-component',
+        kind: 'largest_high_component',
+        title: '最大高值连通区为 A 区',
+        statement: 'A 区网格支持体积估计 1200，为最大连通区',
+        evidence: [{ name: 'label', value: 'A' }, { name: 'support_measure', value: 1200 }],
+        confidence: 'high',
+        limitations: ['网格支持体积估计非真实地质体积'],
+        spatial_target: { kind: 'component', component_id: 1, depth_bin_index: null },
+      },
+      {
+        id: 'finding-boundary-contact',
+        kind: 'boundary_contact',
+        title: 'B 区接触网格边界',
+        statement: 'B 区接触网格边界，需注意外推影响',
+        evidence: [{ name: 'boundary_components', value: 'B' }],
+        confidence: 'high',
+        limitations: ['边界接触不代表异常延伸范围'],
+        spatial_target: null,
+      },
+      {
+        id: 'finding-formal-model',
+        kind: 'formal_model',
+        title: '正式模型为 IDW',
+        statement: '公共有效点 96，RMSE 1.2，R² 0.94',
+        evidence: [{ name: 'algorithm', value: 'idw' }, { name: 'rmse', value: 1.2 }, { name: 'r2', value: 0.94 }],
+        confidence: 'high',
+        limitations: ['指标基于交叉验证'],
+        spatial_target: null,
+      },
+      {
+        id: 'finding-uncertainty',
+        kind: 'uncertainty_availability',
+        title: '不确定性证据缺失',
+        statement: '该成果未物化专业不确定性层',
+        evidence: [{ name: 'availability', value: 'missing' }],
+        confidence: 'high',
+        limitations: ['不确定性分析不可用'],
+        spatial_target: null,
+      },
+    ],
+    provenance: {
+      grid_sha256: SHA,
+      calculation_version: 'result_analysis.v1',
+      threshold_method: 'numpy_linear_p25_p75',
+    },
+  }
+
+  const aiRecordE2E = (mode: string) => ({
+    id: 'ai-e2e-1',
+    result_id: 'cand-1',
+    grid_sha256: SHA,
+    evidence_hash: 'e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6',
+    prompt_version: 'ai_review.v1',
+    provider: 'deepseek',
+    model: 'deepseek-chat',
+    mode,
+    status: 'succeeded',
+    review: {
+      spatial_pattern: {
+        summary: '高值体元集中于 -650–-500m 层段，A 区为最大连通区且不接触边界',
+        evidence_refs: ['result_grid', 'depth_profile', 'component-1', 'depth_bin-1'],
+      },
+      model_reliability: {
+        summary: '公共有效点 96，RMSE 1.2，R² 0.94，模型指标可接受',
+        evidence_refs: ['model_evidence'],
+      },
+      uncertainty_and_risk: {
+        summary: 'B 区接触网格边界存在外推风险；不确定性证据缺失',
+        evidence_refs: ['component-2', 'uncertainty'],
+      },
+      review_and_next_checks: {
+        summary: '建议复核 -650–-500m 层段切片组成与备选候选模型',
+        evidence_refs: ['current_slice', 'depth_bin-1'],
+      },
+      consensus: {
+        consensus: '四视角一致：高值集中于中部层段，正式模型指标可接受',
+        disagreements: ['切片高值占比与完整场存在口径差异'],
+        recommended_checks: ['复核 -650–-500m 层段切片', '对比备选候选模型指标'],
+        decision_options: [
+          {
+            label: '维持当前模型',
+            trigger: 'RMSE 与 R² 满足验收口径',
+            benefit: '无需重新计算',
+            cost: '无',
+            evidence_refs: ['model_evidence'],
+          },
+          {
+            label: '复核备选模型',
+            trigger: '正式模型 R² 低于 0.9',
+            benefit: '可能进一步降低偏差',
+            cost: '需要重新交叉验证耗时',
+            evidence_refs: ['model_evidence', 'result_grid'],
+          },
+        ],
+        limitations: ['局部线性坐标，未做地理配准', '网格支持量非真实地质体积'],
+      },
+      evidence_hash: 'e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6',
+      prompt_version: 'ai_review.v1',
+      provider: 'deepseek',
+      model: 'deepseek-chat',
+      mode,
+    },
+    error_code: null,
+    error_message: null,
+    usage_prompt_tokens: 812,
+    usage_completion_tokens: 346,
+    latency_ms: 4321,
+    created_at: T,
+  })
 
   await page.route('**/api/**', async (route) => {
     const url = new URL(route.request().url())
@@ -1388,7 +1601,7 @@ export async function installMockApi(page: Page): Promise<void> {
           latest_validated_dataset_id: RHO_DATASET_ID,
           next_action: {
             step: 'experiment',
-            label: '新建实验',
+            label: '新建建模实验',
             url: '/#/cases/resistivity/experiments/new',
           },
           error: null,
@@ -1438,7 +1651,7 @@ export async function installMockApi(page: Page): Promise<void> {
           latest_validated_dataset_id: GAS_DATASET_ID,
           next_action: {
             step: 'experiment',
-            label: '新建实验',
+            label: '新建建模实验',
             url: '/#/cases/gas/experiments/new',
           },
           error: null,
@@ -1460,7 +1673,7 @@ export async function installMockApi(page: Page): Promise<void> {
       const prepMap: Record<string, { state: string; step: string; label: string; url: string | null }> = {
         uploaded: { state: 'needs_mapping', step: 'mapping', label: '继续字段映射', url: `/#/cases/case-e2e/datasets/ds-e2e/prepare` },
         mapped: { state: 'needs_quality_review', step: 'quality_review', label: '继续质量检查', url: `/#/cases/case-e2e/datasets/ds-e2e/prepare` },
-        validated: { state: 'ready', step: 'experiment', label: '新建实验', url: `/#/cases/case-e2e/experiments/new` },
+        validated: { state: 'ready', step: 'experiment', label: '新建建模实验', url: `/#/cases/case-e2e/experiments/new` },
         abandoned: { state: 'needs_upload', step: 'upload', label: '上传数据', url: `/#/cases/case-e2e/datasets/new` },
       }
       const prep = prepMap[state.datasetStatus] ?? prepMap.uploaded
@@ -2292,6 +2505,38 @@ export async function installMockApi(page: Page): Promise<void> {
       const coordinate = axis === 'x' ? -150 : axis === 'y' ? 260 : -800
       return json(route, sliceBody(axis, coordinate))
     }
+    // v0.9.0：成果级只读分析摘要（identity 绑定 cand-1 + SHA）
+    if (path === '/results/cand-1/analysis-summary' && method === 'GET') {
+      if (!state.resultMaterialized) {
+        return json(
+          route,
+          { error: { code: 'RESULT_NOT_MATERIALIZED', message: '成果尚未生成', details: { result_id: 'cand-1' } } },
+          404,
+        )
+      }
+      return json(route, RESULT_ANALYSIS_E2E)
+    }
+    // v0.9.0：AI 辅助研判（POST 显式生成 / latest 只读；无记录 404）
+    if (path === '/results/cand-1/ai-analysis' && method === 'POST') {
+      const body = route.request().postDataJSON() as { mode?: string }
+      const requestedMode = body.mode === 'review' ? 'review' : 'quick'
+      state.aiRecords[requestedMode] = aiRecordE2E(requestedMode)
+      return json(route, state.aiRecords[requestedMode], 201)
+    }
+    if (path === '/results/cand-1/ai-analysis/latest' && method === 'GET') {
+      const requestedMode = new URL(route.request().url()).searchParams.get('mode') === 'review'
+        ? 'review'
+        : 'quick'
+      const aiRecord = state.aiRecords[requestedMode]
+      if (!aiRecord) {
+        return json(
+          route,
+          { error: { code: 'AI_ANALYSIS_NOT_FOUND', message: '尚无 AI 辅助分析记录', details: { result_id: 'cand-1', mode: requestedMode } } },
+          404,
+        )
+      }
+      return json(route, aiRecord)
+    }
     if (path === '/results/cand-1/select-formal' && method === 'POST') {
       const body = route.request().postDataJSON() as { note: string; selected_by?: string }
       const record = {
@@ -2439,8 +2684,8 @@ export async function installMockApi(page: Page): Promise<void> {
         log_available: true,
         value_range: RHO_VALUE_RANGE,
         filter_range: RHO_VALUE_RANGE,
-        lighting: true,
-        gradient_opacity: true,
+        lighting: false,
+        gradient_opacity: false,
         bounding_box: true,
         opacity: 1,
       },
@@ -2726,8 +2971,8 @@ export async function installMockApi(page: Page): Promise<void> {
           log_available: true,
           value_range: GAS_VALUE_RANGE,
           filter_range: GAS_VALUE_RANGE,
-          lighting: true,
-          gradient_opacity: true,
+          lighting: false,
+          gradient_opacity: false,
           bounding_box: true,
           opacity: 1,
         },
@@ -2824,8 +3069,8 @@ export async function installMockApi(page: Page): Promise<void> {
           log_available: true,
           value_range: [10, 60],
           filter_range: [10, 60],
-          lighting: true,
-          gradient_opacity: true,
+          lighting: false,
+          gradient_opacity: false,
           bounding_box: true,
           opacity: 1,
         },

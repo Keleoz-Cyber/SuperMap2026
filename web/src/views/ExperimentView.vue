@@ -26,12 +26,18 @@ import type {
   RunRecord,
 } from '../api/types'
 import ParameterEditor, { type ParameterSubmit } from '../components/experiments/ParameterEditor.vue'
-import { parseNumberList, resolveDatasetPreset } from '../components/experiments/searchSpace'
+import { parseNumberList, resolveDatasetPreset, combinationCount } from '../components/experiments/searchSpace'
 import SearchSummary from '../components/experiments/SearchSummary.vue'
 import RunProgress from '../components/experiments/RunProgress.vue'
+import RunPipeline from '../components/experiments/RunPipeline.vue'
 import ResultStatusPanel from '../components/experiments/ResultStatusPanel.vue'
 import CandidateLeaderboard from '../components/experiments/CandidateLeaderboard.vue'
-import PageNavigation from '../components/navigation/PageNavigation.vue'
+import ExperimentLabLayout from '../components/experiments/ExperimentLabLayout.vue'
+import ParameterImpactSummary from '../components/experiments/ParameterImpactSummary.vue'
+import SpatialPreview, { type SpatialPointInput } from '../components/upload/SpatialPreview.vue'
+import PageContextHeader from '../components/navigation/PageContextHeader.vue'
+import AsyncState from '../components/states/AsyncState.vue'
+import { fetchDatasetPoints } from '../api/client'
 
 const route = useRoute()
 const router = useRouter()
@@ -46,6 +52,15 @@ const experimentId = computed(() => String(route.params.experimentId ?? ''))
 const dataset = ref<DatasetVersionRecord | null>(null)
 const name = ref('插值实验')
 const submitting = ref(false)
+
+// v0.9.0：实验画布测点预览与参数实时快照
+const datasetPoints = ref<SpatialPointInput[] | null>(null)
+const datasetPointTotal = ref<number | null>(null)
+const editorSnapshot = ref<ParameterSubmit | null>(null)
+
+function onEditorSnapshot(payload: ParameterSubmit) {
+  editorSnapshot.value = payload
+}
 
 const experiment = ref<ExperimentRecord | null>(null)
 const candidates = ref<CandidateRecord[]>([])
@@ -66,7 +81,7 @@ function stopPolling() {
 }
 
 function describeError(e: unknown): string {
-  if (e instanceof ApiError) return `${e.code}：${e.message}`
+  if (e instanceof ApiError) return e.message
   return e instanceof Error ? e.message : String(e)
 }
 
@@ -75,6 +90,17 @@ const dimension = computed<'2d' | '3d'>(() =>
 )
 
 const preset = computed(() => resolveDatasetPreset(dataset.value?.profile ?? null))
+const datasetDisplayName = computed(() => {
+  const filename = dataset.value?.profile?.original_filename
+  return typeof filename === 'string' && filename ? filename : '已验证数据版本'
+})
+
+// 候选摘要组合数：与 ParameterEditor 同一纯函数口径（手动恒 1，网格按离散候选乘积）
+const snapshotCombinationCount = computed(() => {
+  const snap = editorSnapshot.value
+  if (!snap) return 1
+  return snap.search_mode === 'manual' ? 1 : combinationCount(snap.parameters, 'grid')
+})
 
 const professionalConfirmationId = computed(() => {
   const q = route.query.professional_confirmation
@@ -214,6 +240,27 @@ async function resolveDataset() {
   }
   if (dataset.value?.status === 'validated') {
     void loadDiagnosisHistory()
+    void loadDatasetPoints(dataset.value.id)
+  }
+}
+
+// 实验画布：测点空间预览（抽稀只影响预览，不影响建模数据）
+async function loadDatasetPoints(targetDatasetId: string) {
+  datasetPoints.value = null
+  datasetPointTotal.value = null
+  try {
+    const body = await fetchDatasetPoints(targetDatasetId, 4)
+    if (dataset.value?.id !== targetDatasetId) return
+    const count = Math.min(body.x.length, body.y.length)
+    const pts: SpatialPointInput[] = []
+    for (let i = 0; i < count; i++) {
+      pts.push({ x: body.x[i], y: body.y[i], z: body.z ? body.z[i] : null })
+    }
+    datasetPoints.value = pts
+    datasetPointTotal.value = count
+  } catch {
+    // 预览不可用不阻断实验创建；画布显示解释性状态
+    datasetPoints.value = null
   }
 }
 
@@ -356,38 +403,65 @@ onBeforeUnmount(stopPolling)
 </script>
 
 <template>
-  <div class="experiment-page">
-    <PageNavigation v-if="isCreate" :case-id="caseId" current-label="新建实验" />
-    <PageNavigation v-else :case-id="experiment?.case_id" :experiment-id="experimentId" :current-label="experiment?.name ?? '实验详情'" />
-    <el-result v-if="loadError" icon="error" title="加载失败" :sub-title="loadError" role="alert" />
+  <div class="experiment-page product-page">
+    <PageContextHeader
+      v-if="isCreate"
+      title="新建建模实验"
+      subtitle="选择插值算法、验证方法和参数组合，运行后可在模型比较中查看结果。"
+      :case-id="caseId"
+    />
+    <PageContextHeader
+      v-else
+      :title="`${experiment?.name ?? '建模实验'} · 实验详情`"
+      subtitle="查看运行进度、候选成果、验证指标和失败原因。"
+      :case-id="experiment?.case_id"
+      :experiment-id="experimentId"
+    />
+    <AsyncState
+      v-if="loadError"
+      kind="error"
+      title="加载失败"
+      :impact="loadError"
+      next-action="返回案例工作台重新进入，或稍后重试"
+    />
 
     <template v-else-if="isCreate">
-      <header class="page-header">
-        <h1>调参实验室</h1>
-        <p v-if="dataset" class="page-sub">
-          数据集 <b>{{ dataset.profile?.original_filename ?? dataset.id }}</b> ·
-          {{ dimension === '3d' ? '三维' : '二维' }} · 案例
-          <span class="mono">{{ caseId }}</span>
-        </p>
-      </header>
-      <div v-if="actionError" class="action-error" role="alert" data-test="action-error">{{ actionError }}</div>
-      <label class="name-field">
-        <span>实验名称</span>
-        <input v-model="name" class="gmp-input" data-test="exp-name" maxlength="256" name="experiment-name" autocomplete="off" />
-      </label>
-      <div class="editor-wrap" @change="onEditorChange">
-        <ParameterEditor
-          v-if="dataset"
-          :dimension="dimension"
-          :submitting="submitting"
-          :preset="preset"
-          :algorithm-lock="professionalConfirmationId ? 'ordinary_kriging' : null"
-          :z-scale-lock="professionalConfirmationId ? 1 : null"
-          @submit="submit"
-        />
+      <div v-if="dataset" class="experiment-context" data-test="experiment-dataset-context">
+        <div class="experiment-context-summary" data-test="experiment-dataset-summary">
+          <div><span class="context-label">建模数据</span><strong>{{ datasetDisplayName }}</strong></div>
+          <div><span class="context-label">质量状态</span><strong>已通过质量检查</strong></div>
+          <div><span class="context-label">空间维度</span><strong>{{ dimension === '3d' ? '三维点数据' : '二维点数据' }}</strong></div>
+        </div>
+        <details data-test="experiment-technical-details">
+          <summary>技术详情</summary>
+          <span class="mono">案例 {{ caseId }} · 数据版本 {{ dataset.id }}</span>
+        </details>
       </div>
-      <div v-if="!dataset" v-loading="true" class="page-loading" />
-      <section v-if="dataset" class="professional-section" data-test="professional-section">
+      <div v-if="actionError" class="action-error" role="alert" data-test="action-error">{{ actionError }}</div>
+      <ExperimentLabLayout
+        v-if="dataset"
+        :title="name.trim() || '插值实验'"
+        :dataset-label="`${datasetDisplayName} · ${dimension === '3d' ? '三维' : '二维'}`"
+      >
+        <template #actions>
+          <label class="name-field">
+            <span>实验名称</span>
+            <input v-model="name" class="gmp-input" data-test="exp-name" maxlength="256" name="experiment-name" autocomplete="off" />
+          </label>
+        </template>
+        <template #params>
+          <div class="editor-wrap" @change="onEditorChange">
+            <ParameterEditor
+              :dimension="dimension"
+              :submitting="submitting"
+              :preset="preset"
+              :algorithm-lock="professionalConfirmationId ? 'ordinary_kriging' : null"
+              :z-scale-lock="professionalConfirmationId ? 1 : null"
+              @submit="submit"
+              @change="onEditorSnapshot"
+            />
+          </div>
+          <section class="professional-section" data-test="professional-section">
         <div v-if="professionalConfirmationId" class="pro-block">
           <p class="confirmation-chip" data-test="professional-confirmation">
             变异函数确认快照：<span class="mono">{{ professionalConfirmationId }}</span>
@@ -502,18 +576,52 @@ onBeforeUnmount(stopPolling)
             </el-collapse-item>
           </el-collapse>
         </template>
-      </section>
+          </section>
+        </template>
+        <template #canvas>
+          <SpatialPreview
+            v-if="datasetPoints && datasetPoints.length > 0"
+            :points="datasetPoints"
+            :total-rows="datasetPointTotal"
+          />
+          <div v-else class="canvas-unavailable" data-test="canvas-unavailable">
+            测点预览不可用：不影响参数配置与实验创建。
+          </div>
+          <div v-if="editorSnapshot?.algorithm === 'ordinary_kriging'" class="canvas-note">
+            普通克里金：变异函数证据见「空间结构分析」；快速建模使用自动拟合。
+          </div>
+          <div v-else-if="editorSnapshot?.algorithm === 'idw'" class="canvas-note">
+            IDW：权重随距离幂次衰减，邻点数以局部采样为准。
+          </div>
+        </template>
+        <template #summary>
+          <ParameterImpactSummary
+            v-if="editorSnapshot"
+            :algorithm="editorSnapshot.algorithm"
+            :search-mode="editorSnapshot.search_mode"
+            :combination-count="snapshotCombinationCount"
+            :grid="editorSnapshot.grid"
+            :validation="editorSnapshot.validation"
+            :parameters="editorSnapshot.parameters"
+            :warnings="[]"
+          />
+        </template>
+        <template #queue>
+          <p class="queue-hint">实验创建后，运行流水线、候选指标与比较入口将显示在实验队列中。</p>
+        </template>
+      </ExperimentLabLayout>
+      <div v-if="!dataset" v-loading="true" class="page-loading" />
     </template>
 
     <template v-else>
-      <header class="page-header">
-        <h1>{{ experiment?.name ?? '实验详情' }}</h1>
+      <div class="experiment-context">
         <p class="page-sub">
           实验 <span class="mono">{{ experimentId }}</span>
         </p>
-      </header>
+      </div>
       <div v-if="actionError" class="action-error" role="alert" data-test="action-error">{{ actionError }}</div>
       <SearchSummary v-if="experiment" :params="experiment.params" />
+      <RunPipeline :run="latestRun" />
       <RunProgress :run="latestRun" :acting="acting" @cancel="onCancel" @retry="onRetry" />
       <ResultStatusPanel :run="latestRun" :candidates="candidates" />
       <CandidateLeaderboard :candidates="candidates" :public-metrics="publicMetrics" />
@@ -524,7 +632,7 @@ onBeforeUnmount(stopPolling)
 <style scoped>
 .experiment-page {
   min-height: 100%;
-  max-width: 1080px;
+  max-width: var(--s1-page-standard);
   margin: 0 auto;
   padding: 28px 20px 48px;
   display: flex;
@@ -541,6 +649,47 @@ onBeforeUnmount(stopPolling)
   margin: 8px 0 0;
   font-size: 12px;
   color: var(--gmp-text-faint);
+}
+
+.experiment-context {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 0;
+  border-block: 1px solid var(--s1-border);
+}
+
+.experiment-context-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.experiment-context-summary > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.context-label {
+  color: var(--s1-text-faint);
+  font-size: var(--s1-font-xs);
+}
+
+.experiment-context-summary strong {
+  color: var(--s1-text-strong);
+  overflow-wrap: anywhere;
+}
+
+.experiment-context details {
+  color: var(--s1-text-faint);
+  font-size: var(--s1-font-xs);
+}
+
+.experiment-context summary {
+  width: fit-content;
+  cursor: pointer;
 }
 
 .mono {
@@ -686,5 +835,11 @@ onBeforeUnmount(stopPolling)
 .gmp-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+@media (max-width: 640px) {
+  .experiment-context-summary {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

@@ -17,7 +17,9 @@ function contentVersion(paths: string[]): string {
 
 const frameDir = resolve(__dirname, 'public/supermap-volume-frame')
 const VOLUME_FRAME_VERSION = contentVersion(
-  ['index.html', 'app.js', 'styles.css'].map((name) => resolve(frameDir, name)),
+  ['index.html', 'app.js', 'styles.css', 'sceneAidsGeometry.js', 'cameraRangePolicy.js'].map(
+    (name) => resolve(frameDir, name),
+  ),
 )
 const sdkEntry = resolve(__dirname, 'public/SuperMap3D-2026/SuperMap3D.js')
 const VOLUME_SDK_VERSION = existsSync(sdkEntry) ? contentVersion([sdkEntry]) : 'unpinned'

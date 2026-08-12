@@ -991,6 +991,15 @@ export interface SliceStatistics {
   p10: number | null
   p50: number | null
   p90: number | null
+  // v0.9.0：共享完整网格 p25/p75 阈值的低/正常/高值组成；
+  // 后端恒携带（无阈值时全部为 null），前端不得自行计算分位
+  low_count: number | null
+  normal_count: number | null
+  high_count: number | null
+  low_ratio: number | null
+  normal_ratio: number | null
+  high_ratio: number | null
+  thresholds: ResultThresholds | null
 }
 
 export interface SlicePlane {
@@ -1299,4 +1308,214 @@ export type AnalysisExportFormat = 'json' | 'csv'
 export interface AnalysisExportDownload {
   blob: Blob
   filename: string
+}
+
+// ---------------------------------------------------------------------------
+// v0.9.0 成果级分析（GET /api/results/{id}/analysis-summary）
+// 与 src/geomodeling/platform/result_analysis_contracts.py 逐字段一致；
+// 所有数字/文案只来自后端，前端不得重算阈值、排序或结论。
+// ---------------------------------------------------------------------------
+
+export interface ResultAnalysisIdentity {
+  result_id: string
+  grid_sha256: string
+  analysis_version: string
+  dimension: '2d' | '3d'
+  coordinate_type: 'local_linear' | 'wgs84'
+}
+
+export interface ResultAnalysisVariable {
+  name: string
+  unit: string
+}
+
+export interface ResultGridStatistics {
+  shape: number[]
+  valid_count: number
+  nodata_count: number
+  min: number
+  max: number
+  mean: number
+  median: number
+  p25: number
+  p75: number
+}
+
+export interface ResultThresholds {
+  low: number
+  high: number
+  source: 'full_grid_quartile'
+  method: string
+}
+
+export interface ResultCompositionBucket {
+  category: 'low' | 'normal' | 'high'
+  count: number
+  ratio: number
+}
+
+export interface ResultComposition {
+  buckets: ResultCompositionBucket[]
+}
+
+export interface ResultDepthBin {
+  z_lower: number
+  z_upper: number
+  valid_count: number
+  mean: number
+  high_count: number
+  high_ratio: number
+}
+
+export type ResultDepthProfileStatus = 'applicable' | 'not_applicable'
+
+export interface ResultDepthProfile {
+  status: ResultDepthProfileStatus
+  bins: ResultDepthBin[]
+}
+
+export type ResultSupportUnit = 'area_coordinate_unit2' | 'volume_coordinate_unit3'
+
+export interface ResultComponentPreview {
+  rank: number
+  label: string
+  component_id: number
+  support_node_count: number
+  support_measure: number
+  support_unit: ResultSupportUnit
+  bounds: number[][]
+  centroid: number[]
+  value_min: number
+  value_max: number
+  value_mean: number
+  touches_grid_boundary: boolean
+  empirical_error_scale_min?: number | null
+  empirical_error_scale_max?: number | null
+  empirical_error_scale_mean?: number | null
+  kriging_std_min?: number | null
+  kriging_std_max?: number | null
+  kriging_std_mean?: number | null
+}
+
+export interface ResultComponentsPreview {
+  threshold: number
+  connectivity_rule: string
+  total: number
+  returned: number
+  rows: ResultComponentPreview[]
+}
+
+export interface ResultModelEvidence {
+  algorithm: string
+  metrics: Record<string, number | null>
+  common_valid_count: number | null
+  formal_selection_id: string | null
+  formal_selection_note: string | null
+}
+
+export interface ResultSpatialTarget {
+  kind: 'component' | 'depth_bin' | 'grid'
+  component_id: number | null
+  depth_bin_index: number | null
+}
+
+export interface ResultFindingEvidence {
+  name: string
+  value: number | string | null
+}
+
+export interface ResultAnalysisFinding {
+  id: string
+  kind:
+    | 'dominant_depth_interval'
+    | 'largest_high_component'
+    | 'boundary_contact'
+    | 'formal_model'
+    | 'uncertainty_availability'
+  title: string
+  statement: string
+  evidence: ResultFindingEvidence[]
+  confidence: 'high' | 'medium' | 'low'
+  limitations: string[]
+  spatial_target: ResultSpatialTarget | null
+}
+
+export interface ResultAnalysisProvenance {
+  grid_sha256: string
+  calculation_version: string
+  threshold_method: string
+}
+
+export interface ResultAnalysisSummary {
+  identity: ResultAnalysisIdentity
+  variable: ResultAnalysisVariable
+  grid: ResultGridStatistics
+  thresholds: ResultThresholds
+  composition: ResultComposition
+  depth_profile: ResultDepthProfile
+  components_preview: ResultComponentsPreview
+  model_evidence: ResultModelEvidence
+  findings: ResultAnalysisFinding[]
+  provenance: ResultAnalysisProvenance
+}
+
+// ---------------------------------------------------------------------------
+// v0.9.0 AI 辅助研判（POST/GET /api/results/{id}/ai-analysis[/latest]）
+// 与 src/geomodeling/platform/ai_analysis_contracts.py 逐字段一致。
+// ---------------------------------------------------------------------------
+
+export type AIAnalysisStatus = 'succeeded' | 'unavailable' | 'error'
+export type AIAnalysisMode = 'quick' | 'review'
+
+export interface AIPerspective {
+  summary: string
+  evidence_refs: string[]
+}
+
+export interface AIDecisionOption {
+  label: string
+  trigger: string
+  benefit: string
+  cost: string
+  evidence_refs: string[]
+}
+
+export interface AIConsensus {
+  consensus: string
+  disagreements: string[]
+  recommended_checks: string[]
+  decision_options: AIDecisionOption[]
+  limitations: string[]
+}
+
+export interface AIReview {
+  spatial_pattern: AIPerspective
+  model_reliability: AIPerspective
+  uncertainty_and_risk: AIPerspective
+  review_and_next_checks: AIPerspective
+  consensus: AIConsensus
+  evidence_hash: string
+  prompt_version: string
+  provider: string
+  model: string
+  mode: AIAnalysisMode
+}
+
+export interface AIAnalysisRecord {
+  id: string
+  result_id: string
+  grid_sha256: string
+  evidence_hash: string
+  prompt_version: string
+  provider: string
+  model: string
+  mode: AIAnalysisMode
+  status: AIAnalysisStatus
+  review: AIReview | null
+  error_code: string | null
+  error_message: string | null
+  usage_prompt_tokens: number | null
+  usage_completion_tokens: number | null
+  latency_ms: number | null
+  created_at: string
 }

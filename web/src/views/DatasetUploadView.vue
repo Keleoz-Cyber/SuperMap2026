@@ -4,6 +4,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import { ApiError, uploadDataset } from '../api/client'
 import type { DatasetVersionRecord } from '../api/types'
+import PageContextHeader from '../components/navigation/PageContextHeader.vue'
+import DatasetIntakeStart from '../components/upload/DatasetIntakeStart.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -21,7 +23,7 @@ function onFileChange(event: Event) {
 }
 
 function describeError(e: unknown): string {
-  if (e instanceof ApiError) return `${e.code}：${e.message}`
+  if (e instanceof ApiError) return e.message
   return e instanceof Error ? e.message : String(e)
 }
 
@@ -44,103 +46,33 @@ async function submit() {
 </script>
 
 <template>
-  <div class="upload-page">
-    <header class="upload-header">
-      <el-button :icon="ArrowLeft" circle title="返回案例工作台" @click="router.push(`/cases/${caseId}`)" />
-      <div class="header-title">
-        <h1>上传数据到案例</h1>
-        <p class="header-sub">
-          案例 <span class="mono">{{ caseId }}</span> · 上传 CSV / XLSX 点数据继续数据准备
-        </p>
-      </div>
-    </header>
-
-    <div class="upload-form">
-      <label class="field">
-        <span>数据文件（CSV / XLSX，≤ 50 MiB、≤ 50 万行）</span>
-        <input
-          class="gmp-file"
-          data-test="dataset-file"
-          type="file"
-          accept=".csv,.xlsx"
-          @change="onFileChange"
-        />
-      </label>
-
-      <div v-if="error" class="upload-error" data-test="upload-error">{{ error }}</div>
-
-      <div class="upload-actions">
-        <el-button
-          type="primary"
-          data-test="dataset-submit"
-          :loading="busy"
-          :disabled="!canSubmit"
-          @click="submit"
-        >
-          {{ busy ? '上传中…' : '上传并进入数据准备' }}
+  <div class="upload-page product-page product-page--form">
+    <PageContextHeader
+      title="新增数据版本"
+      subtitle="保留既有版本和成果，为当前案例接入一份新的点数据。"
+      :case-id="caseId"
+      current-label="数据接入"
+    >
+      <template #actions>
+        <el-button :icon="ArrowLeft" title="返回案例工作台" @click="router.push(`/cases/${caseId}`)">
+          返回案例工作台
         </el-button>
-      </div>
-    </div>
+      </template>
+    </PageContextHeader>
+
+    <DatasetIntakeStart
+      mode="version" :file="file" input-test="dataset-file" :busy="busy" :can-submit="canSubmit"
+      :error="error" error-test="upload-error" submit-test="dataset-submit"
+      @file-change="onFileChange" @submit="submit"
+    />
   </div>
 </template>
 
 <style scoped>
 .upload-page {
-  min-height: 100vh;
-  background: #0f141c;
-  color: #d5dde8;
-  padding: 16px 24px 40px;
-  max-width: 720px;
+  min-height: 100%;
+  padding: var(--s1-space-4) var(--s1-space-6) var(--s1-space-8);
+  max-width: var(--s1-page-workflow);
   margin: 0 auto;
-}
-.upload-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-.header-title h1 {
-  margin: 0;
-  font-size: 20px;
-}
-.header-sub {
-  margin: 6px 0 0;
-  color: #93a1b3;
-  font-size: 13px;
-}
-.mono {
-  font-family: ui-monospace, monospace;
-}
-.upload-form {
-  background: #151c26;
-  border: 1px solid #263142;
-  border-radius: 8px;
-  padding: 22px;
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-}
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  font-size: 13px;
-  color: #93a1b3;
-}
-.gmp-file {
-  color: #d5dde8;
-  font-size: 13px;
-}
-.upload-error {
-  border: 1px solid #a43d3d;
-  background: rgba(164, 61, 61, 0.15);
-  color: #ef9a9a;
-  border-radius: 8px;
-  padding: 10px 14px;
-  font-size: 13px;
-}
-.upload-actions {
-  display: flex;
-  gap: 12px;
 }
 </style>

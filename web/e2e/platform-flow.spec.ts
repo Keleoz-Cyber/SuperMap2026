@@ -4,12 +4,13 @@ import { installMockApi } from '../src/mocks/platformDemo'
 // 浏览器冒烟：完整 v0.4 流程，全程 mock API，不需要 iServer。
 
 test.describe('v0.4 通用建模流程（mock API）', () => {
-  test('案例创建 → 向导 → 实验 → 排行榜 → 成果切片 → 选择 → 导出', async ({ page }) => {
+  test('案例创建 → 向导 → 实验 → 排行榜 → 成果 → 选择 → 导出', async ({ page }) => {
     await installMockApi(page)
 
-    // 首页 → 新建案例
+    // 首页 → 新建案例（v0.9.0：全局壳品牌与版本徽标）
     await page.goto('/')
-    await expect(page.getByText(/v\d+\.\d+\.\d+ 建模平台/)).toBeVisible()
+    await expect(page.getByTestId('shell-brand')).toContainText('GeoModelingPlatform')
+    await expect(page.getByTestId('shell-version')).toHaveText(/^v\d+\.\d+\.\d+$/)
     await page.getByTestId('create-case-card').click()
 
     // 创建案例 + 上传
@@ -31,6 +32,7 @@ test.describe('v0.4 通用建模流程（mock API）', () => {
     await page.getByTestId('enter-workspace').click()
     await expect(page).toHaveURL(/#\/cases\/case-e2e$/)
     await expect(page.getByTestId('case-workspace-header')).toContainText('E2E 案例')
+    await page.getByTestId('stage-nav-experiments').click()
     await page.getByTestId('new-experiment').click()
     await expect(page).toHaveURL(/#\/cases\/case-e2e\/experiments\/new\?dataset=ds-e2e/)
 
@@ -41,15 +43,11 @@ test.describe('v0.4 通用建模流程（mock API）', () => {
     await expect(page.getByTestId('run-progress')).toBeVisible()
     await expect(page.getByTestId('leaderboard')).toContainText('1.200', { timeout: 15000 })
 
-    // 成果工作台：切片三方向 + 坐标标签
+    // 成果工作台：3D 工具栏是唯一切片入口；资产未创建时按能力门禁禁用
     await page.getByTestId('open-result').first().click()
     await expect(page).toHaveURL(/#\/results\/cand-1/)
-    await page.getByTestId('tab-slices').click()
-    await expect(page.getByTestId('slice-label')).toContainText('Z = -800 m')
-    await page.getByTestId('axis-x').click()
-    await expect(page.getByTestId('slice-label')).toContainText('X = -150 m')
-    await page.getByTestId('axis-y').click()
-    await expect(page.getByTestId('slice-label')).toContainText('Y = 260 m')
+    await expect(page.getByTestId('mode-slice')).toBeDisabled()
+    await expect(page.getByTestId('tab-slices')).toHaveCount(0)
 
     // 正式选择（理由必填）与导出/发布状态分离
     await page.getByTestId('selection-submit').click()
@@ -58,6 +56,8 @@ test.describe('v0.4 通用建模流程（mock API）', () => {
     await page.getByTestId('selection-submit').click()
     await expect(page.getByTestId('formal-selection-panel')).toContainText('公共验证 RMSE 最低')
 
+    // v0.9.0 V6：导出与发布归入证据窗「数据溯源」标签，先切换再操作
+    await page.getByTestId('ge-tab-provenance').click()
     await expect(page.getByTestId('publication-status')).toContainText('未请求')
     await page.getByTestId('export-button').click()
     await expect(page.getByTestId('export-file').first()).toContainText('manifest.json')
@@ -66,9 +66,9 @@ test.describe('v0.4 通用建模流程（mock API）', () => {
     await expect(page.getByTestId('publication-status')).toContainText('manual_required')
 
     // 导航回归：成果 → 实验 → 首页，无死路
-    await page.getByTestId('crumb-experiment').click()
+    await page.getByTestId('result-back-experiment').click()
     await expect(page).toHaveURL(/#\/experiments\/exp-e2e/)
-    await page.getByTestId('crumb-home').click()
+    await page.getByTestId('shell-brand').click()
     await expect(page).toHaveURL(/#\/$/)
     await expect(page.getByTestId('create-case-card')).toBeVisible()
   })
@@ -158,7 +158,7 @@ test.describe('v0.6 专业建模流程（mock API）', () => {
     await page.getByTestId('mode-grid').check()
     await page.getByTestId('exp-submit').click()
     await expect(page).toHaveURL(/#\/experiments\/exp-pro/)
-    await expect(page.getByTestId('run-progress')).toContainText('succeeded', { timeout: 15000 })
+    await expect(page.getByTestId('run-progress')).toContainText('验证完成', { timeout: 15000 })
     await expect(page.getByTestId('candidate-row')).toHaveCount(2)
 
     // 成果工作台 → 专业分析台
@@ -166,9 +166,9 @@ test.describe('v0.6 专业建模流程（mock API）', () => {
     await expect(page).toHaveURL(/#\/results\/cand-pro-1/)
     await page.getByTestId('model-evaluation-entry').click()
     await expect(page).toHaveURL(/#\/results\/cand-pro-1\/evaluation/)
-    await expect(page.getByTestId('summary-algorithm')).toContainText('ordinary_kriging')
-    await expect(page.getByTestId('summary-confirmation')).toContainText('conf-pro-1')
-    await expect(page.getByTestId('capability-native-kriging-std')).toContainText('supported')
+    await expect(page.getByTestId('summary-algorithm')).toContainText('普通克里金')
+    await expect(page.getByTestId('summary-confirmation')).toContainText('已采用空间结构建议')
+    await expect(page.getByTestId('capability-native-kriging-std')).toContainText('克里金标准差：可用')
 
     // 折分检查：泄漏徽章 + 折切换改变训练/验证计数
     await expect(page.getByTestId('fold-inspector')).toBeVisible()
@@ -222,7 +222,7 @@ test.describe('v0.6.1 体积基准卡直达成果（mock API）', () => {
     await expect(primary).toContainText('查看体渲染成果')
     const secondary = page.getByTestId('new-experiment')
     await expect(secondary).toBeVisible()
-    await expect(secondary).toContainText('新建实验')
+    await expect(secondary).toContainText('新建建模实验')
 
     // 次操作：新建实验 → 实验创建页（与查看已有成果互不混淆）
     await secondary.click()
@@ -232,7 +232,7 @@ test.describe('v0.6.1 体积基准卡直达成果（mock API）', () => {
     await page.goto('/')
     await primary.click()
     await expect(page).toHaveURL(/#\/results\/cand-1/)
-    await expect(page.getByTestId('tab-slices')).toBeVisible()
+    await expect(page.getByTestId('mode-slice')).toBeVisible()
   })
 })
 
@@ -247,20 +247,20 @@ test.describe('v0.6.1 实验成果状态区（mock API）', () => {
 
     // 深链进入（等价刷新恢复）：实验页自行轮询到终态
     await page.goto('/#/experiments/exp-e2e')
-    await expect(page.getByTestId('run-progress')).toContainText('succeeded', { timeout: 15000 })
+    await expect(page.getByTestId('run-progress')).toContainText('验证完成', { timeout: 15000 })
 
     // 成果状态区：四阶段分层，succeeded 不被表述为已渲染
     const panel = page.getByTestId('result-status')
     await expect(panel).toBeVisible()
     await expect(page.getByTestId('stage-validation')).toContainText('验证完成')
-    await expect(page.getByTestId('stage-materialize')).toContainText('未物化')
-    await expect(page.getByTestId('stage-netcdf')).toContainText('待规则网格物化后进行')
+    await expect(page.getByTestId('stage-materialize')).toContainText('等待生成')
+    await expect(page.getByTestId('stage-netcdf')).toContainText('待三维网格生成后进行')
     await expect(page.getByTestId('stage-render')).toContainText('成果工作台')
     await expect(panel).not.toContainText('已渲染')
 
     // 显式物化：动作入口就位于状态区，成功后进入 NetCDF 阶段
     await page.getByTestId('materialize-result').click()
-    await expect(page.getByTestId('stage-materialize')).toContainText('已物化')
+    await expect(page.getByTestId('stage-materialize')).toContainText('三维网格已生成')
     await expect(page.getByTestId('stage-netcdf')).toContainText('未生成')
 
     // 显式创建 NetCDF 资产：状态机到 ready（仍不等于浏览器渲染）
@@ -271,7 +271,7 @@ test.describe('v0.6.1 实验成果状态区（mock API）', () => {
     // 主入口：多候选取排行榜首名（cand-1，RMSE 1.2 < 2.4），一键直达成果工作台
     await page.getByTestId('view-result').click()
     await expect(page).toHaveURL(/#\/results\/cand-1/)
-    await expect(page.getByTestId('tab-slices')).toBeVisible()
+    await expect(page.getByTestId('mode-slice')).toBeVisible()
   })
 })
 
@@ -310,6 +310,7 @@ test.describe('v0.7 生命周期与比较流程（mock API）', () => {
     await page.getByTestId('enter-workspace').click()
     await expect(page).toHaveURL(/#\/cases\/case-e2e$/)
     // 验证后工作台显示"新建实验"恢复按钮
+    await page.getByTestId('stage-nav-experiments').click()
     await expect(page.getByTestId('new-experiment')).toBeVisible()
   })
 
@@ -340,9 +341,10 @@ test.describe('v0.7 生命周期与比较流程（mock API）', () => {
     // 回收站 -> 案例可见 -> 恢复
     await page.goto('/#/trash')
     await expect(page.getByTestId('trash-list')).toBeVisible()
-    await expect(page.getByText('回收测试')).toBeVisible()
-    await page.getByTestId('restore-case').click()
-    await expect(page.getByText('回收测试')).toHaveCount(0)
+    const trashRow = page.getByTestId('trash-row').filter({ hasText: '回收测试' })
+    await expect(trashRow).toBeVisible()
+    await trashRow.getByTestId('restore-case').click()
+    await expect(page.getByTestId('trash-row').filter({ hasText: '回收测试' })).toHaveCount(0)
 
     // 恢复后工作台可用
     await page.goto('/#/cases/case-e2e')
@@ -371,14 +373,15 @@ test.describe('v0.7 生命周期与比较流程（mock API）', () => {
 
     // 回收站 -> 永久删除
     await page.goto('/#/trash')
-    await expect(page.getByText('永久删除测试')).toBeVisible()
-    await page.getByTestId('purge-case-open').click()
+    const purgeRow = page.getByTestId('trash-row').filter({ hasText: '永久删除测试' })
+    await expect(purgeRow).toBeVisible()
+    await purgeRow.getByTestId('purge-case-open').click()
     await expect(page.getByTestId('purge-dialog')).toBeVisible()
     await page.getByTestId('purge-name-input').fill('永久删除测试')
     await page.getByTestId('purge-confirm-btn').click()
 
     // 案例从回收站消失
-    await expect(page.getByText('永久删除测试')).toHaveCount(0)
+    await expect(page.getByTestId('trash-row').filter({ hasText: '永久删除测试' })).toHaveCount(0)
 
     // 深链工作台 -> 未找到
     await page.goto('/#/cases/case-e2e')
@@ -428,10 +431,8 @@ test.describe('v0.7 生命周期与比较流程（mock API）', () => {
     await expect(page.getByTestId('candidate-comparison-view')).toBeVisible()
     await expect(page.getByTestId('candidate-table')).toBeVisible()
 
-    // 从两个实验各选一个候选
+    // 页面默认选择 RMSE 最低的两个不同配置候选。
     const checkboxes = page.getByTestId('candidate-checkbox')
-    await checkboxes.nth(0).click()
-    await checkboxes.nth(2).click()
     await expect(page.getByTestId('selection-info')).toContainText('已选 2')
 
     // 比较 -> 可排名
@@ -500,8 +501,10 @@ test.describe('v0.7 生命周期与比较流程（mock API）', () => {
     await installMockApi(page)
 
     // Create case and trash it (following existing trash flow)
+    // v0.9.0：手机档自定义数据走全局头固定入口（案例轨为紧凑选择条）
     await page.goto('/')
-    await page.getByTestId('create-case-card').click()
+    await page.getByTestId('shell-mobile-menu').locator('summary').click()
+    await page.getByTestId('shell-mobile-menu').getByRole('link', { name: '导入数据' }).click()
     await page.getByTestId('case-name').fill('溢出测试')
     await page.getByTestId('case-file').setInputFiles({
       name: 'platform_demo_3d.csv',
@@ -520,18 +523,18 @@ test.describe('v0.7 生命周期与比较流程（mock API）', () => {
     // Navigate to trash
     await page.goto('/#/trash')
     await expect(page.getByTestId('trash-list')).toBeVisible()
-    await expect(page.getByTestId('trash-row')).toBeVisible()
+    await expect(page.getByTestId('trash-mobile-item')).toBeVisible()
 
     // Assert no page-level horizontal overflow
     const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth)
     expect(scrollWidth).toBeLessThanOrEqual(390)
 
-    // Assert table wrapper handles internal scroll
-    const wrap = page.locator('.trash-table-wrap')
-    const wrapBox = await wrap.boundingBox()
-    expect(wrapBox!.width).toBeLessThanOrEqual(390)
+    // Mobile uses stacked items instead of squeezing a desktop table.
+    await expect(page.locator('.trash-table-wrap')).toBeHidden()
+    const itemBox = await page.getByTestId('trash-mobile-item').boundingBox()
+    expect(itemBox!.width).toBeLessThanOrEqual(366)
 
-    // Assert purge button is not clipped (visible within viewport)
-    await expect(page.getByTestId('purge-case-open').first()).toBeVisible()
+    // Assert purge button is not clipped (visible within viewport).
+    await expect(page.getByTestId('purge-case-open-mobile').first()).toBeVisible()
   })
 })

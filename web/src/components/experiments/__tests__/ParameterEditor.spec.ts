@@ -32,6 +32,25 @@ function selectValue(wrapper: ReturnType<typeof mountEditor>, test: string): str
   return (wrapper.get(`[data-test="${test}"]`).element as HTMLSelectElement).value
 }
 
+describe('ParameterEditor 用户决策层', () => {
+  it('用可比较的算法说明展示适用场景、成本和限制', () => {
+    const wrapper = mountEditor()
+    const choices = wrapper.findAll('[data-test^="algorithm-choice-"]')
+    expect(choices).toHaveLength(3)
+    expect(wrapper.get('[data-test="algorithm-choice-idw"]').text()).toContain('快速基线')
+    expect(wrapper.get('[data-test="algorithm-choice-ordinary_kriging"]').text()).toContain('空间相关性')
+    expect(wrapper.get('[data-test="algorithm-choice-dsi_like"]').text()).toContain('工程近似')
+    expect(wrapper.get('[data-test="advanced-experiment-settings"]').text()).toContain('空间验证')
+  })
+
+  it('默认使用单组推荐配置，并明确参数网格会产生多个候选', () => {
+    const wrapper = mountEditor()
+    expect(wrapper.get('[data-test="mode-manual-label"]').text()).toContain('推荐配置')
+    expect(wrapper.get('[data-test="mode-grid-label"]').text()).toContain('自动组合')
+    expect(wrapper.get('[data-test="count-preview"]').text()).toContain('1 个候选组合')
+  })
+})
+
 describe('ParameterEditor dsi_like（v0.8.0）', () => {
   it('3D 预置下 dsi_like 出现在 IDW/普通 Kriging 旁，并附工程近似免责声明', () => {
     const wrapper = mountEditor()
@@ -67,6 +86,31 @@ describe('ParameterEditor dsi_like（v0.8.0）', () => {
     expect(selectValue(wrapper, 'dsi-connectivity')).toBe('6')
     expect(selectValue(wrapper, 'dsi-smoothing')).toBe('0.5')
     expect(selectValue(wrapper, 'dsi-iterations')).toBe('25')
+    expect(wrapper.text()).not.toContain('init_power')
+    expect(wrapper.text()).not.toContain('neighbor_connectivity')
+    expect(wrapper.text()).not.toContain('smoothing_strength')
+    expect(wrapper.text()).not.toContain('max_iterations')
+    expect(wrapper.text()).not.toContain('hard_constraints')
+  })
+
+  it('主操作层不显示后端参数键，但提交载荷仍保留合同字段', async () => {
+    const wrapper = mountEditor({ preset: MICROSEISMIC_EXPERIMENT_PRESET })
+    await wrapper.get('[data-test="algo-kriging"]').setValue(true)
+    await wrapper.get('[data-test="kriging-mode"]').setValue('manual')
+
+    const primary = wrapper.get('[data-test="param-editor"]').text()
+    expect(primary).not.toContain('nugget/sill/range')
+    expect(primary).not.toContain('z_scale')
+
+    await wrapper.get('[data-test="algo-dsi-like"]').setValue(true)
+    await wrapper.get('[data-test="mode-grid"]').setValue(true)
+    expect(wrapper.get('[data-test="param-editor"]').text()).not.toContain('convergence_tolerance')
+    expect(wrapper.get('[data-test="param-editor"]').text()).not.toContain('hard_constraints')
+    await wrapper.get('[data-test="exp-submit"]').trigger('click')
+    expect(lastSubmit(wrapper).parameters).toMatchObject({
+      convergence_tolerance: [1e-4],
+      hard_constraints: [true],
+    })
   })
 
   it('固定 hard_constraints / convergence_tolerance 只读展示，不提供关闭或编辑入口', async () => {

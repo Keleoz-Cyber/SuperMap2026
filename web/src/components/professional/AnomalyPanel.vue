@@ -291,13 +291,16 @@ onBeforeUnmount(stopPolling)
     </div>
 
     <template v-if="extraction">
-      <div class="extraction-meta">
+      <details class="extraction-technical" data-test="extraction-technical-details">
+        <summary>技术详情</summary>
+        <div class="extraction-meta">
         <span data-test="extraction-identity">提取 <span class="mono">{{ extraction.id }}</span></span>
         <span data-test="extraction-fingerprint">
           指纹 <span class="mono">{{ extraction.fingerprint }}</span>
         </span>
         <span data-test="extraction-status">状态 {{ extraction.status }}</span>
-      </div>
+        </div>
+      </details>
       <p class="extraction-legend" data-test="extraction-legend">
         阈值 {{ extraction.config.threshold }}（{{ extraction.config.direction === 'low' ? '低值' : '高值' }}）
         <template v-if="extraction.config.empirical_error_max != null">

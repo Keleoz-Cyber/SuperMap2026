@@ -11,6 +11,25 @@ import type {
 } from '../../api/types'
 import CandidateComparisonView from '../CandidateComparisonView.vue'
 
+// v0.9.0：比较图在模块边界 mock echarts（jsdom 无 canvas 上下文；
+// 与 analysisPanels.spec.ts 同一模式）
+vi.mock('echarts/core', () => ({
+  init: vi.fn(() => ({
+    setOption: vi.fn(),
+    resize: vi.fn(),
+    dispose: vi.fn(),
+    on: vi.fn(),
+  })),
+  use: vi.fn(),
+}))
+vi.mock('echarts/charts', () => ({ BarChart: {} }))
+vi.mock('echarts/components', () => ({
+  GridComponent: {},
+  TooltipComponent: {},
+  LegendComponent: {},
+}))
+vi.mock('echarts/renderers', () => ({ CanvasRenderer: {} }))
+
 vi.mock('../../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../api/client')>()
   return {
@@ -151,6 +170,11 @@ async function mountView(): Promise<{ wrapper: ReturnType<typeof mount>; router:
         name: 'model-evaluation',
         component: { template: '<div />' },
       },
+      {
+        path: '/cases/:caseId/experiments/new',
+        name: 'experiment-create',
+        component: { template: '<div />' },
+      },
     ],
   })
   await router.push('/datasets/ds-1/candidate-comparison')
@@ -195,10 +219,10 @@ describe('CandidateComparisonView', () => {
     )
   })
 
-  it('标题为「模型对比」且使用可读算法标签', async () => {
+  it('标题为「模型比较」且使用可读算法标签', async () => {
     const { wrapper } = await mountView()
-    expect(wrapper.find('h1').text()).toBe('模型对比')
-    expect(wrapper.text()).toContain('同一数据版本和验证方法下比较不同实验结果')
+    expect(wrapper.find('h1').text()).toBe('模型比较')
+    expect(wrapper.text()).toContain('同一数据版本和验证口径下比较候选成果')
     expect(wrapper.text()).toContain('IDW（反距离加权）')
     expect(wrapper.text()).toContain('普通克里金')
     expect(wrapper.text()).toContain('DSI-like 离散平滑插值')
@@ -213,9 +237,66 @@ describe('CandidateComparisonView', () => {
     wrapper.unmount()
   })
 
+  it('默认选择 RMSE 最低的两个不同配置候选，并说明仍需校验兼容性', async () => {
+    const { wrapper } = await mountView()
+    const selected = checkboxes(wrapper).filter((item) =>
+      (item.find('input').element as HTMLInputElement).checked,
+    )
+
+    expect(selected).toHaveLength(2)
+    expect(wrapper.get('[data-test="comparison-start-summary"]').text()).toContain('已为你选择')
+    expect(wrapper.get('[data-test="comparison-start-summary"]').text()).toContain('兼容性')
+    expect(wrapper.find('[data-test="compare-btn"]').attributes('disabled')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('数据版本 UUID 不出现在主标题区，只保留于技术详情', async () => {
+    const { wrapper } = await mountView()
+    const header = wrapper.get('[data-test="page-context-header"]')
+    expect(header.get('h1').text()).not.toContain('ds-1')
+    expect(header.get('.page-context__subtitle').text()).not.toContain('ds-1')
+    expect(wrapper.get('[data-test="comparison-technical-details"]').text()).toContain('ds-1')
+    wrapper.unmount()
+  })
+
+  it('比较完成后先展示推荐结论、指标差异和主要参数差异', async () => {
+    const { wrapper } = await mountView()
+    await wrapper.get('[data-test="compare-btn"]').trigger('click')
+    await flushPromises()
+
+    const summary = wrapper.get('[data-test="comparison-summary"]')
+    expect(summary.text()).toContain('普通克里金')
+    expect(summary.text()).toContain('RMSE')
+    expect(summary.text()).toContain('主要参数差异')
+    expect(summary.text()).not.toContain('r-2')
+    wrapper.unmount()
+  })
+
+  it('单候选状态不显示空比较表，并引导创建参数网格实验', async () => {
+    vi.mocked(client.fetchComparisonCandidates).mockResolvedValue({
+      dataset_id: 'ds-1',
+      groups: [{
+        experiment_id: 'exp-1',
+        experiment_name: '实验 A',
+        candidates: [makeCandidate('r-only', 'exp-1', 'idw')],
+      }],
+    })
+    const { wrapper, router } = await mountView()
+
+    expect(wrapper.find('[data-test="candidate-table"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="single-candidate-state"]').text()).toContain('参数网格')
+    await wrapper.get('[data-test="create-grid-experiment"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.name).toBe('experiment-create')
+    expect(router.currentRoute.value.query.dataset).toBe('ds-1')
+    wrapper.unmount()
+  })
+
   it('checkbox selection enforces 2 minimum / 4 maximum limit', async () => {
     const { wrapper } = await mountView()
 
+    await uncheck(wrapper, 0)
+    await uncheck(wrapper, 1)
     expect(wrapper.find('[data-test="compare-btn"]').attributes('disabled')).toBeDefined()
 
     await check(wrapper, 0)
@@ -274,6 +355,7 @@ describe('CandidateComparisonView', () => {
     vi.mocked(client.compareCandidates).mockResolvedValue(INCOMPARABLE)
     const { wrapper } = await mountView()
 
+    await uncheck(wrapper, 1)
     await check(wrapper, 0)
     await check(wrapper, 3)
 
@@ -284,12 +366,24 @@ describe('CandidateComparisonView', () => {
 
     const mismatch = wrapper.find('[data-test="mismatch-list"]')
     expect(mismatch.exists()).toBe(true)
-    expect(mismatch.text()).toContain('validation_contract')
-    expect(mismatch.text()).toContain('grid_resolution')
+    expect(mismatch.text()).toContain('验证规则不同')
+    expect(mismatch.text()).toContain('成果网格规格不同')
+    expect(mismatch.text()).not.toContain('validation_contract')
+    expect(mismatch.text()).not.toContain('grid_resolution')
+    expect(mismatch.text()).toContain('请选择来自同一数据版本、使用相同验证设置的候选')
 
     expect(wrapper.find('[data-test="ranking-result"]').exists()).toBe(false)
     expect(wrapper.find('.best-badge').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('最佳')
+    wrapper.unmount()
+  })
+
+  it('比较前明确说明可比条件，避免用户在失败后才知道要求', async () => {
+    const { wrapper } = await mountView()
+    const guide = wrapper.get('[data-test="comparison-requirements"]')
+    expect(guide.text()).toContain('同一数据版本')
+    expect(guide.text()).toContain('相同验证规则')
+    expect(guide.text()).toContain('相同公共有效样本')
     wrapper.unmount()
   })
 

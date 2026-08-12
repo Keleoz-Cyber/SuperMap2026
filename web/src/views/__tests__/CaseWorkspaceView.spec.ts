@@ -54,6 +54,7 @@ async function mountWorkspace(path: string) {
       { path: '/cases/:caseId', name: 'case-workspace', component: CaseWorkspaceView },
       { path: '/', name: 'home', component: { template: '<div />' } },
       { path: '/results/:resultId', name: 'result-workbench', component: { template: '<div />' } },
+      { path: '/results/:resultId/evaluation', name: 'model-evaluation', component: { template: '<div />' } },
       {
         path: '/cases/:caseId/experiments/new',
         name: 'experiment-create',
@@ -253,11 +254,11 @@ describe('CaseWorkspaceView', () => {
 
     const results = wrapper.find('[data-test="workspace-results"]')
     expect(results.text()).toContain('主打成果')
-    expect(results.text()).toContain('已物化')
+    expect(results.text()).toContain('已就绪')
     expect(wrapper.find('[data-test="new-experiment"]').exists()).toBe(true)
   })
 
-  it('user_upload without result: results section shows 暂无成果 and offers 新建实验', async () => {
+  it('user_upload without result: results section shows 暂无成果 and offers 新建建模实验', async () => {
     const ws = workspaceOf('user_upload')
     vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(ws)
     const { wrapper, router } = await mountWorkspace('/cases/up-1')
@@ -372,8 +373,30 @@ describe('CaseWorkspaceView', () => {
 
     expect(wrapper.find('[data-test="recent-experiment-exp-1"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="recent-experiments"]').text()).toContain('IDW')
+    expect(wrapper.find('[data-test="recent-experiments"]').text()).toContain('验证完成')
+    expect(wrapper.find('[data-test="recent-experiments"]').text()).not.toContain('succeeded')
     expect(wrapper.find('[data-test="recent-result-r-1"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="recent-results"]').text()).toContain('已物化')
+    expect(wrapper.find('[data-test="recent-results"]').text()).toContain('三维网格已生成')
+    expect(wrapper.find('[data-test="recent-results"]').text()).not.toContain('物化')
+    wrapper.unmount()
+  })
+
+  it('放弃版本历史与主阅读层不暴露数据 UUID，身份只在技术详情中', async () => {
+    const ws = workspaceOf('user_upload')
+    ws.abandoned_datasets = [{
+      id: 'ds-abandoned-secret',
+      case_id: 'up-1',
+      version: 2,
+      status: 'abandoned',
+      profile: {},
+      created_at: '2026-08-05T00:00:00+00:00',
+    }]
+    vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(ws)
+    const { wrapper } = await mountWorkspace('/cases/up-1')
+
+    expect(wrapper.get('[data-test="abandoned-datasets"]').text()).toContain('数据版本 v2')
+    expect(wrapper.get('[data-test="abandoned-datasets"]').text()).not.toContain('ds-abandoned-secret')
+    expect(wrapper.get('[data-test="dataset-technical-details"]').text()).toContain('ds-1')
     wrapper.unmount()
   })
 
@@ -443,7 +466,7 @@ const RESISTIVITY_PRESET_WS: CaseWorkspaceSummary = {
     latest_validated_dataset_id: 'ds-rho-1',
     next_action: {
       step: 'experiment',
-      label: '新建实验',
+      label: '新建建模实验',
       url: '/#/cases/resistivity/experiments/new',
     },
     error: null,
@@ -472,7 +495,7 @@ describe('CaseWorkspaceView 电阻率散点预置（v0.8.0）', () => {
     await flushPromises()
     expect(router.currentRoute.value.path).toBe('/results/rho-official-1')
 
-    // 操作二：新建实验进入统一实验创建页
+    // 操作二：新建建模实验进入统一实验创建页
     await router.push('/cases/resistivity')
     await flushPromises()
     await wrapper.find('[data-test="new-experiment"]').trigger('click')
@@ -505,12 +528,12 @@ describe('CaseWorkspaceView 电阻率散点预置（v0.8.0）', () => {
 
     const results = wrapper.find('[data-test="workspace-results"]')
     expect(results.text()).toContain('官方成果')
-    expect(results.text()).toContain('已物化')
+    expect(results.text()).toContain('已就绪')
     expect(wrapper.find('[data-test="open-official-result"]').text()).toContain('查看官方成果')
     wrapper.unmount()
   })
 
-  it('预置无官方成果：收起成果直达但保留新建实验', async () => {
+  it('预置无官方成果：收起成果直达但保留新建建模实验', async () => {
     const ws: CaseWorkspaceSummary = {
       ...RESISTIVITY_PRESET_WS,
       capabilities: { ...RESISTIVITY_PRESET_WS.capabilities, official_result: false },
@@ -588,7 +611,7 @@ describe('CaseWorkspaceView 电阻率散点预置（v0.8.0）', () => {
 // ---------------------------------------------------------------------------
 // v0.8.0 第二批 Task 4：统计与空间分析中心入口。已验证数据版本旁出现唯一
 // RouterLink 入口；未验证数据版本不出现入口并显示类型化原因；入口绝不与
-// 「新建实验」等既有命令重复。
+// 「新建建模实验」等既有命令重复。
 // ---------------------------------------------------------------------------
 
 describe('CaseWorkspaceView 统计与空间分析入口（v0.8.0 第二批）', () => {
@@ -608,7 +631,7 @@ describe('CaseWorkspaceView 统计与空间分析入口（v0.8.0 第二批）', 
     expect(router.currentRoute.value.name).toBe('analysis-center')
     expect(router.currentRoute.value.params.datasetId).toBe('ds-1')
 
-    // 入口不与「新建实验」等既有命令重复
+    // 入口不与「新建建模实验」等既有命令重复
     expect(wrapper.findAll('[data-test="new-experiment"]').length).toBe(1)
     wrapper.unmount()
   })
@@ -694,7 +717,7 @@ const GAS_PRESET_WS: CaseWorkspaceSummary = {
     latest_validated_dataset_id: 'ds-gas-1',
     next_action: {
       step: 'experiment',
-      label: '新建实验',
+      label: '新建建模实验',
       url: '/#/cases/gas/experiments/new',
     },
     error: null,
@@ -717,14 +740,14 @@ describe('CaseWorkspaceView 瓦斯散点预置（v0.8.0 第三批）', () => {
     expect(text).toContain('散点预置 · 官方基线成果')
     expect(text).toContain('ml/g')
     expect(text).toContain('X/Y/Z -> CH4_content')
-    expect(text).toContain('行数 58')
+    expect(text).toContain('有效样本58')
 
     // 操作一：查看官方成果直达
     await wrapper.find('[data-test="open-official-result"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.path).toBe('/results/gas-official-1')
 
-    // 操作二：新建实验进入统一实验创建页（携带预置数据版本）
+    // 操作二：新建建模实验进入统一实验创建页（携带预置数据版本）
     await router.push('/cases/gas')
     await flushPromises()
     await wrapper.find('[data-test="new-experiment"]').trigger('click')
@@ -765,6 +788,177 @@ describe('CaseWorkspaceView 瓦斯散点预置（v0.8.0 第三批）', () => {
     expect(wrapper.text()).not.toContain('微震')
     expect(wrapper.text()).not.toContain('电阻率')
     expect(wrapper.text()).not.toContain('上传')
+    wrapper.unmount()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// v0.9.0 Task 6：四业务阶段导航与每状态唯一主动作
+// ---------------------------------------------------------------------------
+
+describe('CaseWorkspaceView v0.9 阶段导航与唯一主动作', () => {
+  it('四个业务阶段标签齐全：数据概览/建模实验/成果分析/证据与报告', async () => {
+    vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(workspaceOf('builtin_preset'))
+    const { wrapper } = await mountWorkspace(`/cases/${PRESET_ID}`)
+    expect(wrapper.get('[data-test="stage-nav-data"]').text()).toContain('数据概览')
+    expect(wrapper.get('[data-test="stage-nav-experiments"]').text()).toContain('建模实验')
+    expect(wrapper.get('[data-test="stage-nav-results"]').text()).toContain('成果分析')
+    expect(wrapper.get('[data-test="stage-nav-evidence"]').text()).toContain('证据与报告')
+    wrapper.unmount()
+  })
+
+  it('阶段页签真正切换唯一可见内容，并把状态写入 URL', async () => {
+    vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(workspaceOf('builtin_preset'))
+    const { wrapper, router } = await mountWorkspace(`/cases/${PRESET_ID}`)
+    expect(wrapper.get('[data-test="stage-panel-data"]').classes()).not.toContain('is-hidden')
+    expect(wrapper.get('[data-test="stage-panel-experiments"]').classes()).toContain('is-hidden')
+
+    await wrapper.get('[data-test="stage-nav-experiments"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query.stage).toBe('experiments')
+    expect(wrapper.get('[data-test="stage-panel-data"]').classes()).toContain('is-hidden')
+    expect(wrapper.get('[data-test="stage-panel-experiments"]').classes()).not.toContain('is-hidden')
+  })
+
+  it('默认工作台用案例摘要和唯一推荐动作替代重复快捷操作区', async () => {
+    vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(workspaceOf('builtin_preset'))
+    const { wrapper } = await mountWorkspace(`/cases/${PRESET_ID}`)
+
+    expect(wrapper.find('.workspace-shortcuts').exists()).toBe(false)
+    expect(wrapper.get('[data-test="workspace-summary"]').text()).toContain('数据可用于建模')
+    expect(wrapper.findAll('[data-test="open-official-result"]')).toHaveLength(1)
+    expect(wrapper.findAll('[data-test="new-experiment"]')).toHaveLength(1)
+    expect(wrapper.get('[data-test="stage-panel-data"]').isVisible()).toBe(true)
+    expect(wrapper.get('[data-test="stage-panel-experiments"]').classes()).toContain('is-hidden')
+    wrapper.unmount()
+  })
+
+  it('主阅读层使用用户术语，技术状态和标识只出现在证据页', async () => {
+    vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(workspaceOf('builtin_preset'))
+    const { wrapper } = await mountWorkspace(`/cases/${PRESET_ID}`)
+
+    const dataPanel = wrapper.get('[data-test="stage-panel-data"]').text()
+    expect(dataPanel).toContain('质量检查通过')
+    expect(dataPanel).not.toContain('validated')
+    expect(dataPanel).not.toContain('local_linear')
+    expect(dataPanel).not.toContain('ds-1')
+
+    await wrapper.get('[data-test="stage-nav-evidence"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="dataset-technical-details"]').text()).toContain('ds-1')
+  })
+
+  it('可从 URL 直接恢复成果分析页签', async () => {
+    vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(workspaceOf('builtin_preset'))
+    const { wrapper } = await mountWorkspace(`/cases/${PRESET_ID}?stage=results`)
+    expect(wrapper.get('[data-test="stage-nav-results"]').attributes('aria-selected')).toBe('true')
+    expect(wrapper.get('[data-test="stage-panel-results"]').classes()).not.toContain('is-hidden')
+    expect(wrapper.get('[data-test="stage-panel-data"]').classes()).toContain('is-hidden')
+  })
+
+  it('官方就绪（预置）：唯一主动作是查看官方成果', async () => {
+    vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(workspaceOf('builtin_preset'))
+    const { wrapper } = await mountWorkspace(`/cases/${PRESET_ID}`)
+    const primaries = wrapper.findAll('[data-primary-action="true"]')
+    expect(primaries).toHaveLength(1)
+    expect(primaries[0].attributes('data-test')).toBe('open-official-result')
+    wrapper.unmount()
+  })
+
+  it('用户案例数据准备中：唯一主动作在数据准备面板', async () => {
+    const ws = workspaceOf('user_upload')
+    ws.data_preparation = {
+      state: 'needs_mapping',
+      dataset_id: 'ds-1',
+      latest_validated_dataset_id: null,
+      next_action: { step: 'mapping', label: '继续映射', url: '/cases/up-1/datasets/ds-1/prepare' },
+      error: null,
+    }
+    vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(ws)
+    const { wrapper } = await mountWorkspace('/cases/up-1')
+    const primaries = wrapper.findAll('[data-primary-action="true"]')
+    expect(primaries).toHaveLength(1)
+    expect(primaries[0].attributes('data-test')).toBe('prep-action-continue')
+    expect(primaries[0].text()).toContain('继续数据准备')
+    wrapper.unmount()
+  })
+
+  it('用户案例就绪：唯一主动作是新建建模实验', async () => {
+    vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(workspaceOf('user_upload'))
+    const { wrapper } = await mountWorkspace('/cases/up-1')
+    const primaries = wrapper.findAll('[data-primary-action="true"]')
+    expect(primaries).toHaveLength(1)
+    expect(primaries[0].attributes('data-test')).toBe('new-experiment')
+    wrapper.unmount()
+  })
+
+  it('加载失败：唯一主动作是返回首页', async () => {
+    vi.mocked(client.fetchCaseWorkspace).mockRejectedValue(new Error('boom'))
+    const { wrapper } = await mountWorkspace('/cases/up-1')
+    const primaries = wrapper.findAll('[data-primary-action="true"]')
+    expect(primaries).toHaveLength(1)
+    expect(primaries[0].text()).toContain('返回首页')
+    wrapper.unmount()
+  })
+
+  it('禁用阶段保留可见并说明原因，不静默消失', async () => {
+    // 无已验证数据且无成果时，成果分析阶段禁用且带原因。
+    const ws = workspaceOf('user_upload')
+    ws.primary_dataset = null
+    ws.validated_datasets = []
+    ws.recent_results = []
+    vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(ws)
+    const { wrapper } = await mountWorkspace('/cases/up-1')
+    const results = wrapper.get('[data-test="stage-nav-results"]')
+    expect(results.attributes('disabled')).toBeDefined()
+    expect(results.text()).toContain('数据尚未通过验证')
+    wrapper.unmount()
+  })
+
+  it('已验证数据即使暂无三维成果也可进入成果分析并打开统计中心', async () => {
+    const ws = workspaceOf('user_upload')
+    ws.official_result = null
+    ws.recent_results = []
+    vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(ws)
+    const { wrapper } = await mountWorkspace('/cases/up-1')
+
+    const results = wrapper.get('[data-test="stage-nav-results"]')
+    expect(results.attributes('disabled')).toBeUndefined()
+    await results.trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="stage-panel-results"]').classes()).not.toContain('is-hidden')
+    expect(wrapper.get('[data-test="analysis-center-entry"]').isVisible()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('四个阶段提供任务密度，不退化为单行说明或单按钮空卡', async () => {
+    vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(workspaceOf('builtin_preset'))
+    const { wrapper } = await mountWorkspace(`/cases/${PRESET_ID}`)
+
+    expect(wrapper.get('[data-test="data-readiness-grid"]').findAll('.task-item')).toHaveLength(3)
+
+    await wrapper.get('[data-test="stage-nav-experiments"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="algorithm-paths"]').findAll('.algorithm-path')).toHaveLength(3)
+
+    await wrapper.get('[data-test="stage-nav-results"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="result-destinations"]').findAll('.destination-item')).toHaveLength(3)
+
+    await wrapper.get('[data-test="stage-nav-evidence"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="evidence-boundaries"]').findAll('li').length).toBeGreaterThanOrEqual(3)
+    wrapper.unmount()
+  })
+
+  it('成果阶段的三维、统计、模型评估都是明确可达的导航入口', async () => {
+    vi.mocked(client.fetchCaseWorkspace).mockResolvedValue(workspaceOf('builtin_preset'))
+    const { wrapper } = await mountWorkspace(`/cases/${PRESET_ID}?stage=results`)
+
+    const destinations = wrapper.get('[data-test="result-destinations"]')
+    expect(destinations.get('[data-test="open-result-workbench"]').attributes('href')).toContain('/results/r-1')
+    expect(destinations.get('[data-test="analysis-center-entry"]').attributes('href')).toContain('/datasets/ds-1/analysis')
+    expect(destinations.get('[data-test="model-evaluation-entry"]').attributes('href')).toContain('/results/r-1/evaluation')
     wrapper.unmount()
   })
 })

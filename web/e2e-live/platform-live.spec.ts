@@ -53,6 +53,29 @@ test.beforeAll(() => {
   assertIsolatedDataDir()
 })
 
+test('中断数据准备：首页主动作返回同一字段映射流程', async ({ page }) => {
+  const caseName = `Live 续接 ${Date.now()}`
+  await page.goto('/')
+  await page.getByTestId('create-case-card').click()
+  await page.getByTestId('case-name').fill(caseName)
+  await page.getByTestId('case-file').setInputFiles(DEMO_CSV)
+  await page.getByTestId('case-submit').click()
+  await expect(page).toHaveURL(/#\/cases\/[0-9a-f-]+\/datasets\/[0-9a-f-]+\/prepare/)
+  const preparationUrl = page.url()
+  const caseId = preparationUrl.match(/#\/cases\/([0-9a-f-]+)\/datasets\//)![1]
+
+  await page.goto('/')
+  const createdCase = page.locator(
+    `[data-test="case-rail-item"][data-case-id="${caseId}"]`,
+  )
+  await expect(createdCase).toBeVisible({ timeout: 30_000 })
+  await createdCase.click()
+  const primary = page.getByTestId('command-primary-action')
+  await expect(primary).toContainText('继续数据准备')
+  await primary.click()
+  await expect(page).toHaveURL(preparationUrl)
+})
+
 test('真实链路：上传 → 映射 → 质量 → IDW → 排行榜 → 成果切片 → 选择 → 导出 → 首页', async ({
   page,
   request,
@@ -85,6 +108,7 @@ test('真实链路：上传 → 映射 → 质量 → IDW → 排行榜 → 成�
   await page.getByTestId('enter-workspace').click()
   await expect(page).toHaveURL(/#\/cases\/[0-9a-f-]+$/)
   await expect(page.getByTestId('case-workspace-header')).toBeVisible({ timeout: 30_000 })
+  await page.getByTestId('stage-nav-experiments').click()
   await page.getByTestId('new-experiment').click()
   await expect(page).toHaveURL(/#\/cases\/[0-9a-f-]+\/experiments\/new\?dataset=[0-9a-f-]+/)
 
@@ -94,23 +118,23 @@ test('真实链路：上传 → 映射 → 质量 → IDW → 排行榜 → 成�
   await expect(page).toHaveURL(/#\/experiments\/[0-9a-f-]+/)
 
   // 5. 有界轮询至成功；排行榜出现公共有效数与有限 RMSE
-  await expect(page.getByTestId('run-progress')).toContainText('succeeded', { timeout: 60_000 })
+  await expect(page.getByTestId('run-progress-primary')).toContainText('验证完成', {
+    timeout: 60_000,
+  })
   const board = page.getByTestId('leaderboard')
   await expect(board).toContainText('公共有效点 144', { timeout: 30_000 })
   const firstRow = page.getByTestId('candidate-row').first()
   await expect(firstRow).toContainText(/\d+\.\d{3}/)
 
-  // 6. 打开成果：完整场（NetCDF 原生体渲染面板）+ X/Y/Z 切片（真实坐标标签为数值）
+  // 6. 打开成果：3D 工具栏进入 X/Y/Z 切片，底部切片分析是唯一二维视图
   await page.getByTestId('open-result').first().click()
   await expect(page).toHaveURL(/#\/results\/[0-9a-f-]+/)
   await expect(page.getByTestId('native-volume-panel')).toBeVisible({ timeout: 30_000 })
   await expect(page.getByTestId('create-asset')).toBeVisible({ timeout: 30_000 })
-  await page.getByTestId('tab-slices').click()
-  await expect(page.getByTestId('slice-label')).toContainText(/Z = -?\d+(\.\d+)? m/)
-  await page.getByTestId('axis-x').click()
-  await expect(page.getByTestId('slice-label')).toContainText(/X = -?\d+(\.\d+)? m/)
-  await page.getByTestId('axis-y').click()
-  await expect(page.getByTestId('slice-label')).toContainText(/Y = -?\d+(\.\d+)? m/)
+  // 此时资产尚未创建，切片模式按钮存在但按能力门禁禁用；后续公开 HTTP
+  // 合同继续验证三轴分析与导出，不渲染已退役的第二套 SlicePanel。
+  await expect(page.getByTestId('mode-slice')).toBeVisible()
+  await expect(page.getByTestId('tab-slices')).toHaveCount(0)
 
   // 6b. v0.7.0 第二批用户上传门：Case→Dataset→Experiment→Run→Candidate 已经
   // 上方真实 UI 流程创建；此处继续走公开 HTTP：render-capability → 显式
@@ -218,6 +242,8 @@ test('真实链路：上传 → 映射 → 质量 → IDW → 排行榜 → 成�
   })
 
   // 8. 导出证据 ZIP（下载事件验证真实 ZIP 字节）
+  // v0.9.0：导出与发布归入证据与溯源抽屉，先展开再操作
+  await page.getByTestId('ge-tab-provenance').click()
   await page.getByTestId('export-button').click()
   const downloadPromise = page.waitForEvent('download', { timeout: 60_000 })
   await page.getByTestId('export-download').click()
@@ -228,10 +254,8 @@ test('真实链路：上传 → 映射 → 质量 → IDW → 排行榜 → 成�
   expect(zipBytes.length).toBeGreaterThan(100)
   expect(zipBytes.subarray(0, 2).toString()).toBe('PK')
 
-  // 9. 返回实验 → 返回首页；案例卡持久化可见
-  await page.getByTestId('crumb-experiment').click()
-  await expect(page).toHaveURL(/#\/experiments\/[0-9a-f-]+/)
-  await page.getByTestId('crumb-home').click()
+  // 9. 成果页通过全局首页返回；案例卡持久化可见
+  await page.getByTestId('shell-brand').click()
   await expect(page).toHaveURL(/#\/$/)
   await expect(page.getByText(caseName)).toBeVisible()
 })
@@ -328,7 +352,9 @@ test.describe('v0.6 专业建模流程（真实链路）', () => {
     await page.getByTestId('exp-name').fill('Live 专业 Kriging')
     await page.getByTestId('exp-submit').click()
     await expect(page).toHaveURL(/#\/experiments\/[0-9a-f-]+/)
-    await expect(page.getByTestId('run-progress')).toContainText('succeeded', { timeout: 90_000 })
+    await expect(page.getByTestId('run-progress-primary')).toContainText('验证完成', {
+      timeout: 90_000,
+    })
     await expect(page.getByTestId('candidate-row')).toHaveCount(2, { timeout: 30_000 })
 
     // 8. 成果工作台 -> 模型评估（真实物化：值场 + 原生标准差 + 经验误差尺度）
@@ -337,10 +363,12 @@ test.describe('v0.6 专业建模流程（真实链路）', () => {
     const resultUrl = page.url()
     await page.getByTestId('model-evaluation-entry').click()
     await expect(page).toHaveURL(/#\/results\/[0-9a-f-]+\/evaluation/)
-    await expect(page.getByTestId('summary-algorithm')).toContainText('ordinary_kriging', {
+    await expect(page.getByTestId('summary-algorithm')).toContainText('普通克里金', {
       timeout: 30_000,
     })
-    await expect(page.getByTestId('capability-native-kriging-std')).toContainText('supported')
+    await expect(page.getByTestId('capability-native-kriging-std')).toContainText(
+      '克里金标准差：可用',
+    )
 
     // 9. 折分检查 + 不确定性图层切换（真实折证据与不确定性格网）
     await expect(page.getByTestId('fold-inspector')).toBeVisible()
@@ -355,6 +383,8 @@ test.describe('v0.6 专业建模流程（真实链路）', () => {
     await page.getByTestId('anomaly-threshold').fill('100')
     await expect(page.getByTestId('anomaly-preview-count')).toContainText('预计合格节点')
     await page.getByTestId('anomaly-save').click()
+    await expect(page.getByTestId('extraction-technical-details')).toBeVisible({ timeout: 60_000 })
+    await page.getByTestId('extraction-technical-details').locator('summary').click()
     await expect(page.getByTestId('extraction-identity')).toBeVisible({ timeout: 60_000 })
     await expect(page.getByTestId('component-count')).toContainText(/连通区 [1-9]\d* \/ [1-9]\d* 个/)
 
@@ -368,6 +398,7 @@ test.describe('v0.6 专业建模流程（真实链路）', () => {
 
     // 12. 回成果工作台导出证据 ZIP：真实字节 + professional/ 逻辑名核对
     await page.goto(resultUrl)
+    await page.getByTestId('ge-tab-provenance').click()
     await page.getByTestId('export-button').click()
     const downloadPromise = page.waitForEvent('download', { timeout: 60_000 })
     await page.getByTestId('export-download').click()
@@ -404,7 +435,7 @@ test.describe('v0.6 专业建模流程（真实链路）', () => {
     ).toBe(true)
 
     // 13. 返回首页；案例卡持久化可见
-    await page.getByTestId('crumb-home').click()
+    await page.getByTestId('shell-brand').click()
     await expect(page).toHaveURL(/#\/$/)
     await expect(page.getByText(caseName)).toBeVisible()
   })

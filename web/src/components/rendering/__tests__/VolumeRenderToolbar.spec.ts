@@ -34,8 +34,8 @@ function makeProfile(overrides: Partial<RenderProfile> = {}): RenderProfile {
     log_available: true,
     value_range: [1, 1000],
     filter_range: [1, 1000],
-    lighting: true,
-    gradient_opacity: true,
+    lighting: false,
+    gradient_opacity: false,
     bounding_box: true,
     opacity: 1,
     ...overrides,
@@ -198,5 +198,140 @@ describe('VolumeRenderToolbar', () => {
     }
     const slider = wrapper.findComponent({ name: 'ElSlider' })
     expect(slider.props('disabled')).toBe(true)
+  })
+})
+
+// v0.9.0 Task 9：相机预设、组件标注与场景辅助进入常驻工具栏。
+// 相机预设是一次性命令（camera-preset 事件，不改状态）；标注显隐与
+// XYZ 轴/深度刻度是完整状态的可选字段（clone-modify 后整体发射）。
+describe('VolumeRenderToolbar v0.9 标注与相机', () => {
+  const ANNOTATIONS = [
+    {
+      id: 'component-1',
+      label: 'A',
+      localPosition: [15, 15, 25] as [number, number, number],
+      bounds: [
+        [10, 20],
+        [10, 20],
+        [20, 30],
+      ] as [[number, number], [number, number], [number, number]],
+      valueMax: 100,
+      supportMeasure: 500,
+      supportUnit: 'volume_coordinate_unit3' as const,
+      color: '#d9a84e',
+      visible: true,
+    },
+  ]
+
+  it('四种相机预设按钮发射 camera-preset 命令事件', async () => {
+    const wrapper = mountToolbar()
+    for (const preset of ['isometric', 'top-xy', 'front-xz', 'front-yz'] as const) {
+      await wrapper.get(`[data-test="camera-${preset}"]`).trigger('click')
+    }
+    expect(wrapper.emitted('camera-preset')).toEqual([
+      ['isometric'],
+      ['top-xy'],
+      ['front-xz'],
+      ['front-yz'],
+    ])
+    // 命令不改渲染状态
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+  })
+
+  it('组件标注开关：无标注时禁用；切换翻转全部标注 visible', async () => {
+    const disabled = mount(VolumeRenderToolbar, {
+      props: { modelValue: makeState(), profile: makeProfile(), annotationsAvailable: false },
+      global: { plugins: [ElementPlus] },
+      attachTo: document.body,
+    })
+    expect(disabled.get('[data-test="annotations-toggle"]').classes()).toContain('is-disabled')
+
+    const wrapper = mount(VolumeRenderToolbar, {
+      props: {
+        modelValue: makeState({ annotations: ANNOTATIONS }),
+        profile: makeProfile(),
+        annotationsAvailable: true,
+      },
+      global: { plugins: [ElementPlus] },
+      attachTo: document.body,
+    })
+    await wrapper.find('[data-test="annotations-toggle"] input').setValue(false)
+    const next = wrapper.emitted('update:modelValue')![0][0] as RenderStateV2
+    expect(next.annotations![0].visible).toBe(false)
+  })
+
+  it('XYZ 轴与深度刻度开关写入 sceneAids 状态字段', async () => {
+    const wrapper = mount(VolumeRenderToolbar, {
+      props: {
+        modelValue: makeState({ sceneAids: { axes: true, depthTicks: true } }),
+        profile: makeProfile(),
+        annotationsAvailable: true,
+      },
+      global: { plugins: [ElementPlus] },
+      attachTo: document.body,
+    })
+    await wrapper.find('[data-test="axes-toggle"] input').setValue(false)
+    let next = wrapper.emitted('update:modelValue')![0][0] as RenderStateV2
+    expect(next.sceneAids).toEqual({ axes: false, depthTicks: true })
+    // 受控组件：父级回填后再切换下一项
+    await wrapper.setProps({ modelValue: next })
+    await wrapper.find('[data-test="depth-ticks-toggle"] input').setValue(false)
+    next = wrapper.emitted('update:modelValue')![1][0] as RenderStateV2
+    expect(next.sceneAids).toEqual({ axes: false, depthTicks: false })
+  })
+})
+
+// v0.9.0 V6 Task 4：rail 布局的信息架构顺序合同（表达→传递函数→透明度→
+// 属性过滤→空间定位→辅助图层→视角预设），组标签不低于 12px 由样式合同保证。
+describe('VolumeRenderToolbar V6 rail 信息架构', () => {
+  it('rail 布局按 V6 顺序输出工具组', () => {
+    const wrapper = mount(VolumeRenderToolbar, {
+      props: {
+        modelValue: makeState({ sceneAids: { axes: true, depthTicks: true } }),
+        profile: makeProfile(),
+        annotationsAvailable: true,
+        layout: 'rail',
+      },
+      global: { plugins: [ElementPlus] },
+      attachTo: document.body,
+      slots: {
+        spatial: '<div data-test="slot-spatial">切片控件</div>',
+        'aux-layer': '<div data-test="slot-aux">辅助采样点</div>',
+      },
+    })
+    const groups = wrapper.findAll('[data-test^="rail-group-"]')
+    expect(groups.map((g) => g.attributes('data-test'))).toEqual([
+      'rail-group-mode',
+      'rail-group-transfer',
+      'rail-group-opacity',
+      'rail-group-filter',
+      'rail-group-spatial',
+      'rail-group-layers',
+      'rail-group-camera',
+    ])
+    // 空间定位与辅助图层槽位内容真实落位
+    expect(wrapper.get('[data-test="rail-group-spatial"]').text()).toContain('切片控件')
+    expect(wrapper.get('[data-test="rail-group-layers"]').text()).toContain('辅助采样点')
+    // 组标签
+    expect(wrapper.get('[data-test="rail-group-mode"]').text()).toContain('表达方式')
+    expect(wrapper.get('[data-test="rail-group-layers"]').text()).toContain('辅助图层')
+    expect(wrapper.get('[data-test="rail-group-camera"]').text()).toContain('视角预设')
+  })
+
+  it('rail 视角区去除重复的等轴入口，并突出恢复默认视角', () => {
+    const wrapper = mount(VolumeRenderToolbar, {
+      props: {
+        modelValue: makeState(),
+        profile: makeProfile(),
+        annotationsAvailable: true,
+        layout: 'rail',
+      },
+      global: { plugins: [ElementPlus] },
+      attachTo: document.body,
+    })
+    expect(wrapper.find('[data-test="camera-isometric"]').exists()).toBe(false)
+    const reset = wrapper.get('[data-test="reset-view"]')
+    expect(reset.text()).toContain('恢复默认视角')
+    expect(reset.classes()).toContain('reset-view-primary')
   })
 })

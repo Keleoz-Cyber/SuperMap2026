@@ -59,8 +59,7 @@ test.describe('v0.8.0 第三批瓦斯含量预置（mock API）', () => {
     await expect(card).not.toHaveClass(/disabled/)
     await expect(card).toContainText('散点预置 · 官方基线成果')
     await expect(card).toContainText('标准化散点 · 58 个合格样品')
-    await expect(card).toContainText('X/Y/Z/CH4_content')
-    await expect(card).toContainText('local_linear')
+    await expect(card).toContainText('局部线性米制坐标')
     await expect(card).toContainText('ml/g')
     // 旧 legacy 瓦斯卡与旧流程语样绝不出现
     await expect(card).not.toContainText('暂缓')
@@ -75,18 +74,18 @@ test.describe('v0.8.0 第三批瓦斯含量预置（mock API）', () => {
     await expect(page.getByTestId('case-workspace-header')).toContainText('煤层瓦斯')
     await expect(page.getByTestId('case-workspace-header')).toContainText('CSV 预置')
     await expect(page.getByTestId('workspace-overview')).toBeVisible()
-    // 数据摘要：只读预置数据版本（58 行 X/Y/Z -> CH4_content，ml/g）
-    await expect(page.getByTestId('workspace-data')).toContainText('状态 validated')
-    await expect(page.getByTestId('workspace-data')).toContainText('行数 58')
-    await expect(page.getByTestId('workspace-data')).toContainText('有效 58')
-    await expect(page.getByTestId('workspace-data')).toContainText('字段：X/Y/Z -> CH4_content')
+    // 数据摘要：主阅读层使用用户语言，不暴露状态枚举或字段映射实现。
+    await expect(page.getByTestId('workspace-data')).toContainText('质量检查通过')
+    await expect(page.getByTestId('workspace-data')).toContainText('58')
+    await expect(page.getByTestId('workspace-data')).toContainText('瓦斯含量')
     await expect(page.getByTestId('workspace-data')).toContainText('ml/g')
     // 官方成果与新建实验两条命令并存
     await expect(page.getByTestId('open-official-result')).toContainText('查看官方成果')
+    await page.getByTestId('stage-nav-experiments').click()
     await expect(page.getByTestId('workspace-experiments')).toBeVisible()
     await expect(page.getByTestId('new-experiment')).toBeVisible()
-    await expect(page.getByTestId('workspace-results')).toContainText('官方成果')
-    await expect(page.getByTestId('workspace-results')).toContainText('已物化')
+    await page.getByTestId('stage-nav-results').click()
+    await expect(page.getByTestId('workspace-results')).toContainText('官方成果已就绪')
     // 旧 legacy 页面嵌入块与导入入口不存在
     await expect(page.getByTestId('workspace-rho-block')).toHaveCount(0)
     await expect(page.getByTestId('legacy-import')).toHaveCount(0)
@@ -94,30 +93,32 @@ test.describe('v0.8.0 第三批瓦斯含量预置（mock API）', () => {
     // ---- 官方成果页：算法身份 + 显式资产 → 渲染状态 ----
     await page.getByTestId('open-official-result').click()
     await expect(page).toHaveURL(/#\/results\/cand-gas-official/)
-    await expect(page.locator('.page-sub')).toContainText('ordinary_kriging')
-    await expect(page.locator('.page-sub')).toContainText('三维')
-    await expect(page.locator('.page-sub')).toContainText('网格 151×333×12')
+    await expect(page.getByTestId('v6-result-summary')).toContainText('普通克里金')
+    await expect(page.getByTestId('v6-result-summary')).toContainText('三维')
+    await expect(page.getByTestId('v6-result-summary')).toContainText('151 × 333 × 12')
     await expect(page.getByTestId('native-volume-panel')).toBeVisible()
     // NetCDF 资产懒创建：显式创建入口 → 已渲染
     await page.getByTestId('create-asset').click()
     await expect(page.getByTestId('volume-phase')).toContainText('已渲染')
-    await expect(page.getByTestId('asset-identity')).toContainText('supermap_voxelgrid_netcdf')
+    await page.getByTestId('ge-tab-provenance').click()
+    await expect(page.getByTestId('ge-asset-identity')).toContainText('supermap_voxelgrid_netcdf')
+    await page.getByTestId('ge-tab-overview').click()
 
     // ---- X/Y/Z 正交剖面控件（坐标标签只来自权威剖面响应）----
     await page.getByTestId('mode-slice').click()
     await expect(page.getByTestId('slice-controls')).toBeVisible()
-    await expect(page.getByTestId('slice-coordinate-label')).toContainText('Z = -400')
+    await expect(page.getByTestId('slice-coordinate')).toContainText('Z = -400')
     await page.getByTestId('axis-x').click()
-    await expect(page.getByTestId('slice-coordinate-label')).toContainText('X = -141')
+    await expect(page.getByTestId('slice-coordinate')).toContainText('X = -141')
     await page.getByTestId('axis-y').click()
-    await expect(page.getByTestId('slice-coordinate-label')).toContainText('Y = 292')
+    await expect(page.getByTestId('slice-coordinate')).toContainText('Y = 292')
     await page.getByTestId('axis-z').click()
-    await expect(page.getByTestId('slice-coordinate-label')).toContainText('Z = -400')
+    await expect(page.getByTestId('slice-coordinate')).toContainText('Z = -400')
 
     // ---- 剖面分析入口（统计 + 导出命令）----
-    await expect(page.getByTestId('slice-analysis')).toBeVisible()
-    await expect(page.getByTestId('slice-statistics')).toContainText('有效 11 / NoData 1')
-    await expect(page.getByTestId('export-slice')).toBeEnabled()
+    await expect(page.getByTestId('ge-pane-slices')).toBeVisible()
+    await expect(page.getByTestId('ge-slice-statistics')).toContainText('均值')
+    await expect(page.getByTestId('ge-export-slice')).toBeEnabled()
 
     // 成果页全程无 legacy/S3M/DAT 语样
     await expect(page.locator('body')).not.toContainText('S3M')
@@ -133,6 +134,7 @@ test.describe('v0.8.0 第三批瓦斯含量预置（mock API）', () => {
     // ---- 案例工作台 → 统计与空间分析入口 ----
     await page.goto('/#/cases/gas')
     await expect(page.getByTestId('case-workspace-header')).toContainText('煤层瓦斯')
+    await page.getByTestId('stage-nav-results').click()
     await page.getByTestId('analysis-center-entry').click()
     await expect(page).toHaveURL(/#\/datasets\/ds-gas\/analysis/)
 
@@ -140,7 +142,8 @@ test.describe('v0.8.0 第三批瓦斯含量预置（mock API）', () => {
     await expect(page.getByTestId('analysis-profile-badge')).toContainText('瓦斯含量')
     await expect(page.getByTestId('analysis-quality-badge')).toContainText('数据全部有效')
     await expect(page.getByTestId('analysis-quality-badge')).toContainText('行')
-    await expect(page.getByTestId('analysis-variable')).toContainText('CH4_content')
+    await expect(page.getByTestId('analysis-variable')).toContainText('瓦斯含量')
+    await expect(page.getByTestId('analysis-variable')).not.toContainText('CH4_content')
     await expect(page.getByTestId('analysis-variable')).toContainText('ml/g')
 
     // ---- 默认主区 = 高/低含量区域（探索性分位口径），echarts 真实渲染非空图 ----
@@ -169,8 +172,8 @@ test.describe('v0.8.0 第三批瓦斯含量预置（mock API）', () => {
     await expect(page.getByTestId('distribution-summary')).toContainText('ml/g')
     await expectCanvasRendered(page.getByTestId('distribution-chart'))
 
-    // ---- 右栏：质量摘要带单位 + 模型对比官方普通克里金候选 ----
-    await expect(page.getByTestId('numeric-summary')).toContainText('ml/g')
+    // ---- 模型证据模块：官方普通克里金候选 ----
+    await page.getByTestId('module-nav-item-model_comparison').click()
     const comparison = page.getByTestId('model-comparison-panel')
     await expect(comparison.getByTestId('model-candidate-row')).toHaveCount(1)
     await expect(comparison).toContainText('普通克里金')
@@ -189,8 +192,8 @@ test.describe('v0.8.0 第三批瓦斯含量预置（mock API）', () => {
     await page.goto('/')
     await page.locator(GAS_CARD).getByTestId('open-official-result').click()
     await expect(page).toHaveURL(/#\/results\/cand-gas-official/)
-    await expect(page.locator('.page-sub')).toContainText('ordinary_kriging')
-    await expect(page.locator('.page-sub')).toContainText('151×333×12')
+    await expect(page.getByTestId('v6-result-summary')).toContainText('普通克里金')
+    await expect(page.getByTestId('v6-result-summary')).toContainText('151 × 333 × 12')
     await expect(page.getByTestId('native-volume-panel')).toBeVisible()
     // NetCDF 资产懒创建：显式创建入口就绪（与电阻率/微震预置官方成果同一形态）
     await expect(page.getByTestId('create-asset')).toBeVisible()
@@ -201,23 +204,27 @@ test.describe('v0.8.0 第三批瓦斯含量预置（mock API）', () => {
     await installMockApi(page)
     await installVolumeFrameMock(page)
 
-    // 首页：瓦斯卡完整可见且无横向溢出
+    // 首页：瓦斯卡完整可见且无横向溢出（v0.9.0：手机档案例轨为横向紧凑选择条，
+    // 点击 chip 选中，主操作在场景头部）
     await page.goto('/')
     const card = page.locator(GAS_CARD)
     await expect(card).toHaveCount(1)
-    await expect(card).toContainText('散点预置 · 官方基线成果')
+    await page.locator('[data-test="case-rail-item"][data-case-id="gas"]').click()
+    await expect(page.getByTestId('command-center-scene')).toContainText('煤层瓦斯')
+    await expect(page.getByTestId('command-center-scene')).toContainText('ml/g')
     const homeScrollWidth = await page.evaluate(() => document.documentElement.scrollWidth)
     expect(homeScrollWidth, '首页 390×844 不得有页面级横向溢出').toBeLessThanOrEqual(390)
 
     // 工作台：数据摘要与官方成果命令可见
-    await card.getByTestId('enter-case-workspace').click()
+    await page.getByTestId('command-primary-action').click()
     await expect(page.getByTestId('case-workspace-header')).toContainText('煤层瓦斯')
-    await expect(page.getByTestId('workspace-data')).toContainText('行数 58')
+    await expect(page.getByTestId('workspace-data')).toContainText('58')
     await expect(page.getByTestId('open-official-result')).toBeVisible()
     const wsScrollWidth = await page.evaluate(() => document.documentElement.scrollWidth)
     expect(wsScrollWidth, '工作台 390×844 不得有页面级横向溢出').toBeLessThanOrEqual(390)
 
     // 分析中心：徽标/空间异常图非空且图表宽度不超视口
+    await page.getByTestId('stage-nav-results').click()
     await page.getByTestId('analysis-center-entry').click()
     await expect(page).toHaveURL(/#\/datasets\/ds-gas\/analysis/)
     await expect(page.getByTestId('analysis-profile-badge')).toContainText('瓦斯含量')

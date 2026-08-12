@@ -18,6 +18,17 @@ const RETRYABLE = new Set(['canceled', 'interrupted', 'failed'])
 const inflight = computed(() => props.run !== null && INFLIGHT.has(props.run.status))
 const retryable = computed(() => props.run !== null && RETRYABLE.has(props.run.status))
 
+const STATUS_LABELS: Record<string, string> = {
+  queued: '排队中',
+  running: '运行中',
+  succeeded: '验证完成',
+  failed: '运行失败',
+  canceled: '已取消',
+  interrupted: '已中断',
+}
+
+const statusLabel = computed(() => (props.run ? STATUS_LABELS[props.run.status] ?? '状态未知' : ''))
+
 const statusType = computed(() => {
   if (!props.run) return 'info'
   switch (props.run.status) {
@@ -49,10 +60,8 @@ const percent = computed(() =>
 
 <template>
   <section v-if="run" class="run-progress" data-test="run-progress">
-    <div class="run-head">
-      <el-tag :type="statusType" effect="dark" size="small">{{ run.status }}</el-tag>
-      <span class="run-id mono">{{ run.id }}</span>
-      <span v-if="run.error_code" class="error-code" data-test="run-error-code">{{ run.error_code }}</span>
+    <div class="run-head" data-test="run-progress-primary">
+      <el-tag :type="statusType" effect="dark" size="small">{{ statusLabel }}</el-tag>
     </div>
 
     <div class="run-bar-row">
@@ -73,6 +82,11 @@ const percent = computed(() =>
         重试运行
       </button>
     </div>
+    <details class="run-technical" data-test="run-technical-details">
+      <summary>技术详情</summary>
+      <p>运行标识 <span class="mono">{{ run.id }}</span></p>
+      <p v-if="run.error_code" class="error-code" data-test="run-error-code">错误码 {{ run.error_code }}</p>
+    </details>
   </section>
   <section v-else class="run-progress empty" data-test="run-progress-empty">尚未启动运行</section>
 </template>
@@ -139,6 +153,19 @@ const percent = computed(() =>
 .run-actions {
   display: flex;
   gap: 10px;
+}
+
+.run-technical {
+  color: var(--gmp-text-faint);
+  font-size: 12px;
+}
+
+.run-technical summary {
+  cursor: pointer;
+}
+
+.run-technical p {
+  margin: 6px 0 0;
 }
 
 .gmp-btn {

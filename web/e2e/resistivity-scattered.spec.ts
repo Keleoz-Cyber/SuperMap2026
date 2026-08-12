@@ -34,7 +34,6 @@ test.describe('v0.8.0 电阻率散点预置与 DSI-like（mock API）', () => {
     await expect(card).toHaveCount(1)
     await expect(card).toContainText('标准化散点 · 17,549 个节点')
     await expect(card).toContainText('散点预置 · 官方普通克里金成果')
-    await expect(card).toContainText('X/Y/Z/RHO')
     await expect(card).toContainText('Ω·m')
     await expect(card).not.toContainText('S3M')
     await expect(card).not.toContainText('DAT')
@@ -46,26 +45,30 @@ test.describe('v0.8.0 电阻率散点预置与 DSI-like（mock API）', () => {
     await expect(page.getByTestId('case-workspace-header')).toContainText('地下电阻率')
     await expect(page.getByTestId('case-workspace-header')).toContainText('CSV 预置')
     await expect(page.getByTestId('workspace-overview')).toBeVisible()
-    // 数据摘要：只读预置数据版本（17,549 行 X/Y/Z -> RHO）
-    await expect(page.getByTestId('workspace-data')).toContainText('行数 17549')
-    await expect(page.getByTestId('workspace-data')).toContainText('X/Y/Z -> RHO')
-    await expect(page.getByTestId('workspace-data')).toContainText('validated')
+    // 数据摘要：只读预置数据版本，主阅读层使用用户语言。
+    await expect(page.getByTestId('workspace-data')).toContainText('17,549')
+    await expect(page.getByTestId('workspace-data')).toContainText('电阻率')
+    await expect(page.getByTestId('workspace-data')).not.toContainText('RHO')
+    await expect(page.getByTestId('workspace-data')).toContainText('质量检查通过')
     // 官方成果与新建实验两条命令并存
     await expect(page.getByTestId('open-official-result')).toContainText('查看官方成果')
+    await page.getByTestId('stage-nav-experiments').click()
     await expect(page.getByTestId('workspace-experiments')).toBeVisible()
     await expect(page.getByTestId('new-experiment')).toBeVisible()
-    await expect(page.getByTestId('workspace-results')).toContainText('官方成果')
-    await expect(page.getByTestId('workspace-results')).toContainText('已物化')
+    await page.getByTestId('stage-nav-results').click()
+    await expect(page.getByTestId('workspace-results')).toContainText('官方成果已就绪')
     // 旧 legacy 页面嵌入块与导入入口不存在
     await expect(page.getByTestId('workspace-rho-block')).toHaveCount(0)
     await expect(page.getByTestId('legacy-import')).toHaveCount(0)
 
     // ---- 新建 DSI-like 实验：算法标签、免责声明与固定合同 ----
+    await page.getByTestId('stage-nav-experiments').click()
     await page.getByTestId('new-experiment').click()
     await expect(page).toHaveURL(/#\/cases\/resistivity\/experiments\/new\?dataset=ds-rho/)
     await expect(page.getByTestId('param-editor')).toBeVisible()
     await page.getByTestId('algo-dsi-like').check()
-    await expect(page.getByTestId('param-editor')).toContainText('DSI-like 离散平滑插值')
+    await expect(page.getByTestId('param-editor')).toContainText('DSI-like')
+    await expect(page.getByTestId('param-editor')).toContainText('三维平滑')
     await expect(page.getByTestId('dsi-like-note')).toContainText('不等同于 GOCAD DSI')
     // 硬约束恒开、收敛容差固定（只读展示，不可关闭/编辑）
     await expect(page.getByTestId('dsi-hard-constraints')).toBeVisible()
@@ -74,7 +77,7 @@ test.describe('v0.8.0 电阻率散点预置与 DSI-like（mock API）', () => {
 
     // ---- 运行到终态：恰好一个成功候选 ----
     await expect(page).toHaveURL(/#\/experiments\/exp-rho-dsi/)
-    await expect(page.getByTestId('run-progress')).toContainText('succeeded', { timeout: 15000 })
+    await expect(page.getByTestId('run-progress')).toContainText('验证完成', { timeout: 15000 })
     await expect(page.getByTestId('candidate-row')).toHaveCount(1)
     await expect(page.getByTestId('candidate-row')).toContainText('成功')
     await expect(page.getByTestId('candidate-row')).toContainText('neighbor_connectivity')
@@ -82,28 +85,33 @@ test.describe('v0.8.0 电阻率散点预置与 DSI-like（mock API）', () => {
     // ---- 成果页：算法身份 + 显式资产 → 渲染状态 ----
     await page.getByTestId('open-result').click()
     await expect(page).toHaveURL(/#\/results\/cand-rho-dsi-1/)
-    await expect(page.locator('.page-sub')).toContainText('dsi_like')
-    await expect(page.locator('.page-sub')).toContainText('7×23×42')
+    // v0.9.0 V6：算法身份在成果摘要条（中文标签 + 网格维度）
+    await expect(page.getByTestId('v6-result-summary')).toContainText('DSI-like')
+    await expect(page.getByTestId('v6-result-summary')).toContainText('7 × 23 × 42')
     await expect(page.getByTestId('native-volume-panel')).toBeVisible()
     await page.getByTestId('create-asset').click()
     await expect(page.getByTestId('volume-phase')).toContainText('已渲染')
-    await expect(page.getByTestId('asset-identity')).toContainText('supermap_voxelgrid_netcdf')
+    // V6：资产身份移入证据窗「数据溯源」标签，主舞台不显示调试块
+    await expect(page.getByTestId('asset-identity')).toHaveCount(0)
+    await page.getByTestId('ge-tab-provenance').click()
+    await expect(page.getByTestId('ge-asset-identity')).toContainText('supermap_voxelgrid_netcdf')
 
     // ---- X/Y/Z 正交剖面控件（坐标标签只来自权威剖面响应）----
     await page.getByTestId('mode-slice').click()
     await expect(page.getByTestId('slice-controls')).toBeVisible()
-    await expect(page.getByTestId('slice-coordinate-label')).toContainText('Z = -400')
+    await expect(page.getByTestId('slice-coordinate')).toContainText('Z = -400')
     await page.getByTestId('axis-x').click()
-    await expect(page.getByTestId('slice-coordinate-label')).toContainText('X = -141')
+    await expect(page.getByTestId('slice-coordinate')).toContainText('X = -141')
     await page.getByTestId('axis-y').click()
-    await expect(page.getByTestId('slice-coordinate-label')).toContainText('Y = 292')
+    await expect(page.getByTestId('slice-coordinate')).toContainText('Y = 292')
     await page.getByTestId('axis-z').click()
-    await expect(page.getByTestId('slice-coordinate-label')).toContainText('Z = -400')
+    await expect(page.getByTestId('slice-coordinate')).toContainText('Z = -400')
 
     // ---- 剖面分析入口（统计 + 导出命令）----
-    await expect(page.getByTestId('slice-analysis')).toBeVisible()
-    await expect(page.getByTestId('slice-statistics')).toContainText('有效 11 / NoData 1')
-    await expect(page.getByTestId('export-slice')).toBeEnabled()
+    await expect(page.getByTestId('ge-pane-slices')).toBeVisible()
+    await expect(page.getByTestId('ge-slice-heatmap')).toBeVisible()
+    await expect(page.getByTestId('ge-slice-statistics')).toContainText('均值')
+    await expect(page.getByTestId('ge-export-slice')).toBeEnabled()
 
     // 成果页全程无 legacy/S3M/DAT 语样
     await expect(page.locator('body')).not.toContainText('S3M')
@@ -116,8 +124,8 @@ test.describe('v0.8.0 电阻率散点预置与 DSI-like（mock API）', () => {
     await page.goto('/')
     await page.locator(RHO_CARD).getByTestId('open-official-result').click()
     await expect(page).toHaveURL(/#\/results\/cand-rho-official/)
-    await expect(page.locator('.page-sub')).toContainText('ordinary_kriging')
-    await expect(page.locator('.page-sub')).toContainText('7×23×42')
+    await expect(page.getByTestId('v6-result-summary')).toContainText('普通克里金')
+    await expect(page.getByTestId('v6-result-summary')).toContainText('7 × 23 × 42')
     await expect(page.getByTestId('native-volume-panel')).toBeVisible()
     // NetCDF 资产懒创建：显式创建入口就绪（与微震预置官方成果同一形态）
     await expect(page.getByTestId('create-asset')).toBeVisible()

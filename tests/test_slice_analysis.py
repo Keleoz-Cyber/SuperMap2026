@@ -129,3 +129,98 @@ def test_json_serializer_uses_none_for_masked_values():
     assert None in flat
     assert not any(isinstance(v, float) and (v != v or v in (float("inf"), float("-inf"))) for v in flat if v is not None)
     assert payload["nodata_mask"][0][1] is True
+
+
+# ---------------------------------------------------------------------------
+# v0.9.0 Task 5: Shared-threshold slice composition
+# ---------------------------------------------------------------------------
+
+def test_shared_thresholds_use_full_grid_p25_p75():
+    """Slice low/normal/high counts use full-grid p25/p75, not slice-local."""
+    axes, values, is_nodata = make_grid()
+    # Compute full-grid valid values
+    from geomodeling.platform.result_analysis import finite_valid_values, result_thresholds
+    valid = finite_valid_values(values, is_nodata)
+    low, high = result_thresholds(valid)
+
+    result = analyze_grid_slice(
+        axes, values, is_nodata, "z", 2,
+        full_grid_thresholds=(low, high),
+    )
+    stats = result.statistics
+    assert stats["thresholds"] is not None
+    assert stats["thresholds"]["low"] == pytest.approx(low)
+    assert stats["thresholds"]["high"] == pytest.approx(high)
+    assert stats["thresholds"]["source"] == "full_grid_quartile"
+
+    # Counts must sum to valid_count
+    assert stats["low_count"] + stats["normal_count"] + stats["high_count"] == stats["valid_count"]
+    # Ratios must sum to 1
+    assert stats["low_ratio"] + stats["normal_ratio"] + stats["high_ratio"] == pytest.approx(1.0)
+
+
+def test_shared_thresholds_differ_from_slice_local():
+    """Full-grid thresholds are not the same as slice-local quartiles."""
+    axes, values, is_nodata = make_grid()
+    from geomodeling.platform.result_analysis import finite_valid_values, result_thresholds
+    valid = finite_valid_values(values, is_nodata)
+    low, high = result_thresholds(valid)
+
+    result = analyze_grid_slice(
+        axes, values, is_nodata, "z", 2,
+        full_grid_thresholds=(low, high),
+    )
+    # The slice at z=2 has values [2, 22, 102, 112, 122] (excluding nodata)
+    # Full-grid p25/p75 will be different from slice-local p25/p75
+    slice_valid = np.array([2.0, 22.0, 102.0, 112.0, 122.0])
+    slice_q25, slice_q75 = np.quantile(slice_valid, [0.25, 0.75], method="linear")
+    # Full-grid thresholds should differ from slice-local
+    assert low != pytest.approx(slice_q25)
+    assert high != pytest.approx(slice_q75)
+
+
+def test_old_fields_unchanged_with_thresholds():
+    """Old count/min/max/mean/std/p10/p50/p90 fields are unchanged."""
+    axes, values, is_nodata = make_grid()
+    from geomodeling.platform.result_analysis import finite_valid_values, result_thresholds
+    valid = finite_valid_values(values, is_nodata)
+    low, high = result_thresholds(valid)
+
+    result_old = analyze_grid_slice(axes, values, is_nodata, "z", 2)
+    result_new = analyze_grid_slice(
+        axes, values, is_nodata, "z", 2,
+        full_grid_thresholds=(low, high),
+    )
+    for key in ("total_count", "valid_count", "nodata_count", "min", "max", "mean", "std_population", "p10", "p50", "p90"):
+        assert result_old.statistics[key] == pytest.approx(result_new.statistics[key])
+
+
+def test_no_thresholds_returns_null_composition():
+    """Without full_grid_thresholds, composition fields are None."""
+    axes, values, is_nodata = make_grid()
+    result = analyze_grid_slice(axes, values, is_nodata, "z", 2)
+    stats = result.statistics
+    assert stats["low_count"] is None
+    assert stats["normal_count"] is None
+    assert stats["high_count"] is None
+    assert stats["low_ratio"] is None
+    assert stats["normal_ratio"] is None
+    assert stats["high_ratio"] is None
+    assert stats["thresholds"] is None
+
+
+def test_all_nodata_slice_with_thresholds_returns_zero_counts():
+    """All-nodata slice with thresholds returns zero counts and ratios."""
+    axes, values, is_nodata = make_grid()
+    is_nodata[:] = True
+    result = analyze_grid_slice(
+        axes, values, is_nodata, "x", 0,
+        full_grid_thresholds=(10.0, 100.0),
+    )
+    stats = result.statistics
+    assert stats["low_count"] == 0
+    assert stats["normal_count"] == 0
+    assert stats["high_count"] == 0
+    assert stats["low_ratio"] == 0.0
+    assert stats["normal_ratio"] == 0.0
+    assert stats["high_ratio"] == 0.0

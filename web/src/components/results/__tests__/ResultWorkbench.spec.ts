@@ -17,6 +17,21 @@ import type {
 } from '../../../api/types'
 import * as client from '../../../api/client'
 import ResultWorkbenchView from '../../../views/ResultWorkbenchView.vue'
+import { RESULT_ANALYSIS_MOCK_3D } from '../../../mocks/resultAnalysisMock'
+
+// 证据带图表统一 mock：jsdom 无 canvas 实现，ECharts 实例不得真实初始化
+vi.mock('echarts/core', () => ({
+  init: vi.fn(() => ({ setOption: vi.fn(), resize: vi.fn(), dispose: vi.fn(), on: vi.fn() })),
+  use: vi.fn(),
+}))
+vi.mock('echarts/charts', () => ({ BarChart: {}, LineChart: {}, PieChart: {}, ScatterChart: {}, HeatmapChart: {} }))
+vi.mock('echarts/components', () => ({
+  GridComponent: {},
+  TooltipComponent: {},
+  LegendComponent: {},
+  VisualMapComponent: {},
+}))
+vi.mock('echarts/renderers', () => ({ CanvasRenderer: {} }))
 
 vi.mock('../../../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../api/client')>()
@@ -35,6 +50,9 @@ vi.mock('../../../api/client', async (importOriginal) => {
     fetchResultRenderCapability: vi.fn(),
     fetchResultRenderAsset: vi.fn(),
     createResultRenderAsset: vi.fn(),
+    fetchResultAnalysisSummary: vi.fn(),
+    fetchCase: vi.fn(),
+    fetchCases: vi.fn(),
   }
 })
 
@@ -224,9 +242,23 @@ async function mountWorkbench(metadata: ResultMetadata) {
     new client.ApiError('RENDER_ASSET_NOT_FOUND', '该渲染源尚未创建渲染资产', 404),
   )
   vi.mocked(client.createResultRenderAsset).mockResolvedValue(ASSET_READY)
+  vi.mocked(client.fetchCase).mockResolvedValue({
+    id: 'c1',
+    name: '测试案例',
+    case_type: 'generic',
+    config: {},
+    created_at: T,
+    updated_at: T,
+  })
+  vi.mocked(client.fetchCases).mockResolvedValue({
+    cases: [{ case_id: 'c1', title: '测试案例', status: 'active', links: { detail: '/cases/c1', publish_status: null } }],
+  })
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
+      { path: '/cases/:caseId', name: 'case-workspace', component: { template: '<div />' } },
+      { path: '/datasets/:datasetId/candidate-comparison', name: 'candidate-comparison', component: { template: '<div />' } },
+
       { path: '/', name: 'home', component: { template: '<div />' } },
       { path: '/experiments/:experimentId', name: 'experiment-detail', component: { template: '<div />' } },
       { path: '/results/:resultId', name: 'result-workbench', component: ResultWorkbenchView },
@@ -241,6 +273,9 @@ async function mountWorkbench(metadata: ResultMetadata) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // 默认：成果级分析成功（单测可覆盖为失败/按身份区分）
+  vi.mocked(client.fetchResultAnalysisSummary).mockResolvedValue(RESULT_ANALYSIS_MOCK_3D)
+  vi.mocked(client.fetchFormalSelections).mockResolvedValue({ case_id: 'c1', selections: [] })
 })
 
 describe('ResultWorkbenchView', () => {
@@ -318,6 +353,9 @@ describe('ResultWorkbenchView', () => {
     vi.mocked(client.createPublication).mockResolvedValue(PUBLICATION)
     const { wrapper } = await mountWorkbench(makeMetadata('2d'))
 
+    // v0.9.0 V6：导出/发布迁入证据窗「数据溯源」标签
+    await wrapper.get('[data-test="ge-tab-provenance"]').trigger('click')
+    await flushPromises()
     expect(wrapper.find('[data-test="publication-status"]').text()).toContain('未请求')
     await wrapper.find('[data-test="export-button"]').trigger('click')
     await flushPromises()
@@ -350,14 +388,16 @@ describe('ResultWorkbenchView', () => {
 })
 
 describe('导航', () => {
-  it('成果页显示面包屑首页与实验链接（精确实验 ID）', async () => {
+  it('成果页不再渲染第二套专用导航，导航统一交给 AppShell', async () => {
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [
         { path: '/', name: 'home', component: { template: '<div />' } },
         { path: '/cases/:caseId', name: 'case-workspace', component: { template: '<div />' } },
         { path: '/experiments/:experimentId', name: 'experiment-detail', component: { template: '<div />' } },
+        { path: '/datasets/:datasetId/candidate-comparison', name: 'candidate-comparison', component: { template: '<div />' } },
         { path: '/results/:resultId', name: 'result-workbench', component: ResultWorkbenchView },
+        { path: '/results/:resultId/evaluation', name: 'model-evaluation', component: { template: '<div />' } },
       ],
     })
     const metadata = makeMetadata('2d')
@@ -370,18 +410,9 @@ describe('导航', () => {
     const wrapper = mount(ResultWorkbenchView, { global: { plugins: [router, ElementPlus] } })
     await flushPromises()
 
-    await wrapper.get('[data-test="crumb-experiment"]').trigger('click')
-    await flushPromises()
-    expect(router.currentRoute.value).toMatchObject({
-      name: 'experiment-detail',
-      params: { experimentId: 'exp1' },
-    })
-
-    await router.push('/results/r1')
-    await flushPromises()
-    await wrapper.get('[data-test="crumb-home"]').trigger('click')
-    await flushPromises()
-    expect(router.currentRoute.value.name).toBe('home')
+    expect(wrapper.find('[data-test="v6-result-topbar"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="v6-nav-experiment"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="v6-nav-home"]').exists()).toBe(false)
   })
 
   it('物化失败：显示错误页且不取切片/预览，仍能返回首页', async () => {
@@ -392,7 +423,11 @@ describe('导航', () => {
       history: createMemoryHistory(),
       routes: [
         { path: '/', name: 'home', component: { template: '<div />' } },
+        { path: '/cases/:caseId', name: 'case-workspace', component: { template: '<div />' } },
+        { path: '/experiments/:experimentId', name: 'experiment-detail', component: { template: '<div />' } },
+        { path: '/datasets/:datasetId/candidate-comparison', name: 'candidate-comparison', component: { template: '<div />' } },
         { path: '/results/:resultId', name: 'result-workbench', component: ResultWorkbenchView },
+        { path: '/results/:resultId/evaluation', name: 'model-evaluation', component: { template: '<div />' } },
       ],
     })
     await router.push('/results/r-missing')
@@ -412,6 +447,8 @@ describe('导出下载', () => {
   it('下载链接使用返回的 export id 而非 result id', async () => {
     vi.mocked(client.createExport).mockResolvedValue(EXPORT)
     const { wrapper } = await mountWorkbench(makeMetadata('2d'))
+    await wrapper.get('[data-test="ge-tab-provenance"]').trigger('click')
+    await flushPromises()
     await wrapper.find('[data-test="export-button"]').trigger('click')
     await flushPromises()
     const link = wrapper.get('[data-test="export-download"]')
@@ -434,5 +471,83 @@ describe('模型评估入口', () => {
     krigingMeta.professional_analysis_supported = true
     const { wrapper } = await mountWorkbench(krigingMeta)
     expect(wrapper.find('[data-test="model-evaluation-entry"]').exists()).toBe(true)
+  })
+})
+
+// v0.9.0 Task 9：成果级分析获取、研判区渲染、失败类型化与身份切换清理。
+describe('成果级分析接入', () => {
+  it('按 result_id 获取成果分析，组件进入研判区与三维标注 prop', async () => {
+    const { wrapper } = await mountWorkbench(makeMetadata('3d'))
+    expect(client.fetchResultAnalysisSummary).toHaveBeenCalledWith('r1')
+    // 研判区渲染后端发现与组件行
+    expect(wrapper.get('[data-test="result-interpretation"]').text()).toContain('最大高值连通区为 A 区')
+    expect(wrapper.find('[data-test="component-2"]').exists()).toBe(true)
+    // 三维标注 prop 来自同一响应（组件 ID 一致）
+    const panel = wrapper.findComponent({ name: 'NativeVolumePanel' })
+    expect(panel.props('components')).toHaveLength(3)
+    expect(panel.props('components')[1].component_id).toBe(2)
+  })
+
+  it('研判与三维场共享完整连通区身份，D–H 定位不会再命中未知标注', async () => {
+    const base = RESULT_ANALYSIS_MOCK_3D.components_preview.rows[0]
+    const rows = Array.from({ length: 8 }, (_, index) => ({
+      ...base,
+      rank: index + 1,
+      label: String.fromCharCode(65 + index),
+      component_id: index + 1,
+    }))
+    vi.mocked(client.fetchResultAnalysisSummary).mockResolvedValue({
+      ...RESULT_ANALYSIS_MOCK_3D,
+      components_preview: {
+        ...RESULT_ANALYSIS_MOCK_3D.components_preview,
+        total: 8,
+        returned: 8,
+        rows,
+      },
+    })
+
+    const { wrapper } = await mountWorkbench(makeMetadata('3d'))
+    const panel = wrapper.findComponent({ name: 'NativeVolumePanel' })
+    expect(panel.props('components').map((row: { component_id: number }) => row.component_id)).toEqual([
+      1, 2, 3, 4, 5, 6, 7, 8,
+    ])
+    expect(wrapper.find('[data-test="component-8"]').exists()).toBe(true)
+  })
+
+  it('成果分析失败显示类型化错误，不残留组件也不回退数据集级统计', async () => {
+    vi.mocked(client.fetchResultAnalysisSummary).mockRejectedValue(
+      new client.ApiError('RESULT_ANALYSIS_NO_VALID_CELLS', '网格无有效体元', 422),
+    )
+    const { wrapper } = await mountWorkbench(makeMetadata('3d'))
+    await flushPromises()
+    expect(wrapper.get('[data-test="interpretation-error"]').text()).toContain(
+      'RESULT_ANALYSIS_NO_VALID_CELLS',
+    )
+    expect(wrapper.find('[data-test="component-1"]').exists()).toBe(false)
+    const panel = wrapper.findComponent({ name: 'NativeVolumePanel' })
+    expect(panel.props('components') ?? null).toBeNull()
+  })
+
+  it('同页切换成果：旧分析/组件立即清空，按新身份重新获取', async () => {
+    const r2Analysis = {
+      ...RESULT_ANALYSIS_MOCK_3D,
+      identity: { ...RESULT_ANALYSIS_MOCK_3D.identity, result_id: 'r2' },
+      components_preview: { ...RESULT_ANALYSIS_MOCK_3D.components_preview, total: 0, returned: 0, rows: [] },
+      findings: [],
+    }
+    vi.mocked(client.fetchResultAnalysisSummary).mockImplementation((id: string) =>
+      Promise.resolve(id === 'r2' ? r2Analysis : RESULT_ANALYSIS_MOCK_3D),
+    )
+    const { wrapper, router } = await mountWorkbench(makeMetadata('3d'))
+    expect(wrapper.find('[data-test="component-1"]').exists()).toBe(true)
+
+    await router.push('/results/r2')
+    await flushPromises()
+    // 新身份重新物化并重新获取分析
+    expect(client.materializeResult).toHaveBeenCalledWith('r2')
+    expect(client.fetchResultAnalysisSummary).toHaveBeenCalledWith('r2')
+    // 旧组件标注与分析数字绝不留存（r2 无连通区）
+    expect(wrapper.find('[data-test="component-1"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="interpretation-components"]').text()).toContain('无高值连通区')
   })
 })

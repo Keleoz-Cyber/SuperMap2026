@@ -243,8 +243,10 @@ describe('AnalysisHeader', () => {
     expect(wrapper.text()).toContain('ds-1')
     expect(wrapper.text()).toContain('v3')
     const variableLine = wrapper.find('[data-test="analysis-variable"]')
-    expect(variableLine.text()).toContain('Vx')
+    expect(variableLine.text()).toContain('微震速度')
+    expect(variableLine.text()).not.toContain('Vx')
     expect(variableLine.text()).toContain('km/s')
+    expect(wrapper.get('[data-test="analysis-identity"]').text()).toContain('Vx')
     expect(wrapper.find('[data-test="analysis-coord-type"]').text()).toContain('三维')
     const badge = wrapper.find('[data-test="analysis-quality-badge"]')
     expect(badge.text()).toContain('11')
@@ -266,6 +268,21 @@ describe('AnalysisHeader', () => {
     await command.trigger('click')
     expect(wrapper.emitted('export')).toBeTruthy()
     wrapper.unmount()
+  })
+
+  it('瓦斯分析主标题使用地质属性名，不暴露 CH4_content 字段键', () => {
+    const summary = summaryOf('gas_content', [])
+    summary.variable = { name: 'CH4_content', unit: 'ml/g' }
+    const wrapper = mount(AnalysisHeader, {
+      props: { summary },
+      global: { plugins: [ElementPlus] },
+    })
+
+    const primary = wrapper.get('[data-test="analysis-variable"]').text()
+    expect(primary).toContain('瓦斯含量')
+    expect(primary).toContain('ml/g')
+    expect(primary).not.toContain('CH4_content')
+    expect(wrapper.get('[data-test="analysis-identity"]').text()).toContain('CH4_content')
   })
 })
 
@@ -373,6 +390,7 @@ describe('DistributionPanel', () => {
     // 无 log10 载荷时回退原始值分箱
     expect(chartInstances).toHaveLength(1)
     expect(lastOption().series[0].data).toHaveLength(32)
+    expect(wrapper.text()).not.toContain('RHO 当前展示')
     wrapper.unmount()
   })
 

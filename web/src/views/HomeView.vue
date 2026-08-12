@@ -1,133 +1,116 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import type { Component } from 'vue'
-import { useRouter } from 'vue-router'
-import {
-  ArrowRight,
-  Bell,
-  Connection,
-  Cpu,
-  Delete,
-  Monitor,
-  MoreFilled,
-  Odometer,
-  Plus,
-} from '@element-plus/icons-vue'
-import {
-  fetchCases,
-  fetchRhoPublishStatus,
-  fetchTrashCases,
-  PLATFORM_DEMO_3D_DOWNLOAD_URL,
-  trashCase,
-} from '../api/client'
-import { WEB_VERSION } from '../version'
-import type { CaseSummary } from '../api/types'
-import { formatDateTime } from '../utils/datetime'
-
-interface CaseMeta {
-  icon: Component
-  enterable: boolean
-  badgeType: 'success' | 'warning' | 'info'
-  badgeText: string
-}
-
-// v0.8.0 第三批 Task 7：旧 legacy 瓦斯卡（旧体元流程的占位卡）是最后一张
-// legacy 卡，已随预置退役；首页不再保留任何按 case_id 的 legacy 卡元数据，
-// builtin_legacy 一律走 FALLBACK_META 兜底（当前后端已绝不出产 legacy 卡）。
-
-const UPLOAD_META: CaseMeta = {
-  icon: Cpu,
-  enterable: true,
-  badgeType: 'success',
-  badgeText: '上传案例 · 可建模',
-}
-
-const FALLBACK_META: CaseMeta = {
-  icon: Odometer,
-  enterable: false,
-  badgeType: 'info',
-  badgeText: '未接入',
-}
+// v0.9.0：首页综合指挥舱。案例轨 + 中央三维主舞台 + 关键发现 + 底部证据带。
+// 数据流：fetchCases → 选中案例 fetchCaseWorkspace → 主数据版本已验证时
+// fetchAnalysisSummary；身份一律来自所选案例的 DTO，绝不跨案例取用。
+import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { ArrowRight } from '@element-plus/icons-vue'
+import { ApiError, fetchAnalysisSummary, fetchCases, fetchCaseWorkspace, trashCase } from '../api/client'
+import type {
+  AnalysisSummaryResponse,
+  CaseSummary,
+  CaseWorkspaceSummary,
+} from '../api/types'
+import { CASE_PRESENTATION, resolveCaseProfile } from '../domain/casePresentation'
+import { buildPresentationFindings } from '../domain/findings'
+import type { PresentationFinding } from '../domain/findings'
+import { clearShellContext, setShellContext } from '../stores/shellContext'
+import CaseRail from '../components/shell/CaseRail.vue'
+import CommandCenterScene from '../components/home/CommandCenterScene.vue'
+import CommandCenterEvidence from '../components/home/CommandCenterEvidence.vue'
+import FindingPanel from '../components/findings/FindingPanel.vue'
+import AsyncState from '../components/states/AsyncState.vue'
+import { coordinateLabel } from '../utils/modelingLabels'
 
 const router = useRouter()
+const route = useRoute()
+
 const cases = ref<CaseSummary[]>([])
 const loading = ref(true)
 const loadError = ref<string | null>(null)
-const iserverOnline = ref<boolean | null>(null)
-const trashCount = ref(0)
 
-type WorkspaceKind = 'builtin_legacy' | 'builtin_preset' | 'user_upload'
+const selectedCaseId = ref<string | null>(null)
+const workspace = ref<CaseWorkspaceSummary | null>(null)
+const workspaceLoading = ref(false)
+const workspaceError = ref<string | null>(null)
+const analysis = ref<AnalysisSummaryResponse | null>(null)
+const analysisLoading = ref(false)
 
-// v0.7.0：身份与动作只读 DTO（workspace_kind/capabilities/official_result），
-// 不再按 case_id 分支业务流程；旧客户端缺少新字段时按 source_kind 回退。
-function kindOf(c: CaseSummary): WorkspaceKind {
-  if (c.workspace_kind) return c.workspace_kind
-  return c.source_kind === 'upload' ? 'user_upload' : 'builtin_legacy'
+// 单调请求序号：旧响应（成功/失败/finally）一律不得覆盖新选择的状态
+let requestSeq = 0
+
+const selectedCase = computed(
+  () => cases.value.find((c) => c.case_id === selectedCaseId.value) ?? null,
+)
+
+// v0.9.0 修复：手机档三维不内嵌首屏，改为显式全屏打开/关闭（JS 只承载
+// 显式全屏状态，不做视口内容分支）
+const phoneSceneOpen = ref(false)
+
+const profile = computed(() => resolveCaseProfile(selectedCase.value?.provenance_summary))
+const presentation = computed(() => CASE_PRESENTATION[profile.value])
+
+// 成果身份：工作台 DTO 优先（official_result 即正式/主打成果链接），
+// 未 seed 描述卡回退到卡片字段；绝不拼接他案例成果
+const sceneResult = computed(() => {
+  const ws = workspace.value
+  if (ws) return ws.official_result ?? ws.featured_result ?? null
+  const c = selectedCase.value
+  return c?.official_result ?? c?.featured_result ?? null
+})
+
+const findings = computed<PresentationFinding[]>(() =>
+  analysis.value ? buildPresentationFindings(analysis.value) : [],
+)
+
+interface PrimaryAction {
+  label: string
+  url: string
 }
 
-function meta(c: CaseSummary): CaseMeta {
-  const kind = kindOf(c)
-  if (kind === 'user_upload') return UPLOAD_META
-  if (kind === 'builtin_preset') {
-    return {
-      icon: Bell,
-      enterable: true,
-      badgeType: 'success',
-      badgeText: String(
-        c.provenance_summary?.badge ?? 'CSV 预置 · 官方普通克里金成果',
-      ),
+function appRoute(url: string): string {
+  return url.startsWith('/#/') ? url.slice(2) : url
+}
+
+// 每个案例恰好一个主动作（设计 §5.2）：官方案例进入案例分析；
+// 用户项目按权威 data_preparation 状态给出继续数据准备/继续建模
+const primaryAction = computed<PrimaryAction | null>(() => {
+  const c = selectedCase.value
+  if (!c) return null
+  const kind = c.workspace_kind ?? (c.source_kind === 'upload' ? 'user_upload' : 'builtin_legacy')
+  if (kind === 'user_upload') {
+    const prep = workspace.value?.data_preparation
+    if (prep && prep.state !== 'ready' && prep.state !== 'validated') {
+      return {
+        label: '继续数据准备',
+        url: prep.next_action.url ?? `/cases/${c.case_id}`,
+      }
     }
+    return { label: '继续建模', url: `/cases/${c.case_id}` }
   }
-  return { ...FALLBACK_META, badgeText: c.status }
+  return { label: '进入案例分析', url: `/cases/${c.case_id}` }
+})
+
+function openPrimaryAction() {
+  const action = primaryAction.value
+  if (!action) return
+  void router.push(appRoute(action.url))
 }
 
-// v0.8.0：预置卡字段行逐字读 DTO provenance_summary.fields（如电阻率 X/Y/Z/RHO）；
-// 不携带 fields 键的预置卡（微震）不渲染该行，显示保持不变
-function presetFields(c: CaseSummary): string | null {
-  const fields = c.provenance_summary?.fields
-  if (!Array.isArray(fields) || fields.length === 0) return null
-  if (fields.some((f) => typeof f !== 'string')) return null
-  return fields.join('/')
-}
-
-function enter(c: CaseSummary) {
-  if (!meta(c).enterable) return
-  // v0.7.0：三类案例卡片点击统一进入案例工作台；实验/成果只走显式按钮
-  void router.push(`/cases/${c.case_id}`)
-}
-
-// v0.7.0：上传卡的「新建实验」显式次操作（与查看成果/进入工作台分离）
-function newExperiment(c: CaseSummary) {
-  void router.push(`/cases/${c.case_id}/experiments/new`)
-}
-
-// v0.6.1：有主打成果的上传卡提供「查看体渲染成果」直达入口，与新建实验分离
-function openFeaturedResult(c: CaseSummary) {
-  if (!c.featured_result) return
-  void router.push(c.featured_result.url)
-}
-
-// v0.7.0：预置卡的官方成果直达（与进入工作台主命令分离）
-function openOfficialResult(c: CaseSummary) {
-  if (!c.official_result) return
-  void router.push(c.official_result.url)
-}
-
-onMounted(async () => {
-  await loadCases()
-  try {
-    const ps = await fetchRhoPublishStatus()
-    iserverOnline.value = ps.iserver_available
-  } catch {
-    iserverOnline.value = false
-  }
-  await loadTrashCount()
+const coordinateNote = computed(() => {
+  const kind = selectedCase.value?.provenance_summary?.coordinate_kind
+  return typeof kind === 'string' ? coordinateLabel(kind) : '局部坐标'
 })
 
 async function loadCases() {
+  loading.value = true
+  loadError.value = null
   try {
     const resp = await fetchCases()
     cases.value = resp.cases
+    if (!selectedCaseId.value && resp.cases.length > 0) {
+      await selectCase(resp.cases[0].case_id)
+    }
   } catch (e) {
     loadError.value = e instanceof Error ? e.message : String(e)
   } finally {
@@ -135,555 +118,398 @@ async function loadCases() {
   }
 }
 
-async function loadTrashCount() {
+async function selectCase(caseId: string) {
+  if (selectedCaseId.value === caseId && workspace.value) return
+  selectedCaseId.value = caseId
+  const seq = ++requestSeq
+  const isCurrent = () => seq === requestSeq && selectedCaseId.value === caseId
+
+  workspace.value = null
+  analysis.value = null
+  workspaceError.value = null
+  workspaceLoading.value = true
+  analysisLoading.value = false
   try {
-    const resp = await fetchTrashCases()
-    trashCount.value = resp.cases.length
-  } catch {
-    trashCount.value = 0
+    const ws = await fetchCaseWorkspace(caseId)
+    if (!isCurrent()) return
+    workspace.value = ws
+    workspaceLoading.value = false
+    // 主数据版本已验证才加载分析摘要；否则发现/证据带保持真实空态
+    if (ws.primary_dataset && ws.primary_dataset.status === 'validated') {
+      analysisLoading.value = true
+      try {
+        const summary = await fetchAnalysisSummary(ws.primary_dataset.id)
+        if (!isCurrent()) return
+        analysis.value = summary
+      } catch {
+        // 分析不可用不阻断三维与基本信息（模块级降级由证据带空态表达）
+        if (isCurrent()) analysis.value = null
+      } finally {
+        if (isCurrent()) analysisLoading.value = false
+      }
+    }
+  } catch (e) {
+    if (!isCurrent()) return
+    workspaceError.value =
+      e instanceof ApiError ? `${e.code}：${e.message}` : e instanceof Error ? e.message : String(e)
+    workspaceLoading.value = false
   }
+}
+
+async function focusCasesRail() {
+  await nextTick()
+  const rail = document.querySelector<HTMLElement>('[data-test="case-rail"]')
+  if (!rail) return
+  rail.focus({ preventScroll: true })
+  rail.scrollIntoView?.({ block: 'start', behavior: 'smooth' })
 }
 
 async function handleTrashCase(caseId: string) {
   try {
     await trashCase(caseId)
+    if (selectedCaseId.value === caseId) {
+      selectedCaseId.value = null
+      workspace.value = null
+      analysis.value = null
+    }
     await loadCases()
-    await loadTrashCount()
   } catch {
-    // 静默失败：回收站操作错误不阻断首页浏览
+    // 回收站操作失败不阻断首页浏览
   }
 }
 
-function openCaseMenu(event: KeyboardEvent) {
-  const target = event.target as HTMLElement
-  target.click()
+// 发现 → 三维定位：携带轴/区间/数据身份深链到成果页，成果页消费查询参数
+function locateFinding(finding: PresentationFinding) {
+  const target = finding.spatialTarget
+  const resultId = target?.resultId ?? sceneResult.value?.result_id
+  if (!target || !resultId) return
+  const query: Record<string, string> = {}
+  if (workspace.value?.primary_dataset) query.dataset = workspace.value.primary_dataset.id
+  if (target.axis === 'xy' && target.xRange && target.yRange) {
+    query.axis = 'xy'
+    query.x_range = `${target.xRange[0]},${target.xRange[1]}`
+    query.y_range = `${target.yRange[0]},${target.yRange[1]}`
+  } else if ((target.axis === 'x' || target.axis === 'y' || target.axis === 'z') && target.range) {
+    query.axis = target.axis
+    query.range = `${target.range[0]},${target.range[1]}`
+  }
+  void router.push({ path: `/results/${resultId}`, query })
 }
+
+onMounted(loadCases)
+
+watch(
+  [() => route.query.focus, cases],
+  ([focus, availableCases]) => {
+    if (focus === 'cases' && availableCases.length > 0) void focusCasesRail()
+  },
+  { immediate: true },
+)
+
+// 壳上下文：选中案例身份登记到全局头；离开首页即清理
+watch(
+  [selectedCase, presentation],
+  ([c, p]) => {
+    if (c) {
+      setShellContext({
+        caseId: c.case_id,
+        caseTitle: c.title,
+        stageLabel: '指挥舱',
+        caseAccent: p.accent,
+      })
+    } else {
+      clearShellContext()
+    }
+  },
+  { immediate: true },
+)
+onBeforeUnmount(clearShellContext)
 </script>
 
 <template>
-  <div class="home-page">
-    <header class="home-header">
-      <div class="home-header-inner">
-        <div class="brand">
-          <div class="brand-text">
-            <h1>GeoModelingPlatform <span>地矿属性模拟与三维建模平台</span></h1>
-          </div>
-          <el-tag type="primary" effect="dark" round>v{{ WEB_VERSION }} 建模平台</el-tag>
-          <router-link
-            to="/trash"
-            class="trash-entry"
-            data-test="trash-entry"
+  <div
+    class="command-center"
+    :class="{ 'scene-open': phoneSceneOpen }"
+    :data-case-accent="presentation.accent"
+    data-test="command-center"
+  >
+    <AsyncState
+      v-if="loadError"
+      kind="error"
+      title="案例列表加载失败"
+      :impact="loadError"
+      next-action="检查全局栏服务状态后刷新重试"
+    />
+    <AsyncState v-else-if="loading && cases.length === 0" kind="loading" title="案例加载中" />
+
+    <div v-else class="cc-grid">
+      <CaseRail
+        :cases="cases"
+        :selected-case-id="selectedCaseId"
+        @select="selectCase"
+        @trash="handleTrashCase"
+      />
+
+      <CommandCenterScene
+        :case-title="selectedCase?.title ?? '未选择案例'"
+        :variable-label="presentation.variableLabel"
+        :unit-label="typeof selectedCase?.provenance_summary?.value_unit === 'string' ? selectedCase.provenance_summary.value_unit : null"
+        :narrative-label="presentation.narrativeLabel"
+        :coordinate-note="coordinateNote"
+        :result-id="sceneResult?.result_id ?? null"
+        :result-url="sceneResult?.url ?? null"
+        :loading="workspaceLoading"
+        :error="workspaceError"
+      >
+        <template #actions>
+          <button
+            v-if="primaryAction"
+            type="button"
+            class="cc-primary"
+            data-test="command-primary-action"
+            data-primary-action="true"
+            @click="openPrimaryAction"
           >
-            <el-badge :value="trashCount" :hidden="trashCount === 0" :max="99">
-              <el-icon :size="18"><Delete /></el-icon>
-            </el-badge>
-            <span>回收站</span>
-          </router-link>
-        </div>
-        <p class="tagline">
-          上传点数据即可完成二维/三维插值建模、空间验证与成果导出；内置电阻率、微震与瓦斯预置案例可直接查看官方成果并新建实验。
-        </p>
-      </div>
-    </header>
+            {{ primaryAction.label }}
+            <el-icon :size="13"><ArrowRight /></el-icon>
+          </button>
+        </template>
+      </CommandCenterScene>
 
-    <main class="home-main">
-      <div v-loading="loading" class="case-cards">
-        <el-result
-          v-if="loadError"
-          icon="error"
-          title="案例列表加载失败"
-          :sub-title="loadError"
-        />
-        <div
-          v-for="c in cases"
-          :key="c.case_id"
-          class="case-card"
-          :class="{ disabled: !meta(c).enterable }"
-          @click="enter(c)"
-        >
-          <div class="case-head">
-            <el-icon :size="20" class="case-icon"><component :is="meta(c).icon" /></el-icon>
-            <h2>{{ c.title }}</h2>
-            <el-tag :type="meta(c).badgeType" effect="dark" size="small">
-              {{ meta(c).badgeText }}
-            </el-tag>
-            <div v-if="kindOf(c) === 'user_upload'" class="card-overflow" @click.stop>
-              <el-dropdown
-                data-test="trash-case-btn"
-                @command="handleTrashCase(c.case_id)"
-              >
-                <el-icon :size="18" class="overflow-trigger" role="button" aria-label="案例操作菜单" tabindex="0"
-                  @keydown.enter.prevent="openCaseMenu"
-                  @keydown.space.prevent="openCaseMenu"
-                ><MoreFilled /></el-icon>
-                <template #dropdown>
-                  <el-dropdown-menu>
-                    <el-dropdown-item command="trash">移入回收站</el-dropdown-item>
-                  </el-dropdown-menu>
-                </template>
-              </el-dropdown>
-            </div>
-          </div>
-          <div class="case-body">
-            <template v-if="kindOf(c) === 'user_upload'">
-              <p><span>案例类型</span>{{ c.case_type ?? 'generic' }}</p>
-              <p><span>创建时间</span>{{ formatDateTime(c.created_at ?? '') }}</p>
-            </template>
-            <template v-else-if="kindOf(c) === 'builtin_preset'">
-              <p><span>数据形态</span>{{ c.provenance_summary?.data_form }}</p>
-              <p v-if="presetFields(c)"><span>字段</span>{{ presetFields(c) }}</p>
-              <p><span>坐标</span>{{ c.provenance_summary?.coordinate_kind }}</p>
-              <p><span>单位</span>{{ c.provenance_summary?.value_unit }}</p>
-            </template>
-            <template v-else>
-              <p><span>数据形态</span>{{ c.data_form }}</p>
-              <p><span>坐标</span>{{ c.coordinate }}</p>
-              <p><span>单位</span>{{ c.unit_note }}</p>
-            </template>
-          </div>
-          <div v-if="c.v03_stage" class="case-stage">{{ c.v03_stage }}</div>
-          <div class="case-foot">
-            <template v-if="kindOf(c) === 'builtin_preset'">
-              <el-button type="primary" data-test="enter-case-workspace" @click.stop="enter(c)">
-                进入案例工作台
-                <el-icon style="margin-left: 4px"><ArrowRight /></el-icon>
-              </el-button>
-              <el-button
-                v-if="c.official_result"
-                size="small"
-                text
-                data-test="open-official-result"
-                @click.stop="openOfficialResult(c)"
-              >
-                查看官方成果
-              </el-button>
-            </template>
-            <el-button
-              v-else-if="kindOf(c) === 'builtin_legacy' && meta(c).enterable"
-              type="primary"
-              data-test="enter-case-workspace"
-              @click.stop="enter(c)"
-            >
-              进入案例工作台
-              <el-icon style="margin-left: 4px"><ArrowRight /></el-icon>
-            </el-button>
-            <template v-else-if="kindOf(c) === 'user_upload'">
-              <template v-if="c.featured_result">
-                <el-button
-                  type="primary"
-                  data-test="open-featured-result"
-                  @click.stop="openFeaturedResult(c)"
-                >
-                  查看体渲染成果
-                  <el-icon style="margin-left: 4px"><ArrowRight /></el-icon>
-                </el-button>
-                <el-button
-                  size="small"
-                  text
-                  data-test="new-experiment"
-                  @click.stop="newExperiment(c)"
-                >
-                  新建实验
-                </el-button>
-              </template>
-              <el-button
-                v-else
-                type="primary"
-                data-test="enter-case-workspace"
-                @click.stop="enter(c)"
-              >
-                进入案例工作台
-                <el-icon style="margin-left: 4px"><ArrowRight /></el-icon>
-              </el-button>
-            </template>
-            <span v-else class="enter-hint">三维接入排期中</span>
-          </div>
-        </div>
+      <aside class="cc-findings" data-test="home-findings" aria-label="关键发现">
+        <h3 class="findings-title">关键发现</h3>
+        <AsyncState v-if="analysisLoading" kind="loading" title="分析加载中" />
+        <FindingPanel v-else :findings="findings" @locate="locateFinding" />
+      </aside>
 
-        <router-link
-          to="/cases/new"
-          class="case-card create-card"
-          data-test="create-case-card"
-        >
-          <div class="case-head">
-            <el-icon :size="20" class="case-icon"><Plus /></el-icon>
-            <h2>新建建模案例</h2>
-          </div>
-          <div class="case-body">
-            <p>上传 CSV / XLSX 点数据，完成字段映射与质量校验后开始二维 / 三维插值调参。</p>
-          </div>
-          <div class="case-foot">
-            <el-button type="primary" plain tag="span">
-              上传数据
-              <el-icon style="margin-left: 4px"><ArrowRight /></el-icon>
-            </el-button>
-            <a
-              class="demo-download"
-              data-test="download-demo-data"
-              :href="PLATFORM_DEMO_3D_DOWNLOAD_URL"
-              download
-              @click.stop
-            >
-              下载演示数据
-            </a>
-          </div>
-        </router-link>
-      </div>
-    </main>
+      <CommandCenterEvidence
+        class="cc-evidence"
+        :summary="analysis"
+        :loading="analysisLoading"
+      />
 
-    <footer class="arch-footer">
-      <div class="arch-chain">
-        <div class="chain-node">
-          <el-icon :size="22"><Connection /></el-icon>
-          <div>
-            <b>SuperMap iServer</b>
-            <span>数据 / 地图 / 三维服务发布</span>
-          </div>
-        </div>
-        <el-icon class="chain-arrow"><ArrowRight /></el-icon>
-        <div class="chain-node">
-          <el-icon :size="22"><Cpu /></el-icon>
-          <div>
-            <b>FastAPI 后端</b>
-            <span>模型登记 · 证据链 · 实时探测</span>
-          </div>
-        </div>
-        <el-icon class="chain-arrow"><ArrowRight /></el-icon>
-        <div class="chain-node">
-          <el-icon :size="22"><Monitor /></el-icon>
-          <div>
-            <b>浏览器三维展示</b>
-            <span>SuperMap3D NetCDF 原生体渲染</span>
-          </div>
-        </div>
-        <div class="iserver-status">
-          <span v-if="iserverOnline === null" class="dot pending"></span>
-          <span v-else class="dot" :class="iserverOnline ? 'ok' : 'bad'"></span>
-          {{ iserverOnline === null ? 'iServer 探测中…' : iserverOnline ? 'iServer 在线' : 'iServer 未连接' }}
-        </div>
+      <!-- 手机档专用：全屏三维入口（桌面档隐藏，内嵌主舞台直接在网格中） -->
+      <div class="cc-phone-entry" data-test="phone-scene-entry">
+        <template v-if="sceneResult">
+          <p class="entry-note">三维成果：{{ sceneResult.materialized ? '已物化' : '未物化' }}</p>
+          <button
+            type="button"
+            class="phone-scene-btn"
+            data-test="phone-open-scene"
+            @click="phoneSceneOpen = true"
+          >
+            打开全屏三维
+          </button>
+        </template>
+        <p v-else class="entry-note">暂无成果：完成建模实验后可查看三维成果。</p>
       </div>
-    </footer>
+
+      <button
+        v-if="phoneSceneOpen"
+        type="button"
+        class="phone-scene-close"
+        data-test="phone-close-scene"
+        aria-label="关闭全屏三维"
+        @click="phoneSceneOpen = false"
+      >
+        关闭三维 ✕
+      </button>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.home-page {
-  min-height: 100%;
+.command-center {
+  /* AppShell 的 app-main 为块级且有确定高度（flex 拉伸），此处直接占满 */
+  height: 100%;
   display: flex;
   flex-direction: column;
-  overflow-x: hidden;
+  min-height: 0;
 }
 
-.home-header {
-  border-bottom: 1px solid var(--gmp-border-soft);
-  background: linear-gradient(180deg, #0e151d 0%, var(--gmp-bg) 100%);
+.cc-grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 264px minmax(0, 1fr) 300px;
+  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'rail scene findings'
+    'evidence evidence evidence';
+  gap: var(--s1-space-4);
+  padding: var(--s1-space-4) var(--s1-space-6) var(--s1-space-6);
 }
 
-.home-header-inner {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 34px 28px 26px;
+.cc-grid > .case-rail {
+  grid-area: rail;
 }
 
-.brand {
+.cc-grid > .scene-panel {
+  grid-area: scene;
+}
+
+.cc-findings {
+  grid-area: findings;
+  min-width: 0;
+  overflow-y: auto;
   display: flex;
-  align-items: center;
-  gap: 14px;
+  flex-direction: column;
+  gap: var(--s1-space-3);
 }
 
-.brand h1 {
+.findings-title {
   margin: 0;
-  font-size: 24px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
+  font-size: var(--s1-font-xs);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: var(--s1-text-faint);
 }
 
-.brand h1 span {
-  font-size: 16px;
-  font-weight: 500;
-  color: var(--gmp-text-dim);
-  margin-left: 10px;
+.cc-evidence {
+  grid-area: evidence;
 }
 
-.trash-entry {
-  display: flex;
+.cc-primary {
+  display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin-left: 8px;
-  padding: 4px 12px;
-  border-radius: 999px;
-  border: 1px solid var(--gmp-border);
-  background: var(--gmp-card);
-  color: var(--gmp-text-dim);
-  font-size: 13px;
-  text-decoration: none;
-  transition: border-color 0.2s, color 0.2s;
-}
-
-.trash-entry:hover {
-  border-color: var(--gmp-accent);
-  color: var(--gmp-accent);
-}
-
-.tagline {
-  margin: 14px 0 0;
-  color: var(--gmp-text-dim);
-  font-size: 14px;
-  line-height: 1.7;
-}
-
-.home-main {
-  flex: 1;
-  max-width: 1200px;
-  width: 100%;
-  margin: 0 auto;
-  padding: 28px;
-  box-sizing: border-box;
-}
-
-.case-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: 18px;
-  min-height: 200px;
-}
-
-.case-card {
-  background: var(--gmp-card);
-  border: 1px solid var(--gmp-border);
-  border-radius: 12px;
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
+  font-size: var(--s1-font-md);
+  font-weight: 600;
+  color: #06110f;
+  background: var(--s1-case-accent);
+  border: none;
+  border-radius: var(--s1-radius-sm);
+  padding: 7px 16px;
+  cursor: pointer;
   transition:
-    border-color 0.2s,
-    background 0.2s,
-    transform 0.2s;
-  text-decoration: none;
-  color: inherit;
+    filter var(--s1-motion-fast) var(--s1-ease-out),
+    transform var(--s1-motion-fast) var(--s1-ease-out);
 }
 
-.case-card:not(.disabled) {
-  cursor: pointer;
+.cc-primary:hover {
+  filter: brightness(1.12);
+  transform: translateY(-1px);
 }
 
-.case-card:not(.disabled):hover {
-  border-color: var(--gmp-accent);
-  background: var(--gmp-card-hover);
-  transform: translateY(-2px);
+@media (max-width: 1200px) {
+  .cc-grid {
+    grid-template-columns: 232px minmax(0, 1fr) 260px;
+  }
 }
 
-.case-card.disabled {
-  opacity: 0.55;
-}
+@media (max-width: 960px) {
+  .cc-grid {
+    grid-template-columns: 220px minmax(0, 1fr);
+    grid-template-areas:
+      'rail scene'
+      'findings findings'
+      'evidence evidence';
+  }
 
-.create-card {
-  border-style: dashed;
-  cursor: pointer;
-  text-decoration: none;
-  color: inherit;
-}
-
-.demo-download {
-  margin-left: 12px;
-  font-size: 12px;
-  color: var(--gmp-text-dim);
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-.demo-download:hover {
-  color: var(--gmp-accent);
-}
-
-.case-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.case-icon {
-  color: var(--gmp-accent);
-}
-
-.case-head h2 {
-  margin: 0;
-  font-size: 17px;
-  flex: 1;
-}
-
-.card-overflow {
-  display: flex;
-  align-items: center;
-  cursor: pointer;
-}
-
-.overflow-trigger {
-  color: var(--gmp-text-faint);
-  transition: color 0.2s;
-}
-
-.card-overflow:hover .overflow-trigger {
-  color: var(--gmp-accent);
-}
-
-.case-body {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.case-body p {
-  margin: 0;
-  font-size: 13px;
-  color: var(--gmp-text);
-  line-height: 1.5;
-}
-
-.case-body p span {
-  display: inline-block;
-  width: 60px;
-  color: var(--gmp-text-faint);
-  font-size: 12px;
-}
-
-.case-stage {
-  font-size: 12px;
-  color: var(--gmp-text-dim);
-  background: var(--gmp-bg-soft);
-  border: 1px dashed var(--gmp-border);
-  border-radius: 8px;
-  padding: 8px 10px;
-  line-height: 1.6;
-}
-
-.case-foot {
-  margin-top: auto;
-  display: flex;
-  align-items: center;
-  min-height: 32px;
-}
-
-.enter-hint {
-  font-size: 12px;
-  color: var(--gmp-text-faint);
-}
-
-.arch-footer {
-  border-top: 1px solid var(--gmp-border-soft);
-  background: var(--gmp-bg-soft);
-}
-
-.arch-chain {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 20px 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 18px;
-  flex-wrap: wrap;
-}
-
-.chain-node {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: var(--gmp-card);
-  border: 1px solid var(--gmp-border);
-  border-radius: 10px;
-  padding: 12px 16px;
-  color: var(--gmp-accent);
-}
-
-.chain-node div {
-  display: flex;
-  flex-direction: column;
-}
-
-.chain-node b {
-  font-size: 13px;
-  color: var(--gmp-text);
-}
-
-.chain-node span {
-  font-size: 12px;
-  color: var(--gmp-text-dim);
-}
-
-.chain-arrow {
-  color: var(--gmp-text-faint);
-}
-
-.iserver-status {
-  font-size: 13px;
-  color: var(--gmp-text-dim);
-  padding: 8px 14px;
-  border: 1px solid var(--gmp-border);
-  border-radius: 999px;
-  background: var(--gmp-card);
+  .cc-findings {
+    max-height: 320px;
+  }
 }
 
 @media (max-width: 480px) {
-  .home-header-inner {
-    padding: 20px 16px 18px;
+  .cc-grid {
+    display: flex;
+    flex-direction: column;
+    padding: var(--s1-space-3);
+    gap: var(--s1-space-3);
   }
 
-  .brand {
-    flex-wrap: wrap;
-    gap: 8px 10px;
+  /* 手机档信息顺序：案例选择 → 案例摘要（场景头部）→ 关键发现 →
+     证据带 → 全屏三维入口；内嵌三维画面不先于发现出现 */
+  .cc-grid > .case-rail {
+    order: 1;
   }
 
-  .brand h1 {
-    font-size: 18px;
+  .cc-grid > .scene-panel {
+    order: 2;
   }
 
-  .brand h1 span {
-    display: block;
-    margin-left: 0;
-    margin-top: 2px;
-    font-size: 13px;
+  .cc-findings {
+    order: 3;
+    max-height: none;
   }
 
-  .brand .el-tag {
-    font-size: 11px;
+  .cc-evidence {
+    order: 4;
   }
 
-  .trash-entry {
-    margin-left: 0;
-    padding: 4px 10px;
-    font-size: 12px;
+  .cc-phone-entry {
+    order: 5;
   }
 
-  .tagline {
-    font-size: 13px;
+  /* 默认只显示场景摘要头，隐藏内嵌三维画面
+     （:deep：scene-body 属于子组件， scoped 属性只落在子组件根上） */
+  .cc-grid > .scene-panel :deep(.scene-body) {
+    display: none;
   }
 
-  .home-main {
-    padding: 16px;
+  /* 全屏打开：同一面板转为视口覆盖，iframe 不重建 */
+  .scene-open .cc-grid > .scene-panel {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    border-radius: 0;
   }
 
-  .case-cards {
-    grid-template-columns: 1fr;
-    gap: 14px;
+  .scene-open .cc-grid > .scene-panel :deep(.scene-body) {
+    display: flex;
   }
 
-  .case-card {
-    padding: 16px;
+  .phone-scene-close {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    z-index: 2100;
+    border: 1px solid var(--s1-border-strong);
+    border-radius: 999px;
+    background: var(--s1-surface-glass);
+    color: var(--s1-text);
+    font-size: var(--s1-font-sm);
+    padding: 6px 14px;
+    cursor: pointer;
+  }
+}
+
+/* 手机入口卡默认隐藏（桌面档主舞台内嵌） */
+.cc-phone-entry {
+  display: none;
+}
+
+@media (max-width: 480px) {
+  .cc-phone-entry {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s1-space-2);
+    border: 1px solid var(--s1-border);
+    border-radius: var(--s1-radius-md);
+    background: var(--s1-surface-1);
+    padding: var(--s1-space-3);
   }
 
-  .case-head h2 {
-    font-size: 15px;
+  .entry-note {
+    margin: 0;
+    font-size: var(--s1-font-sm);
+    color: var(--s1-text-dim);
   }
 
-  .arch-chain {
-    padding: 16px;
-    gap: 10px;
-  }
-
-  .chain-node {
-    padding: 10px 12px;
+  .phone-scene-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    font-size: var(--s1-font-md);
+    font-weight: 600;
+    color: #06110f;
+    background: var(--s1-case-accent);
+    border: none;
+    border-radius: var(--s1-radius-sm);
+    padding: 10px 16px;
+    cursor: pointer;
   }
 }
 </style>

@@ -15,7 +15,7 @@ const caseLabel = computed(() => props.caseName ?? '案例')
 </script>
 
 <template>
-  <nav class="page-nav" aria-label="页面导航">
+  <nav class="page-nav" aria-label="页面导航" data-test="page-navigation">
     <ol class="breadcrumb-list">
       <li class="crumb">
         <RouterLink to="/" data-test="crumb-home">首页</RouterLink>
@@ -27,7 +27,7 @@ const caseLabel = computed(() => props.caseName ?? '案例')
         <span>数据版本</span>
       </li>
       <li v-if="experimentId" class="crumb">
-        <RouterLink :to="`/experiments/${experimentId}`" data-test="crumb-experiment">实验</RouterLink>
+        <RouterLink :to="`/experiments/${experimentId}`" data-test="crumb-experiment">建模实验</RouterLink>
       </li>
       <li v-if="resultId" class="crumb">
         <RouterLink :to="`/results/${resultId}`" data-test="crumb-result">成果</RouterLink>
@@ -58,7 +58,7 @@ const caseLabel = computed(() => props.caseName ?? '案例')
 .crumb {
   display: flex;
   align-items: center;
-  font-size: 13px;
+  font-size: var(--s1-font-sm);
 }
 
 .crumb a {

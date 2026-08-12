@@ -226,6 +226,18 @@ afterEach(() => {
 })
 
 describe('ExperimentView 创建模式', () => {
+  it('主层说明数据用途但不暴露案例和数据 UUID', async () => {
+    vi.mocked(client.fetchDataset).mockResolvedValue(DATASET)
+    const { wrapper } = await mountAt('/cases/c1/experiments/new?dataset=ds1')
+
+    const context = wrapper.get('[data-test="experiment-dataset-summary"]')
+    expect(context.text()).toContain('已通过质量检查')
+    expect(context.text()).not.toContain('ds1')
+    expect(context.text()).not.toContain('c1')
+    expect(wrapper.get('[data-test="experiment-technical-details"]').text()).toContain('ds1')
+    wrapper.unmount()
+  })
+
   it('manual IDW：提交后创建实验、启动运行并跳到详情路由轮询', async () => {
     vi.mocked(client.fetchDataset).mockResolvedValue(DATASET)
     vi.mocked(client.createExperiment).mockResolvedValue(EXP)
@@ -356,7 +368,7 @@ describe('ExperimentView 微震预设', () => {
     expect(zScale.exists()).toBe(true)
     expect((zScale.element as HTMLInputElement).value).toBe('1')
     expect(wrapper.find('[data-test="z-scale-hint"]').text()).toContain(
-      '距离计算使用 Z × z_scale；它是实验参数，不是已确认地质各向异性。',
+      '垂向距离缩放只影响实验中的距离计算，不代表已经确认地质各向异性。',
     )
 
     await wrapper.find('[data-test="exp-submit"]').trigger('click')
@@ -439,14 +451,17 @@ describe('ExperimentView 详情模式', () => {
       .mockResolvedValue(makeRun('succeeded', { completed: 1, total: 1 }))
 
     const { wrapper } = await mountAt('/experiments/exp1')
-    expect(wrapper.text()).toContain('queued')
+    expect(wrapper.text()).toContain('排队中')
+    expect(wrapper.text()).not.toContain('queued')
 
     await vi.advanceTimersByTimeAsync(1000)
     expect(client.fetchRun).toHaveBeenCalledWith('run1')
-    expect(wrapper.text()).toContain('running')
+    expect(wrapper.text()).toContain('运行中')
+    expect(wrapper.text()).not.toContain('running')
 
     await vi.advanceTimersByTimeAsync(1000)
-    expect(wrapper.text()).toContain('succeeded')
+    expect(wrapper.text()).toContain('验证完成')
+    expect(wrapper.text()).not.toContain('succeeded')
     const callsAfterTerminal = vi.mocked(client.fetchRun).mock.calls.length
     // 终态后排行榜刷新且轮询停止
     expect(vi.mocked(client.fetchCandidates).mock.calls.length).toBeGreaterThanOrEqual(2)
@@ -496,7 +511,8 @@ describe('ExperimentView 详情模式', () => {
     vi.mocked(client.fetchRun).mockResolvedValue(makeRun('succeeded', { completed: 1, total: 1 }, 'run2'))
 
     const { wrapper } = await mountAt('/experiments/exp1')
-    expect(wrapper.text()).toContain('interrupted')
+    expect(wrapper.text()).toContain('已中断')
+    expect(wrapper.text()).not.toContain('interrupted')
     expect(wrapper.text()).toContain('PROCESS_RESTARTED')
 
     await wrapper.find('[data-test="retry-run"]').trigger('click')
@@ -562,14 +578,16 @@ describe('ExperimentView 成果状态区（v0.6.1）', () => {
     wrapper.unmount()
   })
 
-  it('四阶段分层：验证完成 / 网格物化 / NetCDF 资产 / 浏览器渲染互不混同，succeeded 不被表述为已渲染', async () => {
+  it('四阶段分层使用用户语言，验证完成不被表述为已渲染', async () => {
     mockSucceeded([makeCandidate('cand1', 'succeeded', 1.25)])
     const { wrapper } = await mountAt('/experiments/exp1')
 
     expect(wrapper.get('[data-test="stage-validation"]').text()).toContain('验证完成')
     expect(wrapper.get('[data-test="stage-validation"]').text()).toContain(T)
-    expect(wrapper.get('[data-test="stage-materialize"]').text()).toContain('未物化')
+    expect(wrapper.get('[data-test="stage-materialize"]').text()).toContain('等待生成')
+    expect(wrapper.get('[data-test="stage-materialize"]').text()).not.toContain('物化')
     expect(wrapper.get('[data-test="stage-netcdf"]').text()).toContain('待')
+    expect(wrapper.get('[data-test="stage-netcdf"]').text()).not.toContain('NetCDF')
     expect(wrapper.get('[data-test="stage-render"]').text()).toContain('成果工作台')
     const panelText = wrapper.get('[data-test="result-status"]').text()
     expect(panelText).not.toContain('已渲染')
@@ -585,7 +603,7 @@ describe('ExperimentView 成果状态区（v0.6.1）', () => {
     await flushPromises()
 
     expect(client.materializeResult).toHaveBeenCalledWith('cand1')
-    expect(wrapper.get('[data-test="stage-materialize"]').text()).toContain('已物化')
+    expect(wrapper.get('[data-test="stage-materialize"]').text()).toContain('三维网格已生成')
     expect(client.fetchResultRenderCapability).toHaveBeenCalledWith('cand1')
     expect(wrapper.find('[data-test="create-netcdf-asset"]').exists()).toBe(true)
     wrapper.unmount()
@@ -605,7 +623,7 @@ describe('ExperimentView 成果状态区（v0.6.1）', () => {
     await wrapper.get('[data-test="materialize-retry"]').trigger('click')
     await flushPromises()
     expect(client.materializeResult).toHaveBeenCalledTimes(2)
-    expect(wrapper.get('[data-test="stage-materialize"]').text()).toContain('已物化')
+    expect(wrapper.get('[data-test="stage-materialize"]').text()).toContain('三维网格已生成')
     wrapper.unmount()
   })
 
@@ -695,7 +713,7 @@ describe('ExperimentView 成果状态区（v0.6.1）', () => {
     // 直接以 URL 打开详情页（等价刷新/深链），状态区照常完成探测
     const { wrapper } = await mountAt('/experiments/exp1')
 
-    expect(wrapper.get('[data-test="stage-materialize"]').text()).toContain('已物化')
+    expect(wrapper.get('[data-test="stage-materialize"]').text()).toContain('三维网格已生成')
     expect(wrapper.get('[data-test="stage-netcdf"]').text()).toContain('已生成')
     expect(wrapper.find('[data-test="materialize-result"]').exists()).toBe(false)
     expect(wrapper.get('[data-test="stage-render"]').text()).toContain('成果工作台')

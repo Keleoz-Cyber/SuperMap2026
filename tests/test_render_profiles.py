@@ -44,8 +44,8 @@ def test_profile_defaults_and_public_shape():
     profile = build_render_profile(
         "builtin_legacy", 1.0, 100.0, property_name="RHO", unit="unknown"
     )
-    assert profile.lighting is True
-    assert profile.gradient_opacity is True
+    assert profile.lighting is False
+    assert profile.gradient_opacity is False
     assert profile.bounding_box is True
     assert profile.opacity == 1.0
     payload = profile.to_public()

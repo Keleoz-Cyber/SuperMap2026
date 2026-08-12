@@ -7,8 +7,11 @@ import type {
   ComparisonCandidateSummary,
   MultiCandidateComparison,
 } from '../api/types'
-import { algorithmLabel, parameterSummary } from '../utils/modelingLabels'
-import PageNavigation from '../components/navigation/PageNavigation.vue'
+import { algorithmLabel, parameterLabel, parameterSummary } from '../utils/modelingLabels'
+import PageContextHeader from '../components/navigation/PageContextHeader.vue'
+import AsyncState from '../components/states/AsyncState.vue'
+import MetricComparisonChart from '../components/comparison/MetricComparisonChart.vue'
+import ParameterDiffTable from '../components/comparison/ParameterDiffTable.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -20,6 +23,17 @@ const queryCaseId = computed(() => {
 
 const MIN_SELECTION = 2
 const MAX_SELECTION = 4
+
+const MISMATCH_LABELS: Record<string, string> = {
+  validation_contract: '验证规则不同',
+  grid_resolution: '成果网格规格不同',
+  common_valid_count_mismatch: '公共有效样本数量不同',
+  validation_holdout_fraction_mismatch: '验证集比例不同',
+  split_fingerprint_mismatch: '验证分组不同',
+  common_valid_fingerprint_mismatch: '公共有效样本范围不同',
+  value_unit_mismatch: '属性单位不同',
+  dataset_version_mismatch: '数据版本不同',
+}
 
 const loading = ref(true)
 const loadError = ref<string | null>(null)
@@ -47,7 +61,51 @@ const rows = computed<CandidateRow[]>(() => {
   )
 })
 
+const selectableRows = computed(() => rows.value.filter((row) => row.selectable))
+const singleCandidate = computed(() => selectableRows.value.length === 1 ? selectableRows.value[0] : null)
+
+const defaultCandidateIds = computed(() => {
+  const selectedFingerprints = new Set<string>()
+  const selected = [...selectableRows.value]
+    .filter((row) => row.metrics.rmse !== null)
+    .sort((a, b) => {
+      const metricDelta = (a.metrics.rmse ?? Number.POSITIVE_INFINITY) - (b.metrics.rmse ?? Number.POSITIVE_INFINITY)
+      return metricDelta || a.candidate_result_id.localeCompare(b.candidate_result_id)
+    })
+    .filter((row) => {
+      if (selectedFingerprints.has(row.configuration_fingerprint)) return false
+      selectedFingerprints.add(row.configuration_fingerprint)
+      return true
+    })
+    .slice(0, 2)
+  const ids = new Set(selected.map((row) => row.candidate_result_id))
+  return rows.value.filter((row) => ids.has(row.candidate_result_id)).map((row) => row.candidate_result_id)
+})
+
 const selectedIdList = computed(() => Array.from(selectedIds.value))
+
+const rankedCandidates = computed(() => {
+  if (!comparison.value?.ranking) return []
+  return comparison.value.ranking
+    .map((id) => comparison.value?.candidates.find((candidate) => candidate.candidate_result_id === id))
+    .filter((candidate): candidate is ComparisonCandidateSummary => candidate !== undefined)
+})
+
+const recommendedCandidate = computed(() => rankedCandidates.value[0] ?? null)
+const runnerUpCandidate = computed(() => rankedCandidates.value[1] ?? null)
+const rmseDelta = computed(() => {
+  const best = recommendedCandidate.value?.metrics.rmse
+  const next = runnerUpCandidate.value?.metrics.rmse
+  if (best === null || best === undefined || next === null || next === undefined) return null
+  return next - best
+})
+const differingParameterLabels = computed(() => {
+  if (rankedCandidates.value.length < 2) return []
+  const keys = new Set(rankedCandidates.value.flatMap((candidate) => Object.keys(candidate.parameters)))
+  return [...keys]
+    .filter((key) => new Set(rankedCandidates.value.map((candidate) => JSON.stringify(candidate.parameters[key]))).size > 1)
+    .map(parameterLabel)
+})
 
 const canCompare = computed(
   () =>
@@ -184,6 +242,14 @@ function gotoResult(url: string) {
   void router.push(url)
 }
 
+function gotoGridExperiment() {
+  void router.push({
+    name: 'experiment-create',
+    params: { caseId: queryCaseId.value || 'new' },
+    query: { dataset: datasetId.value, mode: 'grid' },
+  })
+}
+
 function getCandidateInfo(resultId: string): ComparisonCandidateSummary | undefined {
   return comparison.value?.candidates.find((c) => c.candidate_result_id === resultId)
 }
@@ -198,6 +264,16 @@ function algoLabel(row: ComparisonCandidateSummary): string {
 
 function paramSummary(row: ComparisonCandidateSummary): string {
   return parameterSummary(row.algorithm, row.parameters).join(' · ')
+}
+
+function mismatchLabel(field: string): string {
+  const direct = MISMATCH_LABELS[field]
+  if (direct) return direct
+  if (field.startsWith('validation_')) return '验证规则不同'
+  if (field.startsWith('grid_')) return '成果网格规格不同'
+  if (field.startsWith('common_valid_')) return '公共有效样本范围不同'
+  if (field.endsWith('_mismatch')) return '比较口径不同'
+  return '候选成果的比较条件不同'
 }
 
 let catalogSequence = 0
@@ -216,6 +292,7 @@ async function loadCatalog() {
     const result = await fetchComparisonCandidates(targetDatasetId)
     if (sequence !== catalogSequence || targetDatasetId !== datasetId.value) return
     catalog.value = result
+    selectedIds.value = new Set(defaultCandidateIds.value)
   } catch (e) {
     if (sequence !== catalogSequence || targetDatasetId !== datasetId.value) return
     loadError.value = describeError(e)
@@ -234,23 +311,30 @@ watch(datasetId, (next, prev) => {
 </script>
 
 <template>
-  <div class="comparison-page" data-test="candidate-comparison-view">
-    <PageNavigation :case-id="queryCaseId || undefined" :dataset-id="datasetId" current-label="模型对比" />
-    <header class="page-header">
-      <h1>模型对比</h1>
-      <p class="page-sub">同一数据版本和验证方法下比较不同实验结果</p>
-      <p class="page-sub">数据集 <span class="mono">{{ datasetId }}</span></p>
-    </header>
+  <div class="comparison-page product-page" data-test="candidate-comparison-view">
+    <PageContextHeader
+      title="模型比较"
+      subtitle="在同一数据版本和验证口径下比较候选成果，避免把不可比指标放在一起排名。"
+      :case-id="queryCaseId || undefined"
+      :dataset-id="datasetId"
+    >
+      <template #meta>
+        <details class="comparison-technical" data-test="comparison-technical-details">
+          <summary>技术详情</summary>
+          <span class="mono">数据版本标识：{{ datasetId }}</span>
+        </details>
+      </template>
+    </PageContextHeader>
 
-    <el-result
+    <AsyncState
       v-if="loadError"
-      icon="error"
+      kind="error"
       title="候选目录加载失败"
-      :sub-title="loadError"
+      :impact="loadError"
+      next-action="返回案例工作台重新进入"
       data-test="load-error"
-      role="alert"
     />
-    <div v-else-if="loading" v-loading="true" class="page-loading" data-test="page-loading" />
+    <AsyncState v-else-if="loading" kind="loading" title="候选目录加载中" data-test="page-loading" />
 
     <main v-else class="comparison-main">
       <section v-if="rows.length === 0" class="empty-state" data-test="empty-catalog">
@@ -258,11 +342,36 @@ watch(datasetId, (next, prev) => {
       </section>
 
       <template v-else>
-        <section class="catalog-section">
+        <section v-if="selectableRows.length === 1" class="single-candidate" data-test="single-candidate-state">
+          <div>
+            <span class="section-kicker">只有一个可验证候选</span>
+            <h2>还不能形成有意义的模型比较</h2>
+            <p v-if="singleCandidate" class="single-candidate__source">
+              {{ singleCandidate.experiment_name }} · {{ algoLabel(singleCandidate) }}
+            </p>
+            <p>创建参数网格实验，生成至少一个不同配置的候选后再回来比较。</p>
+          </div>
+          <el-button type="primary" data-test="create-grid-experiment" @click="gotoGridExperiment">创建参数网格实验</el-button>
+        </section>
+
+        <section v-else class="catalog-section">
+          <aside class="comparison-requirements" data-test="comparison-requirements">
+            <strong>可比条件</strong>
+            <span>同一数据版本</span>
+            <span>相同验证规则</span>
+            <span>相同公共有效样本</span>
+            <p>系统会在排名前自动校验；条件不一致时保留各自成果，但不进行数值排名。</p>
+          </aside>
+          <div class="comparison-start" data-test="comparison-start-summary">
+            <div>
+              <span class="section-kicker">建议起点</span>
+              <h2>先比较当前 RMSE 最低的两个不同配置</h2>
+              <p>已为你选择两个候选；点击比较后，服务端会继续校验验证口径、公共有效集和网格兼容性。</p>
+            </div>
+            <span class="selection-info" data-test="selection-info">已选 {{ selectedIdList.length }} / {{ MAX_SELECTION }}</span>
+          </div>
           <div class="catalog-actions">
-            <span class="selection-info" data-test="selection-info">
-              已选 {{ selectedIdList.length }} / {{ MAX_SELECTION }}（至少 {{ MIN_SELECTION }} 个）
-            </span>
+            <span>也可以手动选择 2–4 个候选</span>
             <el-button
               type="primary"
               data-test="compare-btn"
@@ -270,7 +379,7 @@ watch(datasetId, (next, prev) => {
               :loading="comparing"
               @click="runComparison"
             >
-              开始对比
+              校验并比较
             </el-button>
           </div>
 
@@ -364,12 +473,34 @@ watch(datasetId, (next, prev) => {
             class="ranking-result"
             data-test="ranking-result"
           >
+            <div class="comparison-summary" data-test="comparison-summary">
+              <article>
+                <span>推荐方案</span>
+                <strong>{{ recommendedCandidate ? algoLabel(recommendedCandidate) : '—' }}</strong>
+                <p>在本次可比候选中综合排名第一。</p>
+              </article>
+              <article>
+                <span>RMSE 差异</span>
+                <strong>{{ rmseDelta === null ? '—' : rmseDelta.toFixed(4) }}</strong>
+                <p>相对第二名的误差优势，数值越大表示差异越明显。</p>
+              </article>
+              <article>
+                <span>主要参数差异</span>
+                <strong>{{ differingParameterLabels.length }} 项</strong>
+                <p>{{ differingParameterLabels.slice(0, 3).join('、') || '参数配置一致' }}</p>
+              </article>
+            </div>
+            <MetricComparisonChart
+              :candidates="comparison.candidates"
+              :comparable="comparison.comparable"
+            />
+            <ParameterDiffTable :candidates="comparison.candidates" />
             <div class="ranking-scroll">
             <table class="ranking-table">
               <thead>
                 <tr>
                   <th>排名</th>
-                  <th>成果 ID</th>
+                  <th>方案</th>
                   <th>算法</th>
                   <th>RMSE</th>
                   <th>MAE</th>
@@ -387,7 +518,10 @@ watch(datasetId, (next, prev) => {
                     <span class="rank-num">{{ index + 1 }}</span>
                     <el-tag v-if="index === 0" type="danger" size="small" class="best-badge">最佳</el-tag>
                   </td>
-                  <td class="mono">{{ resultId }}</td>
+                  <td>
+                    {{ getCandidateInfo(resultId) ? algorithmLabel(getCandidateInfo(resultId)!.algorithm) : '候选成果' }}
+                    <details class="row-technical"><summary>技术详情</summary><span class="mono">{{ resultId }}</span></details>
+                  </td>
                   <td>{{ getCandidateInfo(resultId) ? algorithmLabel(getCandidateInfo(resultId)!.algorithm) : '-' }}</td>
                   <td>{{ fmt(getCandidateInfo(resultId)?.metrics.rmse ?? null) }}</td>
                   <td>{{ fmt(getCandidateInfo(resultId)?.metrics.mae ?? null) }}</td>
@@ -404,16 +538,18 @@ watch(datasetId, (next, prev) => {
             class="mismatch-result"
             data-test="mismatch-list"
           >
-            <p class="mismatch-head">候选不兼容，无法排名。以下字段不一致：</p>
+            <p class="mismatch-head">这些候选的评估口径不同，因此不能直接排名。</p>
             <ul class="mismatch-fields">
               <li
                 v-for="field in comparison.mismatches"
                 :key="field"
-                class="mono"
               >
-                {{ field }}
+                {{ mismatchLabel(field) }}
               </li>
             </ul>
+            <p class="mismatch-guidance">
+              请选择来自同一数据版本、使用相同验证设置的候选；如需比较不同验证方案，请分别查看成果，不要直接排名。
+            </p>
           </div>
         </section>
       </template>
@@ -424,7 +560,7 @@ watch(datasetId, (next, prev) => {
 <style scoped>
 .comparison-page {
   min-height: 100%;
-  max-width: 1080px;
+  max-width: var(--s1-page-standard);
   margin: 0 auto;
   padding: 28px 20px 48px;
   display: flex;
@@ -483,13 +619,111 @@ watch(datasetId, (next, prev) => {
   flex-wrap: wrap;
 }
 
+.comparison-requirements {
+  display: grid;
+  grid-template-columns: auto repeat(3, auto) minmax(220px, 1fr);
+  align-items: center;
+  gap: 8px 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--s1-border);
+  border-left: 3px solid var(--s1-cyan-strong);
+  border-radius: var(--s1-radius-md);
+  background: var(--s1-surface-2);
+  color: var(--s1-text-dim);
+  font-size: var(--s1-font-sm);
+}
+
+.comparison-requirements strong {
+  color: var(--s1-text-strong);
+}
+
+.comparison-requirements span::before {
+  content: '✓';
+  margin-right: 5px;
+  color: var(--s1-cyan-strong);
+}
+
+.comparison-requirements p {
+  margin: 0;
+  color: var(--s1-text-faint);
+}
+
 .selection-info {
   font-size: 13px;
   color: var(--gmp-text-dim);
 }
 
+.section-kicker {
+  color: var(--s1-cyan-strong);
+  font-size: var(--s1-font-xs);
+  font-weight: 600;
+}
+
+.comparison-start,
+.single-candidate {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s1-space-5);
+}
+
+.comparison-start h2,
+.single-candidate h2 {
+  margin: 5px 0;
+  font-size: var(--s1-font-lg);
+}
+
+.comparison-start p,
+.single-candidate p {
+  margin: 0;
+  color: var(--s1-text-dim);
+  font-size: var(--s1-font-sm);
+}
+
+.single-candidate {
+  padding: var(--s1-space-6) 0;
+  border-block: 1px solid var(--s1-border);
+}
+
+.comparison-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border: 1px solid var(--s1-border);
+  background: var(--s1-border);
+  gap: 1px;
+}
+
+.comparison-summary article {
+  padding: var(--s1-space-4);
+  background: var(--s1-surface-2);
+}
+
+.comparison-summary span,
+.comparison-summary p {
+  color: var(--s1-text-faint);
+  font-size: var(--s1-font-xs);
+}
+
+.comparison-summary strong {
+  display: block;
+  margin: 6px 0;
+  color: var(--s1-text-strong);
+  font-size: var(--s1-font-lg);
+}
+
+.comparison-summary p {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.row-technical {
+  margin-top: 4px;
+  color: var(--s1-text-faint);
+  font-size: var(--s1-font-xs);
+}
+
 .dup-badge {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--gmp-accent);
   margin-top: 2px;
 }
@@ -580,6 +814,13 @@ watch(datasetId, (next, prev) => {
   color: #e5c76b;
 }
 
+.mismatch-guidance {
+  margin: 10px 0 0;
+  color: var(--s1-text-dim);
+  font-size: var(--s1-font-sm);
+  line-height: 1.5;
+}
+
 @media (max-width: 480px) {
   .comparison-page {
     padding: 16px 12px 32px;
@@ -595,13 +836,27 @@ watch(datasetId, (next, prev) => {
   }
 
   .ranking-table {
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .ranking-table th,
   .ranking-table td {
     padding: 4px 6px;
     white-space: nowrap;
+  }
+
+  .comparison-start,
+  .single-candidate {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .comparison-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .comparison-requirements {
+    grid-template-columns: 1fr;
   }
 }
 </style>

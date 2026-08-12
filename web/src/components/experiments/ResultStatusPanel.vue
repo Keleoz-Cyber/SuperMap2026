@@ -193,7 +193,7 @@ onBeforeUnmount(stopAssetPolling)
       </router-link>
     </div>
     <p class="status-note" data-test="status-note">
-      运行 succeeded 仅表示交叉验证完成；网格物化、NetCDF 资产与浏览器体渲染是后续独立阶段。
+      实验验证完成不等于三维成果已可查看；三维网格、体渲染数据和浏览器显示仍是独立阶段。
     </p>
     <ul class="stage-list">
       <li class="stage" data-test="stage-validation">
@@ -201,13 +201,13 @@ onBeforeUnmount(stopAssetPolling)
         <span class="stage-detail">{{ run?.finished_at ?? run?.updated_at }}</span>
       </li>
       <li class="stage" data-test="stage-materialize">
-        <span class="stage-name">规则网格物化</span>
+        <span class="stage-name">三维规则网格</span>
         <span v-if="materializeStage === 'probing'" class="stage-detail">状态探测中…</span>
-        <span v-else-if="materializeStage === 'unmaterialized'" class="stage-detail">未物化</span>
-        <span v-else-if="materializeStage === 'materializing'" class="stage-detail">物化中…</span>
-        <span v-else-if="materializeStage === 'materialized'" class="stage-detail ok">已物化</span>
+        <span v-else-if="materializeStage === 'unmaterialized'" class="stage-detail">等待生成</span>
+        <span v-else-if="materializeStage === 'materializing'" class="stage-detail">生成中…</span>
+        <span v-else-if="materializeStage === 'materialized'" class="stage-detail ok">三维网格已生成</span>
         <span v-else class="stage-detail bad">
-          {{ materializeStage === 'probe_failed' ? '状态探测失败' : '物化失败' }}
+          {{ materializeStage === 'probe_failed' ? '状态探测失败' : '网格生成失败' }}
         </span>
         <button
           v-if="materializeStage === 'unmaterialized'"
@@ -215,7 +215,7 @@ onBeforeUnmount(stopAssetPolling)
           data-test="materialize-result"
           @click="onMaterialize"
         >
-          生成规则网格（materialize）
+          生成三维网格
         </button>
         <button
           v-if="materializeStage === 'materialize_failed'"
@@ -223,7 +223,7 @@ onBeforeUnmount(stopAssetPolling)
           data-test="materialize-retry"
           @click="onMaterialize"
         >
-          重试物化
+          重试生成网格
         </button>
         <button
           v-if="materializeStage === 'probe_failed'"
@@ -238,9 +238,9 @@ onBeforeUnmount(stopAssetPolling)
         </span>
       </li>
       <li class="stage" data-test="stage-netcdf">
-        <span class="stage-name">NetCDF 体渲染资产</span>
+        <span class="stage-name">体渲染数据</span>
         <span v-if="materializeStage !== 'materialized'" class="stage-detail">
-          待规则网格物化后进行
+          待三维网格生成后进行
         </span>
         <template v-else>
           <span v-if="!capabilityChecked" class="stage-detail">能力探测中…</span>
@@ -272,7 +272,7 @@ onBeforeUnmount(stopAssetPolling)
               :disabled="assetBusy"
               @click="onCreateAsset(false)"
             >
-              {{ assetBusy ? '正在生成…' : '生成 NetCDF 资产' }}
+              {{ assetBusy ? '正在准备…' : '准备体渲染数据' }}
             </button>
             <button
               v-if="asset && (asset.status === 'failed' || asset.status === 'interrupted')"
@@ -281,7 +281,7 @@ onBeforeUnmount(stopAssetPolling)
               :disabled="assetBusy"
               @click="onCreateAsset(true)"
             >
-              {{ assetBusy ? '正在重试…' : '重试生成 NetCDF 资产' }}
+              {{ assetBusy ? '正在重试…' : '重试准备体渲染数据' }}
             </button>
             <span v-if="asset?.error" class="stage-error" data-test="asset-record-error">
               {{ asset.error.code }}：{{ asset.error.message }}

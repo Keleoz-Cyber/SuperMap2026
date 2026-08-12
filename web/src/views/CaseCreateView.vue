@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ApiError, createCase, uploadDataset } from '../api/client'
 import PageNavigation from '../components/navigation/PageNavigation.vue'
+import DatasetIntakeStart from '../components/upload/DatasetIntakeStart.vue'
 
 const router = useRouter()
 
@@ -34,7 +35,7 @@ async function submit() {
     }
     void router.push(`/cases/${created.id}/datasets/${uploaded.id}/prepare`)
   } catch (e) {
-    error.value = e instanceof ApiError ? `${e.code}：${e.message}` : e instanceof Error ? e.message : String(e)
+    error.value = e instanceof ApiError ? e.message : e instanceof Error ? e.message : String(e)
   } finally {
     busy.value = false
   }
@@ -42,77 +43,34 @@ async function submit() {
 </script>
 
 <template>
-  <div class="create-page">
-    <header class="create-header">
-      <h1>新建建模案例</h1>
-      <p>上传 CSV / XLSX 点数据，完成字段映射与质量校验后即可开始调参实验。</p>
-    </header>
-
-    <div class="create-form">
-      <label class="field">
-        <span>案例名称</span>
-        <input
-          v-model="name"
-          class="gmp-input"
-          data-test="case-name"
-          placeholder="如：××矿区电阻率建模"
-          maxlength="256"
-        />
-      </label>
-
-      <label class="field">
-        <span>数据文件（CSV / XLSX，≤ 50 MiB、≤ 50 万行）</span>
-        <input
-          class="gmp-file"
-          data-test="case-file"
-          type="file"
-          accept=".csv,.xlsx"
-          @change="onFileChange"
-        />
-      </label>
-
-      <div v-if="error" class="create-error" data-test="create-error">{{ error }}</div>
-
-      <div class="create-actions">
-        <button class="gmp-btn primary" data-test="case-submit" :disabled="!canSubmit" @click="submit">
-          {{ busy ? '创建并上传中…' : '创建并进入数据准备' }}
-        </button>
+  <div class="create-page product-page product-page--workflow">
+    <DatasetIntakeStart
+      mode="create" :file="file" input-test="case-file" :busy="busy" :can-submit="canSubmit"
+      :error="error" error-test="create-error" submit-test="case-submit"
+      @file-change="onFileChange" @submit="submit"
+    >
+      <template #before-file>
+        <label class="field">
+          <span>案例名称</span>
+          <input v-model="name" class="gmp-input" data-test="case-name" placeholder="如：北区电阻率三维建模" maxlength="256" autocomplete="off" />
+        </label>
+      </template>
+      <template #secondary-action>
         <PageNavigation current-label="新建案例" />
-      </div>
-    </div>
+      </template>
+    </DatasetIntakeStart>
   </div>
 </template>
 
 <style scoped>
 .create-page {
   min-height: 100%;
-  max-width: 720px;
+  max-width: var(--s1-page-workflow);
   margin: 0 auto;
   padding: 40px 20px;
   display: flex;
   flex-direction: column;
   gap: 22px;
-}
-
-.create-header h1 {
-  margin: 0 0 8px;
-  font-size: 22px;
-}
-
-.create-header p {
-  margin: 0;
-  color: var(--gmp-text-dim);
-  font-size: 13px;
-}
-
-.create-form {
-  background: var(--gmp-card);
-  border: 1px solid var(--gmp-border);
-  border-radius: 12px;
-  padding: 22px;
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
 }
 
 .field {
@@ -132,44 +90,4 @@ async function submit() {
   font-size: 14px;
 }
 
-.gmp-file {
-  color: var(--gmp-text);
-  font-size: 13px;
-}
-
-.create-error {
-  border: 1px solid #a43d3d;
-  background: rgba(164, 61, 61, 0.15);
-  color: #ef9a9a;
-  border-radius: 8px;
-  padding: 10px 14px;
-  font-size: 13px;
-}
-
-.create-actions {
-  display: flex;
-  gap: 12px;
-}
-
-.gmp-btn {
-  border: 1px solid var(--gmp-border);
-  background: var(--gmp-bg-soft);
-  color: var(--gmp-text);
-  border-radius: 8px;
-  padding: 10px 20px;
-  font-size: 14px;
-  cursor: pointer;
-}
-
-.gmp-btn.primary {
-  background: var(--gmp-accent);
-  border-color: var(--gmp-accent);
-  color: #0b0f14;
-  font-weight: 600;
-}
-
-.gmp-btn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
 </style>

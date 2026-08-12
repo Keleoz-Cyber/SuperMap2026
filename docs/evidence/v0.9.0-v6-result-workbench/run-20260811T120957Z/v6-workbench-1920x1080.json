@@ -1,0 +1,125 @@
+{
+  "result_id": "de5ff816-e97d-4b98-be10-55f3bfa438e1",
+  "grid_sha256": "079c410f071b86980fe56f09f70cfb1cdfb489c48e525cb74e416a4463721534",
+  "valid_count": 6762,
+  "component_count": 8,
+  "ai_status": "unavailable",
+  "viewport": {
+    "width": 1920,
+    "height": 1080
+  },
+  "overflow": {
+    "documentX": 0,
+    "bodyX": 0,
+    "documentY": 0,
+    "bodyY": 0
+  },
+  "columns": {
+    "rail": 328,
+    "scene": 1494,
+    "side": 390
+  },
+  "volume_height_ratio": 0.7411003236245954,
+  "volume_width_ratio": 0.27162629757785467,
+  "scene_aids_geometry": {
+    "originOutsideBounds": true,
+    "axisLengthRatios": {
+      "x": 1.25,
+      "y": 1.25,
+      "z": 1.25
+    }
+  },
+  "diag": {
+    "protocol": "gmp-supermap-volume/v2",
+    "phase": "rendered",
+    "layerType": "VoxelGridLayer3D",
+    "mode": "volume",
+    "identity": {
+      "sourceKind": "candidate_result",
+      "sourceId": "de5ff816-e97d-4b98-be10-55f3bfa438e1",
+      "gridSha256": "079c410f071b86980fe56f09f70cfb1cdfb489c48e525cb74e416a4463721534",
+      "netcdfSha256": "e00eaba94a960162299cd9975c11578ee9b8fe9fd58ecfaa8f15ab8169979c51"
+    },
+    "boundingBoxVisible": true,
+    "annotations": {
+      "total": 3,
+      "visible": 3,
+      "focusedId": "component-1"
+    },
+    "sceneAids": {
+      "axes": true,
+      "depthTicks": true
+    },
+    "sceneAidsGeometry": {
+      "originOutsideBounds": true,
+      "axisLengthRatios": {
+        "x": 1.25,
+        "y": 1.25,
+        "z": 1.25
+      }
+    },
+    "cameraPreset": "isometric",
+    "geometry": {
+      "layerBoundsDegrees": {
+        "west": 119.99937814993133,
+        "south": 29.998015379769292,
+        "east": 120.00062185006867,
+        "north": 30.001984620230708
+      },
+      "zBoundsMetres": [
+        -833.0047143,
+        -19.5999
+      ],
+      "dimensionOrder": [
+        "x",
+        "y",
+        "z"
+      ],
+      "cellSizeMetres": [
+        19.999999999864325,
+        20.000000000016783,
+        19.839141812195123
+      ],
+      "bboxSpansMetres": [
+        119.99999999918595,
+        440.00000000036925,
+        813.4048143
+      ],
+      "cameraSpanMetres": 813.4048143
+    },
+    "errors": []
+  },
+  "network_failures": [],
+  "console": [
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)",
+      "location": "/api/results/de5ff816-e97d-4b98-be10-55f3bfa438e1/render-assets/netcdf"
+    },
+    {
+      "type": "info",
+      "text": "**********超图三维产品SDK包版本信息**********",
+      "location": "/SuperMap3D-2026/SuperMap3D.js"
+    },
+    {
+      "type": "info",
+      "text": "产品名称: iClient3D; 大版本号: 12.1.0; SVN版本号: 50939",
+      "location": "/SuperMap3D-2026/SuperMap3D.js"
+    },
+    {
+      "type": "info",
+      "text": "**********超图三维产品SDK包版本信息**********",
+      "location": "/SuperMap3D-2026/SuperMap3D.js"
+    },
+    {
+      "type": "warning",
+      "text": "Canvas2D: Multiple readback operations using getImageData are faster with the willReadFrequently attribute set to true. See: https://html.spec.whatwg.org/multipage/canvas.html#concept-canvas-will-read-frequently",
+      "location": ""
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)",
+      "location": "/api/results/de5ff816-e97d-4b98-be10-55f3bfa438e1/ai-analysis/latest"
+    }
+  ]
+}

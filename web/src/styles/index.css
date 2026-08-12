@@ -1,21 +1,26 @@
-/* GeoModelingPlatform 全局样式：深色专业 GIS 答辩风格 */
+@import './tokens.css';
+@import './motion.css';
+
+/* GeoModelingPlatform 全局样式：S1「深地极光」深色专业 GIS 答辩风格。
+   v0.9.0 起所有新样式使用 --s1-* token；--gmp-* 保留为兼容别名，
+   指向 S1 token，旧组件局部样式在后续任务中逐步迁移。 */
 
 :root {
-  --gmp-bg: #0b0f14;
-  --gmp-bg-soft: #0e141b;
-  --gmp-panel: #11181f;
-  --gmp-card: #141c25;
-  --gmp-card-hover: #18222d;
-  --gmp-border: #223041;
-  --gmp-border-soft: #1b2632;
-  --gmp-text: #d7dee8;
-  --gmp-text-dim: #8794a5;
-  --gmp-text-faint: #5d6a7a;
-  --gmp-accent: #4ea1ff;
-  --gmp-cyan: #35c4d8;
-  --gmp-gold: #e8c25a;
-  --gmp-green: #3fb96c;
-  --gmp-red: #e05c5c;
+  --gmp-bg: var(--s1-canvas);
+  --gmp-bg-soft: var(--s1-canvas-soft);
+  --gmp-panel: var(--s1-surface-1);
+  --gmp-card: var(--s1-surface-2);
+  --gmp-card-hover: var(--s1-surface-hover);
+  --gmp-border: var(--s1-border);
+  --gmp-border-soft: var(--s1-border-soft);
+  --gmp-text: var(--s1-text);
+  --gmp-text-dim: var(--s1-text-dim);
+  --gmp-text-faint: var(--s1-text-faint);
+  --gmp-accent: var(--s1-cyan);
+  --gmp-cyan: var(--s1-cyan);
+  --gmp-gold: var(--s1-gold);
+  --gmp-green: var(--s1-success);
+  --gmp-red: var(--s1-error);
 }
 
 html,
@@ -27,8 +32,8 @@ body,
 }
 
 body {
-  background: var(--gmp-bg);
-  color: var(--gmp-text);
+  background: var(--s1-canvas);
+  color: var(--s1-text);
   font-family:
     'Helvetica Neue',
     'PingFang SC',
@@ -40,28 +45,34 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Element Plus 暗色变量微调，贴近 #0b0f14 色系 */
+:where(a, button, input, select, textarea, summary):focus-visible {
+  outline: 2px solid var(--s1-cyan-strong);
+  outline-offset: 2px;
+}
+
+/* Element Plus 暗色变量微调，贴近 S1 墨绿黑系 */
 html.dark {
-  --el-bg-color: var(--gmp-card);
-  --el-bg-color-overlay: #17202b;
-  --el-bg-color-page: var(--gmp-bg);
-  --el-border-color: var(--gmp-border);
-  --el-border-color-light: var(--gmp-border-soft);
-  --el-border-color-lighter: #18222d;
-  --el-border-color-extra-light: #151e28;
-  --el-fill-color-blank: var(--gmp-card);
-  --el-fill-color: #1a242f;
-  --el-fill-color-light: #16202a;
-  --el-text-color-primary: var(--gmp-text);
-  --el-text-color-regular: #b7c1ce;
-  --el-text-color-secondary: var(--gmp-text-dim);
-  --el-color-primary: var(--gmp-accent);
+  --el-bg-color: var(--s1-surface-2);
+  --el-bg-color-overlay: #14221c;
+  --el-bg-color-page: var(--s1-canvas);
+  --el-border-color: var(--s1-border);
+  --el-border-color-light: var(--s1-border-soft);
+  --el-border-color-lighter: #182720;
+  --el-border-color-extra-light: #13201a;
+  --el-fill-color-blank: var(--s1-surface-2);
+  --el-fill-color: #1a2b24;
+  --el-fill-color-light: #15241e;
+  --el-text-color-primary: var(--s1-text);
+  --el-text-color-regular: #b9c6c0;
+  --el-text-color-secondary: var(--s1-text-dim);
+  --el-color-primary: var(--s1-cyan);
 }
 
 /* 通用工具类 */
 .mono {
   font-family: 'JetBrains Mono', 'Cascadia Code', Consolas, 'Courier New', monospace;
-  font-size: 12px;
+  font-size: var(--s1-font-sm);
+  font-variant-numeric: tabular-nums;
 }
 
 .break-all {
@@ -78,44 +89,84 @@ html.dark {
 }
 
 .dot.ok {
-  background: var(--gmp-green);
-  box-shadow: 0 0 6px rgba(63, 185, 108, 0.7);
+  background: var(--s1-success);
+  box-shadow: 0 0 6px rgba(70, 185, 124, 0.7);
 }
 
 .dot.bad {
-  background: var(--gmp-red);
-  box-shadow: 0 0 6px rgba(224, 92, 92, 0.7);
+  background: var(--s1-error);
+  box-shadow: 0 0 6px rgba(224, 104, 94, 0.7);
 }
 
 .dot.pending {
-  background: var(--gmp-gold);
+  background: var(--s1-warning);
 }
 
 /* 面板小节标题 */
 .panel-title {
-  font-size: 13px;
+  font-size: var(--s1-font-md);
   font-weight: 600;
   letter-spacing: 0.05em;
-  color: var(--gmp-text);
+  color: var(--s1-text);
   margin: 0 0 10px;
   padding-left: 9px;
-  border-left: 3px solid var(--gmp-accent);
+  border-left: 3px solid var(--s1-cyan);
   line-height: 1.2;
 }
 
 .sub-title {
-  font-size: 12px;
+  font-size: var(--s1-font-sm);
   font-weight: 600;
-  color: var(--gmp-text-dim);
+  color: var(--s1-text-dim);
   margin: 14px 0 8px;
   letter-spacing: 0.04em;
 }
 
 .panel-note {
-  font-size: 12px;
-  color: var(--gmp-text-dim);
-  line-height: 1.6;
+  font-size: var(--s1-font-sm);
+  color: var(--s1-text-dim);
+  line-height: var(--s1-leading);
   margin: 8px 0 0;
+}
+
+/* 全站页面骨架：页面只选择内容宽度，不再各自发明边距与最大宽度。 */
+.product-page {
+  box-sizing: border-box;
+  width: calc(100% - 2 * var(--s1-page-gutter));
+  max-width: var(--s1-page-standard);
+  margin-inline: auto;
+  padding-block: var(--s1-space-4) var(--s1-space-8);
+}
+
+.product-page--form {
+  max-width: var(--s1-page-form);
+}
+
+.product-page--workflow {
+  max-width: var(--s1-page-workflow);
+}
+
+.product-page--wide {
+  max-width: var(--s1-page-wide);
+}
+
+/* 跳转主内容的可访问性链接（AppShell 使用） */
+.skip-link {
+  position: fixed;
+  top: -48px;
+  left: 16px;
+  z-index: 3000;
+  padding: 8px 16px;
+  border-radius: var(--s1-radius-sm);
+  background: var(--s1-cyan);
+  color: #06110f;
+  font-weight: 600;
+  text-decoration: none;
+  transition: top var(--s1-motion-fast) var(--s1-ease-out);
+}
+
+.skip-link:focus-visible {
+  top: 12px;
 }
 
 /* 滚动条 */
@@ -125,12 +176,12 @@ html.dark {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #26313f;
+  background: #233730;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #314052;
+  background: #2f4a3f;
 }
 
 ::-webkit-scrollbar-track {

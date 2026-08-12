@@ -197,6 +197,42 @@ describe('SuperMapVolumeFrame v2', () => {
     await flushPromises()
     expect(wrapper.emitted('failed')).toHaveLength(1)
   })
+
+  it('setCameraPreset/focusAnnotation 发送带 commandId 的命令；ANNOTATION_SELECTED 向上派发', async () => {
+    const { wrapper, posted, emitChild } = mountFrame()
+    emitChild({
+      type: 'FRAME_READY',
+      sdkVersion: '12.1.0',
+      contextType: 2,
+      capabilities: { singleAxisSlice: true, lighting: true, gradientOpacity: true, boundingBox: true, transferFunction: true },
+    })
+    await flushPromises()
+    const api = wrapper.vm as never as {
+      setCameraPreset: (preset: 'isometric' | 'top-xy' | 'front-xz' | 'front-yz') => void
+      focusAnnotation: (annotationId: string) => void
+    }
+    api.setCameraPreset('top-xy')
+    api.focusAnnotation('component-2')
+    const presets = posted.filter((m) => m.type === 'SET_CAMERA_PRESET')
+    expect(presets).toHaveLength(1)
+    expect(presets[0]).toMatchObject({ preset: 'top-xy' })
+    expect(presets[0].commandId).toBeTruthy()
+    const focuses = posted.filter((m) => m.type === 'FOCUS_ANNOTATION')
+    expect(focuses).toHaveLength(1)
+    expect(focuses[0]).toMatchObject({ annotationId: 'component-2' })
+    expect(focuses[0].commandId).toBeTruthy()
+
+    // 子帧回报三维标注点击 → 父组件 annotation-selected 事件
+    emitChild({ type: 'ANNOTATION_SELECTED', annotationId: 'component-2' })
+    await flushPromises()
+    expect(wrapper.emitted('annotation-selected')).toEqual([[{ annotationId: 'component-2' }]])
+
+    // 扩展命令回执向上转发
+    emitChild({ type: 'COMMAND_APPLIED', commandId: String(focuses[0].commandId), commandType: 'FOCUS_ANNOTATION' })
+    await flushPromises()
+    const acks = wrapper.emitted('command-applied') ?? []
+    expect(acks.at(-1)?.[0]).toMatchObject({ commandType: 'FOCUS_ANNOTATION' })
+  })
 })
 
 describe('SuperMapVolumeFrame 握手/渲染超时（黑屏不得无限停留）', () => {

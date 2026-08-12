@@ -39,6 +39,33 @@ export interface ColorStopWire {
   color: string
 }
 
+// ---------------------------------------------------------------------------
+// v0.9.0 Task 7：异常标注与相机（设计 §6）
+// 标注是完整渲染状态的可选扩展（v2 向后兼容）；坐标恒为成果局部米制，
+// 子帧按 INIT.displayTransform 变换；相机预设与组件聚焦为带 commandId 的命令。
+// ---------------------------------------------------------------------------
+
+export type CameraPreset = 'isometric' | 'top-xy' | 'front-xz' | 'front-yz'
+
+export const CAMERA_PRESETS: readonly CameraPreset[] = ['isometric', 'top-xy', 'front-xz', 'front-yz']
+
+export interface AnnotationWire {
+  id: string
+  label: string
+  localPosition: [number, number, number]
+  bounds: [[number, number], [number, number], [number, number]]
+  valueMax: number
+  supportMeasure: number
+  supportUnit: 'volume_coordinate_unit3' | 'area_coordinate_unit2'
+  color: string
+  visible: boolean
+}
+
+export interface SceneAidsWire {
+  axes: boolean
+  depthTicks: boolean
+}
+
 export interface SliceStateV2 {
   axis: SliceAxis
   index: number
@@ -57,6 +84,10 @@ export interface RenderStateV2 {
   boundingBox: boolean
   slice?: SliceStateV2
   contourValue?: number
+  // v0.9.0 可选扩展：异常标注 / 聚焦标注 / 场景辅助（XYZ 轴 + 深度刻度）
+  annotations?: AnnotationWire[]
+  focusedAnnotationId?: string | null
+  sceneAids?: SceneAidsWire
 }
 
 export class ProtocolError extends Error {}
@@ -67,6 +98,68 @@ function isFiniteNumber(value: unknown): value is number {
 
 function isHexColor(value: unknown): value is string {
   return typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value)
+}
+
+const ANNOTATION_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/
+
+function validateAnnotationWire(value: unknown, what: string): AnnotationWire {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new ProtocolError(`${what}_INVALID`)
+  }
+  const a = value as Record<string, unknown>
+  if (typeof a.id !== 'string' || !ANNOTATION_ID_RE.test(a.id)) {
+    throw new ProtocolError(`${what}_ID_INVALID`)
+  }
+  if (typeof a.label !== 'string' || a.label.length === 0 || a.label.length > 16) {
+    throw new ProtocolError(`${what}_LABEL_INVALID`)
+  }
+  if (!Array.isArray(a.localPosition) || a.localPosition.length !== 3 || !a.localPosition.every(isFiniteNumber)) {
+    throw new ProtocolError(`${what}_POSITION_INVALID`)
+  }
+  if (
+    !Array.isArray(a.bounds) ||
+    a.bounds.length !== 3 ||
+    !a.bounds.every(
+      (pair) =>
+        Array.isArray(pair) &&
+        pair.length === 2 &&
+        pair.every(isFiniteNumber) &&
+        (pair[0] as number) <= (pair[1] as number),
+    )
+  ) {
+    throw new ProtocolError(`${what}_BOUNDS_INVALID`)
+  }
+  if (!isFiniteNumber(a.valueMax)) throw new ProtocolError(`${what}_VALUE_MAX_INVALID`)
+  if (!isFiniteNumber(a.supportMeasure) || a.supportMeasure < 0) {
+    throw new ProtocolError(`${what}_SUPPORT_INVALID`)
+  }
+  if (!['volume_coordinate_unit3', 'area_coordinate_unit2'].includes(String(a.supportUnit))) {
+    throw new ProtocolError(`${what}_SUPPORT_UNIT_INVALID`)
+  }
+  if (!isHexColor(a.color)) throw new ProtocolError(`${what}_COLOR_INVALID`)
+  if (typeof a.visible !== 'boolean') throw new ProtocolError(`${what}_VISIBLE_INVALID`)
+  return value as AnnotationWire
+}
+
+function validateAnnotations(state: RenderStateV2): void {
+  if (state.annotations === undefined) {
+    if (state.focusedAnnotationId !== undefined && state.focusedAnnotationId !== null) {
+      throw new ProtocolError('FOCUSED_ANNOTATION_WITHOUT_LIST')
+    }
+    return
+  }
+  if (!Array.isArray(state.annotations)) throw new ProtocolError('ANNOTATIONS_INVALID')
+  const ids = new Set<string>()
+  for (const raw of state.annotations) {
+    const annotation = validateAnnotationWire(raw, 'ANNOTATION')
+    if (ids.has(annotation.id)) throw new ProtocolError('ANNOTATION_DUPLICATE_ID')
+    ids.add(annotation.id)
+  }
+  if (state.focusedAnnotationId !== undefined && state.focusedAnnotationId !== null) {
+    if (typeof state.focusedAnnotationId !== 'string' || !ids.has(state.focusedAnnotationId)) {
+      throw new ProtocolError('FOCUSED_ANNOTATION_UNKNOWN')
+    }
+  }
 }
 
 /** 出站状态完整校验：通过返回原对象（调用方负责克隆），失败抛 ProtocolError。 */
@@ -123,6 +216,13 @@ export function validateRenderState(state: RenderStateV2): RenderStateV2 {
   if (state.contourValue !== undefined && !isFiniteNumber(state.contourValue)) {
     throw new ProtocolError('CONTOUR_VALUE_INVALID')
   }
+  validateAnnotations(state)
+  if (state.sceneAids !== undefined) {
+    const aids = state.sceneAids
+    if (!aids || typeof aids.axes !== 'boolean' || typeof aids.depthTicks !== 'boolean') {
+      throw new ProtocolError('SCENE_AIDS_INVALID')
+    }
+  }
   return state
 }
 
@@ -162,11 +262,29 @@ export interface ResetViewMessageV2 {
   commandId: string
 }
 
+export interface SetCameraPresetMessageV2 {
+  protocol: typeof VOLUME_FRAME_PROTOCOL
+  type: 'SET_CAMERA_PRESET'
+  requestId: string
+  commandId: string
+  preset: CameraPreset
+}
+
+export interface FocusAnnotationMessageV2 {
+  protocol: typeof VOLUME_FRAME_PROTOCOL
+  type: 'FOCUS_ANNOTATION'
+  requestId: string
+  commandId: string
+  annotationId: string
+}
+
 export type ParentMessageV2 =
   | InitMessageV2
   | ApplyRenderStateMessageV2
   | SetPointLayerMessageV2
   | ResetViewMessageV2
+  | SetCameraPresetMessageV2
+  | FocusAnnotationMessageV2
 
 export function buildInitMessage(
   requestId: string,
@@ -210,6 +328,32 @@ export function buildResetView(requestId: string, commandId: string): ResetViewM
   return { protocol: VOLUME_FRAME_PROTOCOL, type: 'RESET_VIEW', requestId, commandId }
 }
 
+export function buildSetCameraPreset(
+  requestId: string,
+  commandId: string,
+  preset: CameraPreset,
+): SetCameraPresetMessageV2 {
+  if (!CAMERA_PRESETS.includes(preset)) throw new ProtocolError('CAMERA_PRESET_INVALID')
+  return { protocol: VOLUME_FRAME_PROTOCOL, type: 'SET_CAMERA_PRESET', requestId, commandId, preset }
+}
+
+export function buildFocusAnnotation(
+  requestId: string,
+  commandId: string,
+  annotationId: string,
+): FocusAnnotationMessageV2 {
+  if (typeof annotationId !== 'string' || !ANNOTATION_ID_RE.test(annotationId)) {
+    throw new ProtocolError('ANNOTATION_ID_INVALID')
+  }
+  return {
+    protocol: VOLUME_FRAME_PROTOCOL,
+    type: 'FOCUS_ANNOTATION',
+    requestId,
+    commandId,
+    annotationId,
+  }
+}
+
 // ---------------------------------------------------------------------------
 // 子 → 父消息
 // ---------------------------------------------------------------------------
@@ -245,11 +389,19 @@ export interface StateAppliedMessage {
   appliedState: RenderStateV2
 }
 
+export type FrameCommandType = 'SET_POINT_LAYER' | 'RESET_VIEW' | 'SET_CAMERA_PRESET' | 'FOCUS_ANNOTATION'
+
 export interface CommandAppliedMessage {
   type: 'COMMAND_APPLIED'
   requestId: string
   commandId: string
-  commandType: 'SET_POINT_LAYER' | 'RESET_VIEW'
+  commandType: FrameCommandType
+}
+
+export interface AnnotationSelectedMessage {
+  type: 'ANNOTATION_SELECTED'
+  requestId: string
+  annotationId: string
 }
 
 export interface ErrorMessageV2 {
@@ -266,6 +418,7 @@ export type ChildMessageV2 =
   | RenderStateMessage
   | StateAppliedMessage
   | CommandAppliedMessage
+  | AnnotationSelectedMessage
   | ErrorMessageV2
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -348,7 +501,9 @@ export function parseChildMessage(data: unknown): ChildMessageV2 | null {
     case 'COMMAND_APPLIED': {
       if (
         typeof data.commandId !== 'string' ||
-        !['SET_POINT_LAYER', 'RESET_VIEW'].includes(String(data.commandType))
+        !['SET_POINT_LAYER', 'RESET_VIEW', 'SET_CAMERA_PRESET', 'FOCUS_ANNOTATION'].includes(
+          String(data.commandType),
+        )
       ) {
         return null
       }
@@ -356,7 +511,15 @@ export function parseChildMessage(data: unknown): ChildMessageV2 | null {
         type: 'COMMAND_APPLIED',
         requestId: data.requestId,
         commandId: data.commandId,
-        commandType: data.commandType as 'SET_POINT_LAYER' | 'RESET_VIEW',
+        commandType: data.commandType as FrameCommandType,
+      }
+    }
+    case 'ANNOTATION_SELECTED': {
+      if (typeof data.annotationId !== 'string' || data.annotationId.length === 0) return null
+      return {
+        type: 'ANNOTATION_SELECTED',
+        requestId: data.requestId,
+        annotationId: data.annotationId,
       }
     }
     case 'ERROR': {

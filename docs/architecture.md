@@ -209,6 +209,14 @@ v0.4 routers (`cases`, `datasets`, `experiments`, `runs`, `results`) registered 
 - 与渲染链的关系：分析中心不重算、不修改 NetCDF 渲染资产与剖面 API（`slice-analysis` 合同不变），只通过带筛选 query 的路由跳转让用户在成果页（Volume/Slice/Contour）复核统计项对应的空间范围；模型对比只读取已物化成果的登记指标。
 - 降级语义：`generic_3d` 附逐条 `disabled_reasons`（机器可读缺失项 + 展示文案），前端显示解释性空状态，绝不显示空图或看似完整的专业面板；`gas_content` 仅注册不伪造瓦斯数据；C 类结论看板（发现/证据/三维定位/可打印答辩页）为 v0.9.0 预留，本批未实现。
 
+### v0.9.0 成果级分析与 AI 辅助研判
+
+- `geomodeling.platform.result_analysis` 从已物化 `CandidateResult` 的规则网格生成只读成果摘要：身份、完整网格统计、同一完整网格 p25/p75 阈值、低/正常/高组成、3D 深度分层、高值 2D-4/3D-6 邻接连通区、模型证据、确定性发现和溯源。公开 DTO 的坐标/阈值/层段/发现枚举闭合，未知值 fail-closed；不从旧数据集摘要拼接或猜测成果结论。
+- `GET /api/results/{result_id}/analysis-summary` 与 `GET /api/render-assets/{asset_id}/slice-analysis` 通过 `result_id + grid_sha256` 绑定；切片组成沿用完整网格 p25/p75 阈值。前端 `ResultAnalysisWorkbench` 只组合 DTO，不在浏览器重算连通区或模型指标；成果切换先清旧分析、切片、聚焦和 AI 状态，并以加载序号防止 A→B→A 旧响应复活。
+- SuperMap3D iframe 协议 v2 扩展组件标注、聚焦、相机预设和反选事件；组件、切片、三维标注与证据带共享同一成果身份。真实 GPU 发布门验证组件→三维聚焦、四相机、三渲染模式及切片；真实鼠标点击标注的命中率仍只由协议/Mock 覆盖，尚未形成独立 GPU 像素门。
+- `geomodeling.platform.ai_analysis` / `deepseek_adapter` 只把结构化证据包发给 DeepSeek，服务端环境变量提供密钥；响应使用闭合 JSON 合同、证据引用白名单、提示版本与 evidence hash 落库。未配置、超时、限流、HTTP/JSON 错误均为类型化状态，规则研判不受影响；不输出隐藏推理或虚构置信度。
+- 桌面 1920×1080 使用固定视口工作台：页面本身无横纵滚动，长研判与证据内容在各自面板内滚动；窄屏继续走既有响应式流式布局。
+
 ### Demo hardening (implemented in v0.4.1)
 
 - `demo_assets` + `api/routes/demo`: the single authoritative public demo CSV (`demo/platform_demo_3d.csv`) with a frozen SHA-256 contract (fail-closed on missing/modified asset) and a sanitized download endpoint.

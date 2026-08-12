@@ -421,7 +421,7 @@ export async function waitSliceApplied(
   expect(resp.ok()).toBe(true)
   const analysis = await resp.json()
   const coordinate = analysis.slice.coordinate
-  await expect(page.getByTestId('slice-coordinate-label')).toContainText(
+  await expect(page.getByTestId('slice-coordinate')).toContainText(
     `${axis.toUpperCase()} = ${coordinate}`,
     { timeout: 30_000 },
   )
@@ -665,6 +665,13 @@ export interface V070GateParams {
    * 调用处书面记录数据稀疏性与实测值，且仍须拒绝无主导结构的纯碎屑。
    */
   contourMinComponentRatio?: number
+  /**
+   * 逐轴剖面最大连通区占比下限（默认 0.9）。极端扁长剖面（如瓦斯
+   * 151×333×12 网格的 X 剖面为 333×12 带状）在等轴取景下投影为细带，
+   * 抗锯齿边缘会把掩膜截成 2 段；仅在纵横向比极端时按几何事实调低，
+   * 且必须在调用处书面记录纵横向比与实测值——不得用于掩盖碎屑/黑屏。
+   */
+  sliceMinComponentRatio?: Partial<Record<'x' | 'y' | 'z', number>>
 }
 
 export interface V070GateReport {
@@ -727,6 +734,20 @@ export async function runV070RenderGates(params: V070GateParams): Promise<V070Ga
   // 父页的 Element Plus loading mask 可能在 iframe 已报告 rendered 后仍处于
   // 离场动画；此时元素截图会被整层遮罩压暗，不能作为视觉证据。
   await expect(page.locator('.el-loading-mask:visible')).toHaveCount(0, { timeout: 30_000 })
+
+  // v0.9.0 V6：组件标注/XYZ 轴/深度刻度默认开启，其标签与轴线属于场景辅助
+  // 而非体数据内容。像素门（连通区/覆盖率/线框贴合）只评估体数据本身，
+  // 测量前关闭覆盖物，门序列结束后恢复默认开启状态。
+  const overlayToggleIds = ['annotations-toggle', 'axes-toggle', 'depth-ticks-toggle'] as const
+  const toggledOff: string[] = []
+  for (const id of overlayToggleIds) {
+    const toggle = page.getByTestId(id)
+    const input = toggle.locator('input')
+    if ((await input.isChecked().catch(() => false)) && (await input.isEnabled().catch(() => false))) {
+      await toggle.click()
+      toggledOff.push(id)
+    }
+  }
 
   // --- 静帧噪声基线 + 基准非背景 ---------------------------------------------
   const noiseShot1 = await shot()
@@ -825,6 +846,7 @@ export async function runV070RenderGates(params: V070GateParams): Promise<V070Ga
     expectVolumeContent(quarterMetrics, `${axis} 剖面`, {
       minNonBg: 500,
       minCoverage: params.sliceMinCoverage?.[axis] ?? 0.03,
+      minComponentRatio: params.sliceMinComponentRatio?.[axis],
     })
     saveShot(`slice-${axis}-q${quarter(axis)}`, shotQuarter)
 
@@ -932,9 +954,9 @@ export async function runV070RenderGates(params: V070GateParams): Promise<V070Ga
   timings['slice-reenter'] = reenter.totalMs
   previous = reenter.shot
   const analysis = await waitSliceApplied(page, request, frame, assetId, exportAxis, exportIdx)
-  await expect(page.getByTestId('export-slice')).toBeEnabled()
+  await expect(page.getByTestId('ge-export-slice')).toBeEnabled()
   const downloadPromise = page.waitForEvent('download', { timeout: 60_000 })
-  await page.getByTestId('export-slice').click()
+  await page.getByTestId('ge-export-slice').click()
   const download = await downloadPromise
   expect(download.suggestedFilename()).toBe('slice-analysis.zip')
   const zipBuf = await readFile(await download.path())
@@ -942,6 +964,11 @@ export async function runV070RenderGates(params: V070GateParams): Promise<V070Ga
 
   // 收尾回体积模式
   await command('restore-volume-final', () => page.getByTestId('mode-volume').click(), false)
+
+  // 恢复场景辅助默认开启（不干扰后续用例的默认状态断言）
+  for (const id of toggledOff) {
+    await page.getByTestId(id).click()
+  }
 
   return {
     noiseDiff,

@@ -87,6 +87,16 @@ beforeEach(() => {
 })
 
 describe('CandidateComparison 跨实验候选输入', () => {
+  it('跨实验成果输入有可访问标签，基准身份收进技术详情', () => {
+    const wrapper = mountPanel()
+    expect(wrapper.find('label[for="comparison-external-input"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="comparison-external-input"]').attributes('name')).toBe('comparison-external-result')
+    expect(wrapper.find('.first-technical').text()).toContain('基准候选标识')
+    expect(wrapper.find('.first-technical').text()).toContain(FIRST)
+    expect(wrapper.find('[data-test="comparison-technical-details"]').text()).toContain(FIRST)
+    wrapper.unmount()
+  })
+
   it('粘贴跨实验成果 ID 后调用后端比较并显示指标差（compatible）', async () => {
     vi.mocked(client.createProfessionalComparison).mockResolvedValue(COMPATIBLE)
     const wrapper = mountPanel()

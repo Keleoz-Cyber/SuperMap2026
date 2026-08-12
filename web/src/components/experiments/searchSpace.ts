@@ -45,7 +45,7 @@ export interface ExperimentPreset {
   krigingGrid: { models: VariogramModel[]; neighborCount: number[]; zScale: number[] }
 }
 
-export const Z_SCALE_HINT = '距离计算使用 Z × z_scale；它是实验参数，不是已确认地质各向异性。'
+export const Z_SCALE_HINT = '垂向距离缩放只影响实验中的距离计算，不代表已经确认地质各向异性。'
 
 export const MICROSEISMIC_EXPERIMENT_PRESET: ExperimentPreset = {
   key: 'microseismic',

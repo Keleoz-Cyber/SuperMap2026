@@ -26,7 +26,7 @@ async function runExport(format: AnalysisExportFormat) {
   if (pendingFormat.value !== null) return
   pendingFormat.value = format
   errorText.value = null
-  statusText.value = `正在导出 ${format.toUpperCase()} 摘要（数据集 ${props.datasetId} · profile ${props.profile}）…`
+  statusText.value = `正在导出 ${format.toUpperCase()} 分析摘要…`
   try {
     const { blob, filename } = await downloadAnalysisExport(props.datasetId, format)
     const url = URL.createObjectURL(blob)
@@ -35,7 +35,7 @@ async function runExport(format: AnalysisExportFormat) {
     anchor.download = filename
     anchor.click()
     URL.revokeObjectURL(url)
-    statusText.value = `已导出 ${filename}（数据集 ${props.datasetId} · profile ${props.profile}）`
+    statusText.value = `已导出 ${filename}`
   } catch (e) {
     statusText.value = null
     errorText.value =
@@ -51,7 +51,9 @@ async function runExport(format: AnalysisExportFormat) {
 <template>
   <section class="panel export-panel" data-test="analysis-export-panel">
     <h3>导出与数据溯源</h3>
-    <dl class="provenance" data-test="export-provenance">
+    <details class="provenance-disclosure" data-test="export-provenance-details">
+      <summary>技术详情</summary>
+      <dl class="provenance" data-test="export-provenance">
       <div class="prov-row">
         <dt>数据集</dt>
         <dd class="mono">{{ datasetId }}</dd>
@@ -76,7 +78,8 @@ async function runExport(format: AnalysisExportFormat) {
         <dt>计算版本</dt>
         <dd class="mono">{{ provenance.calculation_version }}</dd>
       </div>
-    </dl>
+      </dl>
+    </details>
     <div class="export-actions">
       <el-button
         type="primary"

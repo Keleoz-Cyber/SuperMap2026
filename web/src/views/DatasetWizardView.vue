@@ -17,10 +17,9 @@ import type {
   InspectionResult,
   QualityReport,
 } from '../api/types'
-import FileStep from '../components/upload/FileStep.vue'
-import MappingStep from '../components/upload/MappingStep.vue'
-import QualityStep from '../components/upload/QualityStep.vue'
+import DataIntakeWorkbench from '../components/upload/DataIntakeWorkbench.vue'
 import PageNavigation from '../components/navigation/PageNavigation.vue'
+import AsyncState from '../components/states/AsyncState.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -42,22 +41,11 @@ const conversion = ref<{ valid: number; invalid: number; total: number } | null>
 const showAbandonDialog = ref(false)
 const abandoning = ref(false)
 
-const showMapping = computed(
-  () =>
-    dataset.value !== null &&
-    (dataset.value.status === 'uploaded' || dataset.value.status === 'blocked'),
-)
-const showQuality = computed(
-  () =>
-    dataset.value !== null &&
-    (dataset.value.status === 'mapped' ||
-     (report.value !== null && dataset.value.status === 'validated')),
-)
 const showValidated = computed(
   () =>
     dataset.value !== null &&
     dataset.value.status === 'validated' &&
-    report.value === null,
+    (isValidatedPreset.value || report.value === null),
 )
 const showAbandoned = computed(
   () => dataset.value !== null && dataset.value.status === 'abandoned',
@@ -71,9 +59,35 @@ const canAbandon = computed(
 )
 
 function describeError(e: unknown): string {
-  if (e instanceof ApiError) return `${e.code}：${e.message}`
+  if (e instanceof ApiError) return e.message
   return e instanceof Error ? e.message : String(e)
 }
+
+const datasetProfile = computed<Record<string, unknown>>(
+  () => (dataset.value?.profile ?? {}) as Record<string, unknown>,
+)
+const datasetMapping = computed<Record<string, unknown>>(
+  () => (datasetProfile.value.mapping ?? {}) as Record<string, unknown>,
+)
+const isValidatedPreset = computed(
+  () =>
+    dataset.value?.status === 'validated' &&
+    datasetProfile.value.source_kind === 'builtin_preset',
+)
+const validatedSummary = computed(() => {
+  const validRows = Number(datasetProfile.value.valid_row_count ?? datasetProfile.value.row_count ?? 0)
+  const invalidRows = Number(datasetProfile.value.invalid_row_count ?? 0)
+  return {
+    validRows: Number.isFinite(validRows) ? validRows.toLocaleString('zh-CN') : '—',
+    invalidRows: Number.isFinite(invalidRows) ? invalidRows.toLocaleString('zh-CN') : '—',
+    valueName: String(datasetMapping.value.value_name ?? '建模属性'),
+    valueUnit: String(datasetMapping.value.value_unit ?? '未登记'),
+    coordinateKind:
+      datasetMapping.value.coordinate_kind === 'local_linear'
+        ? '局部线性米制坐标'
+        : String(datasetMapping.value.coordinate_kind ?? '未登记'),
+  }
+})
 
 async function loadQuality() {
   try {
@@ -94,12 +108,14 @@ async function refreshDataset() {
 // 刷新/重开页面时一律以服务端状态重建向导（不依赖本地缓存）
 onMounted(async () => {
   try {
-    const [ds, insp] = await Promise.all([
-      fetchDataset(datasetId.value),
-      fetchInspection(datasetId.value),
-    ])
+    const ds = await fetchDataset(datasetId.value)
     dataset.value = ds
-    inspection.value = insp
+    const profile = ds.profile as Record<string, unknown>
+    const validatedPreset =
+      ds.status === 'validated' && profile.source_kind === 'builtin_preset'
+    if (!validatedPreset) {
+      inspection.value = await fetchInspection(datasetId.value)
+    }
     if (ds.status === 'mapped' || ds.status === 'validated' || ds.status === 'blocked') {
       await loadQuality()
     }
@@ -192,36 +208,66 @@ function onStart() {
 </script>
 
 <template>
-  <div class="wizard-page">
-    <PageNavigation :case-id="caseId" current-label="数据准备向导" />
+  <div class="wizard-page product-page product-page--workflow">
+    <PageNavigation :case-id="caseId" current-label="数据接入与准备" />
     <header class="wizard-header">
-      <h1>数据准备向导</h1>
+      <h1>数据接入与准备</h1>
       <p class="wizard-sub">
-        案例 <span class="mono">{{ caseId }}</span> · 数据集
-        <span class="mono">{{ datasetId }}</span>
+        完成字段识别、质量检查与建模确认；已完成的数据可直接返回案例继续工作。
       </p>
     </header>
 
-    <el-result v-if="loadError" icon="error" title="数据集加载失败" :sub-title="loadError" />
-    <div v-else-if="!dataset" v-loading="true" class="wizard-loading" />
+    <AsyncState
+      v-if="loadError"
+      kind="error"
+      title="数据集加载失败"
+      :impact="loadError"
+      next-action="返回案例工作台重新进入，或稍后重试"
+    />
+    <AsyncState v-else-if="!dataset" kind="loading" title="数据版本加载中" />
 
     <main v-else class="wizard-main">
       <div v-if="actionError" class="action-error" data-test="action-error">{{ actionError }}</div>
 
-      <FileStep :dataset="dataset" :inspection="inspection" @sheet-change="onSheetChange" />
-
       <div v-if="showValidated" data-test="wizard-step-validated">
-        <el-result
-          icon="success"
-          title="数据准备完成"
-          sub-title="数据已通过质量校验，可以开始实验与专业诊断。"
-        >
-          <template #extra>
+        <section class="validated-summary">
+          <div class="validated-copy">
+            <span class="status-kicker">质量检查通过</span>
+            <h2>数据已可用于建模</h2>
+            <p>无需再次解析原始文件，可直接进入实验、空间结构分析和结果比较。</p>
+          </div>
+          <dl class="validated-metrics">
+            <div>
+              <dt>有效样本</dt>
+              <dd>{{ validatedSummary.validRows }}</dd>
+            </div>
+            <div>
+              <dt>无效样本</dt>
+              <dd>{{ validatedSummary.invalidRows }}</dd>
+            </div>
+            <div>
+              <dt>建模属性</dt>
+              <dd>{{ validatedSummary.valueName }}</dd>
+            </div>
+            <div>
+              <dt>单位</dt>
+              <dd>{{ validatedSummary.valueUnit }}</dd>
+            </div>
+          </dl>
+          <div class="validated-actions">
             <el-button type="primary" data-test="enter-workspace" @click="onStart">
               进入案例工作台
             </el-button>
-          </template>
-        </el-result>
+          </div>
+          <details class="technical-details" data-test="dataset-technical-details">
+            <summary>技术详情</summary>
+            <dl>
+              <div><dt>坐标口径</dt><dd>{{ validatedSummary.coordinateKind }}</dd></div>
+              <div><dt>案例标识</dt><dd class="mono">{{ caseId }}</dd></div>
+              <div><dt>数据版本标识</dt><dd class="mono">{{ datasetId }}</dd></div>
+            </dl>
+          </details>
+        </section>
       </div>
 
       <div v-else-if="showAbandoned" data-test="wizard-step-abandoned">
@@ -238,25 +284,21 @@ function onStart() {
         </el-result>
       </div>
 
-      <div v-else-if="showMapping" data-test="wizard-step-mapping">
-        <MappingStep
-          :inspection="inspection"
-          :submitting="submitting"
-          :conversion="conversion"
-          @submit="onMappingSubmit"
-        />
-      </div>
-
-      <div v-else-if="showQuality" data-test="wizard-step-quality">
-        <QualityStep
-          :report="report"
-          :validating="validating"
-          :confirming="confirming"
-          @validate="runValidate"
-          @confirm="onConfirmWarnings"
-          @start="onStart"
-        />
-      </div>
+      <DataIntakeWorkbench
+        v-else
+        :dataset="dataset"
+        :inspection="inspection"
+        :report="report"
+        :conversion="conversion"
+        :submitting="submitting"
+        :validating="validating"
+        :confirming="confirming"
+        @sheet-change="onSheetChange"
+        @submit-mapping="onMappingSubmit"
+        @validate="runValidate"
+        @confirm-warnings="onConfirmWarnings"
+        @start="onStart"
+      />
 
       <div v-if="canAbandon" class="abandon-section">
         <el-button
@@ -298,7 +340,7 @@ function onStart() {
 <style scoped>
 .wizard-page {
   min-height: 100%;
-  max-width: 980px;
+  max-width: var(--s1-page-workflow);
   margin: 0 auto;
   padding: 28px 20px 48px;
   display: flex;
@@ -327,6 +369,92 @@ function onStart() {
   gap: 16px;
 }
 
+.validated-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 1fr);
+  gap: 24px 36px;
+  padding: 28px;
+  border: 1px solid var(--s1-border);
+  border-radius: var(--s1-radius-md);
+  background: var(--s1-surface-1);
+}
+
+.status-kicker {
+  color: var(--s1-success);
+  font-size: var(--s1-font-sm);
+  font-weight: 600;
+}
+
+.validated-copy h2 {
+  margin: 8px 0;
+  font-size: 24px;
+}
+
+.validated-copy p {
+  margin: 0;
+  color: var(--s1-text-dim);
+  line-height: var(--s1-leading);
+}
+
+.validated-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0;
+  background: var(--s1-border);
+  border: 1px solid var(--s1-border);
+}
+
+.validated-metrics div {
+  min-width: 0;
+  padding: 14px 16px;
+  background: var(--s1-surface-2);
+}
+
+.validated-metrics dt,
+.technical-details dt {
+  color: var(--s1-text-faint);
+  font-size: var(--s1-font-xs);
+}
+
+.validated-metrics dd {
+  margin: 5px 0 0;
+  color: var(--s1-text);
+  font-size: var(--s1-font-lg);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.validated-actions,
+.technical-details {
+  grid-column: 1 / -1;
+}
+
+.technical-details {
+  padding-top: 16px;
+  border-top: 1px solid var(--s1-border);
+  color: var(--s1-text-dim);
+  font-size: var(--s1-font-sm);
+}
+
+.technical-details summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--s1-text-dim);
+}
+
+.technical-details dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin: 14px 0 0;
+}
+
+.technical-details dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+
 .wizard-loading {
   min-height: 200px;
 }
@@ -349,5 +477,16 @@ function onStart() {
   font-size: 14px;
   line-height: 1.6;
   color: var(--gmp-text);
+}
+
+@media (max-width: 720px) {
+  .validated-summary {
+    grid-template-columns: 1fr;
+    padding: 20px;
+  }
+
+  .technical-details dl {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

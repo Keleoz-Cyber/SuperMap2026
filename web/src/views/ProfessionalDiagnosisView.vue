@@ -104,7 +104,7 @@ function stopPolling() {
 }
 
 function describeError(e: unknown): string {
-  if (e instanceof ApiError) return `${e.code}：${e.message}`
+  if (e instanceof ApiError) return e.message
   return e instanceof Error ? e.message : String(e)
 }
 
@@ -387,16 +387,12 @@ onBeforeUnmount(stopPolling)
 </script>
 
 <template>
-  <div class="diagnosis-page">
+  <div class="diagnosis-page product-page">
     <PageNavigation :case-id="caseId || undefined" :dataset-id="datasetId" current-label="空间结构分析" />
     <header class="page-header">
       <h1>空间结构分析</h1>
       <p class="page-sub">
-        数据集 <span class="mono">{{ datasetId }}</span>
-        <template v-if="dataset"> · {{ dimension === '3d' ? '三维' : '二维' }}</template>
-      </p>
-      <p class="intro-text">
-        空间结构分析为普通克里金插值提供各向异性证据；IDW 不需要此分析。分析仅读取数据，不修改任何已有成果。
+        <template v-if="dataset">{{ dimension === '3d' ? '三维' : '二维' }}建模数据 · 只读诊断，不修改已有成果</template>
       </p>
     </header>
 
@@ -412,12 +408,26 @@ onBeforeUnmount(stopPolling)
       <div v-if="actionError" class="action-error" role="alert" data-test="action-error">{{ actionError }}</div>
 
       <section v-if="phase.kind === 'config'" class="config-section" data-test="diagnosis-config">
-        <h2 class="section-heading">分析配置</h2>
-        <p class="section-hint">
-          经验半变异函数诊断在服务端异步执行；提交后轮询任务状态，证据全部来自登记工件。
-        </p>
+        <div class="purpose-guide" data-test="diagnosis-purpose-guide">
+          <div class="purpose-copy">
+            <span class="section-kicker">是否需要</span>
+            <h2>为普通克里金判断空间连续性</h2>
+            <p>当你需要根据方向性和空间相关距离配置克里金时使用；IDW 不需要，DSI-like 也可直接跳过。</p>
+          </div>
+          <dl class="purpose-outputs">
+            <div><dt>方向证据</dt><dd>识别主方向与各向异性候选</dd></div>
+            <div><dt>距离证据</dt><dd>估计变程、块金与基台关系</dd></div>
+            <div><dt>下一步</dt><dd>确认后应用到新实验</dd></div>
+          </dl>
+        </div>
+        <div class="recommended-config">
+          <div><span class="section-kicker">推荐设置</span><strong>水平 0° / 90° 双方向诊断</strong><p>适合先判断是否存在明显方向差异；三维数据可在高级设置中加入垂向。</p></div>
+          <button class="gmp-btn primary" data-test="start-diagnosis" :disabled="starting" @click="start">
+            {{ starting ? '提交中…' : '开始空间结构分析' }}
+          </button>
+        </div>
         <el-collapse>
-          <el-collapse-item title="高级设置" name="advanced">
+          <el-collapse-item title="高级设置：方向、分箱与点对上限" name="advanced">
             <div class="cfg-grid">
               <label class="field">
                 <span>滞后 bin 数 lag_count</span>
@@ -450,11 +460,6 @@ onBeforeUnmount(stopPolling)
             </div>
           </el-collapse-item>
         </el-collapse>
-        <div class="cfg-actions">
-          <button class="gmp-btn primary" data-test="start-diagnosis" :disabled="starting" @click="start">
-            {{ starting ? '提交中…' : '开始空间结构分析' }}
-          </button>
-        </div>
       </section>
 
       <section v-else-if="running" class="job-section" data-test="job-status" aria-live="polite">
@@ -483,30 +488,40 @@ onBeforeUnmount(stopPolling)
       </section>
 
       <template v-else-if="phase.kind === 'succeeded' && diagnosis && evidence">
-        <section class="diagnosis-meta">
-          <span>诊断 <span class="mono">{{ diagnosis.id }}</span></span>
-          <span data-test="diagnosis-fingerprint">
-            指纹 <span class="mono">{{ diagnosis.fingerprint }}</span>
-          </span>
-          <span>状态 {{ diagnosis.status }}</span>
+        <section class="diagnosis-conclusion" data-test="diagnosis-conclusion">
+          <div>
+            <span class="section-kicker">分析完成</span>
+            <h2>结果可用于普通克里金参数决策</h2>
+            <p>先核对半变异函数拟合和方向证据，再确认各向异性方案；确认后可直接创建锁定该快照的新实验。</p>
+          </div>
+          <span class="conclusion-status">证据已生成</span>
         </section>
+
+        <details class="diagnosis-meta" data-test="diagnosis-technical-details">
+          <summary>技术详情</summary>
+          <span>诊断 <span class="mono">{{ diagnosis.id }}</span></span>
+          <span data-test="diagnosis-fingerprint">指纹 <span class="mono">{{ diagnosis.fingerprint }}</span></span>
+          <span>服务端状态 {{ diagnosis.status }}</span>
+          <span>数据版本 <span class="mono">{{ datasetId }}</span></span>
+        </details>
 
         <VariogramPanel :evidence="evidence" />
 
         <section v-if="confirmation" class="confirmation-snapshot" data-test="confirmation-snapshot">
-          <h2 class="section-heading">不可变确认快照</h2>
-          <p data-test="confirmation-id">确认 ID：<span class="mono">{{ confirmation.id }}</span></p>
-          <p data-test="confirmation-fingerprint">
-            指纹：<span class="mono">{{ confirmation.fingerprint }}</span>
-          </p>
+          <h2 class="section-heading">参数建议已确认</h2>
           <p v-if="confirmation.note">说明：{{ confirmation.note }}</p>
-          <p class="snapshot-hint">快照已创建且永不修改；如需调整，请创建新的确认。</p>
+          <p class="snapshot-hint">这组建议将锁定到新建的克里金实验；如需调整，请重新分析并创建新的确认。</p>
           <button v-if="confirmationFromExisting" class="gmp-btn primary" data-test="apply-confirmation" @click="gotoExperiment">
             采用建议并创建克里金实验
           </button>
           <button v-else class="gmp-btn primary" data-test="goto-experiment" @click="gotoExperiment">
-            用于新建 Kriging 实验
+            用于新建克里金实验
           </button>
+          <details class="confirmation-technical" data-test="confirmation-technical-details">
+            <summary>技术详情</summary>
+            <p data-test="confirmation-id">确认标识：<span class="mono">{{ confirmation.id }}</span></p>
+            <p data-test="confirmation-fingerprint">指纹：<span class="mono">{{ confirmation.fingerprint }}</span></p>
+          </details>
         </section>
 
         <AnisotropyPanel
@@ -528,7 +543,7 @@ onBeforeUnmount(stopPolling)
 <style scoped>
 .diagnosis-page {
   min-height: 100%;
-  max-width: 1080px;
+  max-width: var(--s1-page-standard);
   margin: 0 auto;
   padding: 28px 20px 48px;
   display: flex;
@@ -553,6 +568,84 @@ onBeforeUnmount(stopPolling)
   font-size: 13px;
   color: var(--gmp-text-dim);
   line-height: 1.6;
+}
+
+.section-kicker {
+  color: var(--s1-cyan-strong);
+  font-size: var(--s1-font-xs);
+  font-weight: 600;
+}
+
+.purpose-guide {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(360px, 1fr);
+  gap: 30px;
+  align-items: center;
+}
+
+.purpose-copy h2,
+.diagnosis-conclusion h2 {
+  margin: 6px 0 8px;
+  font-size: var(--s1-font-xl);
+}
+
+.purpose-copy p,
+.diagnosis-conclusion p,
+.recommended-config p {
+  margin: 0;
+  color: var(--s1-text-dim);
+  font-size: var(--s1-font-sm);
+  line-height: var(--s1-leading);
+}
+
+.purpose-outputs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+  border: 1px solid var(--s1-border);
+  background: var(--s1-border);
+  gap: 1px;
+}
+
+.purpose-outputs div {
+  min-width: 0;
+  padding: var(--s1-space-3);
+  background: var(--s1-surface-2);
+}
+
+.purpose-outputs dt {
+  color: var(--s1-text-faint);
+  font-size: var(--s1-font-xs);
+}
+
+.purpose-outputs dd {
+  margin: 5px 0 0;
+  color: var(--s1-text);
+  font-size: var(--s1-font-sm);
+  line-height: 1.45;
+}
+
+.recommended-config,
+.diagnosis-conclusion {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--s1-space-5);
+  padding: var(--s1-space-4) 0;
+  border-block: 1px solid var(--s1-border);
+}
+
+.recommended-config strong {
+  display: block;
+  margin: 5px 0;
+  color: var(--s1-text-strong);
+}
+
+.conclusion-status {
+  flex: 0 0 auto;
+  color: var(--s1-success);
+  font-size: var(--s1-font-sm);
+  font-weight: 600;
 }
 
 .mono {
@@ -599,6 +692,39 @@ onBeforeUnmount(stopPolling)
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.config-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1-space-4);
+}
+
+.diagnosis-meta {
+  display: flex;
+  gap: var(--s1-space-3);
+  flex-wrap: wrap;
+  color: var(--s1-text-faint);
+  font-size: var(--s1-font-xs);
+}
+
+.diagnosis-meta summary {
+  width: 100%;
+  cursor: pointer;
+  color: var(--s1-text-dim);
+}
+
+@media (max-width: 720px) {
+  .purpose-guide,
+  .purpose-outputs {
+    grid-template-columns: 1fr;
+  }
+
+  .recommended-config,
+  .diagnosis-conclusion {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 
 .section-heading {

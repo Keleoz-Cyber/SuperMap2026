@@ -323,7 +323,7 @@ test.describe('v0.8.0：电阻率散点预置 + DSI-like 真实 SDK live 门', (
     await page.getByTestId('exp-submit').click()
     await expect(page).toHaveURL(/#\/experiments\//, { timeout: 60_000 })
     // 真实运行 17,549 散点 × 5 折：有界等待终态
-    await expect(page.getByTestId('run-progress')).toContainText('succeeded', {
+    await expect(page.getByTestId('run-progress-primary')).toContainText('验证完成', {
       timeout: RUN_GATE_MS,
     })
     const runMs = Date.now() - createStart
@@ -335,7 +335,7 @@ test.describe('v0.8.0：电阻率散点预置 + DSI-like 真实 SDK live 门', (
     await expect(page).toHaveURL(/#\/results\//, { timeout: 60_000 })
     const dsiResultId = page.url().split('/results/')[1]
     expect(dsiResultId).toBeTruthy()
-    await expect(page.locator('.page-sub')).toContainText('dsi_like')
+    await expect(page.getByTestId('v6-result-summary')).toContainText('DSI-like')
     await expect(page.getByTestId('native-volume-panel')).toBeVisible({ timeout: 60_000 })
 
     const createButton = page.getByTestId('create-asset')

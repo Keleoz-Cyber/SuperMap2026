@@ -14,6 +14,7 @@ import TrashView from '../views/TrashView.vue'
 // 构建产物由 FastAPI StaticFiles 直接托管，hash 模式可避免刷新深链 404。
 const router = createRouter({
   history: createWebHashHistory(),
+  scrollBehavior: () => ({ top: 0 }),
   routes: [
     { path: '/', name: 'home', component: HomeView },
     { path: '/trash', name: 'trash', component: TrashView },
@@ -76,6 +77,8 @@ const router = createRouter({
         query: to.query,
       }),
     },
+    // v0.9.0 V6：未匹配深链（含已退役 /presentation）一律重定向首页
+    { path: '/:pathMatch(.*)*', redirect: { name: 'home' } },
   ],
 })
 

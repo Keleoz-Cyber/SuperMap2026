@@ -19,6 +19,25 @@ import * as client from '../../../api/client'
 import ProfessionalAnalysisView from '../../../views/ProfessionalAnalysisView.vue'
 import ResultWorkbenchView from '../../../views/ResultWorkbenchView.vue'
 
+// v0.9.0：成果工作台融合证据带后在模块边界 mock echarts（jsdom 无 canvas 上下文）
+vi.mock('echarts/core', () => ({
+  init: vi.fn(() => ({
+    setOption: vi.fn(),
+    resize: vi.fn(),
+    dispose: vi.fn(),
+    on: vi.fn(),
+  })),
+  use: vi.fn(),
+}))
+vi.mock('echarts/charts', () => ({ BarChart: {}, LineChart: {}, ScatterChart: {}, HeatmapChart: {} }))
+vi.mock('echarts/components', () => ({
+  GridComponent: {},
+  TooltipComponent: {},
+  LegendComponent: {},
+  VisualMapComponent: {},
+}))
+vi.mock('echarts/renderers', () => ({ CanvasRenderer: {} }))
+
 vi.mock('../../../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../api/client')>()
   return {
@@ -373,6 +392,7 @@ function makeTestRouter(): Router {
       { path: '/', name: 'home', component: { template: '<div />' } },
       { path: '/cases/:caseId', name: 'case-workspace', component: { template: '<div />' } },
       { path: '/experiments/:experimentId', name: 'experiment-detail', component: { template: '<div />' } },
+      { path: '/datasets/:datasetId/candidate-comparison', name: 'candidate-comparison', component: { template: '<div />' } },
       { path: '/results/:resultId', name: 'result-workbench', component: ResultWorkbenchView },
       {
         path: '/results/:resultId/evaluation',
@@ -471,13 +491,19 @@ describe('单候选联动与参数快照', () => {
     mockKrigingPath()
     const { wrapper } = await mountAnalysis()
 
-    expect(wrapper.find('[data-test="summary-algorithm"]').text()).toContain('ordinary_kriging')
-    expect(wrapper.find('[data-test="summary-confirmation"]').text()).toContain('conf1')
-    expect(wrapper.find('[data-test="capability-native-kriging-std"]').text()).toContain('supported')
-    expect(wrapper.find('[data-test="param-origin-validation"]').text()).toContain(
-      'automatic_candidate',
-    )
-    expect(wrapper.find('[data-test="param-origin-final"]').text()).toContain('final_full_data_fit')
+    expect(wrapper.find('[data-test="summary-algorithm"]').text()).toContain('普通克里金')
+    expect(wrapper.find('[data-test="summary-algorithm"]').text()).not.toContain('ordinary_kriging')
+    expect(wrapper.find('[data-test="summary-confirmation"]').text()).toContain('已采用空间结构建议')
+    expect(wrapper.find('[data-test="summary-confirmation"]').text()).not.toContain('conf1')
+    expect(wrapper.find('[data-test="capability-native-kriging-std"]').text()).toContain('克里金标准差：可用')
+    expect(wrapper.get('[data-test="professional-technical-details"]').text()).toContain('native_kriging_std')
+    expect(wrapper.find('[data-test="param-origin-validation"]').text()).toContain('交叉验证候选')
+    expect(wrapper.find('[data-test="param-origin-final"]').text()).toContain('全量有效数据拟合')
+    const technical = wrapper.get('[data-test="professional-technical-details"]').text()
+    expect(technical).toContain('ordinary_kriging')
+    expect(technical).toContain('conf1')
+    expect(technical).toContain('automatic_candidate')
+    expect(technical).toContain('final_full_data_fit')
     wrapper.unmount()
   })
 
@@ -507,12 +533,30 @@ describe('单候选联动与参数快照', () => {
 
     expect(wrapper.find('[data-test="baseline-metrics"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="baseline-only-note"]').text()).toContain('基础评估可用')
+    expect(wrapper.get('[data-test="evaluation-conclusion"]').text()).toContain('基线指标已生成')
+    expect(wrapper.get('[data-test="evaluation-conclusion"]').text()).toContain('逐折与残差证据未生成')
+    expect(wrapper.get('[data-test="evaluation-next-actions"]').text()).toContain('返回三维成果')
+    expect(wrapper.get('[data-test="evaluation-next-actions"]').text()).toContain('比较候选')
+    expect(wrapper.get('[data-test="evaluation-next-actions"]').text()).toContain('导出')
+    expect(wrapper.get('[data-test="baseline-metrics"]').text()).toContain('RMSE 反映典型误差尺度')
+    expect(wrapper.get('[data-test="baseline-metrics"]').text()).toContain('R² 当前不可计算')
     expect(wrapper.find('[data-test="baseline-r2"]').text()).toContain('不可计算')
     expect(client.fetchProfessionalResult).not.toHaveBeenCalled()
     expect(client.fetchResultFolds).not.toHaveBeenCalled()
     expect(client.fetchResultResiduals).not.toHaveBeenCalled()
     expect(wrapper.find('[data-test="crumb-home"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="back-to-workbench"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('增强证据可用时结论先说明逐折、残差与泄漏检查状态', async () => {
+    mockKrigingPath()
+    const { wrapper } = await mountAnalysis()
+
+    const conclusion = wrapper.get('[data-test="evaluation-conclusion"]')
+    expect(conclusion.text()).toContain('增强评估证据可用')
+    expect(conclusion.text()).toContain('未检测到空间折分泄漏')
+    expect(conclusion.text()).not.toContain('r1')
     wrapper.unmount()
   })
 
@@ -690,6 +734,9 @@ describe('AnomalyPanel 异常提取', () => {
 
     expect(wrapper.find('[data-test="extraction-identity"]').text()).toContain('ext1')
     expect(wrapper.find('[data-test="extraction-fingerprint"]').text()).toContain('fp-ext1')
+    expect(wrapper.find('[data-test="extraction-technical-details"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="extraction-technical-details"] .extraction-meta').exists()).toBe(true)
+    expect(wrapper.find('[data-test="anomaly-panel"] > .extraction-meta').exists()).toBe(false)
     const rows = wrapper.findAll('[data-test="component-row"]')
     expect(rows).toHaveLength(1)
     expect(rows[0].text()).toContain('1')

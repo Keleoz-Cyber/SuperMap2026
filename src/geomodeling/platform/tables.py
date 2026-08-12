@@ -423,3 +423,43 @@ class CasePurgeOperation(Base):
     error_json: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     created_at: Mapped[str] = mapped_column(Text, default=utc_now_iso)
     updated_at: Mapped[str] = mapped_column(Text, default=utc_now_iso, onupdate=utc_now_iso)
+
+
+# ---------------------------------------------------------------------------
+# v8: AI analysis records
+# ---------------------------------------------------------------------------
+
+
+class AIAnalysisRecord(Base):
+    """AI 辅助研判记录（v0.9.0 设计 §9.5）。
+
+    显式 POST 生成、GET 只读最近。相同 evidence_hash + prompt_version +
+    model + mode 默认复用；regenerate=true 才重新计费。不保存 API Key
+    和模型隐藏推理内容。
+    """
+
+    __tablename__ = "ai_analysis_records"
+    __table_args__ = (
+        Index("ix_ai_analysis_result_id", "result_id"),
+        UniqueConstraint(
+            "result_id", "evidence_hash", "prompt_version", "model", "mode",
+            name="uq_ai_analysis_identity",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    result_id: Mapped[str] = mapped_column(String(128), ForeignKey("candidate_results.id"))
+    grid_sha256: Mapped[str] = mapped_column(String(64))
+    evidence_hash: Mapped[str] = mapped_column(String(64))
+    prompt_version: Mapped[str] = mapped_column(String(64))
+    provider: Mapped[str] = mapped_column(String(64))
+    model: Mapped[str] = mapped_column(String(128))
+    mode: Mapped[str] = mapped_column(String(16))
+    status: Mapped[str] = mapped_column(String(32))
+    review_json: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    error_code: Mapped[str | None] = mapped_column(String(128), nullable=True, default=None)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    usage_prompt_tokens: Mapped[int | None] = mapped_column(nullable=True, default=None)
+    usage_completion_tokens: Mapped[int | None] = mapped_column(nullable=True, default=None)
+    latency_ms: Mapped[int | None] = mapped_column(nullable=True, default=None)
+    created_at: Mapped[str] = mapped_column(Text, default=utc_now_iso)

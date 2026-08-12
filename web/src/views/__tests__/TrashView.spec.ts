@@ -35,6 +35,7 @@ function makeTestRouter(): Router {
     history: createMemoryHistory(),
     routes: [
       { path: '/', name: 'home', component: { template: '<div />' } },
+      { path: '/cases/new', name: 'case-create', component: { template: '<div />' } },
       { path: '/trash', name: 'trash', component: TrashView },
     ],
   })
@@ -65,6 +66,16 @@ describe('TrashView', () => {
     vi.mocked(client.purgeCase).mockResolvedValue({})
   })
 
+  it('空回收站只显示任务空态与返回/新建动作，不保留空表格', async () => {
+    const { wrapper } = await mountView()
+
+    expect(wrapper.get('[data-test="trash-empty"]').text()).toContain('没有待处理的案例')
+    expect(wrapper.find('table').exists()).toBe(false)
+    expect(wrapper.get('[data-test="trash-empty-home"]').attributes('href')).toBe('/')
+    expect(wrapper.get('[data-test="trash-empty-create"]').attributes('href')).toBe('/cases/new')
+    wrapper.unmount()
+  })
+
   it('renders correct count of trashed cases', async () => {
     vi.mocked(client.fetchTrashCases).mockResolvedValue({
       cases: [
@@ -80,6 +91,7 @@ describe('TrashView', () => {
     expect(wrapper.findAll('table').length).toBe(1)
     expect(wrapper.find('thead').exists()).toBe(true)
     expect(wrapper.find('tbody').exists()).toBe(true)
+    expect(wrapper.findAll('[data-test="trash-mobile-item"]')).toHaveLength(3)
     wrapper.unmount()
   })
 

@@ -1,0 +1,45 @@
+/* v0.9.0 动效 token：时长/缓动统一，支持 prefers-reduced-motion。
+   动效只表达状态与空间联动，不改变数据完成状态，不用计数动画伪造实时计算。 */
+
+:root {
+  --s1-motion-fast: 180ms;
+  --s1-motion-base: 240ms;
+  --s1-motion-panel: 360ms;
+  --s1-motion-scene: 650ms;
+
+  --s1-ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --s1-ease-in-out: cubic-bezier(0.45, 0, 0.2, 1);
+  --s1-ease-emphasis: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* 通用过渡工具类：组件优先使用 token，工具类用于壳层通用元素 */
+.s1-fade-enter-active,
+.s1-fade-leave-active {
+  transition:
+    opacity var(--s1-motion-base) var(--s1-ease-out),
+    transform var(--s1-motion-base) var(--s1-ease-out);
+}
+
+.s1-fade-enter-from,
+.s1-fade-leave-to {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --s1-motion-fast: 1ms;
+    --s1-motion-base: 1ms;
+    --s1-motion-panel: 1ms;
+    --s1-motion-scene: 1ms;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+}

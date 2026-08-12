@@ -9,12 +9,14 @@ import {
   type RenderScale,
 } from './renderTransferFunctions'
 import type { RenderProfile } from '../../api/types'
-import type { RenderStateV2 } from './renderProtocol'
+import { CAMERA_PRESETS, type CameraPreset, type RenderStateV2 } from './renderProtocol'
 
 // v0.7.0 Batch 2 Task 9：常驻渲染工具栏（设计 §7.2）。
 // 模式/色带/标度/滤波/不透明度/光照/渐变透明度/包围盒/重置视角常驻；
 // 每次合法修改都发射**完整克隆状态**（revision 由编排层递增）；重置视角
 // 只发 reset-view 事件，绝不改渲染状态。
+// v0.9.0 Task 9：相机预设（一次性命令）、组件标注显隐与 XYZ 轴/深度刻度
+// （状态可选字段）进入同一工具区；rail 布局供左栏纵向排布。
 
 const props = withDefaults(
   defineProps<{
@@ -25,8 +27,11 @@ const props = withDefaults(
     // 不传时回退 profile 默认（保持旧用法兼容）
     palette?: RenderPaletteId
     scale?: RenderScale
+    // v0.9.0 Task 9：组件标注可用性（无连通区时禁用开关）；rail 纵向布局
+    annotationsAvailable?: boolean
+    layout?: 'row' | 'rail'
   }>(),
-  { enabled: true, palette: undefined, scale: undefined },
+  { enabled: true, palette: undefined, scale: undefined, annotationsAvailable: false, layout: 'row' },
 )
 
 const emit = defineEmits<{
@@ -34,6 +39,7 @@ const emit = defineEmits<{
   'update:palette': [palette: RenderPaletteId]
   'update:scale': [scale: RenderScale]
   'reset-view': []
+  'camera-preset': [preset: CameraPreset]
 }>()
 
 const paletteIds = PALETTE_IDS
@@ -132,6 +138,50 @@ const boundingBoxModel = computed<boolean>({
     }),
 })
 
+// ---------------------------------------------------------------------------
+// v0.9.0 Task 9：相机预设 / 组件标注 / 场景辅助
+// 相机预设是一次性命令；标注显隐与 sceneAids 是完整状态的可选字段。
+// ---------------------------------------------------------------------------
+const CAMERA_PRESET_LABELS: Record<CameraPreset, string> = {
+  isometric: '等轴',
+  'top-xy': '俯视 XY',
+  'front-xz': '正视 XZ',
+  'front-yz': '正视 YZ',
+}
+const cameraPresets = CAMERA_PRESETS
+const railCameraPresets = CAMERA_PRESETS.filter((preset) => preset !== 'isometric')
+
+function onCameraPreset(preset: CameraPreset) {
+  if (!props.enabled) return
+  emit('camera-preset', preset)
+}
+
+// 组件标注总显隐：状态 annotations 全部成员同开关；无标注时禁用
+const annotationsVisible = computed<boolean>({
+  get: () => (state.value.annotations ?? []).some((a) => a.visible),
+  set: (value) =>
+    cloneWith((next) => {
+      if (!next.annotations) return
+      next.annotations = next.annotations.map((a) => ({ ...a, visible: value }))
+    }),
+})
+
+const axesModel = computed<boolean>({
+  get: () => state.value.sceneAids?.axes ?? false,
+  set: (value) =>
+    cloneWith((next) => {
+      next.sceneAids = { axes: value, depthTicks: next.sceneAids?.depthTicks ?? false }
+    }),
+})
+
+const depthTicksModel = computed<boolean>({
+  get: () => state.value.sceneAids?.depthTicks ?? false,
+  set: (value) =>
+    cloneWith((next) => {
+      next.sceneAids = { axes: next.sceneAids?.axes ?? false, depthTicks: value }
+    }),
+})
+
 const filterDraft = reactive({ min: '', max: '' })
 
 function applyFilter() {
@@ -155,138 +205,376 @@ function onResetView() {
 </script>
 
 <template>
-  <div class="render-toolbar" data-test="render-toolbar">
-    <div class="toolbar-row">
-      <el-radio-group
-        v-model="modeModel"
-        size="small"
-        :disabled="!enabled"
-        data-test="mode-segment"
-      >
-        <el-radio-button value="volume" data-test="mode-volume">体积</el-radio-button>
-        <el-radio-button value="slice" data-test="mode-slice">切片</el-radio-button>
-        <el-radio-button value="contour" data-test="mode-contour">等值面</el-radio-button>
-      </el-radio-group>
-
-      <el-select
-        v-model="paletteModel"
-        size="small"
-        class="palette-select"
-        :disabled="!enabled"
-        data-test="palette-select"
-      >
-        <el-option v-for="id in paletteIds" :key="id" :value="id" :label="id">
-          <span class="palette-option">
-            <span
-              class="palette-swatch"
-              :data-test="`palette-swatch-${id}`"
-              :style="{
-                background: `linear-gradient(to right, ${paletteColors[id].join(', ')})`,
-              }"
-            />
-            <span>{{ id }}</span>
-          </span>
-        </el-option>
-      </el-select>
-
-      <el-radio-group
-        v-model="scaleModel"
-        size="small"
-        :disabled="!enabled"
-        data-test="scale-segment"
-      >
-        <el-radio-button value="linear" data-test="linear-scale">线性</el-radio-button>
-        <el-tooltip
-          :disabled="logAvailable"
-          content="权威有效值不全为正，对数不可用"
-          placement="top"
-        >
-          <span>
-            <el-radio-button value="log" :disabled="!logAvailable" data-test="log-scale">
-              对数
-            </el-radio-button>
-          </span>
-        </el-tooltip>
-      </el-radio-group>
-
-      <el-tooltip content="重置视角" placement="top">
-        <el-button
+  <div class="render-toolbar" :class="`layout-${layout}`" data-test="render-toolbar">
+    <template v-if="layout === 'row'">
+      <div class="toolbar-row">
+        <el-radio-group
+          v-model="modeModel"
           size="small"
-          :icon="RefreshLeft"
-          circle
           :disabled="!enabled"
-          data-test="reset-view"
-          aria-label="重置视角"
-          @click="onResetView"
+          data-test="mode-segment"
+        >
+          <el-radio-button value="volume" data-test="mode-volume">体积</el-radio-button>
+          <el-radio-button value="slice" data-test="mode-slice">切片</el-radio-button>
+          <el-radio-button value="contour" data-test="mode-contour">等值面</el-radio-button>
+        </el-radio-group>
+
+        <el-select
+          v-model="paletteModel"
+          size="small"
+          class="palette-select"
+          :disabled="!enabled"
+          data-test="palette-select"
+        >
+          <el-option v-for="id in paletteIds" :key="id" :value="id" :label="id">
+            <span class="palette-option">
+              <span
+                class="palette-swatch"
+                :data-test="`palette-swatch-${id}`"
+                :style="{
+                  background: `linear-gradient(to right, ${paletteColors[id].join(', ')})`,
+                }"
+              />
+              <span>{{ id }}</span>
+            </span>
+          </el-option>
+        </el-select>
+
+        <el-radio-group
+          v-model="scaleModel"
+          size="small"
+          :disabled="!enabled"
+          data-test="scale-segment"
+        >
+          <el-radio-button value="linear" data-test="linear-scale">线性</el-radio-button>
+          <el-tooltip
+            :disabled="logAvailable"
+            content="权威有效值不全为正，对数不可用"
+            placement="top"
+          >
+            <span>
+              <el-radio-button value="log" :disabled="!logAvailable" data-test="log-scale">
+                对数
+              </el-radio-button>
+            </span>
+          </el-tooltip>
+        </el-radio-group>
+
+        <el-tooltip content="重置视角" placement="top">
+          <el-button
+            size="small"
+            :icon="RefreshLeft"
+            circle
+            :disabled="!enabled"
+            data-test="reset-view"
+            aria-label="重置视角"
+            @click="onResetView"
+          />
+        </el-tooltip>
+      </div>
+
+      <div class="toolbar-row">
+        <label class="control-label" for="filter-min-input">滤波</label>
+        <el-input
+          v-model="filterDraft.min"
+          size="small"
+          class="filter-input"
+          placeholder="min"
+          :disabled="!enabled"
+          data-test="filter-min"
+          id="filter-min-input"
+          name="filter_min"
+          autocomplete="off"
         />
-      </el-tooltip>
-    </div>
+        <span class="control-sep">~</span>
+        <el-input
+          v-model="filterDraft.max"
+          size="small"
+          class="filter-input"
+          placeholder="max"
+          :disabled="!enabled"
+          data-test="filter-max"
+          id="filter-max-input"
+          name="filter_max"
+          autocomplete="off"
+        />
+        <el-button size="small" :disabled="!enabled" data-test="filter-apply" @click="applyFilter">
+          应用
+        </el-button>
 
-    <div class="toolbar-row">
-      <label class="control-label" for="filter-min-input">滤波</label>
-      <el-input
-        v-model="filterDraft.min"
-        size="small"
-        class="filter-input"
-        placeholder="min"
-        :disabled="!enabled"
-        data-test="filter-min"
-        id="filter-min-input"
-        name="filter_min"
-        autocomplete="off"
-      />
-      <span class="control-sep">~</span>
-      <el-input
-        v-model="filterDraft.max"
-        size="small"
-        class="filter-input"
-        placeholder="max"
-        :disabled="!enabled"
-        data-test="filter-max"
-        id="filter-max-input"
-        name="filter_max"
-        autocomplete="off"
-      />
-      <el-button size="small" :disabled="!enabled" data-test="filter-apply" @click="applyFilter">
-        应用
-      </el-button>
+        <span class="control-label">不透明度</span>
+        <el-slider
+          v-model="opacityModel"
+          class="opacity-slider"
+          :min="0"
+          :max="1"
+          :step="0.01"
+          :disabled="!enabled"
+          data-test="opacity-slider"
+        />
 
-      <span class="control-label">不透明度</span>
-      <el-slider
-        v-model="opacityModel"
-        class="opacity-slider"
-        :min="0"
-        :max="1"
-        :step="0.01"
-        :disabled="!enabled"
-        data-test="opacity-slider"
-      />
+        <el-checkbox
+          v-model="lightingModel"
+          size="small"
+          :disabled="!enabled"
+          data-test="lighting-toggle"
+        >
+          光照
+        </el-checkbox>
+        <el-checkbox
+          v-model="gradientModel"
+          size="small"
+          :disabled="!enabled"
+          data-test="gradient-opacity-toggle"
+        >
+          渐变透明度
+        </el-checkbox>
+        <el-checkbox
+          v-model="boundingBoxModel"
+          size="small"
+          :disabled="!enabled"
+          data-test="bounding-box-toggle"
+        >
+          包围盒
+        </el-checkbox>
+      </div>
 
-      <el-checkbox
-        v-model="lightingModel"
-        size="small"
-        :disabled="!enabled"
-        data-test="lighting-toggle"
-      >
-        光照
-      </el-checkbox>
-      <el-checkbox
-        v-model="gradientModel"
-        size="small"
-        :disabled="!enabled"
-        data-test="gradient-opacity-toggle"
-      >
-        渐变透明度
-      </el-checkbox>
-      <el-checkbox
-        v-model="boundingBoxModel"
-        size="small"
-        :disabled="!enabled"
-        data-test="bounding-box-toggle"
-      >
-        包围盒
-      </el-checkbox>
-    </div>
+      <!-- v0.9.0 Task 9：视角预设 + 组件标注 + 场景辅助 -->
+      <div class="toolbar-row aids-row">
+        <span class="control-label">视角</span>
+        <button
+          v-for="preset in cameraPresets"
+          :key="preset"
+          type="button"
+          class="preset-button"
+          :disabled="!enabled"
+          :data-test="`camera-${preset}`"
+          @click="onCameraPreset(preset)"
+        >
+          {{ CAMERA_PRESET_LABELS[preset] }}
+        </button>
+
+        <el-checkbox
+          v-model="annotationsVisible"
+          size="small"
+          :disabled="!enabled || !annotationsAvailable"
+          data-test="annotations-toggle"
+        >
+          组件标注
+        </el-checkbox>
+        <el-checkbox
+          v-model="axesModel"
+          size="small"
+          :disabled="!enabled"
+          data-test="axes-toggle"
+        >
+          XYZ 轴
+        </el-checkbox>
+        <el-checkbox
+          v-model="depthTicksModel"
+          size="small"
+          :disabled="!enabled"
+          data-test="depth-ticks-toggle"
+        >
+          深度刻度
+        </el-checkbox>
+      </div>
+    </template>
+
+    <!-- v0.9.0 V6 Task 4：rail 纵向分组（V6 信息架构顺序） -->
+    <template v-else>
+      <section class="rail-group" data-test="rail-group-mode">
+        <h4 class="rail-title">表达方式</h4>
+        <el-radio-group
+          v-model="modeModel"
+          size="small"
+          :disabled="!enabled"
+          data-test="mode-segment"
+        >
+          <el-radio-button value="volume" data-test="mode-volume">体积</el-radio-button>
+          <el-radio-button value="slice" data-test="mode-slice">切片</el-radio-button>
+          <el-radio-button value="contour" data-test="mode-contour">等值面</el-radio-button>
+        </el-radio-group>
+      </section>
+
+      <section class="rail-group" data-test="rail-group-transfer">
+        <h4 class="rail-title">传递函数</h4>
+        <el-select
+          v-model="paletteModel"
+          size="small"
+          class="palette-select"
+          :disabled="!enabled"
+          data-test="palette-select"
+        >
+          <el-option v-for="id in paletteIds" :key="id" :value="id" :label="id">
+            <span class="palette-option">
+              <span
+                class="palette-swatch"
+                :data-test="`palette-swatch-${id}`"
+                :style="{
+                  background: `linear-gradient(to right, ${paletteColors[id].join(', ')})`,
+                }"
+              />
+              <span>{{ id }}</span>
+            </span>
+          </el-option>
+        </el-select>
+        <el-radio-group
+          v-model="scaleModel"
+          size="small"
+          :disabled="!enabled"
+          data-test="scale-segment"
+        >
+          <el-radio-button value="linear" data-test="linear-scale">线性</el-radio-button>
+          <el-tooltip
+            :disabled="logAvailable"
+            content="权威有效值不全为正，对数不可用"
+            placement="top"
+          >
+            <span>
+              <el-radio-button value="log" :disabled="!logAvailable" data-test="log-scale">
+                对数
+              </el-radio-button>
+            </span>
+          </el-tooltip>
+        </el-radio-group>
+      </section>
+
+      <section class="rail-group" data-test="rail-group-opacity">
+        <h4 class="rail-title">不透明度</h4>
+        <el-slider
+          v-model="opacityModel"
+          class="opacity-slider"
+          :min="0"
+          :max="1"
+          :step="0.01"
+          :disabled="!enabled"
+          data-test="opacity-slider"
+        />
+        <div class="rail-inline">
+          <el-checkbox
+            v-model="lightingModel"
+            size="small"
+            :disabled="!enabled"
+            data-test="lighting-toggle"
+          >
+            光照
+          </el-checkbox>
+          <el-checkbox
+            v-model="gradientModel"
+            size="small"
+            :disabled="!enabled"
+            data-test="gradient-opacity-toggle"
+          >
+            渐变透明度
+          </el-checkbox>
+        </div>
+      </section>
+
+      <section class="rail-group" data-test="rail-group-filter">
+        <h4 class="rail-title">属性过滤</h4>
+        <div class="rail-inline">
+          <el-input
+            v-model="filterDraft.min"
+            size="small"
+            class="filter-input"
+            placeholder="min"
+            :disabled="!enabled"
+            data-test="filter-min"
+            id="filter-min-input"
+            name="filter_min"
+            autocomplete="off"
+          />
+          <span class="control-sep">~</span>
+          <el-input
+            v-model="filterDraft.max"
+            size="small"
+            class="filter-input"
+            placeholder="max"
+            :disabled="!enabled"
+            data-test="filter-max"
+            id="filter-max-input"
+            name="filter_max"
+            autocomplete="off"
+          />
+          <el-button size="small" :disabled="!enabled" data-test="filter-apply" @click="applyFilter">
+            应用
+          </el-button>
+        </div>
+      </section>
+
+      <section class="rail-group" data-test="rail-group-spatial">
+        <h4 class="rail-title">空间定位</h4>
+        <slot name="spatial" />
+      </section>
+
+      <section class="rail-group" data-test="rail-group-layers">
+        <h4 class="rail-title">辅助图层</h4>
+        <div class="rail-stack">
+          <el-checkbox
+            v-model="boundingBoxModel"
+            size="small"
+            :disabled="!enabled"
+            data-test="bounding-box-toggle"
+          >
+            包围盒
+          </el-checkbox>
+          <el-checkbox
+            v-model="annotationsVisible"
+            size="small"
+            :disabled="!enabled || !annotationsAvailable"
+            data-test="annotations-toggle"
+          >
+            组件标注
+          </el-checkbox>
+          <el-checkbox
+            v-model="axesModel"
+            size="small"
+            :disabled="!enabled"
+            data-test="axes-toggle"
+          >
+            XYZ 轴
+          </el-checkbox>
+          <el-checkbox
+            v-model="depthTicksModel"
+            size="small"
+            :disabled="!enabled"
+            data-test="depth-ticks-toggle"
+          >
+            深度刻度
+          </el-checkbox>
+          <slot name="aux-layer" />
+        </div>
+      </section>
+
+      <section class="rail-group" data-test="rail-group-camera">
+        <h4 class="rail-title">视角预设</h4>
+        <div class="rail-presets">
+          <button
+            v-for="preset in railCameraPresets"
+            :key="preset"
+            type="button"
+            class="preset-button"
+            :disabled="!enabled"
+            :data-test="`camera-${preset}`"
+            @click="onCameraPreset(preset)"
+          >
+            {{ CAMERA_PRESET_LABELS[preset] }}
+          </button>
+          <el-button
+            size="small"
+            type="primary"
+            :icon="RefreshLeft"
+            class="reset-view-primary"
+            :disabled="!enabled"
+            data-test="reset-view"
+            @click="onResetView"
+          >
+            恢复默认视角
+          </el-button>
+        </div>
+      </section>
+    </template>
   </div>
 </template>
 
@@ -302,8 +590,32 @@ function onResetView() {
   flex-wrap: wrap;
   gap: 10px;
 }
+.layout-rail .toolbar-row {
+  align-items: flex-start;
+}
+.preset-button {
+  border: 1px solid var(--gmp-border);
+  background: var(--gmp-bg-soft);
+  color: var(--gmp-text-dim);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.preset-button:hover:not(:disabled) {
+  color: var(--gmp-accent);
+  border-color: var(--gmp-accent);
+}
+.preset-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 .palette-select {
   width: 180px;
+}
+.layout-rail .palette-select {
+  width: 100%;
+  max-width: 220px;
 }
 .palette-option {
   display: inline-flex;
@@ -328,5 +640,88 @@ function onResetView() {
 }
 .opacity-slider {
   width: 160px;
+}
+.layout-rail .opacity-slider {
+  flex: 1;
+  min-width: 120px;
+}
+
+/* v0.9.0 V6：rail 分组（无内部卡片，标签 12px，控件 12–14px） */
+.rail-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--gmp-border);
+}
+
+.rail-group:last-child {
+  border-bottom: none;
+}
+
+.rail-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: var(--gmp-text-dim);
+}
+
+.rail-inline {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.rail-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: stretch;
+}
+
+.rail-stack :deep(.el-checkbox) {
+  width: 100%;
+  min-height: 30px;
+  margin-right: 0;
+  padding: 4px 8px;
+  border-radius: 5px;
+  display: flex;
+  align-items: center;
+}
+
+.rail-stack :deep(.el-checkbox:hover) {
+  background: var(--s1-cyan-ghost);
+}
+
+.rail-stack :deep(.el-checkbox__input),
+.rail-stack :deep(.el-checkbox__label) {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1.3;
+}
+
+.rail-presets {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  align-items: center;
+}
+
+.rail-presets .preset-button {
+  width: 100%;
+  min-height: 32px;
+}
+
+.reset-view-primary {
+  grid-column: 1 / -1;
+  width: 100%;
+  min-height: 34px;
+  font-weight: 600;
+}
+
+.layout-rail .filter-input {
+  width: 76px;
 }
 </style>

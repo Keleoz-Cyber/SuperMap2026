@@ -62,6 +62,13 @@ function makeResponse(axis: SliceAxis, index: number, coordinate: number): Slice
       p10: 5,
       p50: 21,
       p90: 105,
+      low_count: null,
+      normal_count: null,
+      high_count: null,
+      low_ratio: null,
+      normal_ratio: null,
+      high_ratio: null,
+      thresholds: null,
     },
     render_profile: null,
   }
@@ -92,9 +99,10 @@ function mountPanel(
   api: ReturnType<typeof makeApi>,
   target: { axis: SliceAxis; index: number } | null,
   axesMeta: typeof AXES_META | null = AXES_META,
+  display: 'panel' | 'controller' = 'panel',
 ) {
   return mount(SliceAnalysisPanel, {
-    props: { api, assetId: 'nc-1', target, axesMeta, enabled: true },
+    props: { api, assetId: 'nc-1', target, axesMeta, enabled: true, display },
     global: { plugins: [ElementPlus], stubs: { SliceHeatmap: HeatmapStub } },
     attachTo: document.body,
   })
@@ -125,6 +133,20 @@ describe('SliceAnalysisPanel', () => {
     expect(wrapper.find('[data-test="slice-valid-count"]').text()).toContain('5')
     expect(wrapper.find('[data-test="slice-coordinate-label"]').text()).toContain('Z = 1')
     expect(wrapper.emitted('analysis-loaded')).toBeTruthy()
+  })
+
+  it('controller 模式只负责权威请求，不绘制第二套热力图或统计面板', async () => {
+    const api = makeApi()
+    api.fetchSliceAnalysis.mockResolvedValue(makeResponse('z', 1, 1))
+    const wrapper = mountPanel(api, { axis: 'z', index: 1 }, AXES_META, 'controller')
+    await flushPromises()
+
+    expect(api.fetchSliceAnalysis).toHaveBeenCalledWith('nc-1', 'z', 1)
+    expect(wrapper.emitted('analysis-loaded')).toBeTruthy()
+    expect(wrapper.find('[data-test="slice-analysis-controller"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="slice-analysis"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="slice-heatmap-stub"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="slice-statistics"]').exists()).toBe(false)
   })
 
   it('竞态：stale 成功/失败均不得污染当前目标状态', async () => {
@@ -177,6 +199,13 @@ describe('SliceAnalysisPanel', () => {
       p10: null,
       p50: null,
       p90: null,
+      low_count: null,
+      normal_count: null,
+      high_count: null,
+      low_ratio: null,
+      normal_ratio: null,
+      high_ratio: null,
+      thresholds: null,
     }
     api.fetchSliceAnalysis.mockResolvedValue(empty)
     const wrapper = mountPanel(api, { axis: 'z', index: 1 })
