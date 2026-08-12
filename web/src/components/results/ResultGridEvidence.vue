@@ -25,7 +25,9 @@ import AxisTrendChart from '../evidence/AxisTrendChart.vue'
 import DistributionPanel from '../analysis/DistributionPanel.vue'
 import ResidualEvidenceChart from '../evidence/ResidualEvidence.vue'
 import EChartBox from './EChartBox.vue'
+import MLModelEvidence from './MLModelEvidence.vue'
 import { buildComponentOption, buildDepthTrendOption } from './resultChartOptions'
+import { algorithmLabel } from '../../utils/modelingLabels'
 
 // 渲染资产身份（数据溯源展示；由 NativeVolumePanel 真实事件外发）
 export interface RenderAssetIdentity {
@@ -456,7 +458,7 @@ const hasResiduals = computed(() => (props.residuals?.returned ?? 0) > 0)
         <section class="evidence-cell">
           <h4 class="cell-title">模型指标</h4>
           <p class="pane-note">
-            算法 {{ analysis.model_evidence.algorithm }} · 交叉验证公共有效点
+            算法 {{ algorithmLabel(analysis.model_evidence.algorithm) }} · 交叉验证公共有效点
             {{ analysis.model_evidence.common_valid_count?.toLocaleString() ?? '—' }}
           </p>
           <div v-if="modelMetrics.length > 0" class="metric-strip">
@@ -481,6 +483,10 @@ const hasResiduals = computed(() => (props.residuals?.returned ?? 0) > 0)
             :unit="datasetSummary?.variable.unit ?? null"
           />
         </section>
+        <MLModelEvidence
+          v-if="analysis.machine_learning"
+          :evidence="analysis.machine_learning"
+        />
       </div>
 
     </template>

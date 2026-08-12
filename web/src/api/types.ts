@@ -1432,6 +1432,49 @@ export interface ResultModelEvidence {
   formal_selection_note: string | null
 }
 
+export type MLResultField =
+  | 'prediction'
+  | 'model_dispersion'
+  | 'kriging_baseline'
+  | 'residual_correction'
+
+export interface MLKrigingBaselineEvidence {
+  result_id: string
+  algorithm: 'ordinary_kriging'
+  rmse: number
+  mae: number
+  r2: number | null
+  bias: number | null
+  common_valid_count: number
+  fold_assignments_sha256: string
+}
+
+export interface MLMetricChange {
+  rmse_absolute: number
+  rmse_percent: number | null
+  mae_absolute: number
+  mae_percent: number | null
+}
+
+export interface MLResultEvidence {
+  algorithm: 'random_forest_spatial' | 'kriging_rf_residual'
+  comparison_status: 'comparable' | 'unavailable'
+  comparison_reason_code: string | null
+  baseline: MLKrigingBaselineEvidence | null
+  metric_change: MLMetricChange | null
+  improved_over_kriging: boolean | null
+  available_fields: MLResultField[]
+  dispersion_semantics: 'model_dispersion_reference'
+  limitations: string[]
+  technical_details: {
+    feature_version: string | null
+    sklearn_version: string | null
+    validation_method: string | null
+    common_valid_count: number | null
+    fold_assignments_sha256: string | null
+  }
+}
+
 export interface ResultSpatialTarget {
   kind: 'component' | 'depth_bin' | 'grid'
   component_id: number | null
@@ -1474,6 +1517,7 @@ export interface ResultAnalysisSummary {
   depth_profile: ResultDepthProfile
   components_preview: ResultComponentsPreview
   model_evidence: ResultModelEvidence
+  machine_learning?: MLResultEvidence
   findings: ResultAnalysisFinding[]
   provenance: ResultAnalysisProvenance
 }

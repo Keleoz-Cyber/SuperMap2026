@@ -61,7 +61,10 @@ describe('候选范围文案', () => {
           bias: 0,
         },
       },
-      global: { plugins: [ElementPlus] },
+      global: {
+        plugins: [ElementPlus],
+        stubs: { RouterLink: { template: '<a><slot /></a>' } },
+      },
     })
     expect(wrapper.text()).toContain('本实验候选排行榜')
     expect(wrapper.text()).toContain('仅比较当前实验本次运行的参数组合')

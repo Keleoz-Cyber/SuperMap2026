@@ -633,7 +633,11 @@ onBeforeUnmount(stopPolling)
       <RunPipeline :run="latestRun" />
       <RunProgress :run="latestRun" :acting="acting" @cancel="onCancel" @retry="onRetry" />
       <ResultStatusPanel :run="latestRun" :candidates="candidates" />
-      <CandidateLeaderboard :candidates="candidates" :public-metrics="publicMetrics" />
+      <CandidateLeaderboard
+        :candidates="candidates"
+        :public-metrics="publicMetrics"
+        :algorithm="experiment?.params.algorithm"
+      />
     </template>
   </div>
 </template>

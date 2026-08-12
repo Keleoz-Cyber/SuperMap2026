@@ -230,6 +230,26 @@ describe('CandidateComparisonView', () => {
     wrapper.unmount()
   })
 
+  it('机器学习候选使用中文算法标签', async () => {
+    vi.mocked(client.fetchComparisonCandidates).mockResolvedValue({
+      dataset_id: 'ds-1',
+      groups: [{
+        experiment_id: 'exp-ml',
+        experiment_name: '机器学习实验',
+        candidates: [
+          makeCandidate('rf-1', 'exp-ml', 'random_forest_spatial'),
+          makeCandidate('res-1', 'exp-ml', 'kriging_rf_residual'),
+        ],
+      }],
+    })
+    const { wrapper } = await mountView()
+    expect(wrapper.text()).toContain('随机森林空间预测')
+    expect(wrapper.text()).toContain('克里金残差校正')
+    expect(wrapper.text()).not.toContain('random_forest_spatial')
+    expect(wrapper.text()).not.toContain('kriging_rf_residual')
+    wrapper.unmount()
+  })
+
   it('参数列使用可读标签而非原始键', async () => {
     const { wrapper } = await mountView()
     expect(wrapper.text()).toContain('幂参数')
