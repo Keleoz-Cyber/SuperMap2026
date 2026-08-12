@@ -168,6 +168,18 @@ describe('ResultAnalysisWorkbench（V6 一屏布局）', () => {
     expect(wrapper.get('[data-test="slot-scene"]').element).toBe(sceneElement)
   })
 
+  it('分析聚焦已占满内容区，不显示没有可见效果的展开按钮', async () => {
+    const wrapper = mountWorkbench()
+    await wrapper.get('[data-test="workbench-focus-analysis"]').trigger('click')
+    expect(wrapper.find('[data-test="evidence-dock-toggle"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="result-evidence-dock"]').classes()).toContain('analysis-focus')
+    await wrapper.get('[data-test="ge-tab-provenance"]').trigger('click')
+    expect(wrapper.get('[data-test="ge-input-details"]').attributes('open')).toBeDefined()
+
+    await wrapper.get('[data-test="workbench-focus-all"]').trigger('click')
+    expect(wrapper.get('[data-test="ge-input-details"]').attributes('open')).toBeUndefined()
+  })
+
   it('dataset-level findings live only under the provenance input-sample cell', async () => {
     const wrapper = mountWorkbench()
     await flushPromises()

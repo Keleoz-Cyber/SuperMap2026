@@ -149,6 +149,7 @@ const CAMERA_PRESET_LABELS: Record<CameraPreset, string> = {
   'front-yz': '正视 YZ',
 }
 const cameraPresets = CAMERA_PRESETS
+const railCameraPresets = CAMERA_PRESETS.filter((preset) => preset !== 'isometric')
 
 function onCameraPreset(preset: CameraPreset) {
   if (!props.enabled) return
@@ -550,7 +551,7 @@ function onResetView() {
         <h4 class="rail-title">视角预设</h4>
         <div class="rail-presets">
           <button
-            v-for="preset in cameraPresets"
+            v-for="preset in railCameraPresets"
             :key="preset"
             type="button"
             class="preset-button"
@@ -560,17 +561,17 @@ function onResetView() {
           >
             {{ CAMERA_PRESET_LABELS[preset] }}
           </button>
-          <el-tooltip content="重置视角" placement="top">
-            <el-button
-              size="small"
-              :icon="RefreshLeft"
-              circle
-              :disabled="!enabled"
-              data-test="reset-view"
-              aria-label="重置视角"
-              @click="onResetView"
-            />
-          </el-tooltip>
+          <el-button
+            size="small"
+            type="primary"
+            :icon="RefreshLeft"
+            class="reset-view-primary"
+            :disabled="!enabled"
+            data-test="reset-view"
+            @click="onResetView"
+          >
+            恢复默认视角
+          </el-button>
         </div>
       </section>
     </template>
@@ -676,15 +677,48 @@ function onResetView() {
 .rail-stack {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  align-items: flex-start;
+  gap: 2px;
+  align-items: stretch;
+}
+
+.rail-stack :deep(.el-checkbox) {
+  width: 100%;
+  min-height: 30px;
+  margin-right: 0;
+  padding: 4px 8px;
+  border-radius: 5px;
+  display: flex;
+  align-items: center;
+}
+
+.rail-stack :deep(.el-checkbox:hover) {
+  background: var(--s1-cyan-ghost);
+}
+
+.rail-stack :deep(.el-checkbox__input),
+.rail-stack :deep(.el-checkbox__label) {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1.3;
 }
 
 .rail-presets {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
   align-items: center;
+}
+
+.rail-presets .preset-button {
+  width: 100%;
+  min-height: 32px;
+}
+
+.reset-view-primary {
+  grid-column: 1 / -1;
+  width: 100%;
+  min-height: 34px;
+  font-weight: 600;
 }
 
 .layout-rail .filter-input {

@@ -153,7 +153,12 @@ function fail(code, message, fatal) {
   emitError(code, text)
 }
 
-window.addEventListener('error', (e) => fail('PAGE_ERROR', e.message || e.type))
+window.addEventListener('error', (e) => {
+  // SDK 缺失已经通过类型化启动错误上报；顶层 throw 只用于中止模块执行，
+  // 不得再用 PAGE_ERROR 覆盖更准确的恢复原因。
+  if (String(e.message || '').includes('FRAME_BOOT_SDK_MISSING')) return
+  fail('PAGE_ERROR', e.message || e.type)
+})
 window.addEventListener('unhandledrejection', (e) =>
   fail('UNHANDLED_REJECTION', (e.reason && (e.reason.message || e.reason.stack)) || e.reason),
 )
@@ -166,11 +171,13 @@ if (!REQUEST_ID_RE.test(urlRequestId)) {
   fail('FRAME_BOOT_INVALID_REQUEST_ID', 'iframe URL 的 request_id 缺失或形态非法')
   throw new Error('FRAME_BOOT_INVALID_REQUEST_ID')
 }
+// request_id 已验证后即可安全地向同源父页报告启动失败；SDK 检查必须位于
+// 此开关之后，否则 SDK 缺失只会留在 iframe 覆盖层，父页只能等待超时。
+bootValidated = true
 if (typeof SuperMap3D === 'undefined') {
   fail('FRAME_BOOT_SDK_MISSING', 'SuperMap3D 全局缺失（SDK 脚本未加载）')
   throw new Error('FRAME_BOOT_SDK_MISSING')
 }
-bootValidated = true
 post({
   type: 'FRAME_READY',
   // 本构建包导出版本号为 MajorVersion（"12.1.0"）；Cesium 风格 VERSION 兜底

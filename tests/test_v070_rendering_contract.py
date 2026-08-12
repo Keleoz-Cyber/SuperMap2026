@@ -125,6 +125,17 @@ def test_iframe_bootstrap_propagates_content_versions():
     assert "SUPERMAP3D_BASE_URL" in src
 
 
+def test_frame_reports_sdk_boot_failure_after_request_id_validation():
+    """SDK 启动失败必须立即上报父页，不能只留在 iframe 覆盖层等超时。"""
+
+    src = _frame_source()
+    request_validation = src.index("if (!REQUEST_ID_RE.test(urlRequestId))")
+    protocol_enabled = src.index("bootValidated = true")
+    sdk_validation = src.index("if (typeof SuperMap3D === 'undefined')")
+    assert request_validation < protocol_enabled < sdk_validation
+    assert "includes('FRAME_BOOT_SDK_MISSING')) return" in src
+
+
 def test_vite_config_injects_frame_and_sdk_versions():
     src = VITE_CONFIG.read_text(encoding="utf-8")
     assert "__VOLUME_FRAME_VERSION__" in src

@@ -24,6 +24,17 @@ const queryCaseId = computed(() => {
 const MIN_SELECTION = 2
 const MAX_SELECTION = 4
 
+const MISMATCH_LABELS: Record<string, string> = {
+  validation_contract: '验证规则不同',
+  grid_resolution: '成果网格规格不同',
+  common_valid_count_mismatch: '公共有效样本数量不同',
+  validation_holdout_fraction_mismatch: '验证集比例不同',
+  split_fingerprint_mismatch: '验证分组不同',
+  common_valid_fingerprint_mismatch: '公共有效样本范围不同',
+  value_unit_mismatch: '属性单位不同',
+  dataset_version_mismatch: '数据版本不同',
+}
+
 const loading = ref(true)
 const loadError = ref<string | null>(null)
 const catalog = ref<CandidateCatalog | null>(null)
@@ -255,6 +266,16 @@ function paramSummary(row: ComparisonCandidateSummary): string {
   return parameterSummary(row.algorithm, row.parameters).join(' · ')
 }
 
+function mismatchLabel(field: string): string {
+  const direct = MISMATCH_LABELS[field]
+  if (direct) return direct
+  if (field.startsWith('validation_')) return '验证规则不同'
+  if (field.startsWith('grid_')) return '成果网格规格不同'
+  if (field.startsWith('common_valid_')) return '公共有效样本范围不同'
+  if (field.endsWith('_mismatch')) return '比较口径不同'
+  return '候选成果的比较条件不同'
+}
+
 let catalogSequence = 0
 
 async function loadCatalog() {
@@ -334,6 +355,13 @@ watch(datasetId, (next, prev) => {
         </section>
 
         <section v-else class="catalog-section">
+          <aside class="comparison-requirements" data-test="comparison-requirements">
+            <strong>可比条件</strong>
+            <span>同一数据版本</span>
+            <span>相同验证规则</span>
+            <span>相同公共有效样本</span>
+            <p>系统会在排名前自动校验；条件不一致时保留各自成果，但不进行数值排名。</p>
+          </aside>
           <div class="comparison-start" data-test="comparison-start-summary">
             <div>
               <span class="section-kicker">建议起点</span>
@@ -510,16 +538,18 @@ watch(datasetId, (next, prev) => {
             class="mismatch-result"
             data-test="mismatch-list"
           >
-            <p class="mismatch-head">候选不兼容，无法排名。以下字段不一致：</p>
+            <p class="mismatch-head">这些候选的评估口径不同，因此不能直接排名。</p>
             <ul class="mismatch-fields">
               <li
                 v-for="field in comparison.mismatches"
                 :key="field"
-                class="mono"
               >
-                {{ field }}
+                {{ mismatchLabel(field) }}
               </li>
             </ul>
+            <p class="mismatch-guidance">
+              请选择来自同一数据版本、使用相同验证设置的候选；如需比较不同验证方案，请分别查看成果，不要直接排名。
+            </p>
           </div>
         </section>
       </template>
@@ -587,6 +617,35 @@ watch(datasetId, (next, prev) => {
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+.comparison-requirements {
+  display: grid;
+  grid-template-columns: auto repeat(3, auto) minmax(220px, 1fr);
+  align-items: center;
+  gap: 8px 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--s1-border);
+  border-left: 3px solid var(--s1-cyan-strong);
+  border-radius: var(--s1-radius-md);
+  background: var(--s1-surface-2);
+  color: var(--s1-text-dim);
+  font-size: var(--s1-font-sm);
+}
+
+.comparison-requirements strong {
+  color: var(--s1-text-strong);
+}
+
+.comparison-requirements span::before {
+  content: '✓';
+  margin-right: 5px;
+  color: var(--s1-cyan-strong);
+}
+
+.comparison-requirements p {
+  margin: 0;
+  color: var(--s1-text-faint);
 }
 
 .selection-info {
@@ -755,6 +814,13 @@ watch(datasetId, (next, prev) => {
   color: #e5c76b;
 }
 
+.mismatch-guidance {
+  margin: 10px 0 0;
+  color: var(--s1-text-dim);
+  font-size: var(--s1-font-sm);
+  line-height: 1.5;
+}
+
 @media (max-width: 480px) {
   .comparison-page {
     padding: 16px 12px 32px;
@@ -786,6 +852,10 @@ watch(datasetId, (next, prev) => {
   }
 
   .comparison-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .comparison-requirements {
     grid-template-columns: 1fr;
   }
 }

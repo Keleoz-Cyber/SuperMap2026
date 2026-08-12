@@ -183,10 +183,14 @@ function onFocusEvidence(ref: string) {
 
     <div
       class="workbench-dock"
-      :class="[{ expanded: evidenceExpanded }, `dock-${dockTabModel}`]"
+      :class="[
+        { expanded: evidenceExpanded && focusMode !== 'analysis', 'analysis-focus': focusMode === 'analysis' },
+        `dock-${dockTabModel}`,
+      ]"
       data-test="result-evidence-dock"
     >
       <button
+        v-if="focusMode !== 'analysis'"
         type="button"
         class="dock-size-toggle"
         data-test="evidence-dock-toggle"
@@ -206,6 +210,7 @@ function onFocusEvidence(ref: string) {
         :dataset-id="datasetId"
         :asset-identity="assetIdentity ?? null"
         :export-slice="exportSlice ?? null"
+        :details-expanded="focusMode === 'analysis'"
         @focus-component="emit('focus-component', $event)"
         @focus-depth-bin="emit('focus-depth-bin', $event)"
         @locate="emit('locate', $event)"
@@ -410,12 +415,12 @@ function onFocusEvidence(ref: string) {
 }
 
 .focus-controls .workbench-scene :deep(.native-volume-panel.workbench .panel-body) {
-  grid-template-columns: minmax(320px, 520px) minmax(0, 1fr);
+  grid-template-columns: 348px minmax(0, 1fr);
 }
 
 .focus-controls .workbench-scene :deep(.native-volume-panel.workbench .scene-column) {
-  opacity: 0.45;
-  pointer-events: none;
+  opacity: 1;
+  pointer-events: auto;
 }
 
 @media (max-width: 1199px) {

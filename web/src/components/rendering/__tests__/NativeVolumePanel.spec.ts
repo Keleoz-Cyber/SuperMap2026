@@ -224,6 +224,7 @@ const FrameStub = defineComponent({
   },
   emits: ['ready', 'rendered', 'failed', 'annotation-selected'],
   setup(_props, { expose }) {
+    const instanceToken = crypto.randomUUID()
     frameExposed = {
       applyRenderState: vi.fn().mockReturnValue(true),
       setPointLayer: vi.fn(),
@@ -232,7 +233,7 @@ const FrameStub = defineComponent({
       focusAnnotation: vi.fn(),
     }
     expose(frameExposed)
-    return () => h('div', { 'data-test': 'volume-frame-stub' })
+    return () => h('div', { 'data-test': 'volume-frame-stub', 'data-instance-token': instanceToken })
   },
 })
 
@@ -457,6 +458,47 @@ describe('NativeVolumePanel 能力与资产', () => {
     expect(wrapper.text()).not.toMatch(/fallback|回退|降级|替代渲染|切换.*点/)
     expect(wrapper.findComponent(VolumeRenderToolbar).props('enabled')).toBe(false)
   })
+
+  it('SDK 启动失败显示可理解的恢复说明，并可原位重启渲染帧', async () => {
+    const api = makeApi({ fetchAsset: vi.fn().mockResolvedValue(ASSET) })
+    const wrapper = mountPanel(api)
+    await flushPromises()
+    const firstFrame = wrapper.findComponent(FrameStub)
+    const firstInstanceToken = firstFrame.get('[data-test="volume-frame-stub"]').attributes('data-instance-token')
+    firstFrame.vm.$emit('failed', {
+      code: 'FRAME_BOOT_SDK_MISSING',
+      message: 'SuperMap3D global missing',
+    })
+    await flushPromises()
+
+    const recovery = wrapper.get('[data-test="frame-recovery"]')
+    expect(recovery.text()).toContain('三维引擎没有正确加载')
+    expect(recovery.text()).toContain('重新加载三维场景')
+    expect(recovery.text()).not.toContain('FRAME_BOOT_SDK_MISSING')
+    await recovery.get('[data-test="reload-frame"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.findComponent(FrameStub).get('[data-test="volume-frame-stub"]').attributes('data-instance-token')).not.toBe(firstInstanceToken)
+  })
+
+  it('刷新状态显示进行中与完成反馈', async () => {
+    let resolveFetch!: (asset: RenderAssetRecord) => void
+    const api = makeApi({
+      fetchAsset: vi.fn()
+        .mockResolvedValueOnce(ASSET)
+        .mockImplementationOnce(() => new Promise<RenderAssetRecord>((resolve) => {
+          resolveFetch = resolve
+        })),
+    })
+    const wrapper = mountPanel(api, null, { showReadyDiagnostics: true, variant: 'workbench' })
+    await flushPromises()
+    expect(wrapper.get('[data-test="volume-status-bar"]').find('[data-test="refresh-asset"]').exists()).toBe(true)
+    expect(wrapper.get('.scene-column').find(':scope > .asset-actions').exists()).toBe(false)
+    await wrapper.get('[data-test="refresh-asset"]').trigger('click')
+    expect(wrapper.get('[data-test="refresh-asset"]').text()).toContain('正在刷新')
+    resolveFetch(ASSET)
+    await flushPromises()
+    expect(wrapper.get('[data-test="refresh-feedback"]').text()).toContain('状态已更新')
+  })
 })
 
 describe('NativeVolumePanel profile 驱动初始状态', () => {
@@ -603,7 +645,10 @@ describe('NativeVolumePanel 控件与 revision', () => {
     await flushPromises()
 
     const toggle = wrapper.find('[data-test="aux-points-toggle"]')
-    expect((toggle.element as HTMLInputElement).checked).toBe(false)
+    expect(toggle.classes()).toContain('el-checkbox')
+    expect(toggle.attributes('aria-label')).toBe('显示辅助采样点')
+    expect(toggle.find('input').exists()).toBe(true)
+    expect((toggle.find('input').element as HTMLInputElement).checked).toBe(false)
 
     wrapper.findComponent(FrameStub).vm.$emit('ready', { sdkVersion: '12.1.0', contextType: 2 })
     await flushPromises()
@@ -625,7 +670,7 @@ describe('NativeVolumePanel 控件与 revision', () => {
 
     expect(wrapper.find('[data-test="volume-phase"]').text()).toContain('已渲染')
 
-    await wrapper.find('[data-test="aux-points-toggle"]').setValue(true)
+    await wrapper.find('[data-test="aux-points-toggle"] input').setValue(true)
     await flushPromises()
     expect(frameExposed.setPointLayer.mock.calls.at(-1)?.[0].visible).toBe(true)
     expect(wrapper.find('[data-test="volume-phase"]').text()).toContain('已渲染')

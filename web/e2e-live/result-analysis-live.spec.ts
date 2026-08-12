@@ -251,10 +251,13 @@ test('官方电阻率成果：规则分析、三维组件、切片、相机、AI
     .poll(async () => (await frameDiag(page)).annotations.focusedId)
     .toBe(`component-${firstComponent.component_id}`)
 
-  for (const preset of ['top-xy', 'front-xz', 'front-yz', 'isometric']) {
+  for (const preset of ['top-xy', 'front-xz', 'front-yz']) {
     await page.getByTestId(`camera-${preset}`).click()
     await expect.poll(async () => (await frameDiag(page)).cameraPreset).toBe(preset)
   }
+  await expect(page.getByTestId('camera-isometric')).toHaveCount(0)
+  await page.getByTestId('reset-view').click()
+  await expect.poll(async () => (await frameDiag(page)).cameraPreset).toBe('isometric')
 
   // 成果尺度相关的相机安全区：滚轮单步约 8%，SDK 导航条与滚轮共享上下限。
   const frame = page.frames().find((item) => item.url().includes('/supermap-volume-frame/'))!
@@ -286,7 +289,11 @@ test('官方电阻率成果：规则分析、三维组件、切片、相机、AI
   await page.waitForTimeout(800)
   const cameraAfterBar = (await frameDiag(page)).geometry
   expect(cameraAfterBar.cameraRangeMetres).toBeGreaterThanOrEqual(cameraAfterBar.cameraRangeBoundsMetres[0])
-  expect(cameraAfterBar.cameraRangeMetres).toBeLessThanOrEqual(cameraAfterBar.cameraRangeBoundsMetres[1])
+  // SDK 在地心坐标与 range 间往返会留下皮米级舍入差；产品侧 0.01 m 内
+  // 不再重复 lookAt，验收沿用同一数值容差，同时继续由下方像素门防止黑屏。
+  expect(cameraAfterBar.cameraRangeMetres).toBeLessThanOrEqual(
+    cameraAfterBar.cameraRangeBoundsMetres[1] + 0.01,
+  )
   expect(cameraAfterBar.cameraTargetAlignment).toBeGreaterThanOrEqual(0.999)
   const cameraShot = await page.getByTestId('volume-frame').screenshot()
   expectVolumeContent(

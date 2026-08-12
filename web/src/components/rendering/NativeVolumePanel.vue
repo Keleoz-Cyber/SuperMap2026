@@ -113,6 +113,9 @@ const assetChecked = ref(false)
 const asset = ref<RenderAssetRecord | null>(null)
 const creating = ref(false)
 const createError = ref<string | null>(null)
+const refreshing = ref(false)
+const refreshFeedback = ref<string | null>(null)
+const frameSession = ref(0)
 
 const frameRef = ref<InstanceType<typeof SuperMapVolumeFrame> | null>(null)
 const frameReady = ref(false)
@@ -323,16 +326,23 @@ const isWorkbench = computed(() => props.variant === 'workbench')
 const isPresentation = computed(() => props.variant === 'presentation')
 const isProductSurface = computed(() => isWorkbench.value || isPresentation.value)
 
-async function refreshAsset() {
+async function refreshAsset(userInitiated = false) {
   // 状态刷新是纯 GET：绝不隐式 POST
+  if (userInitiated) {
+    refreshing.value = true
+    refreshFeedback.value = null
+  }
   try {
     asset.value = await props.api.fetchAsset()
+    if (userInitiated) refreshFeedback.value = '状态已更新'
   } catch (e) {
     if (e instanceof ApiError && e.status === 404) {
       asset.value = null
     } else {
       createError.value = formatError(e)
     }
+  } finally {
+    if (userInitiated) refreshing.value = false
   }
 }
 
@@ -395,6 +405,7 @@ function onFrameReady() {
 function onFrameRendered(payload: RenderIdentity | null) {
   identity.value = payload
   phase.value = 'rendered'
+  frameError.value = null
 }
 
 // 资产身份外发：数据溯源页签展示（workbench 变体不在主舞台显示调试块）
@@ -610,6 +621,24 @@ function focusComponent(componentId: number) {
   frameRef.value?.focusAnnotation(annotationId)
 }
 
+const recoverableFrameError = computed(() => {
+  const code = frameError.value?.code ?? ''
+  return code.startsWith('FRAME_BOOT_') || code === 'FRAME_READY_TIMEOUT' || code === 'PAGE_ERROR'
+})
+
+const frameRecoveryMessage = computed(() => {
+  const code = frameError.value?.code
+  if (code === 'FRAME_BOOT_SDK_MISSING' || code === 'FRAME_READY_TIMEOUT') {
+    return '三维引擎没有正确加载，可能是浏览器仍在使用旧缓存或 SDK 资源短暂未就绪。'
+  }
+  return '三维场景启动时遇到临时错误，可以在当前页面重新加载场景。'
+})
+
+function reloadFrame() {
+  resetFrameState()
+  frameSession.value += 1
+}
+
 // 三维标注点击反选：只接受 component-N 形态，其他 id 一律忽略
 function onAnnotationSelected(payload: { annotationId: string }) {
   const match = /^component-(\d+)$/.exec(payload.annotationId)
@@ -643,12 +672,31 @@ onMounted(() => {
     </ul>
 
     <!-- 工作台主层只显示用户可理解的状态，具体渲染器与坐标合同进入数据溯源。 -->
-    <p v-if="isWorkbench" class="volume-status-line" data-test="volume-status-line">
-      <span class="volume-phase" data-test="volume-phase">{{ phaseText }}</span>
-      <span>连续体成果</span>
-      <span v-if="capability">局部坐标展示</span>
-      <span>辅助采样点默认隐藏</span>
-    </p>
+    <div v-if="isWorkbench" class="volume-status-bar" data-test="volume-status-bar">
+      <p class="volume-status-line" data-test="volume-status-line">
+        <span class="volume-phase" data-test="volume-phase">{{ phaseText }}</span>
+        <span>连续体成果</span>
+        <span v-if="capability">局部坐标展示</span>
+        <span>辅助采样点默认隐藏</span>
+      </p>
+      <div class="status-actions">
+        <span
+          v-if="refreshFeedback"
+          class="refresh-feedback"
+          data-test="refresh-feedback"
+          role="status"
+        >{{ refreshFeedback }}</span>
+        <button
+          v-if="capability && (showReadyDiagnostics || !asset || asset.status !== 'ready')"
+          class="link-button compact"
+          data-test="refresh-asset"
+          :disabled="creating || refreshing"
+          @click="refreshAsset(true)"
+        >
+          {{ refreshing ? '正在刷新…' : '刷新状态' }}
+        </button>
+      </div>
+    </div>
 
     <div v-if="capabilityLoading" class="panel-note" data-test="capability-loading">能力检查中…</div>
     <div v-else-if="capabilityError" class="panel-error" data-test="capability-error">
@@ -715,16 +763,16 @@ onMounted(() => {
               </span>
             </template>
             <template #aux-layer>
-              <label class="toggle-label">
-                <input
-                  v-model="auxVisible"
-                  data-test="aux-points-toggle"
-                  type="checkbox"
-                  :disabled="!auxPoints || !frameReady"
-                  @change="pushPointLayer"
-                />
+              <el-checkbox
+                v-model="auxVisible"
+                size="small"
+                data-test="aux-points-toggle"
+                aria-label="显示辅助采样点"
+                :disabled="!auxPoints || !frameReady"
+                @change="pushPointLayer"
+              >
                 辅助采样点
-              </label>
+              </el-checkbox>
             </template>
           </VolumeRenderToolbar>
         </aside>
@@ -737,7 +785,14 @@ onMounted(() => {
           </div>
 
           <template v-else>
-            <div class="asset-actions">
+            <div
+              v-if="
+                (assetChecked && !asset) ||
+                (asset && (asset.status === 'failed' || asset.status === 'interrupted')) ||
+                (!isWorkbench && (showReadyDiagnostics || !asset || asset.status !== 'ready'))
+              "
+              class="asset-actions"
+            >
               <button
                 v-if="assetChecked && !asset"
                 class="primary-button"
@@ -757,14 +812,20 @@ onMounted(() => {
                 {{ creating ? '正在重试…' : '重试生成渲染资产' }}
               </button>
               <button
-                v-if="showReadyDiagnostics || !asset || asset.status !== 'ready'"
+                v-if="!isWorkbench && (showReadyDiagnostics || !asset || asset.status !== 'ready')"
                 class="link-button"
                 data-test="refresh-asset"
-                :disabled="creating"
-                @click="refreshAsset"
+                :disabled="creating || refreshing"
+                @click="refreshAsset(true)"
               >
-                刷新状态
+                {{ refreshing ? '正在刷新…' : '刷新状态' }}
               </button>
+              <span
+                v-if="!isWorkbench && refreshFeedback"
+                class="refresh-feedback"
+                data-test="refresh-feedback"
+                role="status"
+              >{{ refreshFeedback }}</span>
             </div>
 
             <div v-if="asset && asset.error" class="panel-error" data-test="asset-error">
@@ -788,14 +849,24 @@ onMounted(() => {
             </div>
           </template>
 
-          <div v-if="frameError" class="panel-error" data-test="frame-error">
+          <div v-if="frameError && !recoverableFrameError" class="panel-error" data-test="frame-error">
             {{ frameError.code }}：{{ frameError.message }}
           </div>
 
+          <div v-if="frameError && recoverableFrameError" class="frame-recovery" data-test="frame-recovery" role="alert">
+            <div>
+              <strong>三维场景暂未加载</strong>
+              <p>{{ frameRecoveryMessage }}</p>
+            </div>
+            <button type="button" class="primary-button" data-test="reload-frame" @click="reloadFrame">
+              重新加载三维场景
+            </button>
+          </div>
+
           <SuperMapVolumeFrame
-            v-if="frameInit"
+            v-if="frameInit && !recoverableFrameError"
             ref="frameRef"
-            :key="frameInit.asset ? frameInit.asset.id : 'point-only'"
+            :key="`${frameInit.asset ? frameInit.asset.id : 'point-only'}-${frameSession}`"
             :asset="frameInit.asset"
             :display-transform="frameInit.transform"
             :initial-state="frameInit.initialState"
@@ -841,7 +912,7 @@ onMounted(() => {
 
 /* v0.9.0 V6 workbench：工具栏 328px + 中央场景 min 560px，填满舞台高度 */
 .native-volume-panel.workbench .panel-body {
-  grid-template-columns: 312px minmax(0, 1fr);
+  grid-template-columns: 304px minmax(0, 1fr);
   height: 100%;
 }
 
@@ -900,6 +971,53 @@ onMounted(() => {
     max-height: none;
     overflow: visible;
   }
+}
+
+.refresh-feedback {
+  color: var(--s1-success, #64dab1);
+  font-size: var(--s1-font-sm, 13px);
+}
+
+.volume-status-bar {
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.status-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex: none;
+}
+
+.link-button.compact {
+  min-height: 28px;
+  padding: 3px 10px;
+}
+
+.frame-recovery {
+  min-height: 180px;
+  border: 1px solid rgba(217, 168, 78, 0.45);
+  border-radius: var(--s1-radius-md, 8px);
+  background: rgba(217, 168, 78, 0.08);
+  color: var(--s1-text, #e6f2ec);
+  padding: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 16px;
+  text-align: center;
+}
+
+.frame-recovery p {
+  max-width: 560px;
+  margin: 8px 0 0;
+  color: var(--s1-text-dim, #9eb5aa);
 }
 
 .panel-header {
@@ -1045,6 +1163,13 @@ onMounted(() => {
   gap: 4px 14px;
   font-size: 12px;
   color: var(--gmp-text-dim);
+}
+
+@media (max-width: 640px) {
+  .volume-status-bar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 
 .volume-status-line .volume-phase {

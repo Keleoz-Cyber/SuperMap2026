@@ -366,12 +366,24 @@ describe('CandidateComparisonView', () => {
 
     const mismatch = wrapper.find('[data-test="mismatch-list"]')
     expect(mismatch.exists()).toBe(true)
-    expect(mismatch.text()).toContain('validation_contract')
-    expect(mismatch.text()).toContain('grid_resolution')
+    expect(mismatch.text()).toContain('验证规则不同')
+    expect(mismatch.text()).toContain('成果网格规格不同')
+    expect(mismatch.text()).not.toContain('validation_contract')
+    expect(mismatch.text()).not.toContain('grid_resolution')
+    expect(mismatch.text()).toContain('请选择来自同一数据版本、使用相同验证设置的候选')
 
     expect(wrapper.find('[data-test="ranking-result"]').exists()).toBe(false)
     expect(wrapper.find('.best-badge').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('最佳')
+    wrapper.unmount()
+  })
+
+  it('比较前明确说明可比条件，避免用户在失败后才知道要求', async () => {
+    const { wrapper } = await mountView()
+    const guide = wrapper.get('[data-test="comparison-requirements"]')
+    expect(guide.text()).toContain('同一数据版本')
+    expect(guide.text()).toContain('相同验证规则')
+    expect(guide.text()).toContain('相同公共有效样本')
     wrapper.unmount()
   })
 

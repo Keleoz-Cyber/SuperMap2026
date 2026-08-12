@@ -317,4 +317,21 @@ describe('VolumeRenderToolbar V6 rail 信息架构', () => {
     expect(wrapper.get('[data-test="rail-group-layers"]').text()).toContain('辅助图层')
     expect(wrapper.get('[data-test="rail-group-camera"]').text()).toContain('视角预设')
   })
+
+  it('rail 视角区去除重复的等轴入口，并突出恢复默认视角', () => {
+    const wrapper = mount(VolumeRenderToolbar, {
+      props: {
+        modelValue: makeState(),
+        profile: makeProfile(),
+        annotationsAvailable: true,
+        layout: 'rail',
+      },
+      global: { plugins: [ElementPlus] },
+      attachTo: document.body,
+    })
+    expect(wrapper.find('[data-test="camera-isometric"]').exists()).toBe(false)
+    const reset = wrapper.get('[data-test="reset-view"]')
+    expect(reset.text()).toContain('恢复默认视角')
+    expect(reset.classes()).toContain('reset-view-primary')
+  })
 })

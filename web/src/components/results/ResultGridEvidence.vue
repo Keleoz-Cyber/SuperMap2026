@@ -50,6 +50,7 @@ const props = withDefaults(
     palette?: RenderPaletteId
     scale?: RenderScale
     exportSlice?: ((png: Blob) => Promise<void>) | null
+    detailsExpanded?: boolean
   }>(),
   {
     datasetFindings: () => [],
@@ -246,34 +247,6 @@ const hasResiduals = computed(() => (props.residuals?.returned ?? 0) > 0)
           </div>
         </template>
         <p v-else class="pane-note">输入样本质量报告不可用</p>
-        <details
-          v-if="datasetFindings.length > 0 || inputDistribution || inputTrendAxes.length > 0"
-          class="input-details"
-          data-test="ge-input-details"
-        >
-          <summary>查看输入样本详细分析</summary>
-          <div class="input-details-body">
-            <FindingPanel
-              v-if="datasetFindings.length > 0"
-              :findings="datasetFindings"
-              @locate="emit('locate', $event)"
-            />
-            <DistributionPanel
-              v-if="inputDistribution && datasetSummary"
-              :module="inputDistribution"
-              :variable="datasetSummary.variable"
-              :profile="datasetSummary.analysis_profile"
-            />
-            <AxisTrendChart
-              v-if="inputTrendAxes.length > 0 && datasetId"
-              :axes="inputTrendAxes"
-              :unit="datasetSummary?.variable.unit ?? null"
-              :dataset-id="datasetId"
-              :result-id="resultId"
-              @select="emit('select', $event)"
-            />
-          </div>
-        </details>
       </section>
       <section v-if="analysis" class="evidence-cell result-identity-card">
         <h4 class="cell-title">成果身份 <span class="scope-tag">成果网格</span></h4>
@@ -302,6 +275,36 @@ const hasResiduals = computed(() => (props.residuals?.returned ?? 0) > 0)
       <section class="evidence-cell export-card">
         <h4 class="cell-title">导出与发布</h4>
         <slot name="provenance-actions" />
+      </section>
+      <section
+        v-if="datasetFindings.length > 0 || inputDistribution || inputTrendAxes.length > 0"
+        class="evidence-cell input-analysis-card"
+        data-test="ge-input-analysis"
+      >
+        <details class="input-details" data-test="ge-input-details" :open="detailsExpanded">
+          <summary>查看输入样本详细分析</summary>
+          <div class="input-details-body">
+            <FindingPanel
+              v-if="datasetFindings.length > 0"
+              :findings="datasetFindings"
+              @locate="emit('locate', $event)"
+            />
+            <DistributionPanel
+              v-if="inputDistribution && datasetSummary"
+              :module="inputDistribution"
+              :variable="datasetSummary.variable"
+              :profile="datasetSummary.analysis_profile"
+            />
+            <AxisTrendChart
+              v-if="inputTrendAxes.length > 0 && datasetId"
+              :axes="inputTrendAxes"
+              :unit="datasetSummary?.variable.unit ?? null"
+              :dataset-id="datasetId"
+              :result-id="resultId"
+              @select="emit('select', $event)"
+            />
+          </div>
+        </details>
       </section>
     </div>
 
@@ -613,6 +616,10 @@ const hasResiduals = computed(() => (props.residuals?.returned ?? 0) > 0)
   grid-column: span 6;
 }
 
+.layout-provenance .input-analysis-card {
+  grid-column: 1 / -1;
+}
+
 .cell-title {
   margin: 0 0 6px;
   font-size: var(--s1-font-xs);
@@ -793,9 +800,7 @@ const hasResiduals = computed(() => (props.residuals?.returned ?? 0) > 0)
 }
 
 .input-details {
-  margin-top: var(--s1-space-2);
-  border-top: 1px solid var(--s1-border-soft);
-  padding-top: var(--s1-space-2);
+  margin: 0;
 }
 
 .input-details summary {
@@ -807,6 +812,7 @@ const hasResiduals = computed(() => (props.residuals?.returned ?? 0) > 0)
 
 .input-details-body {
   display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--s1-space-3);
   margin-top: var(--s1-space-3);
 }
@@ -852,6 +858,10 @@ const hasResiduals = computed(() => (props.residuals?.returned ?? 0) > 0)
 
   .evidence-pane.grouped > .evidence-cell {
     grid-column: 1;
+  }
+
+  .input-details-body {
+    grid-template-columns: 1fr;
   }
 }
 

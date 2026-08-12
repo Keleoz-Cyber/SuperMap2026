@@ -247,6 +247,8 @@ describe('ResultGridEvidence（V6 四标签）', () => {
     expect(details.attributes('open')).toBeUndefined()
     expect(details.get('summary').text()).toContain('查看输入样本详细分析')
     expect(wrapper.get('[data-test="ge-input-summary"]').text()).toContain('96')
+    expect(wrapper.get('[data-test="ge-input-summary"]').find('[data-test="ge-input-details"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="ge-input-analysis"]').classes()).toContain('input-analysis-card')
   })
 
   it('disposes every chart instance on unmount', async () => {
