@@ -29,7 +29,7 @@
 ``build_kriging_transform(KrigingAnisotropySpec.isotropic(...))`` 构造，
 保证恒等变换也携带规范指纹。
 
-当前合同依据：docs/architecture.md 的专业证据边界与 docs/acceptance.md。
+当前合同依据：docs/project-guide.md。
 """
 
 from __future__ import annotations

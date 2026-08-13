@@ -1,7 +1,7 @@
 # v0.9.0 视觉产品重构证据
 
 本目录收录 v0.9.0（答辩级视觉产品与全流程体验重构）的真实浏览器证据。
-产品目标见 `docs/product-blueprint.md`，验收口径见 `docs/acceptance.md`。
+当前产品目标与验收口径统一见 `docs/project-guide.md`。
 
 ## 证据纪律
 
@@ -15,7 +15,7 @@
 
 ## 目录结构
 
-- `verification.md`：当次验收矩阵与测试实数；当前发布门以 `docs/acceptance.md` 为准。
+- `verification.md`：当次验收矩阵与测试实数；当前发布门以 `docs/project-guide.md` 为准。
 - `run-<timestamp>-<id>/`：单次真实运行的证据包：
   - `v090-live-evidence.json`：run ID、git/SDK 身份、视口、逐场景像素统计、
     网络与控制台记录、官方成果身份（result/asset/grid/NetCDF 哈希）；

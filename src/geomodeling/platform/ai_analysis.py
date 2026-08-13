@@ -1,6 +1,6 @@
 """v0.9.0 AI 辅助研判服务：EvidencePacket 构建、prompt 构造、结果校验与记录管理。
 
-当前合同依据：docs/architecture.md 的 AI 辅助研判边界与 docs/acceptance.md。
+当前合同依据：docs/project-guide.md。
 
 固定顺序：确定性分析 -> EvidencePacket -> DeepSeek -> 严格校验 -> 展示。
 AI 未配置/超时/无效输出时，规则分析照常成功。

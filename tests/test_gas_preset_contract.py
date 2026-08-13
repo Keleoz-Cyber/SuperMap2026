@@ -11,7 +11,7 @@
 28 个 XY 采样位置、Z∈[121.0375, 175.656]、CH4_content∈[0.05, 34.3]；
 坐标为局部线性米制（local_linear，不做 EPSG 配准），CH4_content 单位
 ml/g（用户权威确认，不做任何换算）。默认源只从项目内 ``example_data/``
-解析，禁止从旧 ``docs/data/gas.md`` 的外部文件或旧 SHA 派生。
+解析，禁止从外部说明文件或旧 SHA 派生。
 """
 
 from __future__ import annotations

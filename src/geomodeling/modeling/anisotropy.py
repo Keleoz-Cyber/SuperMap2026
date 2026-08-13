@@ -27,7 +27,7 @@ JSON → sha256 短码）：同一 Kriging 候选的经验半变异函数距离�
 距离和经验误差距离必须使用同一个变换指纹；矩阵相同但 spec 来源不同
 （legacy ``z_scale`` 与专业尺度比）产生不同指纹。
 
-当前合同依据：docs/architecture.md 的专业证据边界与 docs/acceptance.md。
+当前合同依据：docs/project-guide.md。
 """
 
 from __future__ import annotations

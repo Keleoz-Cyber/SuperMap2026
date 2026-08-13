@@ -4,7 +4,7 @@
 必须有限（``math.isfinite``），NaN/Inf fail-closed。「不适用」用类型化
 状态表达，绝不以空数组或 0 值代替。
 
-当前合同依据：docs/architecture.md 的分析模块边界与 docs/acceptance.md。
+当前合同依据：docs/project-guide.md。
 """
 
 from __future__ import annotations

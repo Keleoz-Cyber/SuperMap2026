@@ -12,7 +12,7 @@ CH4_content 单位为 ml/g（用户权威确认，不做任何换算）。
 加载器 fail-closed：缺失文件、表头/行数不符、非数值/非有限、重复 XYZ
 一律抛出 ``PRESET_SOURCE_INVALID``（409）。本模块绝不向公共层返回本机
 源路径（错误 details 不含 Path 对象或绝对路径文本）。默认源只从项目内
-``example_data/`` 解析，禁止从旧 ``docs/data/gas.md`` 的外部文件或旧
+``example_data/`` 解析，禁止从外部说明文件或旧
 SHA 派生默认数据。
 
 Task 4：``seed_gas_preset`` 经正常生命周期把内置源 seed 为只读

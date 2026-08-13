@@ -8,7 +8,7 @@ combinations are rejected at the contract boundary instead of deep inside
 numerical code. ``AlgorithmCapabilities`` records are immutable and express
 "not applicable" as a typed capability state, never as an empty value.
 
-当前合同依据：docs/architecture.md 的专业建模模块与 docs/acceptance.md。
+当前合同依据：docs/project-guide.md。
 """
 
 from __future__ import annotations

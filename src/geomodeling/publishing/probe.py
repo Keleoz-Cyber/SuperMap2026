@@ -24,7 +24,7 @@ from .schemas import (
 )
 
 # Services published from ../Project/WorkSpace.smwu on 2026-07-22 (manual
-# evidence via the iServer admin UI; see docs/supermap-integration.md).
+# evidence via the iServer admin UI; see docs/project-guide.md).
 DATA_SERVICE_NAME = "data-WorkSpace"
 MAP_SERVICE_NAME = "map-WorkSpace"
 REALSPACE_SERVICE_NAME = "3D-WorkSpace"
