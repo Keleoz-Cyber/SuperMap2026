@@ -92,11 +92,11 @@ beforeEach(() => {
 })
 
 describe('responsive & accessibility contracts', () => {
-  it('home and cases navigation use mutually exclusive explicit active states', () => {
+  it('uses one home entry instead of duplicating home and cases navigation', () => {
     const source = String(readFileSync('src/components/shell/AppHeader.vue'))
-    expect(source).toContain('isHomeActive')
-    expect(source).toContain('isCasesActive')
-    expect(source).toContain('active-class=""')
+    expect(source).toContain('data-test="shell-home-link"')
+    expect(source).not.toContain('data-test="shell-nav-cases"')
+    expect(source).not.toContain("query: { focus: 'cases' }")
   })
 
   it('uses a readable global type scale and shared product-page grid', () => {

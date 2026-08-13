@@ -1,7 +1,6 @@
 <script setup lang="ts">
 // v0.9.0：全局应用头。纯展示组件——不 fetch 页面数据、不创建路由实例；
 // 导航一律使用命名路由，服务状态与案例上下文由 AppShell/壳上下文传入。
-import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import { Delete, MoreFilled, Upload } from '@element-plus/icons-vue'
 import { WEB_VERSION } from '../../version'
@@ -9,16 +8,7 @@ import { WEB_VERSION } from '../../version'
 const props = defineProps<{
   serviceState: 'unknown' | 'online' | 'offline'
   serviceVersion: string | null
-  routeName?: string | null
-  routePath?: string
-  routeFocus?: unknown
 }>()
-
-const isCasesActive = computed(() => {
-  if (props.routeName === 'home') return props.routeFocus === 'cases'
-  return /^(\/cases|\/datasets|\/experiments|\/results)/.test(props.routePath ?? '')
-})
-const isHomeActive = computed(() => props.routeName === 'home' && !isCasesActive.value)
 
 void props
 </script>
@@ -37,20 +27,9 @@ void props
         <RouterLink
           :to="{ name: 'home' }"
           class="product-link"
-          :class="{ 'is-active': isHomeActive }"
-          active-class=""
           data-test="shell-home-link"
         >
           首页
-        </RouterLink>
-        <RouterLink
-          :to="{ name: 'home', query: { focus: 'cases' } }"
-          class="product-link"
-          :class="{ 'is-active': isCasesActive }"
-          active-class=""
-          data-test="shell-nav-cases"
-        >
-          案例
         </RouterLink>
         <RouterLink :to="{ name: 'case-create' }" class="product-link" data-test="shell-nav-ingest">
           数据接入
@@ -185,7 +164,7 @@ void props
 }
 
 .product-link:hover,
-.product-link.is-active {
+.product-link.router-link-active {
   color: var(--s1-cyan-strong);
   background: var(--s1-cyan-ghost);
 }

@@ -27,7 +27,7 @@ describe('AppShell', () => {
     })
     expect(wrapper.get('[data-test="shell-brand"]').text()).toContain('GeoModelingPlatform')
     expect(wrapper.get('[data-test="shell-home-link"]').text()).toBe('首页')
-    expect(wrapper.get('[data-test="shell-nav-cases"]').text()).toBe('案例')
+    expect(wrapper.find('[data-test="shell-nav-cases"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="shell-nav-ingest"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="shell-nav-experiments"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="shell-nav-comparison"]').exists()).toBe(false)

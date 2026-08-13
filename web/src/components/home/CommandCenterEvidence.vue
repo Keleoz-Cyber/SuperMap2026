@@ -204,7 +204,7 @@ const variable = computed(() => props.summary?.variable ?? null)
 
 .donut-text {
   fill: var(--s1-text-strong);
-  font-size: 12px;
+  font-size: 8.5px;
   font-weight: 700;
   text-anchor: middle;
   font-variant-numeric: tabular-nums;

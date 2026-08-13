@@ -28,10 +28,11 @@ const SUMMARY: AnalysisSummaryResponse = {
 }
 
 describe('CommandCenterEvidence', () => {
-  it('keeps the donut and legend in separate non-overlapping layout tracks', () => {
+  it('keeps the donut legend separate and fits a three-digit percentage inside the ring', () => {
     const source = String(readFileSync('src/components/home/CommandCenterEvidence.vue'))
     expect(source).toMatch(/\.donut\s*\{[^}]*flex:\s*none;/s)
     expect(source).toMatch(/\.donut-legend[^\{]*\{[^}]*min-width:\s*0;/s)
+    expect(source).toMatch(/\.donut-text\s*\{[^}]*font-size:\s*(?:8\.5|9)px;/s)
   })
 
   it('keeps user-facing property copy outside collapsed technical provenance', () => {
