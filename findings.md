@@ -1,5 +1,15 @@
 # Findings
 
+## 2026-08-13 PR #20 成果发现与比较整改
+
+- 当前工作树为 `feat/v0.9.0-ml-spatial-prediction`，基线 HEAD `f281079`；设计提交为 `aba936c`，PR #20 保持 OPEN。
+- 8000 使用完整 `.runtime/v080-demo`，三预置案例与官方成果可用；此前默认 `var/geomodeling` 业务表为空，不可用于视觉判断。
+- 电阻率权威配置和新 DTO 已是 `Ω·m`，真实旧成果仍显示占位单位，说明需要对明确的预置电阻率旧 metadata 做后端读取兼容，不能只改前端字符串。
+- `recent_results_for_case()` 当前只返回算法、materialized、featured、时间和 URL，缺少实验名、指标、验证摘要与参数摘要。
+- `CandidateComparisonView` 已能在 strict mismatch 时展示候选，但仍把页面定义成“校验并排名”；后端返回 `comparable/mismatches/ranking`，适合兼容扩展为显式 `comparison_items + ranking.status + differences`。
+- 首页 `CommandCenterScene` 的 `scene-body` 最小高度 380px，但 presentation 变体未继承 workbench 的完整高度链；`NativeVolumePanel.presentation .panel-body` 仍 `align-items:start`，是控制栏贴顶和画布下留空的主要布局风险。
+- 本轮不修改 ML 数值算法、NetCDF 或渲染协议。
+
 ## 2026-08-11 初始审计
 
 - 当前分支 `feat/v0.9.0-visual-product`，HEAD `07bd4d2`。

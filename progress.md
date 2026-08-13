@@ -1,5 +1,11 @@
 # Progress
 
+## 2026-08-13 PR #20 成果发现与比较整改
+
+- 使用真实 8000 页面核对用户四项反馈，确认 API 权威单位与旧成果显示不一致、案例工作台成果目录信息不足、presentation 高度链不完整、严格比较被误用为唯一对照方式。
+- 已完成 brainstorming 并获用户确认；规格写入 `docs/superpowers/specs/2026-08-13-v0.9.0-result-discovery-comparison-usability-design.md`，提交 `aba936c`。
+- 正在按 writing-plans 生成 TDD 实施计划；尚未修改生产代码。
+
 ## 2026-08-11
 
 - 已确认设计文档是本轮 23 项问题的唯一入口。
