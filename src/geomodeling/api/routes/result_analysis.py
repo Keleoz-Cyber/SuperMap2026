@@ -19,6 +19,7 @@ from geomodeling.platform import PlatformRuntime, tables
 from geomodeling.platform.repositories import require_active_candidate
 from geomodeling.platform.results import load_grid, read_materialized_metadata
 from geomodeling.platform.result_analysis import analyze_result_grid
+from geomodeling.platform.schemas import SpatialValidationSpec
 
 router = APIRouter(tags=["v0.9-result-analysis"])
 
@@ -107,6 +108,9 @@ def _compatible_kriging_baseline(
     validation: dict[str, Any],
     metrics: dict[str, Any],
 ) -> dict[str, Any] | None:
+    normalized_validation = SpatialValidationSpec.model_validate(validation).model_dump(
+        mode="json"
+    )
     target_fold_sha = metrics.get("fold_assignments_sha256")
     target_common_count = _non_negative_int(metrics.get("common_valid_count"))
     if not target_fold_sha or target_common_count is None:
@@ -128,7 +132,10 @@ def _compatible_kriging_baseline(
             continue
         if params.get("dataset_version_id") != dataset_version_id:
             continue
-        if (params.get("validation") or {}) != validation:
+        candidate_validation = SpatialValidationSpec.model_validate(
+            params.get("validation") or {}
+        ).model_dump(mode="json")
+        if candidate_validation != normalized_validation:
             continue
         candidate_metrics = tables.loads_canonical(candidate.metrics_json)
         if candidate_metrics.get("fold_assignments_sha256") != target_fold_sha:

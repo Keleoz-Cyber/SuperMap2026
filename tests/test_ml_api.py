@@ -201,6 +201,32 @@ def test_result_analysis_exposes_comparable_ml_evidence(tmp_path, monkeypatch):
         assert_no_path_leak(evidence, "$.machine_learning")
 
 
+def test_result_analysis_treats_omitted_validation_defaults_as_comparable(
+    tmp_path, monkeypatch
+):
+    app = make_app(tmp_path, monkeypatch)
+    with TestClient(app) as client:
+        runtime = app.state.platform_runtime
+        _, _, result_id = _run_ml(runtime, "kriging_rf_residual")
+        baseline_id = _add_kriging_baseline(runtime, result_id)
+        with runtime.session() as session:
+            baseline = session.get(tables.CandidateResult, baseline_id)
+            run = session.get(tables.Run, baseline.run_id)
+            experiment = session.get(tables.Experiment, run.experiment_id)
+            params = tables.loads_canonical(experiment.params_json)
+            params["validation"].pop("holdout_fraction", None)
+            experiment.params_json = tables.dumps_canonical(params)
+            session.commit()
+        materialize(runtime, result_id)
+
+        response = client.get(f"/api/results/{result_id}/analysis-summary")
+
+        assert response.status_code == 200, response.text
+        evidence = response.json()["machine_learning"]
+        assert evidence["comparison_status"] == "comparable"
+        assert evidence["baseline"]["result_id"] == baseline_id
+
+
 def test_result_analysis_does_not_compare_incompatible_kriging(tmp_path, monkeypatch):
     app = make_app(tmp_path, monkeypatch)
     with TestClient(app) as client:
