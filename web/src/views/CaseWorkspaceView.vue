@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ApiError, fetchCaseWorkspace, fetchProfessionalDiagnostics } from '../api/client'
+import { ApiError, fetchCaseWorkspace, fetchProfessionalDiagnostics, materializeResult } from '../api/client'
 import type { CaseWorkspaceSummary, ProfessionalDiagnosticListItem } from '../api/types'
 import DataPreparationPanel from '../components/cases/DataPreparationPanel.vue'
 import CaseStageNav from '../components/cases/CaseStageNav.vue'
@@ -10,6 +10,7 @@ import PageNavigation from '../components/navigation/PageNavigation.vue'
 import AsyncState from '../components/states/AsyncState.vue'
 import { CASE_PRESENTATION, resolveCaseProfile } from '../domain/casePresentation'
 import { clearShellContext, setShellContext } from '../stores/shellContext'
+import { parameterSummary } from '../utils/modelingLabels'
 
 const route = useRoute()
 const router = useRouter()
@@ -114,6 +115,21 @@ const abandonedDatasets = computed(() => {
 
 const recentExperiments = computed(() => workspace.value?.recent_experiments ?? [])
 const recentResults = computed(() => workspace.value?.recent_results ?? [])
+const resultGroups = computed(() => {
+  const groups = new Map<string, { experimentId: string; experimentName: string; results: typeof recentResults.value }>()
+  for (const result of recentResults.value) {
+    const current = groups.get(result.experiment_id) ?? {
+      experimentId: result.experiment_id,
+      experimentName: result.experiment_name,
+      results: [],
+    }
+    current.results.push(result)
+    groups.set(result.experiment_id, current)
+  }
+  return [...groups.values()]
+})
+const materializingResults = ref(new Set<string>())
+const resultActionError = ref<string | null>(null)
 
 // ---------------------------------------------------------------------------
 // v0.9.0：四业务阶段 + 唯一主动作
@@ -238,6 +254,31 @@ const ALGORITHM_LABELS: Record<string, string> = {
 
 function algorithmLabel(id: string): string {
   return ALGORITHM_LABELS[id] ?? id
+}
+
+function resultParameterSummary(algorithm: string, parameters: Record<string, unknown>): string {
+  return parameterSummary(algorithm, parameters).join(' · ') || '默认参数'
+}
+
+function formatMetric(value: number | null): string {
+  return value === null ? '—' : value.toFixed(4)
+}
+
+async function materializeWorkspaceResult(resultId: string) {
+  if (materializingResults.value.has(resultId)) return
+  materializingResults.value = new Set([...materializingResults.value, resultId])
+  resultActionError.value = null
+  try {
+    await materializeResult(resultId)
+    await loadWorkspace()
+    currentStage.value = 'results'
+  } catch (error) {
+    resultActionError.value = error instanceof ApiError ? error.message : error instanceof Error ? error.message : String(error)
+  } finally {
+    const next = new Set(materializingResults.value)
+    next.delete(resultId)
+    materializingResults.value = next
+  }
 }
 
 function runStatusLabel(status: string): string {
@@ -578,22 +619,70 @@ onBeforeUnmount(clearShellContext)
             <div v-if="workspace.official_result" class="section-intro">
               <div><strong>{{ workspace.workspace_kind === 'builtin_preset' ? '官方成果已就绪' : '主打成果已就绪' }}</strong><p>可进入三维成果工作台进行体渲染、切片、剖面和评价。</p></div>
             </div>
-            <p v-else-if="workspace.workspace_kind !== 'builtin_legacy'" data-test="results-empty">
+            <p v-else-if="workspace.workspace_kind !== 'builtin_legacy' && recentResults.length === 0" data-test="results-empty">
               暂无成果。
             </p>
-            <div v-if="recentResults.length" class="recent-list" data-test="recent-results">
-              <div
-                v-for="res in recentResults"
-                :key="res.result_id"
-                class="recent-row"
-                :data-test="`recent-result-${res.result_id}`"
-              >
-                <router-link :to="res.url" class="recent-link">
-                  {{ algorithmLabel(res.algorithm) }} 成果
-                </router-link>
-                <span class="recent-meta">
+            <div v-if="resultGroups.length" class="result-directory" data-test="experiment-result-directory">
+              <div class="directory-head">
+                <div>
+                  <span class="section-kicker">我的建模成果</span>
+                  <strong>从案例内直接查看各次实验成果</strong>
+                </div>
+                <el-button
+                  v-if="workspace.primary_dataset"
+                  size="small"
+                  data-test="compare-workspace-results"
+                  @click="gotoComparisonForDataset(workspace.primary_dataset.id)"
+                >成果对照</el-button>
+              </div>
+              <section v-for="group in resultGroups" :key="group.experimentId" class="result-group">
+                <header class="result-group-head">
+                  <div><strong>{{ group.experimentName }}</strong><span>{{ group.results.length }} 个成功候选</span></div>
+                  <router-link :to="`/experiments/${group.experimentId}`">查看实验</router-link>
+                </header>
+                <article
+                  v-for="res in group.results"
+                  :key="res.result_id"
+                  class="result-card"
+                  :data-test="`recent-result-${res.result_id}`"
+                >
+                  <div class="result-card-main">
+                    <div class="result-title-line">
+                      <strong>{{ algorithmLabel(res.algorithm) }}</strong>
+                      <el-tag :type="res.materialized ? 'success' : 'warning'" size="small">
+                        {{ res.materialized ? '可查看' : '待生成' }}
+                      </el-tag>
+                    </div>
+                    <p>{{ resultParameterSummary(res.algorithm, res.parameters) }}</p>
+                    <dl class="result-metrics">
+                      <div :data-test="`result-rmse-${res.result_id}`"><dt>RMSE</dt><dd>{{ formatMetric(res.metrics.rmse) }}</dd></div>
+                      <div><dt>MAE</dt><dd>{{ formatMetric(res.metrics.mae) }}</dd></div>
+                      <div :data-test="`result-r2-${res.result_id}`"><dt>R²</dt><dd>{{ formatMetric(res.metrics.r2) }}</dd></div>
+                      <div><dt>Bias</dt><dd>{{ formatMetric(res.metrics.bias) }}</dd></div>
+                    </dl>
+                  </div>
+                  <div class="result-card-actions">
+                    <router-link
+                      v-if="res.materialized"
+                      :to="res.url"
+                      class="result-open-button"
+                      :data-test="`open-result-${res.result_id}`"
+                    >查看成果</router-link>
+                    <el-button
+                      v-else
+                      type="primary"
+                      size="small"
+                      :loading="materializingResults.has(res.result_id)"
+                      :data-test="`materialize-result-${res.result_id}`"
+                      @click="materializeWorkspaceResult(res.result_id)"
+                    >生成成果</el-button>
+                  </div>
+                </article>
+              </section>
+              <p v-if="resultActionError" class="action-error" role="alert">{{ resultActionError }}</p>
+              <div class="recent-list" data-test="recent-results" aria-hidden="true">
+                <span v-for="res in recentResults" :key="res.result_id">
                   {{ res.materialized ? '三维网格已生成' : '等待生成三维网格' }}
-                  <template v-if="res.featured"> · 主打</template>
                 </span>
               </div>
             </div>
@@ -1065,6 +1154,122 @@ onBeforeUnmount(clearShellContext)
 
 .recent-link:hover {
   text-decoration: underline;
+}
+
+.result-directory {
+  margin-top: var(--s1-space-5);
+  border-top: 1px solid var(--s1-border);
+  padding-top: var(--s1-space-4);
+}
+
+.directory-head,
+.result-group-head,
+.result-title-line,
+.result-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s1-space-3);
+}
+
+.directory-head strong,
+.directory-head span,
+.result-group-head strong,
+.result-group-head span {
+  display: block;
+}
+
+.result-group {
+  margin-top: var(--s1-space-4);
+}
+
+.result-group-head {
+  padding-bottom: var(--s1-space-2);
+  color: var(--s1-text-dim);
+  font-size: var(--s1-font-sm);
+}
+
+.result-group-head a {
+  color: var(--s1-cyan-strong);
+  text-decoration: none;
+}
+
+.result-card {
+  align-items: stretch;
+  border-top: 1px solid var(--s1-border-soft);
+  padding: var(--s1-space-3) 0;
+}
+
+.result-card-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.result-title-line {
+  justify-content: flex-start;
+}
+
+.result-card-main > p {
+  margin: 5px 0 10px;
+  color: var(--s1-text-dim);
+  font-size: var(--s1-font-sm);
+}
+
+.result-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(72px, 1fr));
+  gap: var(--s1-space-3);
+  margin: 0;
+}
+
+.result-metrics div {
+  display: flex;
+  gap: 6px;
+}
+
+.result-metrics dt { color: var(--s1-text-faint); }
+.result-metrics dd { margin: 0; color: var(--s1-text-strong); font-variant-numeric: tabular-nums; }
+
+.result-card-actions {
+  display: flex;
+  align-items: center;
+}
+
+.result-open-button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 14px;
+  border-radius: var(--s1-radius-sm);
+  background: var(--s1-case-accent);
+  color: #071310;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.result-directory > .recent-list {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+@media (max-width: 640px) {
+  .directory-head,
+  .result-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .result-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .result-card-actions > * {
+    width: 100%;
+    justify-content: center;
+  }
 }
 
 .abandoned-history {

@@ -8,6 +8,7 @@
 - Task 1 RED：归一化模块缺失；补齐真实旧 metadata 测试后继续捕获到错误链函数名。GREEN：`test_property_semantics + test_render_source_resolution + test_resistivity_preset_seed` 共 56 passed。
 - 单位修复只对明确的 `resistivity + builtin_preset + RHO` 生效；旧 evidence 不改写，用户上传 RHO 单位保持原值。
 - Task 2 RED 命中预置主打成果重复；第一次 GREEN 发现上传案例主打成果不能一律排除，规则收窄为仅 builtin_preset 去重。最终 `test_case_workspace_api.py` 17 passed，前端 type-check 通过。
+- Task 3 RED 命中成果目录和待生成动作缺失；实现实验分组、指标、参数、查看/生成动作后，CaseWorkspaceView 45 passed，type-check/build 通过。
 
 ## 2026-08-11
 

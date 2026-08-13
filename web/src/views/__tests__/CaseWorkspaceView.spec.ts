@@ -9,7 +9,12 @@ import workspaceViewSource from '../CaseWorkspaceView.vue?raw'
 
 vi.mock('../../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../api/client')>()
-  return { ...actual, fetchCaseWorkspace: vi.fn(), fetchProfessionalDiagnostics: vi.fn() }
+  return {
+    ...actual,
+    fetchCaseWorkspace: vi.fn(),
+    fetchProfessionalDiagnostics: vi.fn(),
+    materializeResult: vi.fn(),
+  }
 })
 
 const PRESET_ID = 'builtin-microseismic-vx-1911'
@@ -383,6 +388,42 @@ describe('CaseWorkspaceView', () => {
     expect(wrapper.find('[data-test="recent-result-r-1"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="recent-results"]').text()).toContain('三维网格已生成')
     expect(wrapper.find('[data-test="recent-results"]').text()).not.toContain('物化')
+    const directory = wrapper.get('[data-test="experiment-result-directory"]')
+    expect(directory.text()).toContain('实验一')
+    expect(directory.get('[data-test="result-rmse-r-1"]').text()).toContain('0.5000')
+    expect(directory.get('[data-test="result-r2-r-1"]').text()).toContain('0.8000')
+    expect(directory.get('[data-test="open-result-r-1"]').text()).toContain('查看成果')
+    wrapper.unmount()
+  })
+
+  it('successful result without a grid can be materialized from the workspace', async () => {
+    const ws = workspaceOf('user_upload')
+    ws.recent_results = [{
+      result_id: 'r-pending',
+      experiment_id: 'exp-pending',
+      experiment_name: '待生成成果实验',
+      algorithm: 'ordinary_kriging',
+      parameters: { neighbors: 12 },
+      metrics: { rmse: 1.2, mae: 0.9, r2: 0.7, bias: 0.1 },
+      validation_summary: { method: 'spatial_kfold', folds: 5 },
+      materialized: false,
+      materialization_status: 'pending',
+      featured: false,
+      created_at: '2026-08-05T00:00:00+00:00',
+      url: '/results/r-pending',
+    }]
+    vi.mocked(client.fetchCaseWorkspace)
+      .mockResolvedValueOnce(ws)
+      .mockResolvedValueOnce({ ...ws, recent_results: [{ ...ws.recent_results[0], materialized: true, materialization_status: 'ready' }] })
+    vi.mocked(client.materializeResult).mockResolvedValue({} as never)
+    const { wrapper } = await mountWorkspace('/cases/up-1?stage=results')
+    const loadCallsBefore = vi.mocked(client.fetchCaseWorkspace).mock.calls.length
+
+    await wrapper.get('[data-test="materialize-result-r-pending"]').trigger('click')
+    await flushPromises()
+    expect(client.materializeResult).toHaveBeenCalledWith('r-pending')
+    expect(vi.mocked(client.fetchCaseWorkspace).mock.calls.length).toBe(loadCallsBefore + 1)
+    expect(wrapper.find('[data-test="open-result-r-pending"]').exists()).toBe(true)
     wrapper.unmount()
   })
 
