@@ -52,6 +52,11 @@ class CandidateComparisonRequest(ContractModel):
     candidate_result_ids: list[str] = Field(min_length=2, max_length=4)
 
 
+class ComparisonDifference(ContractModel):
+    code: str
+    message: str
+
+
 class MultiCandidateComparison(ContractModel):
     candidate_result_ids: list[str]
     dataset_version_id: str
@@ -59,7 +64,30 @@ class MultiCandidateComparison(ContractModel):
     mismatches: list[str]
     candidates: list[CandidateComparisonSummary]
     ranking: list[str] | None = None
+    comparison_items: list[CandidateComparisonSummary] = Field(default_factory=list)
+    ranking_status: Literal["ranked", "not_ranked"]
+    differences: list[ComparisonDifference] = Field(default_factory=list)
+    unified_experiment_draft: dict[str, Any] | None = None
     comparison_fingerprint: str
+
+
+_DIFFERENCE_MESSAGES = {
+    "validation_method_mismatch": "验证方法不同：这些成果使用了不同的空间验证方式。",
+    "validation_folds_mismatch": "验证折数不同：每次实验的空间分组数量不一致。",
+    "validation_seed_mismatch": "验证分组不同：随机种子不同会改变评估区域。",
+    "validation_holdout_fraction_mismatch": "验证集比例不同：参与训练和评估的样本比例不一致。",
+    "fold_fingerprint_mismatch": "验证分组不同：两次实验评估的空间区域不完全一致。",
+    "metric_population_fingerprint_mismatch": "公共评估样本不同：直接比较误差会失真。",
+    "common_valid_count_mismatch": "公共评估样本数量不同：直接比较误差会失真。",
+}
+
+
+def _difference_message(code: str) -> str:
+    if code.startswith("candidate_not_succeeded:"):
+        return "有候选尚未成功完成，不能参加统一排名。"
+    if code.startswith(("missing_", "nan_", "inf_")):
+        return "有成果缺少完整有效指标，可查看成果但不能参加统一排名。"
+    return _DIFFERENCE_MESSAGES.get(code, "这些成果的验证口径不同，暂不进行统一排名。")
 
 
 def _configuration_fingerprint(
@@ -298,6 +326,21 @@ def compare_candidates_multi(
             mismatches=mismatches,
             candidates=summaries,
             ranking=ranking,
+            comparison_items=summaries,
+            ranking_status="ranked" if comparable else "not_ranked",
+            differences=[
+                ComparisonDifference(code=code, message=_difference_message(code))
+                for code in mismatches
+            ],
+            unified_experiment_draft=None if comparable else {
+                "dataset_version_id": dataset_version_id,
+                "validation": {
+                    "method": "spatial_kfold",
+                    "folds": 5,
+                    "seed": 20260723,
+                    "holdout_fraction": 0.2,
+                },
+            },
             comparison_fingerprint=fingerprint,
         )
 
