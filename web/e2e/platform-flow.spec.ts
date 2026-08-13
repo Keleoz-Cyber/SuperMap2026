@@ -9,7 +9,7 @@ test.describe('v0.4 通用建模流程（mock API）', () => {
 
     // 首页 → 新建案例（v0.9.0：全局壳品牌与版本徽标）
     await page.goto('/')
-    await expect(page.getByTestId('shell-brand')).toContainText('GeoModelingPlatform')
+    await expect(page.getByTestId('shell-platform-title')).toHaveText('地质属性三维建模与空间分析平台')
     await expect(page.getByTestId('shell-version')).toHaveText(/^v\d+\.\d+\.\d+$/)
     await page.getByTestId('create-case-card').click()
 

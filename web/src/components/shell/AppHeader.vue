@@ -16,12 +16,14 @@ void props
 <template>
   <header class="app-header">
     <div class="header-left">
-      <RouterLink :to="{ name: 'home' }" class="brand" data-test="shell-brand">
+      <RouterLink
+        :to="{ name: 'home' }"
+        class="brand"
+        data-test="shell-brand"
+        aria-label="返回首页"
+        title="返回首页"
+      >
         <span class="brand-mark" aria-hidden="true">G</span>
-        <span class="brand-text">
-          <strong>GeoModelingPlatform</strong>
-          <small>深地属性建模综合指挥舱</small>
-        </span>
       </RouterLink>
       <nav class="product-nav" aria-label="产品主导航">
         <RouterLink
@@ -35,6 +37,10 @@ void props
           数据接入
         </RouterLink>
       </nav>
+    </div>
+
+    <div class="platform-title" data-test="shell-platform-title">
+      地质属性三维建模与空间分析平台
     </div>
 
     <div class="header-right">
@@ -100,6 +106,22 @@ void props
   border-bottom: 1px solid var(--s1-border-soft);
 }
 
+.platform-title {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: min(42vw, 620px);
+  overflow: hidden;
+  color: var(--s1-text-strong);
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 .header-left,
 .header-right {
   display: flex;
@@ -111,7 +133,6 @@ void props
 .brand {
   display: flex;
   align-items: center;
-  gap: 10px;
   text-decoration: none;
   color: var(--s1-text-strong);
 }
@@ -128,23 +149,6 @@ void props
   color: #06110f;
   background: linear-gradient(135deg, var(--s1-cyan-strong), var(--s1-cyan));
   box-shadow: 0 0 12px rgba(70, 194, 190, 0.35);
-}
-
-.brand-text {
-  display: flex;
-  flex-direction: column;
-  line-height: 1.15;
-}
-
-.brand-text strong {
-  font-size: var(--s1-font-lg);
-  letter-spacing: 0.02em;
-}
-
-.brand-text small {
-  font-size: var(--s1-font-xs);
-  color: var(--s1-text-dim);
-  letter-spacing: 0.08em;
 }
 
 .product-nav {
@@ -293,9 +297,14 @@ void props
     gap: var(--s1-space-2);
   }
 
-  .brand-text small,
   .version {
     display: none;
+  }
+
+  .platform-title {
+    max-width: 38vw;
+    font-size: 16px;
+    letter-spacing: 0.05em;
   }
 
   .product-link {
@@ -308,10 +317,6 @@ void props
     position: sticky;
     padding: 0 var(--s1-space-2);
     gap: var(--s1-space-2);
-  }
-
-  .brand-text strong {
-    font-size: var(--s1-font-md);
   }
 
   .product-nav {
@@ -332,13 +337,13 @@ void props
   .mobile-menu {
     display: block;
   }
+
+  .platform-title {
+    display: none;
+  }
 }
 
 @media (max-width: 420px) {
-  .brand-text {
-    display: none;
-  }
-
   .product-link {
     padding-inline: 8px;
   }
