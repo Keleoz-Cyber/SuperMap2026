@@ -166,12 +166,13 @@ def _status_payload(
 @router.get("/api/results/{result_id}/render-capability")
 def get_result_render_capability(
     result_id: str,
+    field: str = Query("prediction"),
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
     require_active_candidate(runtime, result_id)
     # 纯查询：不物化、不建文件、不改行
     return dataclasses.asdict(
-        render_assets.candidate_render_capability(runtime, result_id)
+        render_assets.candidate_render_capability(runtime, result_id, field=field)
     )
 
 

@@ -355,7 +355,9 @@ def _best_effort_semantics(runtime, result_id: str):
     return mapping.get("dimension"), semantics["property_name"], semantics["units"]
 
 
-def candidate_render_capability(runtime, result_id: str) -> RenderCapability:
+def candidate_render_capability(
+    runtime, result_id: str, *, field: str = "prediction"
+) -> RenderCapability:
     """候选渲染能力（纯查询：不物化、不创建文件、不改行）。
 
     解析失败报告 ``supported=False`` + 稳定 ``reason_code``（2D、未物化、网格
@@ -364,14 +366,17 @@ def candidate_render_capability(runtime, result_id: str) -> RenderCapability:
 
     anchor = DisplayAnchor()
     try:
-        source, grid = _resolve_candidate_grid(runtime, result_id)
+        source = resolve_candidate_render_source(runtime, result_id, field=field)
+        grid = source.validated_grid or validate_regular_grid(
+            source.grid_path, source.grid_sha256
+        )
     except PlatformError as exc:
         if exc.code == CANDIDATE_NOT_FOUND:
             raise
         dimension, property_name, units = _best_effort_semantics(runtime, result_id)
         return RenderCapability(
             source_kind="candidate_result",
-            source_id=result_id,
+            source_id=result_id if field == "prediction" else f"{result_id}::{field}",
             supported=False,
             reason_code=exc.code,
             reason=exc.message,
@@ -388,9 +393,27 @@ def candidate_render_capability(runtime, result_id: str) -> RenderCapability:
         (float(y_axis[0]), float(y_axis[-1])),
         anchor,
     )
+    valid_min, valid_max = grid.valid_min, grid.valid_max
+    if source.palette_intent == "diverging_zero_centered":
+        magnitude = max(abs(valid_min), abs(valid_max))
+        valid_min, valid_max = -magnitude, magnitude
+    profile = build_render_profile(
+        "candidate_result",
+        valid_min,
+        valid_max,
+        property_name=source.property_name,
+        unit=source.units,
+    ).to_public()
+    if source.palette_intent == "diverging_zero_centered":
+        profile["default_palette"] = "coolwarm"
+        profile["default_scale"] = "linear"
+        profile["log_available"] = False
+    elif source.palette_intent == "sequential_nonnegative":
+        profile["default_palette"] = "viridis"
+        profile["default_scale"] = "linear"
     return RenderCapability(
         source_kind="candidate_result",
-        source_id=result_id,
+        source_id=source.source_id,
         supported=True,
         reason_code=None,
         reason=None,
@@ -400,13 +423,7 @@ def candidate_render_capability(runtime, result_id: str) -> RenderCapability:
         units=source.units,
         geolocation_status=anchor.geolocation_status,
         display_transform=transform,
-        render_profile=build_render_profile(
-            "candidate_result",
-            grid.valid_min,
-            grid.valid_max,
-            property_name=source.property_name,
-            unit=source.units,
-        ).to_public(),
+        render_profile=profile,
     )
 
 

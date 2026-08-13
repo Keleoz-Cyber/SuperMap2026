@@ -95,6 +95,52 @@ def test_ml_render_sources_have_field_specific_identity(tmp_path, monkeypatch):
         assert source.field_name == "model_dispersion"
 
 
+def test_ml_render_capability_is_field_specific(tmp_path, monkeypatch):
+    app = make_app(tmp_path, monkeypatch)
+    with TestClient(app) as client:
+        runtime = app.state.platform_runtime
+        result_id = _materialized_ml_candidate(
+            runtime,
+            "kriging_rf_residual",
+            {
+                "kriging": {"variogram_model": "spherical", "neighbor_count": 12},
+                "random_forest": {
+                    "n_estimators": 40,
+                    "max_depth": 10,
+                    "random_state": 17,
+                },
+            },
+        )
+        materialized = client.post(f"/api/results/{result_id}/materialize")
+        assert materialized.status_code == 200, materialized.text
+
+        dispersion = client.get(
+            f"/api/results/{result_id}/render-capability",
+            params={"field": "model_dispersion"},
+        )
+        correction = client.get(
+            f"/api/results/{result_id}/render-capability",
+            params={"field": "residual_correction"},
+        )
+
+        assert dispersion.status_code == 200, dispersion.text
+        assert correction.status_code == 200, correction.text
+        dispersion_body = dispersion.json()
+        correction_body = correction.json()
+        assert dispersion_body["supported"] is True, dispersion_body
+        assert correction_body["supported"] is True, correction_body
+        assert dispersion_body["source_id"] == f"{result_id}::model_dispersion"
+        assert dispersion_body["property_name"].endswith("模型离散度")
+        assert dispersion_body["render_profile"]["default_palette"] == "viridis"
+        assert dispersion_body["render_profile"]["value_range"][0] >= 0
+        assert correction_body["source_id"] == f"{result_id}::residual_correction"
+        assert correction_body["property_name"].endswith("残差校正")
+        assert correction_body["render_profile"]["default_palette"] == "coolwarm"
+        lo, hi = correction_body["render_profile"]["value_range"]
+        assert lo < 0 < hi
+        assert correction_body["render_profile"]["log_available"] is False
+
+
 def test_ml_render_field_status_slice_and_export_keep_candidate_provenance(
     tmp_path, monkeypatch
 ):

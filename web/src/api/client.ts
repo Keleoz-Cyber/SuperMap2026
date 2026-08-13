@@ -46,6 +46,7 @@ import type {
   QualityReport,
   RenderAssetRecord,
   RenderCapability,
+  MLResultField,
   ResultAnalysisSummary,
   SliceAnalysisResponse,
   SliceAxis,
@@ -366,18 +367,32 @@ export function materializeResult(resultId: string): Promise<ResultMetadata> {
   return requestJson<ResultMetadata>(`/results/${resultId}/materialize`, { method: 'POST' })
 }
 
-export function fetchResultRenderCapability(resultId: string): Promise<RenderCapability> {
-  return getJson<RenderCapability>(`/results/${resultId}/render-capability`)
+function renderFieldQuery(field: MLResultField): string {
+  return field === 'prediction' ? '' : `?field=${encodeURIComponent(field)}`
 }
 
-export function createResultRenderAsset(resultId: string, retryFailed = false): Promise<RenderAssetRecord> {
-  return postJson<RenderAssetRecord>(`/results/${resultId}/render-assets/netcdf`, {
+export function fetchResultRenderCapability(
+  resultId: string,
+  field: MLResultField = 'prediction',
+): Promise<RenderCapability> {
+  return getJson<RenderCapability>(`/results/${resultId}/render-capability${renderFieldQuery(field)}`)
+}
+
+export function createResultRenderAsset(
+  resultId: string,
+  retryFailed = false,
+  field: MLResultField = 'prediction',
+): Promise<RenderAssetRecord> {
+  return postJson<RenderAssetRecord>(`/results/${resultId}/render-assets/netcdf${renderFieldQuery(field)}`, {
     retry_failed: retryFailed,
   })
 }
 
-export function fetchResultRenderAsset(resultId: string): Promise<RenderAssetRecord> {
-  return getJson<RenderAssetRecord>(`/results/${resultId}/render-assets/netcdf`)
+export function fetchResultRenderAsset(
+  resultId: string,
+  field: MLResultField = 'prediction',
+): Promise<RenderAssetRecord> {
+  return getJson<RenderAssetRecord>(`/results/${resultId}/render-assets/netcdf${renderFieldQuery(field)}`)
 }
 
 // ---------------------------------------------------------------------------
