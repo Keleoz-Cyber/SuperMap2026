@@ -63,3 +63,13 @@
 - 首轮隔离真实 SDK 组合门为 4 passed / 1 failed；唯一失败是 live 规格仍等待产品已移除的 `camera-isometric`，并非运行时渲染失败。已更新合同为三个正交视角 + `reset-view` 恢复默认等轴构图，待单规格复跑。
 - 修正后的独立失败用例 1 passed；随后用另一全新 GUID 运行库重跑 `result-analysis-live + platform-live`，同轮 5 passed。缩放条仅出现 `7.7×10⁻¹² m` 坐标换算舍入差，验收采用与产品实现一致的 0.01 m 容差，像素和对准门保持不变。
 - 最终 fresh 验证：前端 61 files / 572 tests、渲染合同 15 passed、type-check/build 通过、`git diff --check` 通过；8000 已恢复默认演示运行库，健康状态 0.9.0 / ok。
+
+## 2026-08-13 PR #20 最终验收
+
+- 修复真实运行库暴露的预置工作台成果缺失：builtin preset 不再把近期实验/成果硬编码为空，且仍排除官方主打成果重复项；提交 `bb8b90a`，`test_case_workspace_api.py` 18 passed。
+- 8000 使用当前 worktree 构建和 `.runtime/v080-demo`，健康状态 `0.9.0 / ok`；实测电阻率单位为 `Ω·m`，案例工作台可直达用户实验成果，严格匹配与不匹配两种比较状态均可用。
+- 首页 presentation 高度链已提交 `982eed9`；Mock 几何门覆盖 1440×900 与 390×844，真实浏览器确认控制栏/画布填满舞台且手机全屏入口可用。
+- 首次隔离 live 轮因陈旧标题文本定位器耗尽 10 分钟；失败截图证明产品端已渲染。规格改用现有 `data-case-id`，Mock 三案例门 1 passed，复用同一隔离临时运行库的真实 SDK 三案例门 1 passed（56.0s）。
+- 成功 live 证据：`docs/evidence/v0.9.0/run-20260813T121601Z-87489201/`，三案例各含整页/iframe 截图，累计运行时错误为零，`git_commit=bb8b90a`。
+- 最终后端便携全量 `1955 passed, 32 deselected`；前端全量单元退出码 0；`vue-tsc`、production build 通过；Mock E2E `46 passed`。
+- 下一步仅剩仓库卫生检查、提交验证记录、推送分支并确认 PR #20 新 CI；PR 必须保持 OPEN。
