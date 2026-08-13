@@ -4005,6 +4005,10 @@ export async function installMockApi(page: Page): Promise<void> {
           mismatches: [],
           candidates,
           ranking: [RHO_OFFICIAL_RESULT_ID, ML_RF_RESULT_ID],
+          comparison_items: candidates,
+          ranking_status: 'ranked',
+          differences: [],
+          unified_experiment_draft: null,
           comparison_fingerprint: 'fp-rho-ml-comparison',
         })
       }
@@ -4080,6 +4084,10 @@ export async function installMockApi(page: Page): Promise<void> {
           mismatches: [],
           candidates: summaries,
           ranking,
+          comparison_items: summaries,
+          ranking_status: 'ranked',
+          differences: [],
+          unified_experiment_draft: null,
           comparison_fingerprint: 'fp-multi-cmp-1',
         })
       }
@@ -4090,6 +4098,16 @@ export async function installMockApi(page: Page): Promise<void> {
         mismatches: ['candidate_not_succeeded:cand-2'],
         candidates: summaries,
         ranking: null,
+        comparison_items: summaries,
+        ranking_status: 'not_ranked',
+        differences: [{
+          code: 'candidate_not_succeeded:cand-2',
+          message: '有候选尚未成功完成，不能参加统一排名。',
+        }],
+        unified_experiment_draft: {
+          dataset_version_id: 'ds-e2e',
+          validation: { method: 'spatial_kfold', folds: 5, seed: 20260723, holdout_fraction: 0.2 },
+        },
         comparison_fingerprint: 'fp-multi-cmp-2',
       })
     }

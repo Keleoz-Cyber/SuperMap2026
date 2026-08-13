@@ -446,6 +446,10 @@ test.describe('v0.7 生命周期与比较流程（mock API）', () => {
     await checkboxes.nth(1).click()
     await page.getByTestId('compare-btn').click()
     await expect(page.getByTestId('mismatch-list')).toBeVisible()
+    await expect(page.getByTestId('comparison-inspection')).toBeVisible()
+    await expect(page.getByTestId('inspection-result-link')).toHaveCount(2)
+    await expect(page.getByTestId('create-unified-validation')).toBeVisible()
+    await expect(page.getByText('最佳')).toHaveCount(0)
   })
 
   test('移动端 390x844：VariogramPanel 无横向溢出', async ({ page }) => {

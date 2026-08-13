@@ -1216,6 +1216,13 @@ export interface MultiCandidateComparison {
   mismatches: string[]
   candidates: ComparisonCandidateSummary[]
   ranking: string[] | null
+  comparison_items: ComparisonCandidateSummary[]
+  ranking_status: 'ranked' | 'not_ranked'
+  differences: Array<{ code: string; message: string }>
+  unified_experiment_draft: {
+    dataset_version_id: string
+    validation: Record<string, unknown>
+  } | null
   comparison_fingerprint: string
 }
 

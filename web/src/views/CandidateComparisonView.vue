@@ -90,6 +90,11 @@ const rankedCandidates = computed(() => {
     .map((id) => comparison.value?.candidates.find((candidate) => candidate.candidate_result_id === id))
     .filter((candidate): candidate is ComparisonCandidateSummary => candidate !== undefined)
 })
+const inspectionCandidates = computed(() =>
+  comparison.value?.comparison_items?.length
+    ? comparison.value.comparison_items
+    : comparison.value?.candidates ?? [],
+)
 
 const recommendedCandidate = computed(() => rankedCandidates.value[0] ?? null)
 const runnerUpCandidate = computed(() => rankedCandidates.value[1] ?? null)
@@ -247,6 +252,23 @@ function gotoGridExperiment() {
     name: 'experiment-create',
     params: { caseId: queryCaseId.value || 'new' },
     query: { dataset: datasetId.value, mode: 'grid' },
+  })
+}
+
+function gotoUnifiedValidationExperiment() {
+  const draft = comparison.value?.unified_experiment_draft
+  if (!draft) return
+  const validation = draft.validation
+  void router.push({
+    name: 'experiment-create',
+    params: { caseId: queryCaseId.value || 'new' },
+    query: {
+      dataset: draft.dataset_version_id,
+      validation_method: String(validation.method ?? 'spatial_kfold'),
+      validation_folds: String(validation.folds ?? 5),
+      validation_seed: String(validation.seed ?? 20260723),
+      holdout_fraction: String(validation.holdout_fraction ?? 0.2),
+    },
   })
 }
 
@@ -468,6 +490,30 @@ watch(datasetId, (next, prev) => {
             </span>
           </div>
 
+          <div class="inspection-result" data-test="comparison-inspection">
+            <div class="inspection-head">
+              <div>
+                <span class="section-kicker">成果对照</span>
+                <h3>并排查看模型与原始验证指标</h3>
+              </div>
+              <span>{{ inspectionCandidates.length }} 个成果</span>
+            </div>
+            <MetricComparisonChart
+              :candidates="inspectionCandidates"
+              :comparable="comparison.comparable"
+            />
+            <ParameterDiffTable :candidates="inspectionCandidates" />
+            <div class="inspection-cards">
+              <article v-for="candidate in inspectionCandidates" :key="candidate.candidate_result_id">
+                <strong>{{ algoLabel(candidate) }}</strong>
+                <span>RMSE {{ fmt(candidate.metrics.rmse) }} · R² {{ fmt(candidate.metrics.r2) }}</span>
+                <el-button size="small" text data-test="inspection-result-link" @click="gotoResult(candidate.result_url)">
+                  查看成果
+                </el-button>
+              </article>
+            </div>
+          </div>
+
           <div
             v-if="comparison.comparable && comparison.ranking"
             class="ranking-result"
@@ -490,11 +536,6 @@ watch(datasetId, (next, prev) => {
                 <p>{{ differingParameterLabels.slice(0, 3).join('、') || '参数配置一致' }}</p>
               </article>
             </div>
-            <MetricComparisonChart
-              :candidates="comparison.candidates"
-              :comparable="comparison.comparable"
-            />
-            <ParameterDiffTable :candidates="comparison.candidates" />
             <div class="ranking-scroll">
             <table class="ranking-table">
               <thead>
@@ -538,18 +579,23 @@ watch(datasetId, (next, prev) => {
             class="mismatch-result"
             data-test="mismatch-list"
           >
-            <p class="mismatch-head">这些候选的评估口径不同，因此不能直接排名。</p>
+            <p class="mismatch-head">这些成果使用了不同的验证规则，可以查看差异，但不能据此判断谁最好。</p>
             <ul class="mismatch-fields">
               <li
-                v-for="field in comparison.mismatches"
-                :key="field"
+                v-for="difference in comparison.differences"
+                :key="difference.code"
               >
-                {{ mismatchLabel(field) }}
+                {{ mismatchLabel(difference.code) }}：{{ difference.message }}
               </li>
             </ul>
             <p class="mismatch-guidance">
-              请选择来自同一数据版本、使用相同验证设置的候选；如需比较不同验证方案，请分别查看成果，不要直接排名。
+              需要统一排名时，可以用相同数据版本和验证规则创建一组新实验；现有成果不会被修改。
             </p>
+            <el-button
+              v-if="comparison.unified_experiment_draft"
+              data-test="create-unified-validation"
+              @click="gotoUnifiedValidationExperiment"
+            >创建统一验证实验</el-button>
           </div>
         </section>
       </template>
@@ -691,6 +737,45 @@ watch(datasetId, (next, prev) => {
   border: 1px solid var(--s1-border);
   background: var(--s1-border);
   gap: 1px;
+}
+
+.inspection-result {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1-space-4);
+  margin-bottom: var(--s1-space-4);
+}
+
+.inspection-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--s1-space-3);
+}
+
+.inspection-head h3 {
+  margin: 4px 0 0;
+  color: var(--s1-text-strong);
+  font-size: var(--s1-font-lg);
+}
+
+.inspection-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: var(--s1-space-3);
+}
+
+.inspection-cards article {
+  display: grid;
+  gap: 8px;
+  padding: var(--s1-space-3);
+  border: 1px solid var(--s1-border);
+  background: var(--s1-surface-2);
+}
+
+.inspection-cards span {
+  color: var(--s1-text-dim);
+  font-size: var(--s1-font-sm);
 }
 
 .comparison-summary article {

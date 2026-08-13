@@ -75,6 +75,7 @@
 | live 门连续读取旧 iframe 哈希 `552997f3...` | 1 | 先执行 production build，确认内容哈希变化后再判断运行时。 |
 | 初始相机距离合规但新宽画布中体盒占高 90% | 1 | 真实诊断确认旧等轴构图不适配新画幅；改为更俯视的 `2.32x` 构图并保留像素双门。 |
 | `camera.changed` 持续纠偏与 SDK 缩放条竞争，体图层无法稳定绘制 | 1 | changed 仅做距离限幅；缩放条 mouseup 后一次性以最终距离重新锚定成果中心。 |
+| build 与 Mock E2E 并行，Playwright 先启动旧 dist | 1 | 确认新 bundle 哈希后顺序运行 E2E；后续构建和浏览器门不并行。 |
 | 首页续接 live 测试按案例名筛选动作按钮，定位器找不到元素 | 1 | 无障碍快照证明案例已显示；改从准备 URL 提取 caseId，用既有 `data-case-id` 精确定位。 |
 | 首次手工调用 live E2E 未设置 `GEOMODELING_DATA_DIR`，规格在 beforeAll 主动拒绝 | 1 | 改用 GUID 临时隔离目录重跑；5 条真实链路全部通过，默认 8000 演示库未参与测试。 |
 | 浏览器复验仍加载上一轮 `index-BKui5dLw.js` | 1 | 服务端已是 `index-BDzWJHGz.js`，使用同端口带版本查询串复验最新构建；未新开端口。 |

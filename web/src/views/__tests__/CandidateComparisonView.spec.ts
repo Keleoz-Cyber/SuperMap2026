@@ -96,6 +96,10 @@ const COMPARABLE: MultiCandidateComparison = {
     makeCandidate('r-4', 'exp-2', 'dsi_like', true, { rmse: 0.15, mae: 0.10, r2: 0.90, bias: 0.03 }),
   ],
   ranking: ['r-2', 'r-1', 'r-4'],
+  comparison_items: [],
+  ranking_status: 'ranked',
+  differences: [],
+  unified_experiment_draft: null,
   comparison_fingerprint: 'fp-comparable',
 }
 
@@ -109,6 +113,19 @@ const INCOMPARABLE: MultiCandidateComparison = {
     makeCandidate('r-4', 'exp-2', 'dsi_like', true, { rmse: 0.15, mae: 0.10, r2: 0.90, bias: 0.03 }),
   ],
   ranking: null,
+  comparison_items: [
+    makeCandidate('r-1', 'exp-1', 'idw', true, { rmse: 0.12, mae: 0.08, r2: 0.93, bias: 0.02 }),
+    makeCandidate('r-4', 'exp-2', 'dsi_like', true, { rmse: 0.15, mae: 0.10, r2: 0.90, bias: 0.03 }),
+  ],
+  ranking_status: 'not_ranked',
+  differences: [
+    { code: 'validation_contract', message: '验证方法不同：这些成果使用了不同的空间验证方式。' },
+    { code: 'grid_resolution', message: '成果网格规格不同，适合查看但不能统一排名。' },
+  ],
+  unified_experiment_draft: {
+    dataset_version_id: 'ds-1',
+    validation: { method: 'spatial_kfold', folds: 5, seed: 20260723, holdout_fraction: 0.2 },
+  },
   comparison_fingerprint: 'fp-incomparable',
 }
 
@@ -371,7 +388,7 @@ describe('CandidateComparisonView', () => {
     wrapper.unmount()
   })
 
-  it('incompatible response shows mismatch fields with no 最佳 badge', async () => {
+  it('different validation still shows result inspection with no best badge', async () => {
     vi.mocked(client.compareCandidates).mockResolvedValue(INCOMPARABLE)
     const { wrapper } = await mountView()
 
@@ -390,7 +407,13 @@ describe('CandidateComparisonView', () => {
     expect(mismatch.text()).toContain('成果网格规格不同')
     expect(mismatch.text()).not.toContain('validation_contract')
     expect(mismatch.text()).not.toContain('grid_resolution')
-    expect(mismatch.text()).toContain('请选择来自同一数据版本、使用相同验证设置的候选')
+    expect(mismatch.text()).toContain('可以查看差异，但不能据此判断谁最好')
+
+    const inspection = wrapper.get('[data-test="comparison-inspection"]')
+    expect(inspection.text()).toContain('IDW')
+    expect(inspection.text()).toContain('DSI-like')
+    expect(inspection.findAll('[data-test="inspection-result-link"]')).toHaveLength(2)
+    expect(wrapper.find('[data-test="create-unified-validation"]').exists()).toBe(true)
 
     expect(wrapper.find('[data-test="ranking-result"]').exists()).toBe(false)
     expect(wrapper.find('.best-badge').exists()).toBe(false)

@@ -10,6 +10,8 @@
 - Task 2 RED 命中预置主打成果重复；第一次 GREEN 发现上传案例主打成果不能一律排除，规则收窄为仅 builtin_preset 去重。最终 `test_case_workspace_api.py` 17 passed，前端 type-check 通过。
 - Task 3 RED 命中成果目录和待生成动作缺失；实现实验分组、指标、参数、查看/生成动作后，CaseWorkspaceView 45 passed，type-check/build 通过。
 - Task 4 RED 命中新比较响应字段缺失；兼容扩展 comparison_items/ranking_status/differences/unified draft 后，candidate + professional comparison 34 passed。
+- Task 5 RED 命中旧阻断式 mismatch 结果；前端改为成果对照恒显、严格排名条件显示。单元 18 passed、type-check/build 通过、候选比较 Mock E2E 1 passed。
+- 一次将 build 与 E2E 并行导致 Playwright 从上一轮 dist 启动，缺少新 DOM；确认新哈希后顺序重跑通过。后续所有构建与浏览器门必须串行。
 
 ## 2026-08-11
 
