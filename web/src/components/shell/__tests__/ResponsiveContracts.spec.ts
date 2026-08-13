@@ -124,6 +124,13 @@ describe('responsive & accessibility contracts', () => {
     expect(resultWorkbenchSource).not.toContain('@media (min-width: 1200px) {')
   })
 
+  it('locks the desktop command center to one viewport while keeping narrower layouts in document flow', () => {
+    expect(appShellSource).toContain("route.name === 'home'")
+    expect(appShellSource).toMatch(
+      /@media \(min-width: 961px\)[\s\S]*?\.app-shell\.command-center-route\s*\{[^}]*height:\s*100dvh;[^}]*overflow:\s*hidden;/s,
+    )
+  })
+
   it('reduces shared page padding on short laptop screens without changing browser zoom', () => {
     expect(globalCss).toContain('@media (max-height: 819px) and (min-width: 901px)')
     expect(globalCss).toMatch(/@media \(max-height: 819px\)[\s\S]*?\.product-page\s*\{[^}]*padding-block:/s)

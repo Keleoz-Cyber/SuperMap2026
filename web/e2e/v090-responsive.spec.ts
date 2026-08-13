@@ -122,6 +122,39 @@ for (const viewport of VIEWPORTS) {
     await expect(page.getByTestId('home-evidence-dock')).toBeVisible()
     await expect(page.getByTestId('command-primary-action')).toBeVisible()
 
+    // 桌面/笔记本 100% 浏览器缩放必须直接看到完整指挥舱与底部证据坞，
+    // 不允许再依赖用户手工缩放到 75%。平板/手机仍采用自然文档流。
+    if (viewport.width > 960) {
+      const firstScreen = await page.evaluate(() => {
+        const dock = document.querySelector<HTMLElement>('[data-test="home-evidence-dock"]')
+        return {
+          dockBottom: dock?.getBoundingClientRect().bottom ?? Number.POSITIVE_INFINITY,
+          viewportHeight: window.innerHeight,
+          documentScrollHeight: document.documentElement.scrollHeight,
+        }
+      })
+      expect(firstScreen.dockBottom).toBeLessThanOrEqual(firstScreen.viewportHeight)
+      expect(firstScreen.documentScrollHeight).toBeLessThanOrEqual(firstScreen.viewportHeight + 1)
+    }
+    if (viewport.width >= 1600 && viewport.height >= 900) {
+      const innerPanels = await page.evaluate(() => {
+        const measure = (selector: string) => {
+          const element = document.querySelector<HTMLElement>(selector)
+          return element ? element.scrollHeight - element.clientHeight : Number.POSITIVE_INFINITY
+        }
+        return {
+          caseRailOverflow: measure('[data-test="case-rail"]'),
+          findingsOverflow: measure('[data-test="home-findings"]'),
+          toolsOverflow: measure('.native-volume-panel.presentation .tools-rail'),
+        }
+      })
+      // Chromium 在固定轨道上可能因子像素/边框舍入报告 2–3px 的伪溢出；
+      // 4px 内不产生可操作滚动，也不会隐藏任何正文。
+      expect(innerPanels.caseRailOverflow).toBeLessThanOrEqual(4)
+      expect(innerPanels.findingsOverflow).toBeLessThanOrEqual(1)
+      expect(innerPanels.toolsOverflow).toBeLessThanOrEqual(1)
+    }
+
     // 零横向溢出
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - window.innerWidth,

@@ -16,6 +16,7 @@ const route = inject(
   { name: null } as unknown as RouteLocationNormalizedLoaded,
 )
 const immersive = computed(() => route.name === 'result-workbench')
+const commandCenterRoute = computed(() => route.name === 'home')
 
 onMounted(async () => {
   try {
@@ -29,7 +30,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="app-shell" :class="{ immersive }">
+  <div class="app-shell" :class="{ immersive, 'command-center-route': commandCenterRoute }">
     <a class="skip-link" href="#main-content">跳转到主内容</a>
     <AppHeader
       :service-state="serviceState"
@@ -55,6 +56,22 @@ onMounted(async () => {
   /* 关键：保持块级布局。列向 flex 会让带 margin:auto 居中的页面按
      min-content 撑宽（stretch 被 auto 边距禁用），造成移动端横向溢出 */
   display: block;
+}
+
+/* 首页本身就是一屏指挥舱：桌面与横向笔记本使用确定的视口高度，
+   让三维舞台、关键发现与底部证据坞共同参与同一套网格分配。
+   各列已有自己的 overflow-y，内容较多时只滚动局部，不再把证据坞
+   推到第二屏。平板和手机仍保持自然文档流。 */
+@media (min-width: 961px) {
+  .app-shell.command-center-route {
+    height: 100dvh;
+    overflow: hidden;
+  }
+
+  .app-shell.command-center-route .app-main {
+    min-height: 0;
+    overflow: hidden;
+  }
 }
 
 /* 成果页只有在桌面宽度和可用高度都足够时才锁成一屏工作台。

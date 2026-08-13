@@ -80,4 +80,25 @@ describe('AppShell', () => {
     expect(wrapper.find('[data-test="app-global-header"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="global-create-case"]').exists()).toBe(true)
   })
+
+  it('marks the desktop home route as a viewport-fitted command center', async () => {
+    const { createMemoryHistory, createRouter } = await import('vue-router')
+    const stub = { template: '<div />' }
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/', name: 'home', component: stub },
+        { path: '/cases/new', name: 'case-create', component: stub },
+      ],
+    })
+    await router.push('/')
+    const wrapper = mount(AppShell, {
+      global: {
+        plugins: [router],
+        stubs: { RouterView: true, RouterLink: { template: '<a><slot /></a>' } },
+      },
+    })
+    await flushPromises()
+    expect(wrapper.get('.app-shell').classes()).toContain('command-center-route')
+  })
 })

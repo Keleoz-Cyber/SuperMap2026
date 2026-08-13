@@ -391,6 +391,86 @@ onBeforeUnmount(clearShellContext)
   transform: translateY(-1px);
 }
 
+/* 1080p/大屏答辩档：不缩字号，只回收垂直留白。
+   目标是在浏览器 100% 缩放下同时展示完整三维舞台、四张发现卡和证据坞，
+   避免依赖 75% 浏览器缩放。较窄或较矮屏幕仍使用各列滚动兜底。 */
+@media (min-width: 1600px) and (min-height: 900px) {
+  .cc-grid {
+    gap: var(--s1-space-3);
+    padding: var(--s1-space-3) var(--s1-space-6) var(--s1-space-3);
+  }
+
+  .cc-evidence {
+    min-height: 100px;
+    padding: 10px 18px;
+  }
+
+  .cc-evidence :deep(.donut) {
+    width: 58px;
+    height: 58px;
+  }
+
+  .cc-evidence :deep(.evidence-cell) {
+    gap: 6px;
+  }
+
+  .cc-findings {
+    gap: var(--s1-space-2);
+  }
+
+  .cc-findings :deep(.finding-panel) {
+    gap: var(--s1-space-2);
+  }
+
+  .cc-findings :deep(.finding-card) {
+    gap: 5px;
+    padding: 9px 10px;
+  }
+
+  .cc-findings :deep(.finding-statement) {
+    line-height: 1.4;
+  }
+
+  .cc-findings :deep(.finding-evidence) {
+    gap: 4px;
+  }
+
+  .cc-findings :deep(.evidence-chip) {
+    padding-block: 1px;
+  }
+
+  .cc-findings :deep(.finding-limitations) {
+    line-height: 1.35;
+  }
+
+  .cc-findings :deep(.locate-btn) {
+    padding-block: 2px;
+  }
+
+  .scene-panel :deep(.native-volume-panel.presentation .tools-rail) {
+    margin-top: 8px;
+    padding: 8px 10px;
+  }
+
+  .scene-panel :deep(.native-volume-panel.presentation .rail-group) {
+    gap: 4px;
+    padding: 5px 0;
+  }
+
+  .scene-panel :deep(.native-volume-panel.presentation .rail-stack .el-checkbox) {
+    min-height: 26px;
+    padding-block: 2px;
+  }
+
+  .scene-panel :deep(.native-volume-panel.presentation .rail-presets .preset-button) {
+    min-height: 28px;
+  }
+
+  .scene-panel :deep(.native-volume-panel.presentation .reset-view-primary) {
+    min-height: 30px;
+  }
+}
+
 @media (max-width: 1200px) {
   .cc-grid {
     grid-template-columns: 232px minmax(0, 1fr) 260px;
