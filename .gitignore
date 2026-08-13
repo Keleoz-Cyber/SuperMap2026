@@ -81,3 +81,7 @@ var/demo_v05/
 
 # v0.6 专业建模彩排运行时目录
 var/demo_v06/
+
+# Windows portable evaluation package (generated locally, never commit binaries)
+build/
+release/

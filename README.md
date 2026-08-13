@@ -2,7 +2,7 @@
 
 GeoModelingPlatform 是面向 SuperMap 杯答辩的浏览器三维地质属性建模平台。用户可以上传 CSV、Excel 或受支持的专业数据，完成字段映射、质量校验、插值调参、空间交叉验证、候选比较、三维成果展示、切片分析和证据导出。
 
-当前源码版本为 **0.9.0**。版本发布状态以 GitHub Releases 为准；本文只描述当前代码能力，不记录临时分支或 PR 状态。
+当前源码版本为 **0.9.1**。版本发布状态以 GitHub Releases 为准；本文只描述当前代码能力，不记录临时分支或 PR 状态。
 
 ## 已实现能力
 
@@ -27,6 +27,14 @@ GeoModelingPlatform 是面向 SuperMap 杯答辩的浏览器三维地质属性�
 内置数据位于 `example_data/`，字节级 SHA-256 由测试锁定。原始私有研究资料、SuperMap 工作空间、运行数据库和凭据不进入仓库。
 
 ## 快速启动
+
+### 评测组免安装启动（Windows x64）
+
+解压 `GeoModelingPlatform-0.9.1-win-x64.zip` 后，双击 `启动平台.cmd`。系统自带 Python 运行时、前端静态资源、SuperMap3D SDK 和三个内置案例，不需要安装 Python、Node.js、数据库或 Docker。使用结束后双击 `停止平台.cmd`。
+
+完整的制作、校验和故障排查说明见 [Windows 便携交付说明](docs/portable-delivery.md)。
+
+### 源码开发启动
 
 以下命令均为 **PowerShell**：
 

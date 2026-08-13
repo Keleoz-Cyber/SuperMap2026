@@ -11,8 +11,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from geomodeling.platform.errors import PlatformError
+from geomodeling.runtime_paths import resource_root
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = resource_root()
 DEMO_DATASET_PATH = PROJECT_ROOT / "demo" / "platform_demo_3d.csv"
 DEMO_DATASET_SHA256 = "deb9c25f713ae79d7b1c6300cc8066a6ae927879767c67ab03ef4ad76e8a2bb3"
 DEMO_DATASET_UNAVAILABLE = "DEMO_DATASET_UNAVAILABLE"

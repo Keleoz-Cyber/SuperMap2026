@@ -1,0 +1,13 @@
+GeoModelingPlatform 0.9.1 第三方组件说明
+
+本便携包包含项目运行所需的 Python 开源依赖、Web 前端依赖和 SuperMap3D 2026 浏览器 SDK。
+各组件仍分别适用其原始许可证和权利声明；本项目不改变第三方组件的所有权。
+
+主要开源组件包括 Python、FastAPI、Uvicorn、NumPy、pandas、SciPy、scikit-learn、
+PyArrow、SQLAlchemy、Vue、Element Plus、ECharts 和 PyInstaller。具体版本以包内运行时及
+项目 pyproject.toml、web/package-lock.json 为准。
+
+SuperMap3D SDK 及其相关标识的权利归超图软件及相应权利人所有。本包仅将项目使用的 SDK
+资源用于超图杯作品的离线运行与评测，不代表对该 SDK 进行再许可。
+
+便携包不包含 iServer 管理员账号、许可文件或其他本机凭据。iServer 是可选增强能力。

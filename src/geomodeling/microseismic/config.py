@@ -6,7 +6,9 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
+from geomodeling.runtime_paths import resource_root
+
+PROJECT_ROOT = resource_root()
 
 
 class PointSpec(BaseModel):

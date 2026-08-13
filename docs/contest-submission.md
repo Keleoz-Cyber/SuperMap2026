@@ -66,6 +66,7 @@ B/S 运行目录应是可部署产物，而不是整个开发仓库复制：
 - 后端安装包或明确的 Python 环境安装清单；
 - 前端 production build；
 - 启动/停止脚本；
+- Windows x64 免安装包的制作与验收见 [Windows 便携交付说明](portable-delivery.md)；
 - 配置模板与环境变量说明；
 - 必要的 SuperMap3D 前端运行时；
 - 健康检查和演示前检查说明。

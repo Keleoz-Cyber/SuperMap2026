@@ -15,6 +15,7 @@ from pathlib import Path
 
 from geomodeling.platform.errors import PRESET_SOURCE_INVALID, PlatformError
 from geomodeling.platform.render_contracts import DisplayAnchor
+from geomodeling.runtime_paths import resource_root
 
 ENV_DATA_DIR = "GEOMODELING_DATA_DIR"
 DEFAULT_DATA_DIR = "var/geomodeling"
@@ -24,7 +25,7 @@ DB_FILENAME = "platform.sqlite3"
 # v0.8.0 第三批：三个官方案例的规范化源 CSV 随仓库内置，统一从
 # ``PROJECT_ROOT / "example_data"`` 解析（字节级冻结，见
 # tests/test_example_data_contract.py）。
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
+PROJECT_ROOT = resource_root()
 EXAMPLE_DATA_DIRNAME = "example_data"
 
 
