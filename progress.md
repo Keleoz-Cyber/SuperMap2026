@@ -12,6 +12,9 @@
 - Task 4 RED 命中新比较响应字段缺失；兼容扩展 comparison_items/ranking_status/differences/unified draft 后，candidate + professional comparison 34 passed。
 - Task 5 RED 命中旧阻断式 mismatch 结果；前端改为成果对照恒显、严格排名条件显示。单元 18 passed、type-check/build 通过、候选比较 Mock E2E 1 passed。
 - 一次将 build 与 E2E 并行导致 Playwright 从上一轮 dist 启动，缺少新 DOM；确认新哈希后顺序重跑通过。后续所有构建与浏览器门必须串行。
+- Task 6 RED 命中首页 `presentation` 变体缺少完整高度链；根因是父级场景可伸缩，但子面板仍沿用内容高度和 16:9 画布约束。
+- 为 `presentation` 增加独立的 panel/body/tools/scene/frame 高度约束，未改工作台变体；定向单元 46 passed，type-check/build 通过。
+- 首轮浏览器门因预置渲染资产按产品合同懒创建而等不到画布；测试改为显式点击“准备体渲染数据”后测量。1440×900 几何门 4 passed，响应式与手机全屏门 5 passed。
 
 ## 2026-08-11
 

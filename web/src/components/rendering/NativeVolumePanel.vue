@@ -1005,6 +1005,39 @@ watch(
   max-height: none;
 }
 
+/* 首页展示变体：控制栏与三维画布共享场景主体的完整高度。 */
+.native-volume-panel.presentation {
+  height: 100%;
+  min-height: 0;
+  gap: 8px;
+}
+
+.native-volume-panel.presentation .panel-body {
+  flex: 1;
+  height: 100%;
+  min-height: 0;
+  align-items: stretch;
+}
+
+.native-volume-panel.presentation .tools-rail {
+  margin-top: 12px;
+  min-height: 0;
+  max-height: 100%;
+  overflow-y: auto;
+}
+
+.native-volume-panel.presentation .scene-column {
+  height: 100%;
+  min-height: 0;
+}
+
+.native-volume-panel.presentation :deep(.volume-frame) {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  aspect-ratio: auto;
+}
+
 .tools-rail {
   display: flex;
   flex-direction: column;

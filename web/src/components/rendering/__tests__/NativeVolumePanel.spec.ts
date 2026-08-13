@@ -313,6 +313,12 @@ afterEach(() => {
 })
 
 describe('NativeVolumePanel 能力与资产', () => {
+  it('presentation variant keeps a full-height scene geometry contract', async () => {
+    const source = await import('../NativeVolumePanel.vue?raw')
+    expect(source.default).toContain('.native-volume-panel.presentation .panel-body')
+    expect(source.default).toContain('.native-volume-panel.presentation .scene-column')
+    expect(source.default).toContain('.native-volume-panel.presentation :deep(.volume-frame)')
+  })
   it('展示舞台只显示用户可理解的渲染状态，技术身份不占据主阅读层', async () => {
     const api = makeApi({ fetchAsset: vi.fn().mockResolvedValue(ASSET) })
     const wrapper = mountPanel(api, null, { variant: 'presentation' })

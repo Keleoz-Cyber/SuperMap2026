@@ -64,6 +64,34 @@ test.describe('v0.9.0 指挥舱（mock API）', () => {
     await expect(page.getByTestId('download-demo-data')).toBeVisible()
   })
 
+  test('桌面三维舞台：渲染控制与画布共同填满中央舞台', async ({ page }) => {
+    await boot(page)
+    const scene = page.getByTestId('command-center-scene')
+    const body = scene.locator('.scene-body')
+    const panel = scene.getByTestId('native-volume-panel')
+    await panel.getByTestId('create-asset').click()
+    await expect(panel.getByTestId('volume-frame')).toBeVisible()
+    const tools = panel.getByTestId('tools-rail')
+    const frame = panel.getByTestId('volume-frame')
+    const boxes = await Promise.all([
+      body.boundingBox(),
+      panel.boundingBox(),
+      tools.boundingBox(),
+      frame.boundingBox(),
+    ])
+    expect(boxes.every(Boolean)).toBe(true)
+    const [bodyBox, panelBox, toolsBox, frameBox] = boxes as Array<{
+      x: number
+      y: number
+      width: number
+      height: number
+    }>
+    expect(panelBox.height).toBeGreaterThan(bodyBox.height * 0.8)
+    expect(toolsBox.y).toBeGreaterThanOrEqual(bodyBox.y)
+    expect(Math.abs((toolsBox.y + toolsBox.height) - (frameBox.y + frameBox.height))).toBeLessThanOrEqual(28)
+    expect(bodyBox.y + bodyBox.height - (frameBox.y + frameBox.height)).toBeLessThanOrEqual(36)
+  })
+
   test('官方卡主命令进入案例分析；官方成果直达成果页', async ({ page }) => {
     await boot(page)
     await page.locator('[data-test="case-rail-item"][data-case-id="gas"]').click()

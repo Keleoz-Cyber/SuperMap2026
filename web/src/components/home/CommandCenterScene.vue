@@ -149,7 +149,8 @@ const api = computed<NativeVolumeRenderApi | null>(() => {
 
 .scene-body {
   flex: 1;
-  min-height: 380px;
+  min-height: 0;
+  height: 100%;
   display: flex;
   flex-direction: column;
   position: relative;

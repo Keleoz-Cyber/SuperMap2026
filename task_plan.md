@@ -6,10 +6,10 @@
 |---|---|---|
 | O | complete | 真实 8000 页面复现单位、成果入口、首页布局和模型比较问题 |
 | P | complete | 用户确认双层比较与案例内成果目录设计；规格提交 `aba936c` |
-| Q | in_progress | 编写并提交 TDD 实施计划 |
-| R | pending | 后端单位归一化、成果目录和双层比较合同 |
-| S | pending | 前端成果目录、比较交互和首页三维布局 |
-| T | pending | 定向、全量、Mock E2E 与真实 8000 多视口验收 |
+| Q | complete | 编写并提交 TDD 实施计划 |
+| R | complete | 后端单位归一化、成果目录和双层比较合同 |
+| S | complete | 前端成果目录、比较交互和首页三维布局 |
+| T | in_progress | 定向、全量、Mock E2E 与真实 8000 多视口验收 |
 | U | pending | 更新文档并推送 PR #20；保持 OPEN |
 
 ## 目标
