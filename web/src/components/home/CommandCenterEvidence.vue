@@ -182,6 +182,8 @@ const variable = computed(() => props.summary?.variable ?? null)
 .donut {
   width: 56px;
   height: 56px;
+  flex: none;
+  display: block;
 }
 
 .donut-track {
@@ -212,9 +214,14 @@ const variable = computed(() => props.summary?.variable ?? null)
 .anomaly-legend {
   display: flex;
   flex-direction: column;
+  min-width: 0;
   gap: 3px;
   font-size: var(--s1-font-sm);
   color: var(--s1-text-dim);
+}
+
+.donut-legend span {
+  white-space: nowrap;
 }
 
 .swatch {

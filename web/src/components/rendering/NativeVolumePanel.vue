@@ -1042,11 +1042,15 @@ watch(
   display: flex;
   flex-direction: column;
   gap: 10px;
+  width: 100%;
+  max-width: 100%;
   min-width: 0;
+  overflow-x: hidden;
   border: 1px solid var(--gmp-border);
   border-radius: 10px;
   background: var(--gmp-bg-soft);
   padding: 12px;
+  box-sizing: border-box;
 }
 
 .scene-column {

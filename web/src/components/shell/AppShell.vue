@@ -34,6 +34,9 @@ onMounted(async () => {
     <AppHeader
       :service-state="serviceState"
       :service-version="serviceVersion"
+      :route-name="typeof route.name === 'string' ? route.name : null"
+      :route-path="route.path ?? ''"
+      :route-focus="route.query?.focus"
       data-test="app-global-header"
     />
     <main id="main-content" class="app-main">

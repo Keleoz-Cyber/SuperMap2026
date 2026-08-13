@@ -1,4 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils'
+import { readFileSync } from 'node:fs'
 import { defineComponent, h } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ElementPlus from 'element-plus'
@@ -313,6 +314,11 @@ afterEach(() => {
 })
 
 describe('NativeVolumePanel 能力与资产', () => {
+  it('工具栏只允许纵向滚动，不产生底部横向滚动条', () => {
+    const source = String(readFileSync('src/components/rendering/NativeVolumePanel.vue'))
+    expect(source).toMatch(/\.tools-rail\s*\{[^}]*overflow-x:\s*hidden;/s)
+  })
+
   it('presentation variant keeps a full-height scene geometry contract', async () => {
     const source = await import('../NativeVolumePanel.vue?raw')
     expect(source.default).toContain('.native-volume-panel.presentation .panel-body')

@@ -92,6 +92,13 @@ beforeEach(() => {
 })
 
 describe('responsive & accessibility contracts', () => {
+  it('home and cases navigation use mutually exclusive explicit active states', () => {
+    const source = String(readFileSync('src/components/shell/AppHeader.vue'))
+    expect(source).toContain('isHomeActive')
+    expect(source).toContain('isCasesActive')
+    expect(source).toContain('active-class=""')
+  })
+
   it('uses a readable global type scale and shared product-page grid', () => {
     expect(tokensCss).toContain('--s1-font-xs: 12px')
     expect(tokensCss).toContain('--s1-font-md: 14px')
