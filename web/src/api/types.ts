@@ -316,7 +316,25 @@ export interface GridSpecPayload {
 }
 
 // v0.8.0：dsi_like 离散平滑插值（工程近似，仅 3D，不等同 GOCAD DSI）
-export type Algorithm = 'idw' | 'ordinary_kriging' | 'dsi_like'
+export type Algorithm =
+  | 'idw'
+  | 'ordinary_kriging'
+  | 'dsi_like'
+  | 'random_forest_spatial'
+  | 'kriging_rf_residual'
+
+export interface MLCapability {
+  dataset_id: string
+  level: 'supported' | 'experimental' | 'not_recommended'
+  valid_sample_count: number
+  spatial_group_count: number
+  available_algorithms: Algorithm[]
+  confirmation_required: boolean
+  reason_code: string | null
+  message: string
+  validation_requirement: 'spatial_cross_validation'
+  dispersion_semantics: 'model_dispersion_reference'
+}
 
 export interface ExperimentCreatePayload {
   case_id: string
@@ -333,6 +351,7 @@ export interface ExperimentCreatePayload {
   professional_confirmation_id?: string
   neighborhood?: NeighborhoodPayload
   empirical_uncertainty?: EmpiricalUncertaintyPayload
+  ml_experimental_confirmed?: boolean
 }
 
 export interface ExperimentRecord {
@@ -1133,8 +1152,13 @@ export interface WorkspaceExperimentSummary {
 export interface WorkspaceResultSummary {
   result_id: string
   experiment_id: string
+  experiment_name: string
   algorithm: string
+  parameters: Record<string, unknown>
+  metrics: { rmse: number | null; mae: number | null; r2: number | null; bias: number | null }
+  validation_summary: Record<string, unknown>
   materialized: boolean
+  materialization_status: 'ready' | 'pending'
   featured: boolean
   created_at: string
   url: string
@@ -1192,6 +1216,13 @@ export interface MultiCandidateComparison {
   mismatches: string[]
   candidates: ComparisonCandidateSummary[]
   ranking: string[] | null
+  comparison_items: ComparisonCandidateSummary[]
+  ranking_status: 'ranked' | 'not_ranked'
+  differences: Array<{ code: string; message: string }>
+  unified_experiment_draft: {
+    dataset_version_id: string
+    validation: Record<string, unknown>
+  } | null
   comparison_fingerprint: string
 }
 
@@ -1413,6 +1444,49 @@ export interface ResultModelEvidence {
   formal_selection_note: string | null
 }
 
+export type MLResultField =
+  | 'prediction'
+  | 'model_dispersion'
+  | 'kriging_baseline'
+  | 'residual_correction'
+
+export interface MLKrigingBaselineEvidence {
+  result_id: string
+  algorithm: 'ordinary_kriging'
+  rmse: number
+  mae: number
+  r2: number | null
+  bias: number | null
+  common_valid_count: number
+  fold_assignments_sha256: string
+}
+
+export interface MLMetricChange {
+  rmse_absolute: number
+  rmse_percent: number | null
+  mae_absolute: number
+  mae_percent: number | null
+}
+
+export interface MLResultEvidence {
+  algorithm: 'random_forest_spatial' | 'kriging_rf_residual'
+  comparison_status: 'comparable' | 'unavailable'
+  comparison_reason_code: string | null
+  baseline: MLKrigingBaselineEvidence | null
+  metric_change: MLMetricChange | null
+  improved_over_kriging: boolean | null
+  available_fields: MLResultField[]
+  dispersion_semantics: 'model_dispersion_reference'
+  limitations: string[]
+  technical_details: {
+    feature_version: string | null
+    sklearn_version: string | null
+    validation_method: string | null
+    common_valid_count: number | null
+    fold_assignments_sha256: string | null
+  }
+}
+
 export interface ResultSpatialTarget {
   kind: 'component' | 'depth_bin' | 'grid'
   component_id: number | null
@@ -1455,6 +1529,7 @@ export interface ResultAnalysisSummary {
   depth_profile: ResultDepthProfile
   components_preview: ResultComponentsPreview
   model_evidence: ResultModelEvidence
+  machine_learning?: MLResultEvidence
   findings: ResultAnalysisFinding[]
   provenance: ResultAnalysisProvenance
 }

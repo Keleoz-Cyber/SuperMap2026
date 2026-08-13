@@ -77,6 +77,48 @@ function mountEvidence(props: Record<string, unknown> = {}) {
 }
 
 describe('ResultGridEvidence（V6 四标签）', () => {
+  it('机器学习成果在模型可信度中展示基线比较证据', async () => {
+    const analysis = structuredClone(RESULT_ANALYSIS_MOCK_3D)
+    analysis.model_evidence.algorithm = 'random_forest_spatial'
+    analysis.machine_learning = {
+      algorithm: 'random_forest_spatial',
+      comparison_status: 'comparable',
+      comparison_reason_code: null,
+      baseline: {
+        result_id: 'kriging-1',
+        algorithm: 'ordinary_kriging',
+        rmse: 6.5,
+        mae: 4.2,
+        r2: 0.91,
+        bias: 0.08,
+        common_valid_count: 1722,
+        fold_assignments_sha256: 'a'.repeat(64),
+      },
+      metric_change: {
+        rmse_absolute: 0.2,
+        rmse_percent: 3.077,
+        mae_absolute: 0.1,
+        mae_percent: 2.381,
+      },
+      improved_over_kriging: false,
+      available_fields: ['prediction', 'model_dispersion'],
+      dispersion_semantics: 'model_dispersion_reference',
+      limitations: ['模型离散度仅作参考，不是严格置信区间。'],
+      technical_details: {
+        feature_version: 'spatial_features.v1',
+        sklearn_version: '1.7.2',
+        validation_method: 'spatial_kfold',
+        common_valid_count: 1722,
+        fold_assignments_sha256: 'a'.repeat(64),
+      },
+    }
+    const wrapper = mountEvidence({ analysis })
+    await wrapper.get('[data-test="ge-tab-model"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="ml-model-evidence"]').text()).toContain('未优于普通克里金')
+    expect(wrapper.get('[data-test="ge-pane-model"]').text()).toContain('随机森林空间预测')
+  })
+
   it('只渲染四个一级标签', async () => {
     const wrapper = mountEvidence()
     await flushPromises()
@@ -172,7 +214,8 @@ describe('ResultGridEvidence（V6 四标签）', () => {
     await wrapper.get('[data-test="ge-tab-model"]').trigger('click')
     await flushPromises()
     const pane = wrapper.get('[data-test="ge-pane-model"]')
-    expect(pane.text()).toContain('ordinary_kriging')
+    expect(pane.text()).toContain('普通克里金')
+    expect(pane.text()).not.toContain('ordinary_kriging')
     expect(pane.text()).toContain('5.2')
     expect(pane.text()).toContain('暂无残差证据')
     expect(pane.text()).not.toContain('NaN')

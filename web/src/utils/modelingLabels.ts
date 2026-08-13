@@ -2,6 +2,8 @@ const ALGORITHMS: Record<string, string> = {
   idw: 'IDW（反距离加权）',
   ordinary_kriging: '普通克里金',
   dsi_like: 'DSI-like 离散平滑插值',
+  random_forest_spatial: '随机森林空间预测',
+  kriging_rf_residual: '克里金残差校正',
 }
 
 const COORDINATES: Record<string, string> = {
@@ -50,6 +52,13 @@ const PARAM_LABELS: Record<string, string> = {
   max_iterations: '最大迭代次数',
   convergence_tolerance: '收敛容差',
   hard_constraints: '观测点约束',
+  n_estimators: '决策树数量',
+  max_depth: '最大树深',
+  min_samples_leaf: '叶节点最少样本',
+  max_features: '每次分裂特征数',
+  random_state: '随机种子',
+  rf: '随机森林参数',
+  kriging: '克里金参数',
 }
 
 const VARIOGRAM_MODELS: Record<string, string> = {

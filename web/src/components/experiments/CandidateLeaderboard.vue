@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { CandidateRecord } from '../../api/types'
+import { algorithmLabel } from '../../utils/modelingLabels'
 
 const props = defineProps<{
   candidates: CandidateRecord[]
   publicMetrics: Record<string, number>
+  algorithm?: string
 }>()
 
 // 默认排序：成功候选按公共有效 RMSE 升序；失败候选永远保留在表格中、
@@ -63,6 +65,9 @@ function paramsPreview(parameters: Record<string, unknown>): string {
   <section class="leaderboard" data-test="leaderboard">
     <div class="board-head">
       <h3>本实验候选排行榜</h3>
+      <span v-if="algorithm" class="algorithm" data-test="candidate-algorithm">
+        {{ algorithmLabel(algorithm) }}
+      </span>
       <span class="public" data-test="public-metrics">
         仅比较当前实验本次运行的参数组合 · 公共有效点
         {{ publicMetrics.common_valid_count ?? '—' }}（公共掩膜复算，NoData 不换排名优势）
@@ -140,6 +145,15 @@ function paramsPreview(parameters: Record<string, unknown>): string {
 .public {
   font-size: 12px;
   color: var(--gmp-text-faint);
+}
+
+.algorithm {
+  padding: 2px 7px;
+  border: 1px solid var(--gmp-border);
+  border-radius: 4px;
+  color: var(--gmp-text-dim);
+  background: var(--gmp-bg-soft);
+  font-size: 12px;
 }
 
 .board-table {

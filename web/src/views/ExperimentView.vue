@@ -8,6 +8,7 @@ import {
   fetchCandidates,
   fetchCaseDatasets,
   fetchDataset,
+  fetchMLCapability,
   fetchExperiment,
   fetchProfessionalConfirmation,
   fetchProfessionalDiagnostics,
@@ -21,6 +22,8 @@ import type {
   ExperimentCreatePayload,
   ExperimentRecord,
   NeighborhoodPayload,
+  MLCapability,
+  Algorithm,
   ProfessionalConfirmationSummary,
   ProfessionalDiagnosticListItem,
   RunRecord,
@@ -50,6 +53,7 @@ const caseId = computed(() => String(route.params.caseId ?? ''))
 const experimentId = computed(() => String(route.params.experimentId ?? ''))
 
 const dataset = ref<DatasetVersionRecord | null>(null)
+const mlCapability = ref<MLCapability | null>(null)
 const name = ref('插值实验')
 const submitting = ref(false)
 
@@ -60,6 +64,7 @@ const editorSnapshot = ref<ParameterSubmit | null>(null)
 
 function onEditorSnapshot(payload: ParameterSubmit) {
   editorSnapshot.value = payload
+  editorAlgorithm.value = payload.algorithm
 }
 
 const experiment = ref<ExperimentRecord | null>(null)
@@ -115,7 +120,7 @@ const confirmationNote = computed(() => {
   return raw?.note ?? null
 })
 
-const editorAlgorithm = ref<'idw' | 'ordinary_kriging'>('idw')
+const editorAlgorithm = ref<Algorithm>('idw')
 function onEditorChange(event: Event) {
   const target = event.target as HTMLInputElement | null
   if (!target || target.name !== 'algo') return
@@ -218,6 +223,7 @@ async function resolveDataset() {
     confirmationSummary.value = summary
     editorAlgorithm.value = 'ordinary_kriging'
     dataset.value = await fetchDataset(summary.dataset_id)
+    mlCapability.value = await fetchMLCapability(summary.dataset_id)
     return
   }
   confirmationSummary.value = null
@@ -239,6 +245,7 @@ async function resolveDataset() {
     dataset.value = await fetchDataset(picked.id)
   }
   if (dataset.value?.status === 'validated') {
+    mlCapability.value = await fetchMLCapability(dataset.value.id)
     void loadDiagnosisHistory()
     void loadDatasetPoints(dataset.value.id)
   }
@@ -277,6 +284,7 @@ async function submit(payload: ParameterSubmit) {
     parameters: payload.parameters,
     validation: payload.validation,
     grid: payload.grid,
+    ml_experimental_confirmed: payload.ml_experimental_confirmed,
   }
   if (professionalConfirmationId.value) {
     body.professional_confirmation_id = professionalConfirmationId.value
@@ -457,6 +465,7 @@ onBeforeUnmount(stopPolling)
               :preset="preset"
               :algorithm-lock="professionalConfirmationId ? 'ordinary_kriging' : null"
               :z-scale-lock="professionalConfirmationId ? 1 : null"
+              :ml-capability="mlCapability"
               @submit="submit"
               @change="onEditorSnapshot"
             />
@@ -624,7 +633,11 @@ onBeforeUnmount(stopPolling)
       <RunPipeline :run="latestRun" />
       <RunProgress :run="latestRun" :acting="acting" @cancel="onCancel" @retry="onRetry" />
       <ResultStatusPanel :run="latestRun" :candidates="candidates" />
-      <CandidateLeaderboard :candidates="candidates" :public-metrics="publicMetrics" />
+      <CandidateLeaderboard
+        :candidates="candidates"
+        :public-metrics="publicMetrics"
+        :algorithm="experiment?.params.algorithm"
+      />
     </template>
   </div>
 </template>

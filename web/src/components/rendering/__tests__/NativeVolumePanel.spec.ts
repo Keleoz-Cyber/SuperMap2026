@@ -1,4 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils'
+import { readFileSync } from 'node:fs'
 import { defineComponent, h } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ElementPlus from 'element-plus'
@@ -313,6 +314,17 @@ afterEach(() => {
 })
 
 describe('NativeVolumePanel 能力与资产', () => {
+  it('工具栏只允许纵向滚动，不产生底部横向滚动条', () => {
+    const source = String(readFileSync('src/components/rendering/NativeVolumePanel.vue'))
+    expect(source).toMatch(/\.tools-rail\s*\{[^}]*overflow-x:\s*hidden;/s)
+  })
+
+  it('presentation variant keeps a full-height scene geometry contract', async () => {
+    const source = await import('../NativeVolumePanel.vue?raw')
+    expect(source.default).toContain('.native-volume-panel.presentation .panel-body')
+    expect(source.default).toContain('.native-volume-panel.presentation .scene-column')
+    expect(source.default).toContain('.native-volume-panel.presentation :deep(.volume-frame)')
+  })
   it('展示舞台只显示用户可理解的渲染状态，技术身份不占据主阅读层', async () => {
     const api = makeApi({ fetchAsset: vi.fn().mockResolvedValue(ASSET) })
     const wrapper = mountPanel(api, null, { variant: 'presentation' })
@@ -683,6 +695,65 @@ describe('NativeVolumePanel 控件与 revision', () => {
 })
 
 describe('NativeVolumePanel 切片集成', () => {
+  it('apiKey 变化时清空旧身份并按新字段 API 重载，旧请求不得覆盖', async () => {
+    let resolveOld: (value: RenderCapability) => void = () => {}
+    const oldCapability = new Promise<RenderCapability>((resolve) => { resolveOld = resolve })
+    const oldApi = makeApi({ fetchCapability: vi.fn(() => oldCapability) })
+    const newAsset = { ...ASSET_B, source_id: 'r1::model_dispersion' }
+    const newApi = makeApi({ fetchAsset: vi.fn().mockResolvedValue(newAsset) })
+    const wrapper = mountPanel(oldApi, null, { apiKey: 'prediction' })
+
+    await wrapper.setProps({ api: newApi, apiKey: 'model_dispersion' })
+    await flushPromises()
+    expect(newApi.fetchCapability).toHaveBeenCalledTimes(1)
+    expect(newApi.fetchAsset).toHaveBeenCalledTimes(1)
+    expect(wrapper.findComponent(FrameStub).props('asset')).toEqual(newAsset)
+
+    resolveOld(supportedCapability())
+    await flushPromises()
+    expect(wrapper.findComponent(FrameStub).props('asset')).toEqual(newAsset)
+    expect(wrapper.emitted('asset-identity')?.at(-1)?.[0]).toMatchObject({ assetId: newAsset.id })
+    wrapper.unmount()
+  })
+
+  it('字段能力加载失败会结束切换状态，允许用户切回其他字段', async () => {
+    const api = makeApi({
+      fetchCapability: vi.fn().mockRejectedValue(
+        new ApiError('ML_FIELD_NOT_AVAILABLE', '该成果不提供请求字段', 409),
+      ),
+    })
+    const wrapper = mountPanel(api, null, { apiKey: 'model_dispersion' })
+    await flushPromises()
+    expect(wrapper.emitted('source-load-state')?.at(-1)?.[0]).toMatchObject({
+      key: 'model_dispersion',
+      loading: false,
+      error: expect.stringContaining('ML_FIELD_NOT_AVAILABLE'),
+    })
+    wrapper.unmount()
+  })
+
+  it('字段切换后忽略旧资产的迟到切片响应', async () => {
+    const api = makeApi({ fetchAsset: vi.fn().mockResolvedValue(ASSET) })
+    const wrapper = mountPanel(api, null, { apiKey: 'prediction' })
+    await flushPromises()
+    await emitRendered(wrapper)
+    await wrapper.find('[data-test="mode-slice"] input').setValue(true)
+    await flushPromises()
+    const before = wrapper.emitted('slice-analysis')?.length ?? 0
+
+    const newAsset = { ...ASSET_B, source_id: 'r1::model_dispersion' }
+    const nextApi = makeApi({ fetchAsset: vi.fn().mockResolvedValue(newAsset) })
+    await wrapper.setProps({ api: nextApi, apiKey: 'model_dispersion' })
+    await flushPromises()
+
+    const stale = makeSliceAnalysis('z', 1)
+    const exposed = wrapper.vm as unknown as { acceptSliceAnalysis: (response: SliceAnalysisResponse) => void }
+    exposed.acceptSliceAnalysis(stale)
+    await flushPromises()
+    expect(wrapper.emitted('slice-analysis')?.length ?? 0).toBe(before)
+    wrapper.unmount()
+  })
+
   async function enterSliceMode(wrapper: ReturnType<typeof mount>) {
     await wrapper.find('[data-test="mode-slice"] input').setValue(true)
     await flushPromises()

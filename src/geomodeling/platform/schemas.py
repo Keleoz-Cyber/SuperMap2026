@@ -91,6 +91,8 @@ class Algorithm(str, Enum):
     ORDINARY_KRIGING = "ordinary_kriging"
     # v0.8.0：DSI-like 离散平滑插值（工程近似，不等同 GOCAD DSI），仅 3D
     DSI_LIKE = "dsi_like"
+    RANDOM_FOREST_SPATIAL = "random_forest_spatial"
+    KRIGING_RF_RESIDUAL = "kriging_rf_residual"
 
 
 # ---------------------------------------------------------------------------
@@ -192,6 +194,7 @@ class ExperimentCreateRequest(ContractModel):
     professional_confirmation_id: str | None = Field(default=None, min_length=1, max_length=128)
     neighborhood: dict[str, Any] | None = None
     empirical_uncertainty: dict[str, Any] | None = None
+    ml_experimental_confirmed: bool = False
 
 
 class FormalSelectionRequest(ContractModel):
@@ -492,8 +495,13 @@ class WorkspaceResultSummary(ContractModel):
 
     result_id: str
     experiment_id: str
+    experiment_name: str
     algorithm: str
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    metrics: dict[str, float | None] = Field(default_factory=dict)
+    validation_summary: dict[str, Any] = Field(default_factory=dict)
     materialized: bool
+    materialization_status: Literal["ready", "pending"]
     featured: bool
     created_at: str
     url: str

@@ -25,9 +25,10 @@ describe('AppShell', () => {
     const wrapper = mount(AppShell, {
       global: { stubs: { RouterView: true, RouterLink: { template: '<a><slot /></a>' } } },
     })
-    expect(wrapper.get('[data-test="shell-brand"]').text()).toContain('GeoModelingPlatform')
+    expect(wrapper.get('[data-test="shell-brand"]').attributes('aria-label')).toBe('返回首页')
+    expect(wrapper.get('[data-test="shell-platform-title"]').text()).toBe('地质属性三维建模与空间分析平台')
     expect(wrapper.get('[data-test="shell-home-link"]').text()).toBe('首页')
-    expect(wrapper.get('[data-test="shell-nav-cases"]').text()).toBe('案例')
+    expect(wrapper.find('[data-test="shell-nav-cases"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="shell-nav-ingest"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="shell-nav-experiments"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="shell-nav-comparison"]').exists()).toBe(false)

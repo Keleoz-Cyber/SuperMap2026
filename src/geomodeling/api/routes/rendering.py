@@ -52,7 +52,11 @@ from geomodeling.platform.slice_exports import (
     MAX_SLICE_IMAGE_BYTES,
     SLICE_EXPORT_UPLOAD_TOO_LARGE,
 )
-from geomodeling.platform.repositories import RenderAssetRepository, require_active_candidate, require_active_render_asset
+from geomodeling.platform.repositories import (
+    RenderAssetRepository,
+    require_active_candidate,
+    require_active_render_asset,
+)
 from geomodeling.platform.schemas import (
     STATUS_READY,
     ContractModel,
@@ -144,7 +148,9 @@ def _create_payload(
     )
 
 
-def _status_payload(runtime: PlatformRuntime, source_kind: str, source_id: str) -> dict[str, Any]:
+def _status_payload(
+    runtime: PlatformRuntime, source_kind: str, source_id: str
+) -> dict[str, Any]:
     """纯查询：读该源最新资产行；从未创建 404，绝不创建文件或改行。"""
 
     with runtime.session() as session:
@@ -160,11 +166,14 @@ def _status_payload(runtime: PlatformRuntime, source_kind: str, source_id: str) 
 @router.get("/api/results/{result_id}/render-capability")
 def get_result_render_capability(
     result_id: str,
+    field: str = Query("prediction"),
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
     require_active_candidate(runtime, result_id)
     # 纯查询：不物化、不建文件、不改行
-    return dataclasses.asdict(render_assets.candidate_render_capability(runtime, result_id))
+    return dataclasses.asdict(
+        render_assets.candidate_render_capability(runtime, result_id, field=field)
+    )
 
 
 @router.post("/api/results/{result_id}/render-assets/netcdf", status_code=201)
@@ -172,12 +181,15 @@ def create_result_render_asset(
     result_id: str,
     response: Response,
     body: RenderAssetCreateBody | None = None,
+    field: str = Query("prediction"),
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
     require_active_candidate(runtime, result_id)
     # POST 是显式变异：先显式物化（幂等），再解析源创建资产
     platform_results.materialize(runtime, result_id)
-    source = render_assets.resolve_candidate_render_source(runtime, result_id)
+    source = render_assets.resolve_candidate_render_source(
+        runtime, result_id, field=field
+    )
     payload, status_code = _create_payload(
         runtime, source, retry_failed=body.retry_failed if body is not None else False
     )
@@ -188,10 +200,17 @@ def create_result_render_asset(
 @router.get("/api/results/{result_id}/render-assets/netcdf")
 def get_result_render_asset(
     result_id: str,
+    field: str = Query("prediction"),
     runtime: PlatformRuntime = Depends(get_platform_runtime),
 ) -> dict[str, Any]:
     require_active_candidate(runtime, result_id)
-    return _status_payload(runtime, "candidate_result", result_id)
+    if field == "prediction":
+        source_id = result_id
+    else:
+        source_id = render_assets.resolve_candidate_render_source(
+            runtime, result_id, field=field
+        ).source_id
+    return _status_payload(runtime, "candidate_result", source_id)
 
 
 # ---------------------------------------------------------------------------
@@ -245,7 +264,9 @@ async def import_legacy_render_source() -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-def _verified_ready_package(runtime: PlatformRuntime, asset_id: str) -> tuple[RenderAssetRecord, Path]:
+def _verified_ready_package(
+    runtime: PlatformRuntime, asset_id: str
+) -> tuple[RenderAssetRecord, Path]:
     """文件下发门禁：ID 形态 → ready 行 → containment → 当前文件哈希核验。
 
     任一环失败都 fail-closed：非法 ID 400、缺席 404、非 ready 409、

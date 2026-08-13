@@ -5,7 +5,7 @@
 未知字段拒绝；所有浮点字段必须有限。AI 引用只能指向当前
 EvidencePacket 的合法证据 ID。
 
-设计依据：docs/superpowers/specs/2026-08-10-v0.9.0-result-analysis-integration-design.md §9。
+当前合同依据：docs/architecture.md 的 AI 辅助研判边界与 docs/acceptance.md。
 """
 
 from __future__ import annotations

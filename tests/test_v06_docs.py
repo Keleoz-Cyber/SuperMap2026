@@ -2,7 +2,7 @@
 
 禁止表述只允许出现在显式「禁止表述」引述 fixture 区（由
 ``banned-claims-fixture:start/end`` 标记包裹），不得出现在读者面能力陈述中。
-设计来源：docs/superpowers/specs/2026-07-26-v0.6-professional-modeling-enhancements-design.md §21。
+当前文档合同来源：docs/architecture.md 与 docs/acceptance.md。
 """
 
 from __future__ import annotations
@@ -183,12 +183,12 @@ def test_readme_documents_v06_capability_cli_and_runbook_link():
     assert "v0.5.0 已发布" in text and "d37eb94" in text, "README 发布基线未记录 v0.5.0 已发布"
 
 
-def test_status_marks_v06_implemented_on_branch_and_v050_released():
+def test_status_marks_v06_implemented_without_stale_branch_state_and_v050_released():
     text = _read(STATUS_DOC)
-    assert "feat/v0.6-professional-modeling" in text, "状态文档缺少 v0.6 分支标识"
-    assert "已实现" in text, "状态文档缺少 v0.6 已实现口径"
+    assert "v0.6.0" in text and "当前平台" in text, "状态文档缺少 v0.6 当前能力口径"
+    assert "feat/v0.6-professional-modeling" not in text, "状态文档不得保留已结束的临时分支状态"
     assert "v0.5.0" in text and "d37eb94" in text, "状态文档未把 v0.5.0 移入已发布"
-    assert "待批准" in text, "状态文档必须保留 v0.6 PR/tag 待批准说明"
+    assert "待批准" not in text, "状态文档不得把已进入当前平台的 v0.6 写成待批准"
 
 
 def test_architecture_documents_v06_professional_layer():

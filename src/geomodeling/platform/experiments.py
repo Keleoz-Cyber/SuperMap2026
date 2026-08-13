@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from pydantic import ValidationError
+import pandas as pd
 
 from geomodeling.modeling.anisotropy import KrigingAnisotropySpec
 from geomodeling.modeling.professional_contracts import (
@@ -40,6 +41,7 @@ from geomodeling.platform.repositories import (
     ProfessionalDiagnosticRepository,
 )
 from geomodeling.platform.schemas import Algorithm
+from geomodeling.platform.ml_capability import MLCapability, assess_ml_capability
 from geomodeling.platform.tables import RunStatus
 
 SEARCH_TOO_LARGE = "SEARCH_TOO_LARGE"
@@ -76,6 +78,43 @@ PROFESSIONAL_Z_SCALE_CONFLICT = "PROFESSIONAL_Z_SCALE_CONFLICT"
 
 # v0.8.0：创建期算法-维度校验（设计 §4.4），DSI-like 仅接受三维散点数据
 ALGORITHM_DIMENSION_MISMATCH = "ALGORITHM_DIMENSION_MISMATCH"
+ML_EXPERIMENTAL_CONFIRMATION_REQUIRED = "ML_EXPERIMENTAL_CONFIRMATION_REQUIRED"
+
+_ML_ALGORITHMS = {
+    Algorithm.RANDOM_FOREST_SPATIAL.value,
+    Algorithm.KRIGING_RF_RESIDUAL.value,
+}
+
+
+def validate_ml_experiment(request, frame: pd.DataFrame, dimension: str) -> MLCapability | None:
+    """Validate ML suitability before an experiment is persisted."""
+
+    algorithm = Algorithm(request.algorithm).value
+    if algorithm not in _ML_ALGORITHMS:
+        return None
+    capability = assess_ml_capability(frame, dimension)
+    if capability.level == "not_recommended":
+        raise PlatformError(
+            capability.reason_code or "ML_DATASET_TOO_SMALL",
+            capability.message,
+            capability.model_dump(mode="json"),
+            http_status=409,
+        )
+    if algorithm == Algorithm.KRIGING_RF_RESIDUAL.value and capability.level != "supported":
+        raise PlatformError(
+            "ML_DATASET_TOO_SMALL",
+            "克里金残差校正需要至少 200 个有效样本和 30 个独立空间分组。",
+            capability.model_dump(mode="json"),
+            http_status=409,
+        )
+    if capability.confirmation_required and not request.ml_experimental_confirmed:
+        raise PlatformError(
+            ML_EXPERIMENTAL_CONFIRMATION_REQUIRED,
+            "该数据规模只能进行实验性随机森林对照，请确认小样本限制后再运行。",
+            capability.model_dump(mode="json"),
+            http_status=409,
+        )
+    return capability
 
 
 def assert_algorithm_dimension(algorithm: str, profile: dict[str, Any]) -> None:
@@ -229,6 +268,8 @@ def expand_candidates(search: dict[str, Any]) -> list[CandidateDefinition]:
     definitions: list[CandidateDefinition] = []
     for index, parameters in enumerate(combos):
         merged = _merge_professional_parameters(algorithm, parameters, professional)
+        if algorithm in _ML_ALGORITHMS:
+            merged.setdefault("feature_version", "spatial_features.v1")
         definitions.append(
             CandidateDefinition(
                 index=index,

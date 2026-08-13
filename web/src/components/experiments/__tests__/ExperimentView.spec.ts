@@ -26,6 +26,7 @@ vi.mock('../../../api/client', async (importOriginal) => {
     fetchDataset: vi.fn(),
     fetchProfessionalConfirmation: vi.fn(),
     fetchProfessionalDiagnostics: vi.fn(),
+    fetchMLCapability: vi.fn(),
     createExperiment: vi.fn(),
     startRun: vi.fn(),
     fetchRun: vi.fn(),
@@ -218,6 +219,18 @@ beforeEach(() => {
   vi.mocked(client.fetchResultRenderCapability).mockResolvedValue(CAPABILITY_OK)
   vi.mocked(client.fetchResultRenderAsset).mockRejectedValue(assetNotFound())
   vi.mocked(client.createResultRenderAsset).mockResolvedValue(makeAsset('ready'))
+  vi.mocked(client.fetchMLCapability).mockResolvedValue({
+    dataset_id: 'ds1',
+    level: 'supported',
+    valid_sample_count: 240,
+    spatial_group_count: 40,
+    available_algorithms: ['random_forest_spatial', 'kriging_rf_residual'],
+    confirmation_required: false,
+    reason_code: null,
+    message: '样本量和独立空间分组满足机器学习空间验证要求。',
+    validation_requirement: 'spatial_cross_validation',
+    dispersion_semantics: 'model_dispersion_reference',
+  })
 })
 
 afterEach(() => {
@@ -290,6 +303,39 @@ describe('ExperimentView 创建模式', () => {
     expect(payload.parameters).not.toHaveProperty('nugget')
     expect(payload.parameters).not.toHaveProperty('sill')
     expect(payload.parameters).not.toHaveProperty('range')
+    wrapper.unmount()
+  })
+
+  it('实验性 RF 将用户确认随实验请求提交', async () => {
+    vi.mocked(client.fetchDataset).mockResolvedValue(DATASET)
+    vi.mocked(client.fetchMLCapability).mockResolvedValue({
+      dataset_id: 'ds1',
+      level: 'experimental',
+      valid_sample_count: 100,
+      spatial_group_count: 20,
+      available_algorithms: ['random_forest_spatial'],
+      confirmation_required: true,
+      reason_code: 'ML_EXPERIMENTAL_DATASET',
+      message: '样本规模有限，仅建议将随机森林作为实验性对照。',
+      validation_requirement: 'spatial_cross_validation',
+      dispersion_semantics: 'model_dispersion_reference',
+    })
+    vi.mocked(client.createExperiment).mockResolvedValue(EXP)
+    vi.mocked(client.startRun).mockResolvedValue(makeRun('queued'))
+    vi.mocked(client.fetchExperiment).mockResolvedValue(EXP)
+    vi.mocked(client.fetchCandidates).mockResolvedValue(makeCandidates([], makeRun('queued')))
+
+    const { wrapper } = await mountAt('/cases/c1/experiments/new?dataset=ds1')
+    await wrapper.get('[data-test="algo-random-forest"]').setValue(true)
+    await wrapper.get('[data-test="ml-experimental-confirmation-input"]').setValue(true)
+    await wrapper.get('[data-test="exp-submit"]').trigger('click')
+    await flushPromises()
+
+    expect(client.fetchMLCapability).toHaveBeenCalledWith('ds1')
+    expect(vi.mocked(client.createExperiment).mock.calls[0][0]).toMatchObject({
+      algorithm: 'random_forest_spatial',
+      ml_experimental_confirmed: true,
+    })
     wrapper.unmount()
   })
 

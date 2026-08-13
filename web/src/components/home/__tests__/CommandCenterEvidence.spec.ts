@@ -1,4 +1,5 @@
 import { mount } from '@vue/test-utils'
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import type { AnalysisSummaryResponse } from '../../../api/types'
 import CommandCenterEvidence from '../CommandCenterEvidence.vue'
@@ -27,6 +28,21 @@ const SUMMARY: AnalysisSummaryResponse = {
 }
 
 describe('CommandCenterEvidence', () => {
+  it('keeps the donut legend separate and fits a three-digit percentage inside the ring', () => {
+    const source = String(readFileSync('src/components/home/CommandCenterEvidence.vue'))
+    expect(source).toMatch(/\.donut\s*\{[^}]*flex:\s*none;/s)
+    expect(source).toMatch(/\.donut-legend[^\{]*\{[^}]*min-width:\s*0;/s)
+    expect(source).toMatch(/\.donut-text\s*\{[^}]*font-size:\s*(?:8\.5|9)px;/s)
+  })
+
+  it('uses the available desktop footer space for a readable evidence dashboard', () => {
+    const source = String(readFileSync('src/components/home/CommandCenterEvidence.vue'))
+    expect(source).toMatch(/\.evidence-band\s*\{[^}]*min-height:\s*148px;/s)
+    expect(source).toMatch(/\.donut\s*\{[^}]*width:\s*72px;[^}]*height:\s*72px;/s)
+    expect(source).toMatch(/\.metric-track\s*\{[^}]*height:\s*8px;/s)
+    expect(source).toMatch(/@media \(max-width: 900px\)[\s\S]*?\.evidence-band\s*\{[^}]*min-height:\s*0;/s)
+  })
+
   it('keeps user-facing property copy outside collapsed technical provenance', () => {
     const wrapper = mount(CommandCenterEvidence, {
       props: { summary: SUMMARY, loading: false },

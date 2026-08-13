@@ -25,7 +25,7 @@
 ``modeling.uncertainty`` 一致（``RUN_CANCELED`` / http 409，按连通
 区批检查）。
 
-设计依据：docs/superpowers/specs/2026-07-26-v0.6-professional-modeling-enhancements-design.md §12。
+当前合同依据：docs/architecture.md 的异常分析边界与 docs/acceptance.md。
 """
 
 from __future__ import annotations

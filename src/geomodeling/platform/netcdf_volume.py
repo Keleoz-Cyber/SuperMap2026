@@ -331,6 +331,14 @@ def write_netcdf_package(
         "geolocation_status": _GEOLOCATION_STATUS,
         "sdk_target": _SDK_TARGET,
     }
+    if source.field_name != "prediction":
+        manifest.update(
+            {
+                "result_id": source.candidate_result_id,
+                "field": source.field_name,
+                "palette_intent": source.palette_intent,
+            }
+        )
     manifest_path = stage_dir / PACKAGE_MANIFEST
     manifest_path.write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"

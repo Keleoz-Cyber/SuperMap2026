@@ -97,10 +97,18 @@ from geomodeling.platform.tables import (
 # v7: uploaded/mapped/blocked 可放弃（abandoned），abandoned 为终态。
 ALLOWED_DATASET_TRANSITIONS: dict[str, frozenset[str]] = {
     DatasetStatus.UPLOADED.value: frozenset(
-        {DatasetStatus.MAPPED.value, DatasetStatus.BLOCKED.value, DatasetStatus.ABANDONED.value}
+        {
+            DatasetStatus.MAPPED.value,
+            DatasetStatus.BLOCKED.value,
+            DatasetStatus.ABANDONED.value,
+        }
     ),
     DatasetStatus.MAPPED.value: frozenset(
-        {DatasetStatus.VALIDATED.value, DatasetStatus.BLOCKED.value, DatasetStatus.ABANDONED.value}
+        {
+            DatasetStatus.VALIDATED.value,
+            DatasetStatus.BLOCKED.value,
+            DatasetStatus.ABANDONED.value,
+        }
     ),
     DatasetStatus.BLOCKED.value: frozenset(
         {DatasetStatus.MAPPED.value, DatasetStatus.ABANDONED.value}
@@ -429,6 +437,7 @@ class ExperimentRepository:
         request: ExperimentCreateRequest,
         *,
         professional: dict[str, Any] | None = None,
+        ml_capability: dict[str, Any] | None = None,
     ) -> ExperimentRecord:
         if request.case_id != case_id:
             raise PlatformError(
@@ -459,6 +468,9 @@ class ExperimentRepository:
             # v0.6：规范化专业上下文随实验参数落库；legacy 实验不写该键，
             # params_json 与 v0.5 逐位一致。
             params["professional"] = professional
+        if ml_capability is not None:
+            params["ml_capability"] = ml_capability
+            params["ml_experimental_confirmed"] = request.ml_experimental_confirmed
         row = Experiment(
             id=_new_id(),
             case_id=case_id,
@@ -997,7 +1009,9 @@ class ProfessionalDiagnosticRepository:
         return _professional_diagnostic_record(self._get_row(diagnosis_id))
 
     def list_for_dataset(
-        self, dataset_id: str, limit: int = 50,
+        self,
+        dataset_id: str,
+        limit: int = 50,
     ) -> list[ProfessionalDiagnosticRecord]:
         """List diagnostics for a dataset, newest-first."""
         rows = (
@@ -1673,9 +1687,13 @@ class RenderAssetRepository:
                 source_kind=source.source_kind,
                 source_id=source.source_id,
                 candidate_result_id=(
-                    source.source_id
-                    if source.source_kind == "candidate_result"
-                    else None
+                    source.candidate_result_id
+                    if source.candidate_result_id is not None
+                    else (
+                        source.source_id
+                        if source.source_kind == "candidate_result"
+                        else None
+                    )
                 ),
                 renderer=RENDERER,
                 format_version=FORMAT_VERSION,
@@ -1837,8 +1855,10 @@ def require_active_dataset(runtime: Any, dataset_id: str) -> str:
         dv = session.get(DatasetVersion, dataset_id)
         if dv is None:
             raise PlatformError(
-                DATASET_NOT_FOUND, "数据集不存在",
-                {"dataset_id": dataset_id}, http_status=404,
+                DATASET_NOT_FOUND,
+                "数据集不存在",
+                {"dataset_id": dataset_id},
+                http_status=404,
             )
         CaseRepository(session).get_active(dv.case_id)
         return dv.case_id
@@ -1850,8 +1870,10 @@ def require_active_experiment(runtime: Any, experiment_id: str) -> str:
         exp = session.get(Experiment, experiment_id)
         if exp is None:
             raise PlatformError(
-                EXPERIMENT_NOT_FOUND, "实验不存在",
-                {"experiment_id": experiment_id}, http_status=404,
+                EXPERIMENT_NOT_FOUND,
+                "实验不存在",
+                {"experiment_id": experiment_id},
+                http_status=404,
             )
         CaseRepository(session).get_active(exp.case_id)
         return exp.case_id
@@ -1863,14 +1885,18 @@ def require_active_run(runtime: Any, run_id: str) -> str:
         run = session.get(Run, run_id)
         if run is None:
             raise PlatformError(
-                RUN_NOT_FOUND, "任务不存在",
-                {"run_id": run_id}, http_status=404,
+                RUN_NOT_FOUND,
+                "任务不存在",
+                {"run_id": run_id},
+                http_status=404,
             )
         exp = session.get(Experiment, run.experiment_id)
         if exp is None:
             raise PlatformError(
-                EXPERIMENT_NOT_FOUND, "实验不存在",
-                {"experiment_id": run.experiment_id}, http_status=404,
+                EXPERIMENT_NOT_FOUND,
+                "实验不存在",
+                {"experiment_id": run.experiment_id},
+                http_status=404,
             )
         CaseRepository(session).get_active(exp.case_id)
         return exp.case_id
@@ -1882,20 +1908,26 @@ def require_active_candidate(runtime: Any, candidate_id: str) -> str:
         cand = session.get(CandidateResult, candidate_id)
         if cand is None:
             raise PlatformError(
-                CANDIDATE_NOT_FOUND, "候选结果不存在",
-                {"candidate_result_id": candidate_id}, http_status=404,
+                CANDIDATE_NOT_FOUND,
+                "候选结果不存在",
+                {"candidate_result_id": candidate_id},
+                http_status=404,
             )
         run = session.get(Run, cand.run_id)
         if run is None:
             raise PlatformError(
-                RUN_NOT_FOUND, "任务不存在",
-                {"run_id": cand.run_id}, http_status=404,
+                RUN_NOT_FOUND,
+                "任务不存在",
+                {"run_id": cand.run_id},
+                http_status=404,
             )
         exp = session.get(Experiment, run.experiment_id)
         if exp is None:
             raise PlatformError(
-                EXPERIMENT_NOT_FOUND, "实验不存在",
-                {"experiment_id": run.experiment_id}, http_status=404,
+                EXPERIMENT_NOT_FOUND,
+                "实验不存在",
+                {"experiment_id": run.experiment_id},
+                http_status=404,
             )
         CaseRepository(session).get_active(exp.case_id)
         return exp.case_id
@@ -1910,6 +1942,7 @@ def require_active_render_asset(runtime: Any, asset_id: str) -> str | None:
     """
     # Skip invalid ID formats -- downstream logic handles validation
     import re
+
     if not re.match(r"^nc-[0-9a-f]{32}$", asset_id):
         return None
     with runtime.session() as session:
@@ -1931,29 +1964,37 @@ def require_active_analysis_job(runtime: Any, job_id: str) -> str:
         job = session.get(AnalysisJob, job_id)
         if job is None:
             raise PlatformError(
-                ANALYSIS_JOB_NOT_FOUND, "分析任务不存在",
-                {"job_id": job_id}, http_status=404,
+                ANALYSIS_JOB_NOT_FOUND,
+                "分析任务不存在",
+                {"job_id": job_id},
+                http_status=404,
             )
         if job.job_kind == "professional_diagnosis":
             diag = session.get(ProfessionalDiagnostic, job.subject_id)
             if diag is None:
                 raise PlatformError(
-                    PROFESSIONAL_DIAGNOSIS_NOT_FOUND, "专业诊断不存在",
-                    {"diagnosis_id": job.subject_id}, http_status=404,
+                    PROFESSIONAL_DIAGNOSIS_NOT_FOUND,
+                    "专业诊断不存在",
+                    {"diagnosis_id": job.subject_id},
+                    http_status=404,
                 )
             return require_active_dataset(runtime, diag.dataset_version_id)
         elif job.job_kind == "anomaly_extraction":
             ext = session.get(AnomalyExtraction, job.subject_id)
             if ext is None:
                 raise PlatformError(
-                    ANOMALY_EXTRACTION_NOT_FOUND, "异常提取不存在",
-                    {"extraction_id": job.subject_id}, http_status=404,
+                    ANOMALY_EXTRACTION_NOT_FOUND,
+                    "异常提取不存在",
+                    {"extraction_id": job.subject_id},
+                    http_status=404,
                 )
             return require_active_candidate(runtime, ext.candidate_result_id)
         else:
             raise PlatformError(
-                ANALYSIS_JOB_NOT_FOUND, "未知分析任务类型",
-                {"job_id": job_id, "job_kind": job.job_kind}, http_status=404,
+                ANALYSIS_JOB_NOT_FOUND,
+                "未知分析任务类型",
+                {"job_id": job_id, "job_kind": job.job_kind},
+                http_status=404,
             )
 
 
@@ -1963,8 +2004,10 @@ def require_active_export(runtime: Any, export_id: str) -> str:
         exp = session.get(Export, export_id)
         if exp is None:
             raise PlatformError(
-                "EXPORT_NOT_FOUND", "导出不存在",
-                {"export_id": export_id}, http_status=404,
+                "EXPORT_NOT_FOUND",
+                "导出不存在",
+                {"export_id": export_id},
+                http_status=404,
             )
         CaseRepository(session).get_active(exp.case_id)
         return exp.case_id
@@ -1976,7 +2019,9 @@ def require_active_export(runtime: Any, export_id: str) -> str:
 
 
 def recent_experiments_for_case(
-    session: Session, case_id: str, limit: int = 5,
+    session: Session,
+    case_id: str,
+    limit: int = 5,
 ) -> list[dict[str, Any]]:
     """Return bounded recent experiment summaries for a case, newest-first."""
     from geomodeling.platform.schemas import WorkspaceExperimentSummary
@@ -2024,12 +2069,18 @@ def recent_experiments_for_case(
 
 
 def recent_results_for_case(
-    runtime: Any, case_id: str, featured_result_id: str | None, limit: int = 5,
+    runtime: Any,
+    case_id: str,
+    featured_result_id: str | None,
+    limit: int = 5,
 ) -> list[dict[str, Any]]:
     """Return bounded recent succeeded candidate summaries for a case, newest-first."""
     from geomodeling.platform.schemas import WorkspaceResultSummary
 
     with runtime.session() as session:
+        case = session.get(Case, case_id)
+        case_config = tables.loads_canonical(case.config_json) if case else {}
+        exclude_featured = case_config.get("workspace_kind") == "builtin_preset"
         rows = (
             session.query(CandidateResult)
             .join(Run, CandidateResult.run_id == Run.id)
@@ -2044,18 +2095,39 @@ def recent_results_for_case(
         )
         result: list[dict[str, Any]] = []
         for cand in rows:
+            if exclude_featured and featured_result_id == cand.id:
+                continue
             run = session.get(Run, cand.run_id)
             exp = session.get(Experiment, run.experiment_id) if run else None
             if exp is None:
                 continue
             params = tables.loads_canonical(exp.params_json)
             algorithm = params.get("algorithm", "unknown")
+            metrics = tables.loads_canonical(cand.metrics_json)
+            candidate_params = tables.loads_canonical(cand.params_json)
+            validation = params.get("validation")
+            if not isinstance(validation, dict):
+                validation = {}
 
             summary = WorkspaceResultSummary(
                 result_id=cand.id,
                 experiment_id=exp.id,
+                experiment_name=exp.name,
                 algorithm=algorithm,
+                parameters=candidate_params,
+                metrics={
+                    "rmse": metrics.get("rmse"),
+                    "mae": metrics.get("mae"),
+                    "r2": metrics.get("r2"),
+                    "bias": metrics.get("bias"),
+                },
+                validation_summary={
+                    key: validation[key]
+                    for key in ("method", "folds", "seed", "holdout_fraction")
+                    if key in validation
+                },
                 materialized=cand.grid_path is not None,
+                materialization_status="ready" if cand.grid_path is not None else "pending",
                 featured=(featured_result_id == cand.id),
                 created_at=cand.created_at,
                 url=f"/results/{cand.id}",

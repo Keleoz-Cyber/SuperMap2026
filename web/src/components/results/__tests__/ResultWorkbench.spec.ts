@@ -302,7 +302,7 @@ describe('ResultWorkbenchView', () => {
     await wrapper.find('[data-test="create-asset"]').trigger('click')
     await flushPromises()
     expect(client.createResultRenderAsset).toHaveBeenCalledTimes(1)
-    expect(client.createResultRenderAsset).toHaveBeenCalledWith('r1', false)
+    expect(client.createResultRenderAsset).toHaveBeenCalledWith('r1', false, 'prediction')
     const iframe = wrapper.find('iframe')
     expect(iframe.exists()).toBe(true)
     expect(iframe.attributes('src')).toContain('/supermap-volume-frame/index.html?request_id=')
@@ -476,6 +476,71 @@ describe('模型评估入口', () => {
 
 // v0.9.0 Task 9：成果级分析获取、研判区渲染、失败类型化与身份切换清理。
 describe('成果级分析接入', () => {
+  it('ML 成果展示字段选择器，切换后所有渲染 API 携带字段且场景身份更新', async () => {
+    const mlAnalysis = structuredClone(RESULT_ANALYSIS_MOCK_3D)
+    mlAnalysis.machine_learning = {
+      algorithm: 'random_forest_spatial',
+      comparison_status: 'unavailable',
+      comparison_reason_code: 'ML_KRIGING_BASELINE_NOT_COMPARABLE',
+      baseline: null,
+      metric_change: null,
+      improved_over_kriging: null,
+      available_fields: ['prediction', 'model_dispersion'],
+      dispersion_semantics: 'model_dispersion_reference',
+      limitations: ['模型离散度仅作参考，不是严格置信区间。'],
+      technical_details: {
+        feature_version: 'spatial_features.v1',
+        sklearn_version: '1.7.2',
+        validation_method: 'spatial_kfold',
+        common_valid_count: 50,
+        fold_assignments_sha256: 'a'.repeat(64),
+      },
+    }
+    vi.mocked(client.fetchResultAnalysisSummary).mockResolvedValue(mlAnalysis)
+    const { wrapper } = await mountWorkbench(makeMetadata('3d'))
+    expect(wrapper.find('[data-test="ml-field-selector"]').exists()).toBe(true)
+
+    await wrapper.get('[data-test="ml-field-model_dispersion"]').trigger('click')
+    await flushPromises()
+    expect(client.fetchResultRenderCapability).toHaveBeenLastCalledWith('r1', 'model_dispersion')
+    expect(client.fetchResultRenderAsset).toHaveBeenLastCalledWith('r1', 'model_dispersion')
+    expect(wrapper.get('[data-test="active-ml-field-note"]').text()).toContain('模型离散度')
+  })
+
+  it('字段加载失败后解除选择器禁用，可切回预测结果', async () => {
+    const mlAnalysis = structuredClone(RESULT_ANALYSIS_MOCK_3D)
+    mlAnalysis.machine_learning = {
+      algorithm: 'random_forest_spatial',
+      comparison_status: 'unavailable',
+      comparison_reason_code: 'ML_KRIGING_BASELINE_NOT_COMPARABLE',
+      baseline: null,
+      metric_change: null,
+      improved_over_kriging: null,
+      available_fields: ['prediction', 'model_dispersion'],
+      dispersion_semantics: 'model_dispersion_reference',
+      limitations: [],
+      technical_details: {
+        feature_version: 'spatial_features.v1', sklearn_version: '1.7.2',
+        validation_method: 'spatial_kfold', common_valid_count: 50,
+        fold_assignments_sha256: 'a'.repeat(64),
+      },
+    }
+    vi.mocked(client.fetchResultAnalysisSummary).mockResolvedValue(mlAnalysis)
+    vi.mocked(client.fetchResultRenderCapability).mockImplementation(async (_id, field = 'prediction') => {
+      if (field === 'model_dispersion') {
+        throw new client.ApiError('ML_FIELD_NOT_AVAILABLE', '字段暂不可用', 409)
+      }
+      return CAPABILITY_3D
+    })
+    const { wrapper } = await mountWorkbench(makeMetadata('3d'))
+    await wrapper.get('[data-test="ml-field-model_dispersion"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="ml-field-prediction"]').attributes('disabled')).toBeUndefined()
+    await wrapper.get('[data-test="ml-field-prediction"]').trigger('click')
+    await flushPromises()
+    expect(client.fetchResultRenderCapability).toHaveBeenLastCalledWith('r1', 'prediction')
+  })
+
   it('按 result_id 获取成果分析，组件进入研判区与三维标注 prop', async () => {
     const { wrapper } = await mountWorkbench(makeMetadata('3d'))
     expect(client.fetchResultAnalysisSummary).toHaveBeenCalledWith('r1')

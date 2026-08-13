@@ -594,10 +594,9 @@ export function verifySliceAnalysisZip(
   expect(manifest.format_version).toBe('slice-analysis/v1')
   expect(manifest.export_kind).toBe('slice_analysis')
   expect(manifest.image_provenance).toBe('client_echarts_canvas')
-  expect(manifest.asset_identity).toEqual({
+  expect(manifest.asset_identity).toEqual(analysis.asset_identity)
+  expect(manifest.asset_identity).toMatchObject({
     asset_id: exp.identity.assetId,
-    source_kind: analysis.asset_identity.source_kind,
-    source_id: analysis.asset_identity.source_id,
     grid_sha256: exp.identity.gridSha256,
     netcdf_sha256: exp.identity.netcdfSha256,
   })

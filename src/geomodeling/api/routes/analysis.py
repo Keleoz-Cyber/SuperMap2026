@@ -70,6 +70,7 @@ from geomodeling.platform.errors import (
     DATASET_NOT_VALIDATED,
     PlatformError,
 )
+from geomodeling.platform.ml_capability import assess_ml_capability
 from geomodeling.platform.repositories import DatasetRepository, require_active_dataset
 from geomodeling.platform.schemas import DatasetStatus, DatasetVersionRecord
 from geomodeling.platform.tables import (
@@ -186,6 +187,28 @@ def _valid_values(frame: pd.DataFrame) -> np.ndarray:
     return values[declared & np.isfinite(values)]
 
 
+@router.get("/{dataset_id}/ml-capability")
+def get_ml_capability(
+    dataset_id: str,
+    runtime: PlatformRuntime = Depends(get_platform_runtime),
+) -> dict[str, Any]:
+    """Return deterministic ML suitability without creating experiments or files."""
+
+    record = _load_validated_dataset(runtime, dataset_id)
+    frame = _load_standardized_frame(record)
+    mapping = record.profile.get("mapping") or {}
+    capability = assess_ml_capability(frame, mapping.get("dimension", "2d"))
+    payload = capability.model_dump(mode="json")
+    payload.update(
+        {
+            "dataset_id": dataset_id,
+            "validation_requirement": "spatial_cross_validation",
+            "dispersion_semantics": "model_dispersion_reference",
+        }
+    )
+    return payload
+
+
 # ---------------------------------------------------------------------------
 # model_comparison：只读既有 succeeded 候选（绝不重算指标）
 # ---------------------------------------------------------------------------
@@ -231,7 +254,9 @@ def _succeeded_candidates(
                         CandidateResult.run_id == run.id,
                         CandidateResult.status == RunStatus.SUCCEEDED.value,
                     )
-                    .order_by(CandidateResult.created_at.asc(), CandidateResult.id.asc())
+                    .order_by(
+                        CandidateResult.created_at.asc(), CandidateResult.id.asc()
+                    )
                     .all()
                 )
                 for candidate in rows:
@@ -492,7 +517,15 @@ def _csv_export(summary: AnalysisSummaryResponse) -> str:
     if statistics is not None:
         for metric in _STATISTIC_METRICS:
             writer.writerow(
-                ("statistics", "", "", metric, "", "", _cell(getattr(statistics, metric)))
+                (
+                    "statistics",
+                    "",
+                    "",
+                    metric,
+                    "",
+                    "",
+                    _cell(getattr(statistics, metric)),
+                )
             )
         quantiles = statistics.quantiles
         for metric in _QUANTILE_METRICS:
@@ -504,7 +537,9 @@ def _csv_export(summary: AnalysisSummaryResponse) -> str:
                     metric,
                     "",
                     "",
-                    _cell(getattr(quantiles, metric) if quantiles is not None else None),
+                    _cell(
+                        getattr(quantiles, metric) if quantiles is not None else None
+                    ),
                 )
             )
 

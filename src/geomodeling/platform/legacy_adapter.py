@@ -252,6 +252,18 @@ def workspace_case_card(
             "badge": config.get("badge") or _PRESET_PROVENANCE_FALLBACK["badge"],
         }
         if record.id == RESISTIVITY_PRESET_CASE_ID:
+            from geomodeling.platform.property_semantics import normalize_mapping
+
+            provenance["value_unit"] = "Ω·m"
+            if primary_dataset is not None:
+                profile = dict(primary_dataset.get("profile") or {})
+                mapping = dict(profile.get("mapping") or {})
+                profile["mapping"] = normalize_mapping(
+                    mapping,
+                    case_id=record.id,
+                    workspace_kind=PRESET_WORKSPACE_KIND,
+                )
+                primary_dataset = {**primary_dataset, "profile": profile}
             # v0.8.0 Task 10：seed 自本批起写入 fields 键与统一 data_form。
             # Task 2 时代旧 seed（无 fields 键）整体兜底为设计 §5 统一口径，
             # 已 seed 的旧运行库首页卡文案与描述卡一致。

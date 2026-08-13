@@ -155,6 +155,9 @@ interface MockState {
   // v0.8.0：电阻率散点预置的 dsi_like 用户实验状态机（轮询/物化）
   rhoDsiRunPolls: number
   rhoResultMaterialized: boolean
+  mlRunPolls: number
+  mlResultMaterialized: boolean
+  mlRenderFields: Set<string>
   // v0.7.0 batch 3：案例生命周期状态机
   caseName: string | null
   caseTrashed: boolean
@@ -361,6 +364,9 @@ const RHO_OFFICIAL_RESULT_ID = 'cand-rho-official'
 const RHO_DSI_EXPERIMENT_ID = 'exp-rho-dsi'
 const RHO_DSI_RUN_ID = 'run-rho-dsi'
 const RHO_DSI_RESULT_ID = 'cand-rho-dsi-1'
+const ML_RF_EXPERIMENT_ID = 'exp-ml-rf'
+const ML_RF_RUN_ID = 'run-ml-rf'
+const ML_RF_RESULT_ID = 'cand-ml-rf'
 const RHO_ROW_COUNT = 17_549
 const RHO_VALUE_RANGE: [number, number] = [1.032113, 149.984]
 const RHO_GRID_SHAPE = [7, 23, 42]
@@ -1221,6 +1227,9 @@ export async function installMockApi(page: Page): Promise<void> {
     resultMaterialized: false,
     rhoDsiRunPolls: 0,
     rhoResultMaterialized: false,
+    mlRunPolls: 0,
+    mlResultMaterialized: false,
+    mlRenderFields: new Set(),
     caseName: null,
     caseTrashed: false,
     casePurged: false,
@@ -2210,13 +2219,74 @@ export async function installMockApi(page: Page): Promise<void> {
         source_sha256: SHA,
       })
     }
+    const mlCapabilityMatch = /^\/datasets\/(ds-e2e|ds-preset|ds-rho|ds-gas)\/ml-capability$/.exec(path)
+    if (mlCapabilityMatch && method === 'GET') {
+      const datasetId = mlCapabilityMatch[1]
+      if (datasetId === GAS_DATASET_ID) {
+        return json(route, {
+          dataset_id: datasetId,
+          level: 'not_recommended',
+          valid_sample_count: 58,
+          spatial_group_count: 58,
+          available_algorithms: [],
+          confirmation_required: false,
+          reason_code: 'ML_SAMPLE_COUNT_TOO_LOW',
+          message: '当前只有 58 个有效样本，不建议使用机器学习空间预测；请优先采用普通克里金并如实说明稀疏数据限制。',
+          validation_requirement: 'spatial_cross_validation',
+          dispersion_semantics: 'model_dispersion_reference',
+        })
+      }
+      const facts = datasetId === RHO_DATASET_ID
+        ? { valid: 17549, groups: 293 }
+        : datasetId === 'ds-preset'
+          ? { valid: 1911, groups: 1911 }
+          : { valid: 1722, groups: 144 }
+      return json(route, {
+        dataset_id: datasetId,
+        level: 'supported',
+        valid_sample_count: facts.valid,
+        spatial_group_count: facts.groups,
+        available_algorithms: ['random_forest_spatial', 'kriging_rf_residual'],
+        confirmation_required: false,
+        reason_code: null,
+        message: '样本数与空间分组满足机器学习空间交叉验证要求。',
+        validation_requirement: 'spatial_cross_validation',
+        dispersion_semantics: 'model_dispersion_reference',
+      })
+    }
     if (path === '/experiments' && method === 'POST') {
       const body = route.request().postDataJSON() as {
         name?: string
         algorithm?: string
+        dataset_version_id?: string
         professional_confirmation_id?: string
         neighborhood?: unknown
         empirical_uncertainty?: unknown
+      }
+      if (body.algorithm === 'random_forest_spatial') {
+        return json(route, {
+          id: ML_RF_EXPERIMENT_ID,
+          case_id: 'resistivity',
+          name: body.name ?? '机器学习空间预测实验',
+          params: {
+            case_id: 'resistivity',
+            name: body.name ?? '机器学习空间预测实验',
+            algorithm: 'random_forest_spatial',
+            dataset_version_id: body.dataset_version_id ?? RHO_DATASET_ID,
+            search_mode: 'manual',
+            parameters: {
+              n_estimators: 120,
+              max_depth: 16,
+              min_samples_leaf: 2,
+              max_features: 0.8,
+              random_state: 20260813,
+            },
+            validation: RHO_VALIDATION,
+            grid: null,
+          },
+          created_at: T,
+          updated_at: T,
+        }, 201)
       }
       // v0.8.0：电阻率散点预置上的 dsi_like 用户实验（单组参数 → 1 候选）
       if (body.algorithm === 'dsi_like') {
@@ -2410,6 +2480,81 @@ export async function installMockApi(page: Page): Promise<void> {
         route,
         state.rhoDsiRunPolls > 1 ? rhoDsiRunBody('succeeded', 1) : rhoDsiRunBody('running', 0),
       )
+    }
+    // ------------------------------------------- v0.9.0 机器学习空间预测状态机
+    const mlRunBody = (status: string, completed: number) => ({
+      id: ML_RF_RUN_ID,
+      experiment_id: ML_RF_EXPERIMENT_ID,
+      status,
+      error_code: null,
+      metrics: { current_candidate: status === 'succeeded' ? null : 1, completed, total: 1, failed: 0 },
+      retry_of_run_id: null,
+      created_at: T,
+      professional_analysis_supported: false,
+      updated_at: T,
+      started_at: T,
+      finished_at: status === 'succeeded' ? T : null,
+    })
+    const mlParameters = {
+      n_estimators: 120,
+      max_depth: 16,
+      min_samples_leaf: 2,
+      max_features: 0.8,
+      random_state: 20260813,
+    }
+    const mlCandidate = {
+      id: ML_RF_RESULT_ID,
+      fingerprint: 'fp-ml-rf-1',
+      status: 'succeeded',
+      parameters: mlParameters,
+      metrics: {
+        total_count: 17549,
+        common_valid_count: 17041,
+        candidate_valid_count: 17041,
+        candidate_nodata_count: 508,
+        coverage: 0.971,
+        mae: 4.21,
+        rmse: 6.82,
+        r2: 0.914,
+        bias: 0.18,
+      },
+      error: null,
+    }
+    if (path === `/experiments/${ML_RF_EXPERIMENT_ID}` && method === 'GET') {
+      return json(route, {
+        id: ML_RF_EXPERIMENT_ID,
+        case_id: 'resistivity',
+        name: '机器学习空间预测实验',
+        params: {
+          case_id: 'resistivity',
+          name: '机器学习空间预测实验',
+          algorithm: 'random_forest_spatial',
+          dataset_version_id: RHO_DATASET_ID,
+          search_mode: 'manual',
+          parameters: mlParameters,
+          validation: RHO_VALIDATION,
+          grid: null,
+        },
+        created_at: T,
+        updated_at: T,
+      })
+    }
+    if (path === `/experiments/${ML_RF_EXPERIMENT_ID}/runs` && method === 'POST') {
+      state.mlRunPolls = 0
+      return json(route, mlRunBody('queued', 0), 201)
+    }
+    if (path === `/runs/${ML_RF_RUN_ID}` && method === 'GET') {
+      state.mlRunPolls += 1
+      return json(route, state.mlRunPolls > 1 ? mlRunBody('succeeded', 1) : mlRunBody('running', 0))
+    }
+    if (path === `/experiments/${ML_RF_EXPERIMENT_ID}/candidates` && method === 'GET') {
+      const done = state.mlRunPolls > 1
+      return json(route, {
+        experiment_id: ML_RF_EXPERIMENT_ID,
+        public_metrics: { common_valid_count: 17041 },
+        latest_run: done ? mlRunBody('succeeded', 1) : mlRunBody('queued', 0),
+        candidates: done ? [mlCandidate] : [],
+      })
     }
     if (path === `/experiments/${RHO_DSI_EXPERIMENT_ID}/candidates` && method === 'GET') {
       const done = state.rhoDsiRunPolls > 1
@@ -2733,6 +2878,101 @@ export async function installMockApi(page: Page): Promise<void> {
         created_at: T,
         updated_at: T,
       })
+    }
+    const mlResultMetadata = () => ({
+      result_id: ML_RF_RESULT_ID,
+      run_id: ML_RF_RUN_ID,
+      experiment_id: ML_RF_EXPERIMENT_ID,
+      dataset_version_id: RHO_DATASET_ID,
+      algorithm: 'random_forest_spatial',
+      parameters: mlParameters,
+      dimension: '3d',
+      shape: RHO_GRID_SHAPE,
+      cell_count: 6762,
+      bounds: RHO_GRID_BOUNDS,
+      resolution: RHO_GRID_RESOLUTION,
+      value_range: RHO_VALUE_RANGE,
+      nodata_count: 0,
+      grid_sha256: RHO_GRID_SHA,
+      source_sha256: RHO_SHA,
+      standardized_sha256: RHO_SHA,
+      fingerprint: 'fp-ml-rf-1',
+      validation: RHO_VALIDATION,
+      created_at: T,
+      professional_analysis_supported: false,
+      evaluation_summary: mlCandidate.metrics,
+    })
+    const mlAnalysisSummary = () => ({
+      identity: { result_id: ML_RF_RESULT_ID, grid_sha256: RHO_GRID_SHA, analysis_version: 'result_analysis.v1', dimension: '3d', coordinate_type: 'local_linear' },
+      variable: { name: 'RHO', unit: RHO_VALUE_UNIT },
+      grid: { shape: RHO_GRID_SHAPE, valid_count: 6254, nodata_count: 508, min: 1.03, max: 149.98, mean: 54.2, median: 42.1, p25: 18.4, p75: 77.6 },
+      thresholds: { low: 18.4, high: 77.6, source: 'full_grid_quartile', method: 'numpy_linear_p25_p75' },
+      composition: { buckets: [{ category: 'low', count: 1564, ratio: 0.25 }, { category: 'normal', count: 3127, ratio: 0.5 }, { category: 'high', count: 1563, ratio: 0.25 }] },
+      depth_profile: { status: 'applicable', bins: [{ z_lower: -833, z_upper: -600, valid_count: 2000, mean: 38.1, high_count: 220, high_ratio: 0.11 }, { z_lower: -600, z_upper: -300, valid_count: 2100, mean: 61.4, high_count: 740, high_ratio: 0.35 }, { z_lower: -300, z_upper: -20, valid_count: 2154, mean: 54.2, high_count: 603, high_ratio: 0.28 }] },
+      components_preview: { threshold: 77.6, connectivity_rule: 'face_2d4_3d6_v1', total: 0, returned: 0, rows: [] },
+      model_evidence: { algorithm: 'random_forest_spatial', metrics: mlCandidate.metrics, common_valid_count: 17041, formal_selection_id: null, formal_selection_note: null },
+      machine_learning: {
+        algorithm: 'random_forest_spatial',
+        comparison_status: 'comparable',
+        comparison_reason_code: null,
+        baseline: { result_id: RHO_OFFICIAL_RESULT_ID, algorithm: 'ordinary_kriging', rmse: 6.454476, mae: 4.013, r2: 0.923093, bias: -0.095026, common_valid_count: 17041, fold_assignments_sha256: 'b'.repeat(64) },
+        metric_change: { rmse_absolute: 0.365524, rmse_percent: 5.7, mae_absolute: 0.197, mae_percent: 4.9 },
+        improved_over_kriging: false,
+        available_fields: ['prediction', 'model_dispersion'],
+        dispersion_semantics: 'model_dispersion_reference',
+        limitations: ['模型离散度仅作参考，不是严格置信区间。', '仅使用坐标派生特征，不代表引入了额外地质变量。'],
+        technical_details: { feature_version: 'spatial_features.v1', sklearn_version: '1.7.2', validation_method: 'spatial_kfold', common_valid_count: 17041, fold_assignments_sha256: 'b'.repeat(64) },
+      },
+      findings: [],
+      provenance: { grid_sha256: RHO_GRID_SHA, calculation_version: 'result_analysis.v1', threshold_method: 'numpy_linear_p25_p75' },
+    })
+    if (path === `/results/${ML_RF_RESULT_ID}` && method === 'GET') {
+      if (!state.mlResultMaterialized) return json(route, { error: { code: 'RESULT_NOT_MATERIALIZED', message: '成果尚未生成', details: {} } }, 404)
+      return json(route, mlResultMetadata())
+    }
+    if (path === `/results/${ML_RF_RESULT_ID}/materialize` && method === 'POST') {
+      state.mlResultMaterialized = true
+      return json(route, mlResultMetadata())
+    }
+    if (path === `/results/${ML_RF_RESULT_ID}/analysis-summary` && method === 'GET') {
+      if (!state.mlResultMaterialized) return json(route, { error: { code: 'RESULT_NOT_MATERIALIZED', message: '成果尚未生成', details: {} } }, 404)
+      return json(route, mlAnalysisSummary())
+    }
+    if (path === `/results/${ML_RF_RESULT_ID}/preview` && method === 'GET') {
+      return json(route, {
+        result_id: ML_RF_RESULT_ID,
+        dimension: '3d',
+        original_cell_count: 6762,
+        served_cell_count: 3,
+        stride: 1,
+        x: [-160, -140, -120],
+        y: [220, 240, 260],
+        z: [-833, -813, -793],
+        values: [21.4, 48.2, 92.7],
+        is_nodata: [false, false, false],
+        value_range: RHO_VALUE_RANGE,
+      })
+    }
+    const mlField = url.searchParams.get('field') || 'prediction'
+    if (path === `/results/${ML_RF_RESULT_ID}/render-capability` && method === 'GET') {
+      if (!['prediction', 'model_dispersion'].includes(mlField)) return json(route, { error: { code: 'ML_FIELD_NOT_AVAILABLE', message: '该成果不提供请求字段', details: {} } }, 409)
+      return json(route, {
+        source_kind: 'candidate_result', source_id: mlField === 'prediction' ? ML_RF_RESULT_ID : `${ML_RF_RESULT_ID}::${mlField}`,
+        supported: true, reason_code: null, reason: null, dimension: '3d', grid_kind: 'regular',
+        property_name: mlField === 'prediction' ? 'RHO' : 'RHO（模型离散度）', units: RHO_VALUE_UNIT,
+        geolocation_status: 'display_anchor_only', display_transform: { contract: 'wgs84_display_anchor_v1', origin_x: -160, origin_y: 220, anchor_longitude: 120, anchor_latitude: 30, anchor_height: 0, metres_per_degree_lon: 96486.3, metres_per_degree_lat: 110852.4 },
+        render_profile: { property_name: 'RHO', unit: RHO_VALUE_UNIT, default_scale: 'linear', default_palette: 'viridis', log_available: true, value_range: mlField === 'prediction' ? RHO_VALUE_RANGE : [0, 18], filter_range: mlField === 'prediction' ? RHO_VALUE_RANGE : [0, 18], lighting: false, gradient_opacity: false, bounding_box: true, opacity: 1 },
+      })
+    }
+    if (path === `/results/${ML_RF_RESULT_ID}/render-assets/netcdf` && method === 'GET') {
+      if (!state.mlRenderFields.has(mlField)) return json(route, { error: { code: 'RENDER_ASSET_NOT_FOUND', message: '该字段尚未创建渲染资产', details: {} } }, 404)
+      const assetId = `nc-ml-${mlField.replace('_', '-')}`
+      return json(route, { id: assetId, source_kind: 'candidate_result', source_id: mlField === 'prediction' ? ML_RF_RESULT_ID : `${ML_RF_RESULT_ID}::${mlField}`, renderer: 'supermap_voxelgrid_netcdf', status: 'ready', grid_sha256: RHO_GRID_SHA, netcdf_sha256: RHO_NC_SHA, manifest_url: `/api/render-assets/${assetId}/manifest`, netcdf_url: `/api/render-assets/${assetId}/volume.nc`, error: null })
+    }
+    if (path === `/results/${ML_RF_RESULT_ID}/render-assets/netcdf` && method === 'POST') {
+      state.mlRenderFields.add(mlField)
+      const assetId = `nc-ml-${mlField.replace('_', '-')}`
+      return json(route, { id: assetId, source_kind: 'candidate_result', source_id: mlField === 'prediction' ? ML_RF_RESULT_ID : `${ML_RF_RESULT_ID}::${mlField}`, renderer: 'supermap_voxelgrid_netcdf', status: 'ready', grid_sha256: RHO_GRID_SHA, netcdf_sha256: RHO_NC_SHA, manifest_url: `/api/render-assets/${assetId}/manifest`, netcdf_url: `/api/render-assets/${assetId}/volume.nc`, error: null }, 201)
     }
     // 官方成果：seed 即物化（GET 恒 200）；资产懒创建（GET 404 → 显式 POST）
     if (path === `/results/${RHO_OFFICIAL_RESULT_ID}` && method === 'GET') {
@@ -3711,6 +3951,68 @@ export async function installMockApi(page: Page): Promise<void> {
       })
     }
     // ---------------------------------- v0.7.0 batch 3：候选目录与多候选比较
+    const comparisonCandidate = (
+      id: string,
+      exp: string,
+      run: string,
+      algorithm: string,
+      parameters: Record<string, unknown>,
+      rmse: number,
+      mae: number,
+      r2: number,
+      bias: number,
+      fingerprint: string,
+    ) => ({
+      candidate_result_id: id,
+      experiment_id: exp,
+      run_id: run,
+      algorithm,
+      parameters,
+      selectable: true,
+      metrics: { rmse, mae, r2, bias },
+      result_url: `/results/${id}`,
+      configuration_fingerprint: fingerprint,
+    })
+    if (path === `/datasets/${RHO_DATASET_ID}/comparison-candidates` && method === 'GET') {
+      return json(route, {
+        dataset_id: RHO_DATASET_ID,
+        groups: [
+          {
+            experiment_id: RHO_OFFICIAL_EXPERIMENT_ID,
+            experiment_name: '官方普通克里金基线',
+            candidates: [comparisonCandidate(RHO_OFFICIAL_RESULT_ID, RHO_OFFICIAL_EXPERIMENT_ID, RHO_OFFICIAL_RUN_ID, 'ordinary_kriging', { variogram_model: 'exponential', neighbor_count: 24 }, 6.454476, 4.013, 0.923093, -0.095026, 'fp-rho-official')],
+          },
+          {
+            experiment_id: ML_RF_EXPERIMENT_ID,
+            experiment_name: '机器学习空间预测实验',
+            candidates: [comparisonCandidate(ML_RF_RESULT_ID, ML_RF_EXPERIMENT_ID, ML_RF_RUN_ID, 'random_forest_spatial', mlParameters, 6.82, 4.21, 0.914, 0.18, 'fp-ml-rf-1')],
+          },
+        ],
+      })
+    }
+    if (path === '/candidate-comparisons' && method === 'POST') {
+      const body = route.request().postDataJSON() as { candidate_result_ids: string[] }
+      const ids = body.candidate_result_ids
+      if (ids.includes(ML_RF_RESULT_ID)) {
+        const candidates = [
+          comparisonCandidate(RHO_OFFICIAL_RESULT_ID, RHO_OFFICIAL_EXPERIMENT_ID, RHO_OFFICIAL_RUN_ID, 'ordinary_kriging', { variogram_model: 'exponential', neighbor_count: 24 }, 6.454476, 4.013, 0.923093, -0.095026, 'fp-rho-official'),
+          comparisonCandidate(ML_RF_RESULT_ID, ML_RF_EXPERIMENT_ID, ML_RF_RUN_ID, 'random_forest_spatial', mlParameters, 6.82, 4.21, 0.914, 0.18, 'fp-ml-rf-1'),
+        ].filter((row) => ids.includes(row.candidate_result_id))
+        return json(route, {
+          candidate_result_ids: ids,
+          dataset_version_id: RHO_DATASET_ID,
+          comparable: true,
+          mismatches: [],
+          candidates,
+          ranking: [RHO_OFFICIAL_RESULT_ID, ML_RF_RESULT_ID],
+          comparison_items: candidates,
+          ranking_status: 'ranked',
+          differences: [],
+          unified_experiment_draft: null,
+          comparison_fingerprint: 'fp-rho-ml-comparison',
+        })
+      }
+    }
     if (path === '/datasets/ds-e2e/comparison-candidates' && method === 'GET') {
       const candidateSummary = (id: string, expId: string, runId: string, algo: string, params: Record<string, unknown>, rmse: number, mae: number, r2: number, bias: number, fp: string) => ({
         candidate_result_id: id,
@@ -3782,6 +4084,10 @@ export async function installMockApi(page: Page): Promise<void> {
           mismatches: [],
           candidates: summaries,
           ranking,
+          comparison_items: summaries,
+          ranking_status: 'ranked',
+          differences: [],
+          unified_experiment_draft: null,
           comparison_fingerprint: 'fp-multi-cmp-1',
         })
       }
@@ -3792,6 +4098,16 @@ export async function installMockApi(page: Page): Promise<void> {
         mismatches: ['candidate_not_succeeded:cand-2'],
         candidates: summaries,
         ranking: null,
+        comparison_items: summaries,
+        ranking_status: 'not_ranked',
+        differences: [{
+          code: 'candidate_not_succeeded:cand-2',
+          message: '有候选尚未成功完成，不能参加统一排名。',
+        }],
+        unified_experiment_draft: {
+          dataset_version_id: 'ds-e2e',
+          validation: { method: 'spatial_kfold', folds: 5, seed: 20260723, holdout_fraction: 0.2 },
+        },
         comparison_fingerprint: 'fp-multi-cmp-2',
       })
     }

@@ -226,7 +226,51 @@ class TestMultiCandidateComparison:
         result = compare_candidates_multi(runtime, [cand1, cand2])
         assert result.comparable is True
         assert result.ranking == [cand2, cand1]  # lower RMSE first
+        assert result.ranking_status == "ranked"
+        assert [item.candidate_result_id for item in result.comparison_items] == [cand1, cand2]
+        assert result.differences == []
         assert result.comparison_fingerprint
+
+    def test_validation_mismatch_still_returns_result_inspection(self, runtime):
+        case_id = create_case(runtime)
+        dataset_id = create_dataset(runtime, case_id)
+        exp1 = create_experiment(runtime, case_id, dataset_id, name="空间五折")
+        run1 = create_run(runtime, exp1)
+        drive_run_succeeded(runtime, run1)
+        cand1 = create_succeeded_candidate(runtime, run1, {
+            "rmse": 0.5, "mae": 0.3, "r2": 0.8, "bias": 0.01,
+            "fold_fingerprint": "fold-a", "metric_population_fingerprint": "pop-a",
+            "common_valid_count": 90,
+        })
+        with runtime.session() as session:
+            request = ExperimentCreateRequest(
+                case_id=case_id, name="留出验证", algorithm=Algorithm.IDW,
+                dataset_version_id=dataset_id, parameters={"power": 3.0},
+                validation={"method": "spatial_holdout", "seed": 99, "holdout_fraction": 0.3},
+            )
+            exp2 = ExperimentRepository(session).create(case_id, request).id
+        run2 = create_run(runtime, exp2)
+        drive_run_succeeded(runtime, run2)
+        cand2 = create_succeeded_candidate(runtime, run2, {
+            "rmse": 0.6, "mae": 0.4, "r2": 0.7, "bias": 0.02,
+            "fold_fingerprint": "fold-b", "metric_population_fingerprint": "pop-b",
+            "common_valid_count": 80,
+        })
+
+        result = compare_candidates_multi(runtime, [cand1, cand2])
+        assert result.comparable is False
+        assert result.ranking is None
+        assert result.ranking_status == "not_ranked"
+        assert [item.candidate_result_id for item in result.comparison_items] == [cand1, cand2]
+        assert any(item.code == "validation_method_mismatch" for item in result.differences)
+        assert any("验证" in item.message for item in result.differences)
+        assert result.unified_experiment_draft == {
+            "dataset_version_id": dataset_id,
+            "validation": {
+                "method": "spatial_kfold", "folds": 5, "seed": 20260723,
+                "holdout_fraction": 0.2,
+            },
+        }
 
     def test_duplicate_ids_rejected(self, runtime):
         case_id = create_case(runtime)

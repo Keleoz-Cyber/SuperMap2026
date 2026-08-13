@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import math
+import copy
 from collections import OrderedDict
 from typing import Any
 
@@ -15,12 +16,14 @@ from fastapi import APIRouter, Depends, Query
 from geomodeling.api.deps import get_platform_runtime
 from geomodeling.modeling.anomalies import UncertaintyLayer
 from geomodeling.platform import PlatformRuntime, tables
-from geomodeling.platform.errors import PlatformError
 from geomodeling.platform.repositories import require_active_candidate
 from geomodeling.platform.results import load_grid, read_materialized_metadata
 from geomodeling.platform.result_analysis import analyze_result_grid
+from geomodeling.platform.schemas import SpatialValidationSpec
 
 router = APIRouter(tags=["v0.9-result-analysis"])
+
+_ML_ALGORITHMS = {"random_forest_spatial", "kriging_rf_residual"}
 
 _CACHE_MAX_SIZE = 32
 _cache: OrderedDict[str, dict[str, Any]] = OrderedDict()
@@ -65,11 +68,12 @@ def _non_negative_int(value: Any) -> int | None:
 
 
 def _try_load_uncertainty_layer(
-    runtime: PlatformRuntime, result_id: str, filename: str, key: str,
+    runtime: PlatformRuntime,
+    result_id: str,
+    filename: str,
+    key: str,
 ) -> UncertaintyLayer | None:
     """Try to load a professional uncertainty layer; return None if not materialized."""
-
-    from geomodeling.platform.results import _LAYER_ARTIFACTS
 
     try:
         path = runtime.settings.professional_result_dir(result_id) / filename
@@ -81,6 +85,158 @@ def _try_load_uncertainty_layer(
         return UncertaintyLayer(values=values, is_nodata=is_nodata)
     except Exception:
         return None
+
+
+def _candidate_context(session, result_id: str):
+    candidate = session.get(tables.CandidateResult, result_id)
+    if candidate is None:
+        return None
+    run = session.get(tables.Run, candidate.run_id)
+    if run is None:
+        return None
+    experiment = session.get(tables.Experiment, run.experiment_id)
+    if experiment is None:
+        return None
+    return candidate, experiment, tables.loads_canonical(experiment.params_json)
+
+
+def _compatible_kriging_baseline(
+    session,
+    *,
+    result_id: str,
+    dataset_version_id: str,
+    validation: dict[str, Any],
+    metrics: dict[str, Any],
+) -> dict[str, Any] | None:
+    normalized_validation = SpatialValidationSpec.model_validate(validation).model_dump(
+        mode="json"
+    )
+    target_fold_sha = metrics.get("fold_assignments_sha256")
+    target_common_count = _non_negative_int(metrics.get("common_valid_count"))
+    if not target_fold_sha or target_common_count is None:
+        return None
+    matches: list[dict[str, Any]] = []
+    rows = (
+        session.query(tables.CandidateResult, tables.Experiment)
+        .join(tables.Run, tables.CandidateResult.run_id == tables.Run.id)
+        .join(tables.Experiment, tables.Run.experiment_id == tables.Experiment.id)
+        .filter(
+            tables.CandidateResult.id != result_id,
+            tables.CandidateResult.status == "succeeded",
+        )
+        .all()
+    )
+    for candidate, experiment in rows:
+        params = tables.loads_canonical(experiment.params_json)
+        if params.get("algorithm") != "ordinary_kriging":
+            continue
+        if params.get("dataset_version_id") != dataset_version_id:
+            continue
+        candidate_validation = SpatialValidationSpec.model_validate(
+            params.get("validation") or {}
+        ).model_dump(mode="json")
+        if candidate_validation != normalized_validation:
+            continue
+        candidate_metrics = tables.loads_canonical(candidate.metrics_json)
+        if candidate_metrics.get("fold_assignments_sha256") != target_fold_sha:
+            continue
+        if (
+            _non_negative_int(candidate_metrics.get("common_valid_count"))
+            != target_common_count
+        ):
+            continue
+        rmse = _finite_float(candidate_metrics.get("rmse"))
+        mae = _finite_float(candidate_metrics.get("mae"))
+        if rmse is None or mae is None:
+            continue
+        matches.append(
+            {
+                "result_id": candidate.id,
+                "algorithm": "ordinary_kriging",
+                "rmse": rmse,
+                "mae": mae,
+                "r2": _finite_float(candidate_metrics.get("r2")),
+                "bias": _finite_float(candidate_metrics.get("bias")),
+                "common_valid_count": target_common_count,
+                "fold_assignments_sha256": target_fold_sha,
+            }
+        )
+    return (
+        min(matches, key=lambda item: (item["rmse"], item["result_id"]))
+        if matches
+        else None
+    )
+
+
+def _machine_learning_evidence(
+    runtime: PlatformRuntime, result_id: str, metadata: dict[str, Any]
+) -> dict[str, Any] | None:
+    algorithm = metadata.get("algorithm")
+    if algorithm not in _ML_ALGORITHMS:
+        return None
+    with runtime.session() as session:
+        context = _candidate_context(session, result_id)
+        if context is None:
+            return None
+        candidate, _experiment, params = context
+        metrics = tables.loads_canonical(candidate.metrics_json)
+        baseline = _compatible_kriging_baseline(
+            session,
+            result_id=result_id,
+            dataset_version_id=params["dataset_version_id"],
+            validation=params.get("validation") or {},
+            metrics=metrics,
+        )
+
+    ml_metadata = metadata.get("ml") or {}
+    available_fields = ["prediction", *(metadata.get("ml_fields") or {}).keys()]
+    evidence: dict[str, Any] = {
+        "algorithm": algorithm,
+        "comparison_status": "unavailable",
+        "comparison_reason_code": "ML_KRIGING_BASELINE_NOT_COMPARABLE",
+        "baseline": None,
+        "metric_change": None,
+        "improved_over_kriging": None,
+        "available_fields": available_fields,
+        "dispersion_semantics": "model_dispersion_reference",
+        "limitations": list(ml_metadata.get("limitations") or []),
+        "technical_details": {
+            "feature_version": ml_metadata.get("feature_version"),
+            "sklearn_version": ml_metadata.get("sklearn_version"),
+            "validation_method": (params.get("validation") or {}).get("method"),
+            "common_valid_count": _non_negative_int(metrics.get("common_valid_count")),
+            "fold_assignments_sha256": metrics.get("fold_assignments_sha256"),
+        },
+    }
+    current_rmse = _finite_float(metrics.get("rmse"))
+    current_mae = _finite_float(metrics.get("mae"))
+    if baseline is None or current_rmse is None or current_mae is None:
+        return evidence
+    rmse_percent = (
+        (current_rmse - baseline["rmse"]) / baseline["rmse"] * 100.0
+        if baseline["rmse"] != 0
+        else None
+    )
+    mae_percent = (
+        (current_mae - baseline["mae"]) / baseline["mae"] * 100.0
+        if baseline["mae"] != 0
+        else None
+    )
+    evidence.update(
+        {
+            "comparison_status": "comparable",
+            "comparison_reason_code": None,
+            "baseline": baseline,
+            "metric_change": {
+                "rmse_absolute": current_rmse - baseline["rmse"],
+                "rmse_percent": rmse_percent,
+                "mae_absolute": current_mae - baseline["mae"],
+                "mae_percent": mae_percent,
+            },
+            "improved_over_kriging": current_rmse < baseline["rmse"],
+        }
+    )
+    return evidence
 
 
 @router.get("/api/results/{result_id}/analysis-summary")
@@ -99,11 +255,17 @@ def get_analysis_summary(
     property_name = metadata.get("property_name", "value")
     units = metadata.get("units", "unknown")
     coordinate_kind = metadata.get("coordinate_kind", "local_linear")
+    ml_evidence = _machine_learning_evidence(runtime, result_id, metadata)
 
-    cache_key = f"{result_id}:{grid_sha256}:{depth_bins}:{component_limit}:{min_support_nodes}"
+    cache_key = (
+        f"{result_id}:{grid_sha256}:{depth_bins}:{component_limit}:{min_support_nodes}"
+    )
     cached = _cache_get(cache_key)
     if cached is not None:
-        return cached
+        result = copy.deepcopy(cached)
+        if ml_evidence is not None:
+            result["machine_learning"] = ml_evidence
+        return result
 
     grid = load_grid(runtime, result_id)
 
@@ -119,7 +281,10 @@ def get_analysis_summary(
         )
     if kriging_path.is_file():
         kriging_layer = _try_load_uncertainty_layer(
-            runtime, result_id, "kriging_standard_deviation.npz", "kriging_standard_deviation"
+            runtime,
+            result_id,
+            "kriging_standard_deviation.npz",
+            "kriging_standard_deviation",
         )
 
     # Get model metrics
@@ -128,12 +293,23 @@ def get_analysis_summary(
     with runtime.session() as session:
         candidate = session.get(tables.CandidateResult, result_id)
         if candidate is not None:
-            raw_metrics = tables.loads_canonical(candidate.metrics_json) if candidate.metrics_json else {}
+            raw_metrics = (
+                tables.loads_canonical(candidate.metrics_json)
+                if candidate.metrics_json
+                else {}
+            )
             for k in ("rmse", "mae", "r2", "coverage", "bias"):
                 model_metrics[k] = _finite_float(raw_metrics.get(k))
-            for k in ("common_valid_count", "candidate_valid_count", "candidate_nodata_count", "total_count"):
+            for k in (
+                "common_valid_count",
+                "candidate_valid_count",
+                "candidate_nodata_count",
+                "total_count",
+            ):
                 model_metrics[k] = _non_negative_int(raw_metrics.get(k))
-            common_valid_count = _non_negative_int(raw_metrics.get("common_valid_count"))
+            common_valid_count = _non_negative_int(
+                raw_metrics.get("common_valid_count")
+            )
 
         # Check for formal selection
         formal_selection_id = None
@@ -172,5 +348,7 @@ def get_analysis_summary(
     )
 
     result = summary.model_dump(mode="json")
-    _cache_put(cache_key, result)
+    _cache_put(cache_key, copy.deepcopy(result))
+    if ml_evidence is not None:
+        result["machine_learning"] = ml_evidence
     return result

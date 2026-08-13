@@ -1,0 +1,52 @@
+{
+  "run_id": "run-20260813T064945Z-f8d30015",
+  "git_commit": "11b02acb9674f3f80b6d746649a714ee524cf6a7",
+  "sdk_sha256": "d69dadab01fc452a79f1fa88a46aced3cf29885df7bf4febbd6f24ce5b578120",
+  "scenarios": [
+    {
+      "scenario": "fresh",
+      "metrics": {
+        "nonBg": 27343,
+        "total": 59150,
+        "coverage": 0.4622654268808115,
+        "colorStd": 66.58,
+        "largestComponent": 24616,
+        "componentRatio": 0.9002669787514171
+      }
+    },
+    {
+      "scenario": "reload",
+      "metrics": {
+        "nonBg": 27343,
+        "total": 59150,
+        "coverage": 0.4622654268808115,
+        "colorStd": 66.58,
+        "largestComponent": 24616,
+        "componentRatio": 0.9002669787514171
+      }
+    },
+    {
+      "scenario": "server-restart",
+      "metrics": {
+        "nonBg": 27343,
+        "total": 59150,
+        "coverage": 0.4622654268808115,
+        "colorStd": 66.58,
+        "largestComponent": 24616,
+        "componentRatio": 0.9002669787514171
+      }
+    },
+    {
+      "scenario": "warm-cache-upgrade",
+      "app_js": "http://127.0.0.1:5291/supermap-volume-frame/app.js?v=ff9e4d533a19d7be",
+      "metrics": {
+        "nonBg": 27343,
+        "total": 59150,
+        "coverage": 0.4622654268808115,
+        "colorStd": 66.58,
+        "largestComponent": 24616,
+        "componentRatio": 0.9002669787514171
+      }
+    }
+  ]
+}

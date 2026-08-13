@@ -92,6 +92,19 @@ beforeEach(() => {
 })
 
 describe('responsive & accessibility contracts', () => {
+  it('uses one home entry instead of duplicating home and cases navigation', () => {
+    const source = String(readFileSync('src/components/shell/AppHeader.vue'))
+    expect(source).toContain('data-test="shell-home-link"')
+    expect(source).not.toContain('data-test="shell-nav-cases"')
+    expect(source).not.toContain("query: { focus: 'cases' }")
+  })
+
+  it('places the Chinese platform title at the geometric center of the global header', () => {
+    const source = String(readFileSync('src/components/shell/AppHeader.vue'))
+    expect(source).toContain('地质属性三维建模与空间分析平台')
+    expect(source).toMatch(/\.platform-title\s*\{[^}]*position:\s*absolute;[^}]*left:\s*50%;[^}]*transform:\s*translateX\(-50%\);/s)
+  })
+
   it('uses a readable global type scale and shared product-page grid', () => {
     expect(tokensCss).toContain('--s1-font-xs: 12px')
     expect(tokensCss).toContain('--s1-font-md: 14px')

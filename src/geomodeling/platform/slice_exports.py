@@ -155,12 +155,19 @@ def build_slice_export(
     validate_slice_image(png_bytes, declared_mime)
 
     # 归属链：候选资产填 case_id/candidate_result_id；legacy 用稳定案例行
-    record, _, _ = load_ready_asset_grid(runtime, asset_id)
+    record, source, _ = load_ready_asset_grid(runtime, asset_id)
     candidate_result_id: str | None = None
     if record.source_kind == "candidate_result":
-        _, _, experiment = _load_candidate(runtime, record.source_id)
+        candidate_result_id = source.candidate_result_id
+        if candidate_result_id is None:
+            raise PlatformError(
+                "RENDER_ASSET_SOURCE_UNSUPPORTED",
+                "候选渲染资产缺少成果归属",
+                {"asset_id": asset_id},
+                http_status=409,
+            )
+        _, _, experiment = _load_candidate(runtime, candidate_result_id)
         case_id = experiment.case_id
-        candidate_result_id = record.source_id
     elif record.source_kind == "builtin_legacy":
         case_id = _ensure_legacy_case_row(runtime, record.source_id)
     else:  # pragma: no cover - load_ready_asset_grid 已 fail-closed
@@ -206,12 +213,18 @@ def build_slice_export(
             },
             "statistics": analysis["statistics"],
             "files": {
-                "slice.csv": {"sha256": _sha256_bytes(csv_bytes), "size_bytes": len(csv_bytes)},
+                "slice.csv": {
+                    "sha256": _sha256_bytes(csv_bytes),
+                    "size_bytes": len(csv_bytes),
+                },
                 "statistics.json": {
                     "sha256": _sha256_bytes(stats_bytes),
                     "size_bytes": len(stats_bytes),
                 },
-                "slice.png": {"sha256": _sha256_bytes(png_bytes), "size_bytes": len(png_bytes)},
+                "slice.png": {
+                    "sha256": _sha256_bytes(png_bytes),
+                    "size_bytes": len(png_bytes),
+                },
             },
             "created_at": tables.utc_now_iso(),
         }
@@ -255,7 +268,9 @@ def build_slice_export(
             try:
                 final_zip.unlink(missing_ok=True)
             except Exception:  # noqa: BLE001
-                logger.exception("slice export final package cleanup failed: %s", final_zip)
+                logger.exception(
+                    "slice export final package cleanup failed: %s", final_zip
+                )
         raise
 
     return {

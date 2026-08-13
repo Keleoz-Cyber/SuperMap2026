@@ -9,7 +9,7 @@ test.describe('v0.4 通用建模流程（mock API）', () => {
 
     // 首页 → 新建案例（v0.9.0：全局壳品牌与版本徽标）
     await page.goto('/')
-    await expect(page.getByTestId('shell-brand')).toContainText('GeoModelingPlatform')
+    await expect(page.getByTestId('shell-platform-title')).toHaveText('地质属性三维建模与空间分析平台')
     await expect(page.getByTestId('shell-version')).toHaveText(/^v\d+\.\d+\.\d+$/)
     await page.getByTestId('create-case-card').click()
 
@@ -446,6 +446,10 @@ test.describe('v0.7 生命周期与比较流程（mock API）', () => {
     await checkboxes.nth(1).click()
     await page.getByTestId('compare-btn').click()
     await expect(page.getByTestId('mismatch-list')).toBeVisible()
+    await expect(page.getByTestId('comparison-inspection')).toBeVisible()
+    await expect(page.getByTestId('inspection-result-link')).toHaveCount(2)
+    await expect(page.getByTestId('create-unified-validation')).toBeVisible()
+    await expect(page.getByText('最佳')).toHaveCount(0)
   })
 
   test('移动端 390x844：VariogramPanel 无横向溢出', async ({ page }) => {

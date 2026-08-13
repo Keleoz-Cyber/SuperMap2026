@@ -58,6 +58,7 @@ import type { AnnotationWire, CameraPreset, RenderStateV2 } from './renderProtoc
 const props = withDefaults(
   defineProps<{
     api: NativeVolumeRenderApi
+    apiKey?: string
     auxPoints?: NativeVolumeAuxPoints | null
     // v0.9.0 Task 12：外部（图表/发现联动）请求的正交切片目标；
     // token 单调递增，仅承载请求语义，面板仍从权威剖面响应确立 slice 状态
@@ -73,6 +74,7 @@ const props = withDefaults(
   }>(),
   {
     auxPoints: null,
+    apiKey: 'default',
     sliceRequest: null,
     components: null,
     focusedComponentId: null,
@@ -89,6 +91,7 @@ const emit = defineEmits<{
   // v0.9.0 Task 9：三维标注点击反选组件；权威剖面响应外发（当前切片证据）
   (e: 'annotation-selected', payload: { componentId: number }): void
   (e: 'slice-analysis', response: SliceAnalysisResponse): void
+  (e: 'source-load-state', payload: { key: string; loading: boolean; error: string | null }): void
   // v0.9.0 V6：资产身份外发（成果页「数据溯源」展示；主舞台不再显示调试块）
   (
     e: 'asset-identity',
@@ -116,6 +119,7 @@ const createError = ref<string | null>(null)
 const refreshing = ref(false)
 const refreshFeedback = ref<string | null>(null)
 const frameSession = ref(0)
+let loadSequence = 0
 
 const frameRef = ref<InstanceType<typeof SuperMapVolumeFrame> | null>(null)
 const frameReady = ref(false)
@@ -346,19 +350,62 @@ async function refreshAsset(userInitiated = false) {
   }
 }
 
-async function load() {
+function resetDataSourceState() {
+  loadSequence += 1
   capabilityLoading.value = true
   capabilityError.value = null
+  capability.value = null
+  assetChecked.value = false
+  asset.value = null
+  creating.value = false
+  createError.value = null
+  refreshing.value = false
+  refreshFeedback.value = null
+  resetFrameState()
+  resetRenderState()
+  emit('asset-identity', null)
+}
+
+async function load() {
+  const sequence = ++loadSequence
+  const api = props.api
+  const sourceKey = props.apiKey
+  const isCurrent = () => sequence === loadSequence && sourceKey === props.apiKey
+  capabilityLoading.value = true
+  capabilityError.value = null
+  emit('source-load-state', { key: sourceKey, loading: true, error: null })
   try {
-    capability.value = await props.api.fetchCapability()
+    const nextCapability = await api.fetchCapability()
+    if (!isCurrent()) return
+    capability.value = nextCapability
   } catch (e) {
-    capabilityError.value = formatError(e)
+    if (!isCurrent()) return
+    const message = formatError(e)
+    capabilityError.value = message
     capabilityLoading.value = false
+    emit('source-load-state', { key: sourceKey, loading: false, error: message })
     return
   }
   capabilityLoading.value = false
-  await refreshAsset()
+  try {
+    const nextAsset = await api.fetchAsset()
+    if (!isCurrent()) return
+    asset.value = nextAsset
+  } catch (e) {
+    if (!isCurrent()) return
+    if (e instanceof ApiError && e.status === 404) {
+      asset.value = null
+    } else {
+      const message = formatError(e)
+      createError.value = message
+      assetChecked.value = true
+      emit('source-load-state', { key: sourceKey, loading: false, error: message })
+      return
+    }
+  }
+  if (!isCurrent()) return
   assetChecked.value = true
+  emit('source-load-state', { key: sourceKey, loading: false, error: null })
 }
 
 function resetFrameState() {
@@ -510,6 +557,7 @@ function onSliceCommit(payload: { axis: SliceAxis; index: number }) {
 
 // 3D slice 状态只来自权威剖面响应（index/coordinate/sdk_relative_position）
 function onAnalysisLoaded(response: SliceAnalysisResponse) {
+  if (response.asset_identity.asset_id !== asset.value?.id) return
   if (renderState.value.mode !== 'slice') return
   const s = response.slice
   renderState.value = {
@@ -650,11 +698,25 @@ function sendPointLayer(layer: PointLayerPayload) {
   frameRef.value?.setPointLayer(layer)
 }
 
-defineExpose({ sendPointLayer, focusComponent, setCameraPreset: onCameraPreset })
+defineExpose({
+  sendPointLayer,
+  focusComponent,
+  setCameraPreset: onCameraPreset,
+  acceptSliceAnalysis: onAnalysisLoaded,
+})
 
 onMounted(() => {
   void load()
 })
+
+watch(
+  () => props.apiKey,
+  (next, prev) => {
+    if (next === prev) return
+    resetDataSourceState()
+    void load()
+  },
+)
 </script>
 
 <template>
@@ -943,15 +1005,52 @@ onMounted(() => {
   max-height: none;
 }
 
+/* 首页展示变体：控制栏与三维画布共享场景主体的完整高度。 */
+.native-volume-panel.presentation {
+  height: 100%;
+  min-height: 0;
+  gap: 8px;
+}
+
+.native-volume-panel.presentation .panel-body {
+  flex: 1;
+  height: 100%;
+  min-height: 0;
+  align-items: stretch;
+}
+
+.native-volume-panel.presentation .tools-rail {
+  margin-top: 12px;
+  min-height: 0;
+  max-height: 100%;
+  overflow-y: auto;
+}
+
+.native-volume-panel.presentation .scene-column {
+  height: 100%;
+  min-height: 0;
+}
+
+.native-volume-panel.presentation :deep(.volume-frame) {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  aspect-ratio: auto;
+}
+
 .tools-rail {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  width: 100%;
+  max-width: 100%;
   min-width: 0;
+  overflow-x: hidden;
   border: 1px solid var(--gmp-border);
   border-radius: 10px;
   background: var(--gmp-bg-soft);
   padding: 12px;
+  box-sizing: border-box;
 }
 
 .scene-column {

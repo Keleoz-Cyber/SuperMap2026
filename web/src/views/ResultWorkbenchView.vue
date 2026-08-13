@@ -26,6 +26,7 @@ import type {
   ResidualEvidence,
   ResultAnalysisSummary,
   ResultMetadata,
+  MLResultField,
   ResultPreview,
   SliceAnalysisResponse,
 } from '../api/types'
@@ -46,6 +47,7 @@ import type { AnalysisSelection } from '../components/analysis/analysisTypes'
 import { createAnalysisSelectionController } from '../composables/useAnalysisSelection'
 import type { SliceAxis } from '../api/types'
 import { clearShellContext, setShellContext } from '../stores/shellContext'
+import MLFieldSelector from '../components/results/MLFieldSelector.vue'
 
 // v0.9.0 V6 Task 3：成果页 = 成果专用顶栏 + 成果摘要条 + 一屏工作台外壳。
 // 页面本身在大屏下禁止纵向滚动；长内容只在右栏与证据窗内部滚动。
@@ -90,9 +92,39 @@ const renderAssetIdentity = ref<{
   netcdfSha256: string | null
   geolocationStatus: string
 } | null>(null)
+const activeMLField = ref<MLResultField>('prediction')
+const mlFieldLoading = ref(false)
+const mlFieldError = ref<string | null>(null)
+
+const availableMLFields = computed<MLResultField[]>(() =>
+  resultAnalysis.value?.machine_learning?.available_fields ?? [],
+)
+
+const activeMLFieldLabel = computed(() => ({
+  prediction: '预测结果',
+  model_dispersion: '模型离散度',
+  kriging_baseline: '克里金基线',
+  residual_correction: '残差校正',
+})[activeMLField.value])
+
+function selectMLField(field: MLResultField) {
+  if (field === activeMLField.value) return
+  activeMLField.value = field
+  mlFieldLoading.value = true
+  mlFieldError.value = null
+  currentSlice.value = null
+  focusedComponentId.value = null
+  renderAssetIdentity.value = null
+}
 
 function onAssetIdentity(info: typeof renderAssetIdentity.value) {
   renderAssetIdentity.value = info
+}
+
+function onMLSourceLoadState(payload: { key: string; loading: boolean; error: string | null }) {
+  if (payload.key !== activeMLField.value) return
+  mlFieldLoading.value = payload.loading
+  mlFieldError.value = payload.error
 }
 
 const findings = computed<PresentationFinding[]>(() =>
@@ -262,9 +294,9 @@ function restoreSelectionFromQuery() {
 // ---------------------------------------------------------------------------
 
 const volumeApi: NativeVolumeRenderApi = {
-  fetchCapability: () => fetchResultRenderCapability(resultId.value),
-  fetchAsset: () => fetchResultRenderAsset(resultId.value),
-  createAsset: (retryFailed) => createResultRenderAsset(resultId.value, retryFailed),
+  fetchCapability: () => fetchResultRenderCapability(resultId.value, activeMLField.value),
+  fetchAsset: () => fetchResultRenderAsset(resultId.value, activeMLField.value),
+  createAsset: (retryFailed) => createResultRenderAsset(resultId.value, retryFailed, activeMLField.value),
   fetchSliceAnalysis: (assetId, axis, index) => fetchRenderAssetSliceAnalysis(assetId, axis, index),
   createSliceExport: (assetId, axis, index, png) =>
     createRenderAssetSliceExport(assetId, axis, index, png),
@@ -312,6 +344,9 @@ function resetForIdentityChange() {
   formalSelected.value = null
   exportError.value = null
   renderAssetIdentity.value = null
+  activeMLField.value = 'prediction'
+  mlFieldLoading.value = false
+  mlFieldError.value = null
 }
 
 // 加载序号：A→B→A 快速切换时，只有最新一次 load 的响应可以写入状态；
@@ -501,21 +536,42 @@ onBeforeUnmount(clearShellContext)
         @focus-depth-bin="onFocusDepthBin"
       >
         <template #scene>
-          <NativeVolumePanel
-            v-if="metadata.dimension === '3d'"
-            ref="volumePanelRef"
-            variant="workbench"
-            :api="volumeApi"
-            :aux-points="gridSamplePoints"
-            :slice-request="sliceRequest"
-            :components="sceneComponents"
-            :focused-component-id="focusedComponentId"
-            @slice-change="onSliceChange"
-            @slice-request-failed="onSliceRequestFailed"
-            @annotation-selected="onAnnotationSelected"
-            @slice-analysis="onSliceAnalysis"
-            @asset-identity="onAssetIdentity"
-          />
+          <div v-if="metadata.dimension === '3d'" class="field-scene">
+            <MLFieldSelector
+              v-if="availableMLFields.length > 1"
+              :model-value="activeMLField"
+              :available-fields="availableMLFields"
+              :property-unit="resultAnalysis?.variable.unit ?? null"
+              :loading="mlFieldLoading"
+              @update:model-value="selectMLField"
+            />
+            <p
+              v-if="activeMLField !== 'prediction'"
+              class="active-field-note"
+              data-test="active-ml-field-note"
+            >
+              当前显示：{{ activeMLFieldLabel }}。异常连通区标注仅属于主预测场，已暂时隐藏。
+            </p>
+            <p v-if="mlFieldError" class="field-load-error" data-test="ml-field-load-error" role="alert">
+              当前字段暂时无法加载：{{ mlFieldError }}。可以切换到其他字段后重试。
+            </p>
+            <NativeVolumePanel
+              ref="volumePanelRef"
+              variant="workbench"
+              :api="volumeApi"
+              :api-key="activeMLField"
+              :aux-points="gridSamplePoints"
+              :slice-request="sliceRequest"
+              :components="activeMLField === 'prediction' ? sceneComponents : null"
+              :focused-component-id="focusedComponentId"
+              @slice-change="onSliceChange"
+              @slice-request-failed="onSliceRequestFailed"
+              @annotation-selected="onAnnotationSelected"
+              @slice-analysis="onSliceAnalysis"
+              @asset-identity="onAssetIdentity"
+              @source-load-state="onMLSourceLoadState"
+            />
+          </div>
           <SlicePanel
             v-else
             :result-id="resultId"
@@ -542,6 +598,38 @@ onBeforeUnmount(clearShellContext)
   min-height: 100%;
   display: flex;
   flex-direction: column;
+}
+
+.field-scene {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1-space-2);
+}
+
+.field-scene :deep(.native-volume-panel) {
+  flex: 1;
+  min-height: 0;
+}
+
+.active-field-note {
+  margin: 0;
+  padding: 5px 10px;
+  border-left: 2px solid var(--s1-cyan-dim);
+  color: var(--s1-text-dim);
+  background: var(--s1-cyan-ghost);
+  font-size: var(--s1-font-xs);
+}
+
+.field-load-error {
+  margin: 0;
+  padding: 7px 10px;
+  border-left: 2px solid var(--s1-warning, #d9a84e);
+  color: var(--s1-warning, #d9a84e);
+  background: rgba(217, 168, 78, 0.08);
+  font-size: var(--s1-font-xs);
 }
 
 /* 大屏一屏外壳：页面不滚动；主舞台与证据窗内部自适应 */

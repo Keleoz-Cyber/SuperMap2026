@@ -1,12 +1,12 @@
 # 地下电阻率数据与成果
 
-> 数据契约通用规则见 [contracts.md](contracts.md)。本文件记录电阻率案例的当前产品事实（v0.8.0 散点预置 + DSI-like），以及旧 S3M/legacy 链的历史事实（§8，已退役）。
+> 数据契约通用规则见 [contracts.md](contracts.md)。本文件记录电阻率案例当前的散点预置、DSI-like、机器学习预测和 NetCDF 体渲染事实，以及旧 S3M/legacy 链的历史边界。
 
-## 1. 当前结论（v0.8.0）
+## 1. 当前结论（0.9.0）
 
 - 电阻率案例已从只读 `builtin_legacy` 入口迁移为统一的 `builtin_preset` 散点预置案例，案例 ID 保持 `resistivity`（既有深链可解析）；不提供 CSV 上传步骤，数据版本只读。
 - 官方成果为普通克里金基线（winner `exponential / neighbor=24`，RMSE=6.454476），经 `Experiment → Run → CandidateResult → materialize → FormalSelection` 链登记，用户实验不得改写官方正式选择。
-- 算法选项为 IDW、普通 Kriging 与 **DSI-like 离散平滑插值**；DSI-like 是工程近似方法，**不等同于 GOCAD DSI**（免责声明见 §5）。
+- 算法选项为 IDW、普通 Kriging、**DSI-like 离散平滑插值**、随机森林空间回归和克里金残差随机森林；DSI-like 是工程近似方法，**不等同于 GOCAD DSI**（免责声明见 §5）。机器学习必须通过样本/空间组适用性门，并与相同折分指纹的普通克里金比较。
 - 体渲染走统一候选 NetCDF 链（§6）；旧 S3M/legacy 渲染入口已类型化退役（§7）。
 - 官方验证合同为生产 `spatial_kfold` 5 折、seed=20260723；遗留训练/验证分区（15,827/1,722）只作源溯源事实记录（§3）。
 

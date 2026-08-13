@@ -133,18 +133,22 @@ const variable = computed(() => props.summary?.variable ?? null)
 .evidence-band {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--s1-space-3);
+  align-items: stretch;
+  min-height: 148px;
+  gap: var(--s1-space-4);
   border: 1px solid var(--s1-border);
   border-radius: var(--s1-radius-md);
   background: var(--s1-surface-1);
-  padding: var(--s1-space-3) var(--s1-space-4);
+  padding: 18px 22px;
+  box-sizing: border-box;
 }
 
 .evidence-cell {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--s1-space-2);
+  justify-content: center;
+  gap: 10px;
 }
 
 .cell-title {
@@ -176,12 +180,14 @@ const variable = computed(() => props.summary?.variable ?? null)
 .donut-wrap {
   display: flex;
   align-items: center;
-  gap: var(--s1-space-3);
+  gap: var(--s1-space-4);
 }
 
 .donut {
-  width: 56px;
-  height: 56px;
+  width: 72px;
+  height: 72px;
+  flex: none;
+  display: block;
 }
 
 .donut-track {
@@ -202,7 +208,7 @@ const variable = computed(() => props.summary?.variable ?? null)
 
 .donut-text {
   fill: var(--s1-text-strong);
-  font-size: 12px;
+  font-size: 8.5px;
   font-weight: 700;
   text-anchor: middle;
   font-variant-numeric: tabular-nums;
@@ -212,9 +218,14 @@ const variable = computed(() => props.summary?.variable ?? null)
 .anomaly-legend {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  font-size: var(--s1-font-sm);
+  min-width: 0;
+  gap: 5px;
+  font-size: var(--s1-font-md);
   color: var(--s1-text-dim);
+}
+
+.donut-legend span {
+  white-space: nowrap;
 }
 
 .swatch {
@@ -244,7 +255,7 @@ const variable = computed(() => props.summary?.variable ?? null)
 .metric-bars {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 7px;
 }
 
 .metric-row {
@@ -252,7 +263,7 @@ const variable = computed(() => props.summary?.variable ?? null)
   grid-template-columns: 96px 1fr 56px;
   align-items: center;
   gap: 8px;
-  font-size: var(--s1-font-sm);
+  font-size: var(--s1-font-md);
 }
 
 .metric-name {
@@ -268,8 +279,8 @@ const variable = computed(() => props.summary?.variable ?? null)
 }
 
 .metric-track {
-  height: 6px;
-  border-radius: 3px;
+  height: 8px;
+  border-radius: 4px;
   background: var(--s1-surface-3);
   overflow: hidden;
 }
@@ -294,13 +305,13 @@ const variable = computed(() => props.summary?.variable ?? null)
 .anomaly-wrap {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .anomaly-bar {
   display: flex;
-  height: 8px;
-  border-radius: 4px;
+  height: 10px;
+  border-radius: 5px;
   background: var(--s1-surface-3);
   overflow: hidden;
 }
@@ -356,6 +367,19 @@ const variable = computed(() => props.summary?.variable ?? null)
 @media (max-width: 900px) {
   .evidence-band {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    min-height: 0;
+    padding: var(--s1-space-3) var(--s1-space-4);
+  }
+
+  .donut {
+    width: 56px;
+    height: 56px;
+  }
+
+  .donut-legend,
+  .anomaly-legend,
+  .metric-row {
+    font-size: var(--s1-font-sm);
   }
 }
 

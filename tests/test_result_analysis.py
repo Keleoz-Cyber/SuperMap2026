@@ -1,6 +1,6 @@
 """v0.9.0 成果分析合同测试：DTO 严格校验、未知字段拒绝、非有限值 fail-closed。
 
-设计依据：docs/superpowers/specs/2026-08-10-v0.9.0-result-analysis-integration-design.md §5, §9。
+当前合同依据：docs/architecture.md 与 docs/acceptance.md。
 """
 
 from __future__ import annotations

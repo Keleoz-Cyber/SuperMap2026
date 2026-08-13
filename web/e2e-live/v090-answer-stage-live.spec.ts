@@ -190,7 +190,9 @@ test('指挥舱三案例切换真实渲染（桌面 1440×900）', async ({ page
 
   for (const c of CASES) {
     const tag = `home-${c.caseId}`
-    await page.getByTestId('case-rail-item').filter({ hasText: c.title }).click()
+    await page
+      .locator(`[data-test="case-rail-item"][data-case-id="${c.caseId}"]`)
+      .click()
     const scene = page.getByTestId('command-center-scene')
     await expect(scene).toContainText(c.title)
     await expect(scene).toContainText(c.unit)
@@ -278,7 +280,7 @@ test('手机 390×844：摘要优先顺序 + 全屏三维入口 + 案例切换�
   await writer.savePageShot(page, 'phone-summary-first')
 
   // 切换瓦斯并打开全屏三维（同一面板转为视口覆盖，iframe 不重建）
-  await page.getByTestId('case-rail-item').filter({ hasText: '煤层瓦斯' }).click()
+  await page.locator('[data-test="case-rail-item"][data-case-id="gas"]').click()
   await expect(page.getByTestId('command-center-scene')).toContainText('ml/g')
   await page.getByTestId('phone-open-scene').scrollIntoViewIfNeeded()
   await page.getByTestId('phone-open-scene').click()

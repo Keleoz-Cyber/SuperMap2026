@@ -14,9 +14,9 @@ function candidate(id: string, parameters: Record<string, unknown>): CandidateRe
   }
 }
 
-function mountBoard(candidates: CandidateRecord[]): VueWrapper {
+function mountBoard(candidates: CandidateRecord[], algorithm = 'ordinary_kriging'): VueWrapper {
   return mount(CandidateLeaderboard, {
-    props: { candidates, publicMetrics: {} },
+    props: { candidates, publicMetrics: {}, algorithm },
     global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } },
   })
 }
@@ -26,6 +26,21 @@ function paramsText(wrapper: VueWrapper): string {
 }
 
 describe('CandidateLeaderboard 参数列格式化', () => {
+  it('显示当前实验的中文算法名，机器学习算法不泄漏内部枚举值', () => {
+    const rf = mountBoard([candidate('r1', { n_estimators: 200 })], 'random_forest_spatial')
+    expect(rf.get('[data-test="candidate-algorithm"]').text()).toBe('随机森林空间预测')
+    expect(rf.text()).not.toContain('random_forest_spatial')
+    rf.unmount()
+
+    const residual = mountBoard(
+      [candidate('r2', { rf: { n_estimators: 200 } })],
+      'kriging_rf_residual',
+    )
+    expect(residual.get('[data-test="candidate-algorithm"]').text()).toBe('克里金残差校正')
+    expect(residual.text()).not.toContain('kriging_rf_residual')
+    residual.unmount()
+  })
+
   it('嵌套专业参数（neighborhood/anisotropy）以紧凑可读形式渲染，绝不出现 [object Object]', () => {
     const wrapper = mountBoard([
       candidate('r1', {

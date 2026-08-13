@@ -12,6 +12,7 @@ import type {
   ProfessionalConfirmationSummary,
   ProfessionalDiagnosisRecord,
   ProfessionalDiagnosticList,
+  MLCapability,
   RunStatus,
   VariogramBin,
   VariogramEvidence,
@@ -39,6 +40,7 @@ vi.mock('../../../api/client', async (importOriginal) => {
     fetchExperiment: vi.fn(),
     fetchRun: vi.fn(),
     fetchCandidates: vi.fn(),
+    fetchMLCapability: vi.fn(),
   }
 })
 
@@ -403,6 +405,18 @@ function mockHappyPath() {
 beforeEach(() => {
   vi.clearAllMocks()
   vi.useFakeTimers()
+  vi.mocked(client.fetchMLCapability).mockResolvedValue({
+    dataset_id: 'ds1',
+    level: 'supported',
+    valid_sample_count: 240,
+    spatial_group_count: 40,
+    available_algorithms: ['random_forest_spatial', 'kriging_rf_residual'],
+    confirmation_required: false,
+    reason_code: null,
+    message: '样本量和独立空间分组满足机器学习空间验证要求。',
+    validation_requirement: 'spatial_cross_validation',
+    dispersion_semantics: 'model_dispersion_reference',
+  } satisfies MLCapability)
 })
 
 afterEach(() => {

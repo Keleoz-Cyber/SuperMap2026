@@ -29,7 +29,7 @@
 ``build_kriging_transform(KrigingAnisotropySpec.isotropic(...))`` 构造，
 保证恒等变换也携带规范指纹。
 
-设计依据：docs/superpowers/specs/2026-07-26-v0.6-professional-modeling-enhancements-design.md §10.2。
+当前合同依据：docs/architecture.md 的专业证据边界与 docs/acceptance.md。
 """
 
 from __future__ import annotations

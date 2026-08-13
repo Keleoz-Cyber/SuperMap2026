@@ -20,6 +20,7 @@ import type {
   ExperimentRecord,
   FoldEvidence,
   MultiCandidateComparison,
+  MLCapability,
   ProfessionalConfirmationSummary,
   ProfessionalDiagnosticList,
   ProfessionalResultEvidence,
@@ -45,6 +46,7 @@ import type {
   QualityReport,
   RenderAssetRecord,
   RenderCapability,
+  MLResultField,
   ResultAnalysisSummary,
   SliceAnalysisResponse,
   SliceAxis,
@@ -153,6 +155,10 @@ export function uploadDataset(caseId: string, file: File): Promise<DatasetVersio
 
 export function fetchDataset(datasetId: string): Promise<DatasetVersionRecord> {
   return getJson<DatasetVersionRecord>(`/datasets/${datasetId}`)
+}
+
+export function fetchMLCapability(datasetId: string): Promise<MLCapability> {
+  return getJson<MLCapability>(`/datasets/${datasetId}/ml-capability`)
 }
 
 export function fetchInspection(datasetId: string, sheet?: string | null): Promise<InspectionResult> {
@@ -361,18 +367,32 @@ export function materializeResult(resultId: string): Promise<ResultMetadata> {
   return requestJson<ResultMetadata>(`/results/${resultId}/materialize`, { method: 'POST' })
 }
 
-export function fetchResultRenderCapability(resultId: string): Promise<RenderCapability> {
-  return getJson<RenderCapability>(`/results/${resultId}/render-capability`)
+function renderFieldQuery(field: MLResultField): string {
+  return field === 'prediction' ? '' : `?field=${encodeURIComponent(field)}`
 }
 
-export function createResultRenderAsset(resultId: string, retryFailed = false): Promise<RenderAssetRecord> {
-  return postJson<RenderAssetRecord>(`/results/${resultId}/render-assets/netcdf`, {
+export function fetchResultRenderCapability(
+  resultId: string,
+  field: MLResultField = 'prediction',
+): Promise<RenderCapability> {
+  return getJson<RenderCapability>(`/results/${resultId}/render-capability${renderFieldQuery(field)}`)
+}
+
+export function createResultRenderAsset(
+  resultId: string,
+  retryFailed = false,
+  field: MLResultField = 'prediction',
+): Promise<RenderAssetRecord> {
+  return postJson<RenderAssetRecord>(`/results/${resultId}/render-assets/netcdf${renderFieldQuery(field)}`, {
     retry_failed: retryFailed,
   })
 }
 
-export function fetchResultRenderAsset(resultId: string): Promise<RenderAssetRecord> {
-  return getJson<RenderAssetRecord>(`/results/${resultId}/render-assets/netcdf`)
+export function fetchResultRenderAsset(
+  resultId: string,
+  field: MLResultField = 'prediction',
+): Promise<RenderAssetRecord> {
+  return getJson<RenderAssetRecord>(`/results/${resultId}/render-assets/netcdf${renderFieldQuery(field)}`)
 }
 
 // ---------------------------------------------------------------------------

@@ -8,7 +8,7 @@
 进程时间；同一输入与配置产生相同的点对身份与字节。全程不分配 ``n×n``
 距离矩阵，也不调用 ``scipy.spatial.distance.pdist``。
 
-设计依据：docs/superpowers/specs/2026-07-26-v0.6-professional-modeling-enhancements-design.md §6.2。
+当前合同依据：docs/architecture.md 的专业证据边界与 docs/acceptance.md。
 """
 
 from __future__ import annotations
