@@ -27,6 +27,11 @@ const description = computed(() =>
 const submitLabel = computed(() =>
   props.mode === 'create' ? '创建并进入数据准备' : '上传并进入数据准备',
 )
+const busyLabel = computed(() =>
+  props.mode === 'create'
+    ? '正在创建案例并上传数据，文件较大时可能需要数秒'
+    : '正在上传新数据版本，完成后将自动进入字段确认',
+)
 const fileType = computed(() => props.file?.name.split('.').pop()?.toUpperCase() ?? '文件')
 const fileSize = computed(() => {
   if (!props.file) return ''
@@ -83,6 +88,16 @@ const fileSize = computed(() => {
           >{{ submitLabel }}</el-button>
           <slot name="secondary-action" />
         </div>
+        <p
+          v-if="busy"
+          class="intake-busy-status"
+          data-test="intake-busy-status"
+          role="status"
+          aria-live="polite"
+        >
+          <span class="intake-busy-dot" aria-hidden="true" />
+          {{ busyLabel }}
+        </p>
       </div>
 
       <aside class="intake-guide">
@@ -136,6 +151,10 @@ const fileSize = computed(() => {
 .file-summary .ready { color:var(--s1-success); }
 .intake-error { padding:10px 14px; border:1px solid rgba(224,104,94,.5); background:rgba(224,104,94,.12); color:var(--s1-error); }
 .intake-actions { display:flex; gap:12px; align-items:center; }
+.intake-busy-status { margin:0; display:flex; align-items:center; gap:8px; color:var(--s1-cyan-strong); font-size:var(--s1-font-sm); animation:gmp-intake-status-in var(--s1-motion-base) var(--s1-ease-out) both; }
+.intake-busy-dot { width:8px; height:8px; flex:none; border-radius:50%; background:var(--s1-cyan); animation:gmp-intake-pulse 1.15s var(--s1-ease-in-out) infinite; }
+@keyframes gmp-intake-status-in { from { opacity:0; transform:translateY(-3px); } to { opacity:1; transform:translateY(0); } }
+@keyframes gmp-intake-pulse { 0%,100% { opacity:.4; transform:scale(.8); } 50% { opacity:1; transform:scale(1.15); } }
 @media (max-width:800px) {
   .intake-heading { align-items:start; flex-direction:column; }
   .intake-steps { width:100%; justify-content:space-between; }

@@ -104,6 +104,7 @@ const estimated = computed(() => props.run?.status === 'running')
         :class="nodeState(node.group)"
         :data-test="`pipeline-stage-${node.id}`"
         :data-state="nodeState(node.group)"
+        :aria-current="nodeState(node.group) === 'active' ? 'step' : undefined"
       >
         <span class="node-dot" aria-hidden="true" />
         {{ node.label }}
@@ -210,6 +211,12 @@ const estimated = computed(() => props.run?.status === 'running')
   border-color: var(--s1-cyan);
   background: var(--s1-cyan-ghost);
   box-shadow: 0 0 8px rgba(70, 194, 190, 0.5);
+  animation: pipeline-stage-pulse 1.4s var(--s1-ease-in-out) infinite;
+}
+
+@keyframes pipeline-stage-pulse {
+  0%, 100% { opacity: 0.62; transform: scale(0.9); }
+  50% { opacity: 1; transform: scale(1.12); }
 }
 
 .pipeline-node.failed {

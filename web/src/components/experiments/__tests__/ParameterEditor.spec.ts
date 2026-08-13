@@ -65,6 +65,14 @@ describe('ParameterEditor 用户决策层', () => {
     expect(wrapper.get('[data-test="mode-grid-label"]').text()).toContain('自动组合')
     expect(wrapper.get('[data-test="count-preview"]').text()).toContain('1 个候选组合')
   })
+
+  it('提交期间显示旋转状态和明确阶段提示', () => {
+    const wrapper = mountEditor({ submitting: true })
+
+    expect(wrapper.get('[data-test="exp-submit-spinner"]')).toBeTruthy()
+    expect(wrapper.get('[data-test="exp-submit-status"]').attributes('aria-live')).toBe('polite')
+    expect(wrapper.get('[data-test="exp-submit-status"]').text()).toContain('正在创建实验并提交运行任务')
+  })
 })
 
 describe('ParameterEditor dsi_like（v0.8.0）', () => {

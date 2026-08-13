@@ -135,6 +135,7 @@ describe('ResultAnalysisWorkbench（V6 一屏布局）', () => {
 
     await toggle.trigger('click')
     expect(dock.classes()).toContain('expanded')
+    expect(dock.classes()).toContain('is-transitioning')
     expect(toggle.attributes('aria-expanded')).toBe('true')
     expect(toggle.text()).toBe('收起分析')
     expect(wrapper.get('[data-test="slot-scene"]').element).toBe(sceneElement)

@@ -554,6 +554,12 @@ const hasResiduals = computed(() => (props.residuals?.returned ?? 0) > 0)
   min-height: 0;
   flex: 1;
   overscroll-behavior: contain;
+  animation: evidence-pane-in var(--s1-motion-base) var(--s1-ease-out) both;
+}
+
+@keyframes evidence-pane-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .evidence-pane.grouped {

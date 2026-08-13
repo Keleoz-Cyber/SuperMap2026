@@ -26,6 +26,84 @@
   transform: translateY(6px);
 }
 
+/* 页面与面板切换：只做短距离位移和淡入，避免干扰三维交互。 */
+.gmp-route-enter-active,
+.gmp-route-leave-active {
+  transition:
+    opacity var(--s1-motion-base) var(--s1-ease-out),
+    transform var(--s1-motion-base) var(--s1-ease-out);
+}
+
+.gmp-route-enter-from,
+.gmp-route-leave-to {
+  opacity: 0;
+  transform: translateY(5px);
+}
+
+/* 原生 details 无法平滑插值 auto 高度，至少让内容进入时有明确的展开反馈。 */
+details > :not(summary) {
+  animation: gmp-disclosure-in var(--s1-motion-base) var(--s1-ease-out) both;
+  transform-origin: top;
+}
+
+/* 新版 Chromium 支持 details 内容伪元素时，同时补齐收起方向的高度过渡。 */
+@supports selector(details::details-content) {
+  details {
+    interpolate-size: allow-keywords;
+  }
+
+  details::details-content {
+    block-size: 0;
+    opacity: 0;
+    overflow: hidden;
+    transition:
+      block-size var(--s1-motion-base) var(--s1-ease-out),
+      opacity var(--s1-motion-fast) var(--s1-ease-out),
+      content-visibility var(--s1-motion-base) allow-discrete;
+  }
+
+  details[open]::details-content {
+    block-size: auto;
+    opacity: 1;
+  }
+
+  details > :not(summary) {
+    animation: none;
+  }
+}
+
+@keyframes gmp-disclosure-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 所有常规按钮共享轻量按压反馈，不给禁用按钮制造可点击错觉。 */
+:where(button, .gmp-btn, .el-button) {
+  transition:
+    transform var(--s1-motion-fast) var(--s1-ease-out),
+    opacity var(--s1-motion-fast) var(--s1-ease-out),
+    background-color var(--s1-motion-fast) var(--s1-ease-out),
+    border-color var(--s1-motion-fast) var(--s1-ease-out),
+    color var(--s1-motion-fast) var(--s1-ease-out);
+  touch-action: manipulation;
+}
+
+@media (hover: hover) {
+  :where(button, .gmp-btn, .el-button):not(:disabled):hover {
+    transform: translateY(-1px);
+  }
+}
+
+:where(button, .gmp-btn, .el-button):not(:disabled):active {
+  transform: translateY(0) scale(0.98);
+}
+
 @media (prefers-reduced-motion: reduce) {
   :root {
     --s1-motion-fast: 1ms;

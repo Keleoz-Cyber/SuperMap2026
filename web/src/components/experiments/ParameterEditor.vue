@@ -738,8 +738,18 @@ const AXES = ['x', 'y', 'z'] as const
 
     <div class="editor-actions">
       <button class="gmp-btn primary" data-test="exp-submit" :disabled="!canSubmit" @click="submit">
-        {{ submitting ? '提交中…' : '创建实验并运行' }}
+        <span v-if="submitting" class="submit-spinner" data-test="exp-submit-spinner" aria-hidden="true" />
+        <span>{{ submitting ? '正在创建实验…' : '创建实验并运行' }}</span>
       </button>
+      <p
+        v-if="submitting"
+        class="submit-status"
+        data-test="exp-submit-status"
+        role="status"
+        aria-live="polite"
+      >
+        正在创建实验并提交运行任务，请勿重复点击
+      </p>
     </div>
   </section>
 </template>
@@ -771,7 +781,7 @@ const AXES = ['x', 'y', 'z'] as const
 .algorithm-group-heading span { color: var(--gmp-text-faint); font-size: 11px; text-align: right; }
 .algorithm-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .algorithm-grid.ml-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.algorithm-choice { min-width: 0; display: flex; flex-direction: column; gap: 8px; padding: 14px; border: 1px solid var(--gmp-border); background: var(--gmp-bg-soft); cursor: pointer; }
+.algorithm-choice { min-width: 0; display: flex; flex-direction: column; gap: 8px; padding: 14px; border: 1px solid var(--gmp-border); background: var(--gmp-bg-soft); cursor: pointer; transition: transform var(--s1-motion-fast) var(--s1-ease-out), background-color var(--s1-motion-fast) var(--s1-ease-out), border-color var(--s1-motion-fast) var(--s1-ease-out), box-shadow var(--s1-motion-fast) var(--s1-ease-out); }
 .algorithm-choice input { position: absolute; opacity: 0; }
 .algorithm-choice.selected { border-color: var(--s1-cyan); background: var(--s1-cyan-ghost); box-shadow: inset 0 2px 0 var(--s1-cyan); }
 .algorithm-choice.disabled { opacity: .5; cursor: not-allowed; }
@@ -781,7 +791,8 @@ const AXES = ['x', 'y', 'z'] as const
 .choice-title small { color: var(--s1-cyan-strong); font-size: 10px; font-weight: 600; }
 .mode-selector { display: grid; grid-template-columns: auto repeat(2, minmax(0, 1fr)); gap: 10px; align-items: stretch; }
 .mode-selector > .section-kicker { align-self: center; margin-right: 4px; }
-.mode-choice { display: flex; gap: 10px; align-items: center; padding: 10px 12px; border: 1px solid var(--gmp-border); cursor: pointer; }
+.mode-choice { display: flex; gap: 10px; align-items: center; padding: 10px 12px; border: 1px solid var(--gmp-border); cursor: pointer; transition: transform var(--s1-motion-fast) var(--s1-ease-out), background-color var(--s1-motion-fast) var(--s1-ease-out), border-color var(--s1-motion-fast) var(--s1-ease-out); }
+.algorithm-choice:active, .mode-choice:active { transform: scale(.99); }
 .mode-choice.selected { border-color: var(--s1-cyan-dim); background: var(--s1-cyan-ghost); }
 .mode-choice span { display: flex; flex-direction: column; gap: 3px; }
 .mode-choice small { color: var(--gmp-text-faint); font-size: 11px; }
@@ -896,6 +907,7 @@ const AXES = ['x', 'y', 'z'] as const
 
 .editor-actions {
   display: flex;
+  align-items: center;
   gap: 12px;
 }
 
@@ -914,6 +926,38 @@ const AXES = ['x', 'y', 'z'] as const
   border-color: var(--gmp-accent);
   color: #0b0f14;
   font-weight: 600;
+}
+
+.editor-actions .gmp-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.submit-spinner {
+  width: 13px;
+  height: 13px;
+  border: 2px solid rgba(11, 15, 20, 0.28);
+  border-top-color: #0b0f14;
+  border-radius: 50%;
+  animation: submit-spin 0.8s linear infinite;
+}
+
+.submit-status {
+  margin: 0;
+  color: var(--s1-cyan-strong);
+  font-size: 12px;
+  animation: submit-status-in var(--s1-motion-base) var(--s1-ease-out) both;
+}
+
+@keyframes submit-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes submit-status-in {
+  from { opacity: 0; transform: translateX(-4px); }
+  to { opacity: 1; transform: translateX(0); }
 }
 
 .gmp-btn:disabled {

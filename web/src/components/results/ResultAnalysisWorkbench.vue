@@ -157,22 +157,26 @@ function onFocusEvidence(ref: string) {
         </div>
 
         <div class="side-scroll">
-          <ResultInterpretationPanel
-            v-if="sideTab === 'rules'"
-            :analysis="analysis"
-            :current-slice="currentSlice"
-            :focused-component-id="focusedComponentId ?? null"
-            :loading="analysisLoading ?? false"
-            :error="analysisError ?? null"
-            @focus-component="emit('focus-component', $event)"
-            @focus-depth-bin="emit('focus-depth-bin', $event)"
-          />
-          <AIAssistedReview
-            v-else
-            :result-id="resultId"
-            :grid-sha256="analysis?.identity.grid_sha256 ?? null"
-            @focus-evidence="onFocusEvidence"
-          />
+          <Transition name="gmp-route" mode="out-in">
+            <ResultInterpretationPanel
+              v-if="sideTab === 'rules'"
+              key="rules"
+              :analysis="analysis"
+              :current-slice="currentSlice"
+              :focused-component-id="focusedComponentId ?? null"
+              :loading="analysisLoading ?? false"
+              :error="analysisError ?? null"
+              @focus-component="emit('focus-component', $event)"
+              @focus-depth-bin="emit('focus-depth-bin', $event)"
+            />
+            <AIAssistedReview
+              v-else
+              key="ai"
+              :result-id="resultId"
+              :grid-sha256="analysis?.identity.grid_sha256 ?? null"
+              @focus-evidence="onFocusEvidence"
+            />
+          </Transition>
 
           <section class="side-block" data-test="result-evaluation">
             <slot name="evaluation" />
@@ -184,7 +188,11 @@ function onFocusEvidence(ref: string) {
     <div
       class="workbench-dock"
       :class="[
-        { expanded: evidenceExpanded && focusMode !== 'analysis', 'analysis-focus': focusMode === 'analysis' },
+        {
+          expanded: evidenceExpanded && focusMode !== 'analysis',
+          'analysis-focus': focusMode === 'analysis',
+          'is-transitioning': focusMode !== 'analysis',
+        },
         `dock-${dockTabModel}`,
       ]"
       data-test="result-evidence-dock"
@@ -351,7 +359,11 @@ function onFocusEvidence(ref: string) {
   height: clamp(280px, 29vh, 330px);
   min-height: 0;
   position: relative;
-  transition: height var(--s1-motion-normal) var(--s1-ease-out);
+}
+
+.workbench-dock.is-transitioning {
+  transition: height var(--s1-motion-panel) var(--s1-ease-out);
+  will-change: height;
 }
 
 .workbench-dock.expanded {

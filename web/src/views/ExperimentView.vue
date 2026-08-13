@@ -56,6 +56,7 @@ const dataset = ref<DatasetVersionRecord | null>(null)
 const mlCapability = ref<MLCapability | null>(null)
 const name = ref('插值实验')
 const submitting = ref(false)
+const loading = ref(true)
 
 // v0.9.0：实验画布测点预览与参数实时快照
 const datasetPoints = ref<SpatialPointInput[] | null>(null)
@@ -392,16 +393,20 @@ async function onRetry() {
 watch(
   () => route.fullPath,
   async () => {
-    if (isCreate.value) {
-      stopPolling()
-      loadError.value = null
-      try {
+    loading.value = true
+    try {
+      if (isCreate.value) {
+        stopPolling()
+        loadError.value = null
+        dataset.value = null
         await resolveDataset()
-      } catch (e) {
-        loadError.value = describeError(e)
+      } else if (experimentId.value) {
+        await loadDetail(experimentId.value)
       }
-    } else if (experimentId.value) {
-      await loadDetail(experimentId.value)
+    } catch (e) {
+      loadError.value = describeError(e)
+    } finally {
+      loading.value = false
     }
   },
   { immediate: true },
@@ -431,6 +436,12 @@ onBeforeUnmount(stopPolling)
       title="加载失败"
       :impact="loadError"
       next-action="返回案例工作台重新进入，或稍后重试"
+    />
+    <AsyncState
+      v-else-if="loading"
+      kind="loading"
+      :title="isCreate ? '正在载入建模数据与参数预设' : '正在加载实验与运行状态'"
+      impact="数据量较大或服务刚启动时可能需要数秒"
     />
 
     <template v-else-if="isCreate">

@@ -38,6 +38,13 @@ const validating = ref(false)
 const confirming = ref(false)
 const conversion = ref<{ valid: number; invalid: number; total: number } | null>(null)
 
+const workflowBusyLabel = computed(() => {
+  if (submitting.value) return '正在应用字段映射并检查数值，请稍候'
+  if (validating.value) return '正在执行数据质量检查，请勿关闭页面'
+  if (confirming.value) return '正在保存质量确认并更新建模状态'
+  return ''
+})
+
 const showAbandonDialog = ref(false)
 const abandoning = ref(false)
 
@@ -228,6 +235,16 @@ function onStart() {
 
     <main v-else class="wizard-main">
       <div v-if="actionError" class="action-error" data-test="action-error">{{ actionError }}</div>
+      <div
+        v-if="workflowBusyLabel"
+        class="workflow-busy"
+        data-test="workflow-busy-status"
+        role="status"
+        aria-live="polite"
+      >
+        <span class="workflow-busy-spinner" aria-hidden="true" />
+        <span>{{ workflowBusyLabel }}</span>
+      </div>
 
       <div v-if="showValidated" data-test="wizard-step-validated">
         <section class="validated-summary">
@@ -367,6 +384,38 @@ function onStart() {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.workflow-busy {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 1px solid var(--s1-cyan-dim);
+  border-radius: var(--s1-radius-sm);
+  background: var(--s1-cyan-ghost);
+  color: var(--s1-cyan-strong);
+  font-size: var(--s1-font-sm);
+  animation: workflow-busy-in var(--s1-motion-base) var(--s1-ease-out) both;
+}
+
+.workflow-busy-spinner {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  border: 2px solid rgba(70, 194, 190, 0.24);
+  border-top-color: var(--s1-cyan);
+  border-radius: 50%;
+  animation: workflow-busy-spin 0.8s linear infinite;
+}
+
+@keyframes workflow-busy-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes workflow-busy-spin {
+  to { transform: rotate(360deg); }
 }
 
 .validated-summary {

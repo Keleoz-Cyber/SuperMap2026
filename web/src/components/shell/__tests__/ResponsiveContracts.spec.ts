@@ -209,6 +209,13 @@ describe('responsive & accessibility contracts', () => {
     expect(motionCss).toContain('transition-duration: 1ms !important')
   })
 
+  it('defines restrained global feedback for actions, disclosures, and page entry', () => {
+    expect(motionCss).toContain('.gmp-route-enter')
+    expect(motionCss).toContain('details > :not(summary)')
+    expect(motionCss).toContain(':where(button, .gmp-btn, .el-button)')
+    expect(motionCss).not.toContain('transition: all')
+  })
+
   it('native interactive elements receive a shared visible keyboard focus treatment', () => {
     expect(globalCss).toContain(':where(a, button, input, select, textarea, summary):focus-visible')
     expect(globalCss).toContain('outline: 2px solid var(--s1-cyan-strong)')

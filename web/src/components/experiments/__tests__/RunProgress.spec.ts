@@ -45,4 +45,16 @@ describe('RunProgress 产品语言', () => {
     expect(wrapper.get('[data-test="run-progress-primary"]').text()).toContain('验证完成')
     expect(wrapper.get('[data-test="run-progress-primary"]').text()).not.toContain('succeeded')
   })
+
+  it('排队和运行中提供持续的可见反馈，而不是静止在 0%', () => {
+    const wrapper = mount(RunProgress, {
+      props: { run: runOf('queued'), acting: false },
+      global: { plugins: [ElementPlus] },
+    })
+
+    expect(wrapper.get('[data-test="run-live-status"]').attributes('aria-live')).toBe('polite')
+    expect(wrapper.get('[data-test="run-live-status"]').text()).toContain('正在等待执行资源')
+    expect(wrapper.get('[data-test="run-progress-bar"]').classes()).toContain('indeterminate')
+    expect(wrapper.get('[data-test="run-status-spinner"]')).toBeTruthy()
+  })
 })

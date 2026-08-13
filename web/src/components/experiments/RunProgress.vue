@@ -56,17 +56,53 @@ const progress = computed(() => {
 const percent = computed(() =>
   progress.value.total > 0 ? Math.round((progress.value.completed / progress.value.total) * 100) : 0,
 )
+
+const indeterminate = computed(
+  () => props.run?.status === 'queued' || (props.run?.status === 'running' && progress.value.total <= 0),
+)
+
+const liveMessage = computed(() => {
+  if (!props.run) return ''
+  if (props.run.status === 'queued') return '正在等待执行资源，任务已进入队列'
+  if (props.run.status === 'running') {
+    return progress.value.total > 0
+      ? `正在计算候选结果，已完成 ${progress.value.completed}/${progress.value.total}`
+      : '模型正在运行，正在等待第一批计算结果'
+  }
+  if (props.run.status === 'succeeded') return '运行完成，可以查看模型评估与成果'
+  if (props.run.status === 'failed') return '运行失败，请查看技术详情或修正参数后重试'
+  if (props.run.status === 'canceled') return '运行已取消，已完成的候选结果仍会保留'
+  if (props.run.status === 'interrupted') return '运行被中断，可以重新提交运行'
+  return '正在获取运行状态'
+})
 </script>
 
 <template>
   <section v-if="run" class="run-progress" data-test="run-progress">
     <div class="run-head" data-test="run-progress-primary">
       <el-tag :type="statusType" effect="dark" size="small">{{ statusLabel }}</el-tag>
+      <span
+        v-if="inflight"
+        class="run-status-spinner"
+        data-test="run-status-spinner"
+        aria-hidden="true"
+      />
+      <p class="run-live-status" data-test="run-live-status" aria-live="polite">
+        {{ liveMessage }}
+      </p>
     </div>
 
     <div class="run-bar-row">
-      <div class="run-bar">
-        <div class="run-bar-fill" :style="{ width: `${percent}%` }" />
+      <div
+        class="run-bar"
+        :class="{ indeterminate }"
+        data-test="run-progress-bar"
+        role="progressbar"
+        :aria-valuenow="indeterminate ? undefined : percent"
+        aria-valuemin="0"
+        aria-valuemax="100"
+      >
+        <div class="run-bar-fill" :style="indeterminate ? undefined : { width: `${percent}%` }" />
       </div>
       <span class="run-count" data-test="run-count">
         {{ progress.completed }}/{{ progress.total }} 完成
@@ -113,6 +149,22 @@ const percent = computed(() =>
   gap: 10px;
 }
 
+.run-live-status {
+  margin: 0;
+  color: var(--gmp-text-dim);
+  font-size: 12px;
+}
+
+.run-status-spinner {
+  width: 13px;
+  height: 13px;
+  flex: none;
+  border: 2px solid rgba(70, 194, 190, 0.24);
+  border-top-color: var(--gmp-accent);
+  border-radius: 50%;
+  animation: run-status-spin 0.8s linear infinite;
+}
+
 .mono {
   font-family: ui-monospace, monospace;
   font-size: 12px;
@@ -141,7 +193,21 @@ const percent = computed(() =>
 .run-bar-fill {
   height: 100%;
   background: var(--gmp-accent);
-  transition: width 0.4s;
+  transition: width var(--s1-motion-panel) var(--s1-ease-out);
+}
+
+.run-bar.indeterminate .run-bar-fill {
+  width: 38%;
+  animation: run-progress-sweep 1.25s var(--s1-ease-in-out) infinite;
+}
+
+@keyframes run-status-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes run-progress-sweep {
+  from { transform: translateX(-120%); }
+  to { transform: translateX(310%); }
 }
 
 .run-count {
