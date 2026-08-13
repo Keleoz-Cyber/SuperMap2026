@@ -1,0 +1,83 @@
+{
+  "run_id": "run-20260813T064945Z-f8d30015",
+  "git_commit": "11b02acb9674f3f80b6d746649a714ee524cf6a7",
+  "sdk_sha256": "d69dadab01fc452a79f1fa88a46aced3cf29885df7bf4febbd6f24ce5b578120",
+  "field_pixel_gates": {
+    "prediction": {
+      "volume": {
+        "nonBg": 27343,
+        "total": 59150,
+        "coverage": 0.4622654268808115,
+        "colorStd": 66.58,
+        "largestComponent": 24616,
+        "componentRatio": 0.9002669787514171
+      },
+      "slice": {
+        "nonBg": 11371,
+        "total": 59150,
+        "coverage": 0.19224006762468301,
+        "colorStd": 106.05,
+        "largestComponent": 9376,
+        "componentRatio": 0.8245536892093923
+      },
+      "z_index": 16
+    },
+    "model_dispersion": {
+      "volume": {
+        "nonBg": 23049,
+        "total": 53200,
+        "coverage": 0.4332518796992481,
+        "colorStd": 66.15,
+        "largestComponent": 21875,
+        "componentRatio": 0.9490650353594516
+      },
+      "slice": {
+        "nonBg": 8891,
+        "total": 53200,
+        "coverage": 0.16712406015037595,
+        "colorStd": 106.27,
+        "largestComponent": 6931,
+        "componentRatio": 0.7795523563153751
+      },
+      "z_index": 16
+    },
+    "kriging_baseline": {
+      "volume": {
+        "nonBg": 23063,
+        "total": 53200,
+        "coverage": 0.43351503759398496,
+        "colorStd": 52.66,
+        "largestComponent": 21889,
+        "componentRatio": 0.9490959545592508
+      },
+      "slice": {
+        "nonBg": 8882,
+        "total": 53200,
+        "coverage": 0.1669548872180451,
+        "colorStd": 103.57,
+        "largestComponent": 6922,
+        "componentRatio": 0.7793289799594686
+      },
+      "z_index": 16
+    },
+    "residual_correction": {
+      "volume": {
+        "nonBg": 23234,
+        "total": 53200,
+        "coverage": 0.4367293233082707,
+        "colorStd": 70.65,
+        "largestComponent": 22060,
+        "componentRatio": 0.9494706034260136
+      },
+      "slice": {
+        "nonBg": 8903,
+        "total": 53200,
+        "coverage": 0.1673496240601504,
+        "colorStd": 107.46,
+        "largestComponent": 6943,
+        "componentRatio": 0.7798494889363136
+      },
+      "z_index": 16
+    }
+  }
+}

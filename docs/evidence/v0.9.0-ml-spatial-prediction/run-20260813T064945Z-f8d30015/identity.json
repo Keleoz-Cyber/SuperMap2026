@@ -1,0 +1,611 @@
+{
+  "run_id": "run-20260813T064945Z-f8d30015",
+  "git_commit": "11b02acb9674f3f80b6d746649a714ee524cf6a7",
+  "sdk_sha256": "d69dadab01fc452a79f1fa88a46aced3cf29885df7bf4febbd6f24ce5b578120",
+  "models": {
+    "resistivity_rf": {
+      "caseId": "resistivity",
+      "datasetId": "8c283725-2d7d-5f8b-9c62-2431613d0ec2",
+      "experimentId": "eb59ec88-438f-4cff-9d52-193ef1c81e81",
+      "runId": "82fcbdec-c19c-4fcd-8497-d60d70279f60",
+      "resultId": "f97d8eea-4c4e-4286-85f7-28ad6cf22f91",
+      "algorithm": "random_forest_spatial",
+      "metrics": {
+        "bias": -0.07934446731812395,
+        "candidate_nodata_count": 0,
+        "candidate_valid_count": 17549,
+        "common_valid_count": 17549,
+        "coverage": 1,
+        "fold_assignments_sha256": "90ce8855a5fc8b5ec9f0379da3373a1abd7edbc468dc80b31acef67e32a3dfc5",
+        "fold_metrics": [
+          {
+            "fold": 0,
+            "rmse": 6.1453975749522165,
+            "valid_count": 3527
+          },
+          {
+            "fold": 1,
+            "rmse": 7.752301991769716,
+            "valid_count": 3540
+          },
+          {
+            "fold": 2,
+            "rmse": 4.4950258854915095,
+            "valid_count": 3480
+          },
+          {
+            "fold": 3,
+            "rmse": 4.545712177036271,
+            "valid_count": 3480
+          },
+          {
+            "fold": 4,
+            "rmse": 3.8339114817706346,
+            "valid_count": 3522
+          }
+        ],
+        "mae": 2.464956564753054,
+        "ml_diagnostics": {
+          "dispersion_semantics": "tree_prediction_standard_deviation",
+          "feature_version": "spatial_features.v1",
+          "outer_fold_count": 5,
+          "sklearn_version": "1.8.0",
+          "tree_count": 80
+        },
+        "oof_predictions_sha256": "ad7507113187d0bd4586108d37fa1843c084a88c9c2c66e31124bd41bd024b0b",
+        "r2": 0.9432215408848317,
+        "rmse": 5.546855250895306,
+        "runtime_seconds": 16.230226099985885,
+        "total_count": 17549
+      },
+      "metadata": {
+        "result_id": "f97d8eea-4c4e-4286-85f7-28ad6cf22f91",
+        "run_id": "82fcbdec-c19c-4fcd-8497-d60d70279f60",
+        "experiment_id": "eb59ec88-438f-4cff-9d52-193ef1c81e81",
+        "dataset_version_id": "8c283725-2d7d-5f8b-9c62-2431613d0ec2",
+        "algorithm": "random_forest_spatial",
+        "parameters": {
+          "feature_version": "spatial_features.v1",
+          "max_depth": 18,
+          "max_features": 0.8,
+          "min_samples_leaf": 2,
+          "n_estimators": 80,
+          "random_state": 20260813
+        },
+        "dimension": "3d",
+        "shape": [
+          7,
+          23,
+          42
+        ],
+        "cell_count": 6762,
+        "bounds": [
+          [
+            -160,
+            -40
+          ],
+          [
+            220,
+            660
+          ],
+          [
+            -833.0047143,
+            -19.5999
+          ]
+        ],
+        "resolution": [
+          20,
+          20,
+          19.839141812195123
+        ],
+        "value_range": [
+          4.9828162515773835,
+          131.8561565059524
+        ],
+        "nodata_count": 0,
+        "grid_sha256": "10b45a106ff2afbb7e986b95b91e4cc2ebfb48a0d77be62b039f9a37299dc986",
+        "source_sha256": "04c5914d992f397f7dcec3b0d1a6069a9ddeb4a214e5c7de121f37c861cec167",
+        "standardized_sha256": "e8bf066fdea36fd7744ed44cfb170775b1ae9da7291d2882ae44b7e580271336",
+        "fingerprint": "57f91a8d185454d0e6d34883c4dc6c82f7d0bef64cd6cd36c2069366dd423f12",
+        "validation": {
+          "folds": 5,
+          "holdout_fraction": 0.2,
+          "method": "spatial_kfold",
+          "seed": 20260723
+        },
+        "created_at": "2026-08-13T06:50:21.920996+00:00",
+        "property_name": "RHO",
+        "units": "Ω·m",
+        "coordinate_kind": "local_linear",
+        "ml_fields": {
+          "model_dispersion": {
+            "sha256": "96780484be2d91911b99a21b43242471b87ab824d4417af5ef6b55394f108657",
+            "shape": [
+              7,
+              23,
+              42
+            ],
+            "value_range": [
+              0.12898796702789664,
+              28.33114899357277
+            ],
+            "nodata_count": 0,
+            "unit": "Ω·m",
+            "palette_intent": "sequential_nonnegative"
+          }
+        },
+        "ml": {
+          "feature_version": "spatial_features.v1",
+          "sklearn_version": "1.8.0",
+          "limitations": [
+            "模型离散度为树间预测标准差参考，不是严格概率置信区间。",
+            "机器学习结果必须结合空间交叉验证指标和地质背景解释。"
+          ]
+        },
+        "evaluation_summary": {
+          "common_valid_count": 17549,
+          "candidate_valid_count": 17549,
+          "candidate_nodata_count": 0,
+          "total_count": 17549,
+          "coverage": 1,
+          "rmse": 5.546855250895306,
+          "mae": 2.464956564753054,
+          "r2": 0.9432215408848317,
+          "bias": -0.07934446731812395,
+          "enhanced_evidence_available": false
+        },
+        "professional_analysis_supported": false
+      }
+    },
+    "microseismic_rf": {
+      "caseId": "builtin-microseismic-vx-1911",
+      "datasetId": "d25d3cf9-55a1-55e8-9c92-999a7e9c2477",
+      "experimentId": "0cf84714-dec3-4d8f-96b2-08086b5cfeb9",
+      "runId": "d0f228b0-ceff-4c11-9310-86907e503194",
+      "resultId": "7b3d0001-71f0-4fe0-905d-5b2a54eaafb8",
+      "algorithm": "random_forest_spatial",
+      "metrics": {
+        "bias": 0.04749352947965118,
+        "candidate_nodata_count": 0,
+        "candidate_valid_count": 1911,
+        "common_valid_count": 1911,
+        "coverage": 1,
+        "fold_assignments_sha256": "b3d4c88eda6581e9016dc8d06c12fce20d4adbabdd00aa71a236c6cf47550a89",
+        "fold_metrics": [
+          {
+            "fold": 0,
+            "rmse": 0.23744441886503406,
+            "valid_count": 349
+          },
+          {
+            "fold": 1,
+            "rmse": 0.2730349704848543,
+            "valid_count": 430
+          },
+          {
+            "fold": 2,
+            "rmse": 0.23068857295719528,
+            "valid_count": 434
+          },
+          {
+            "fold": 3,
+            "rmse": 0.240112050068164,
+            "valid_count": 348
+          },
+          {
+            "fold": 4,
+            "rmse": 0.26669293869523875,
+            "valid_count": 350
+          }
+        ],
+        "mae": 0.20291131146619729,
+        "ml_diagnostics": {
+          "dispersion_semantics": "tree_prediction_standard_deviation",
+          "feature_version": "spatial_features.v1",
+          "outer_fold_count": 5,
+          "sklearn_version": "1.8.0",
+          "tree_count": 80
+        },
+        "oof_predictions_sha256": "9cd410bb814092211b10091e16ad92557e9d17141c6e3e558fec114f64071c7f",
+        "r2": 0.8643381965181952,
+        "rmse": 0.25036429365472074,
+        "runtime_seconds": 1.2689374000183307,
+        "total_count": 1911
+      },
+      "metadata": {
+        "result_id": "7b3d0001-71f0-4fe0-905d-5b2a54eaafb8",
+        "run_id": "d0f228b0-ceff-4c11-9310-86907e503194",
+        "experiment_id": "0cf84714-dec3-4d8f-96b2-08086b5cfeb9",
+        "dataset_version_id": "d25d3cf9-55a1-55e8-9c92-999a7e9c2477",
+        "algorithm": "random_forest_spatial",
+        "parameters": {
+          "feature_version": "spatial_features.v1",
+          "max_depth": 18,
+          "max_features": 0.8,
+          "min_samples_leaf": 2,
+          "n_estimators": 80,
+          "random_state": 20260813
+        },
+        "dimension": "3d",
+        "shape": [
+          35,
+          47,
+          82
+        ],
+        "cell_count": 134890,
+        "bounds": [
+          [
+            -750,
+            960
+          ],
+          [
+            -995,
+            1310
+          ],
+          [
+            -4086.538,
+            -37.5
+          ]
+        ],
+        "resolution": [
+          50.294117647058826,
+          50.108695652173914,
+          49.98812345679012
+        ],
+        "value_range": [
+          0.1500000000000002,
+          2.9017652987797624
+        ],
+        "nodata_count": 0,
+        "grid_sha256": "29c45ef2ee5305cc16689c58c3d11944328abc974ca9798802a197420c78302d",
+        "source_sha256": "4011de85e1fa7e49999fc5ae66a73e00a59dbec372a417ae0728d0a338c7765e",
+        "standardized_sha256": "dabf204316e125a41b629a6e1d7cf8f70a382231e32c004edb604cea4cc7376e",
+        "fingerprint": "273b009cc646c2d2766af42e359faba62df63e0669d49b7c1255946b95f2f21a",
+        "validation": {
+          "folds": 5,
+          "holdout_fraction": 0.2,
+          "method": "spatial_kfold",
+          "seed": 20260723
+        },
+        "created_at": "2026-08-13T06:50:24.768675+00:00",
+        "property_name": "Vx",
+        "units": "km/s",
+        "coordinate_kind": "local_linear",
+        "ml_fields": {
+          "model_dispersion": {
+            "sha256": "425e365d35a591803aa7ee4e733f59689665e44d657cfb645cbe841c2cc15707",
+            "shape": [
+              35,
+              47,
+              82
+            ],
+            "value_range": [
+              2.1242537182971561e-16,
+              0.5645419827424887
+            ],
+            "nodata_count": 0,
+            "unit": "km/s",
+            "palette_intent": "sequential_nonnegative"
+          }
+        },
+        "ml": {
+          "feature_version": "spatial_features.v1",
+          "sklearn_version": "1.8.0",
+          "limitations": [
+            "模型离散度为树间预测标准差参考，不是严格概率置信区间。",
+            "机器学习结果必须结合空间交叉验证指标和地质背景解释。"
+          ]
+        },
+        "evaluation_summary": {
+          "common_valid_count": 1911,
+          "candidate_valid_count": 1911,
+          "candidate_nodata_count": 0,
+          "total_count": 1911,
+          "coverage": 1,
+          "rmse": 0.25036429365472074,
+          "mae": 0.20291131146619729,
+          "r2": 0.8643381965181952,
+          "bias": 0.04749352947965118,
+          "enhanced_evidence_available": false
+        },
+        "professional_analysis_supported": false
+      }
+    },
+    "resistivity_residual": {
+      "caseId": "resistivity",
+      "datasetId": "8c283725-2d7d-5f8b-9c62-2431613d0ec2",
+      "experimentId": "ab1e33a1-038d-4437-ad79-a6b7949a2fef",
+      "runId": "b3d019c9-2e01-4ac6-92ca-8a9ea1cc3544",
+      "resultId": "514c9895-1e4a-4e4b-b7b8-45012e7ca13a",
+      "algorithm": "kriging_rf_residual",
+      "metrics": {
+        "bias": -0.19688476403007305,
+        "candidate_nodata_count": 0,
+        "candidate_valid_count": 17549,
+        "common_valid_count": 17549,
+        "coverage": 1,
+        "fold_assignments_sha256": "90ce8855a5fc8b5ec9f0379da3373a1abd7edbc468dc80b31acef67e32a3dfc5",
+        "fold_metrics": [
+          {
+            "fold": 0,
+            "rmse": 7.4882121401712185,
+            "valid_count": 3527
+          },
+          {
+            "fold": 1,
+            "rmse": 8.660768603465,
+            "valid_count": 3540
+          },
+          {
+            "fold": 2,
+            "rmse": 6.524375981966951,
+            "valid_count": 3480
+          },
+          {
+            "fold": 3,
+            "rmse": 6.446020750618332,
+            "valid_count": 3480
+          },
+          {
+            "fold": 4,
+            "rmse": 7.266272025212158,
+            "valid_count": 3522
+          }
+        ],
+        "mae": 3.84168517077596,
+        "ml_diagnostics": {
+          "feature_version": "spatial_features.v1",
+          "inner_fold_count": 3,
+          "inner_validation_fingerprints": [
+            "1a4953ca59b5ae6f085d42e5f3d5fe4ad407ef424474e63620fff6f205918a16",
+            "e20d9fb283c7a7d489e486c05ee4435ff56a5a81bff44379117098efc414f4d2",
+            "a159f7d0f8ec3ff418dce662b088c6be3f889fabdc5b08347ff55e470bfefe4b",
+            "2141b562aa8e195332659ec08c45f342b18b7899f1419f1a79e7aca2a6b599f3",
+            "10cff02dd8b5e0d5092ec8199d79ccd41f305979c0c57435dd4e246107eafc64"
+          ],
+          "oof_residual_count": 70196,
+          "oof_residual_coverage_min": 1,
+          "outer_fold_count": 5,
+          "residual_target_semantics": "observed_minus_out_of_fold_kriging",
+          "sklearn_version": "1.8.0"
+        },
+        "oof_predictions_sha256": "080f837b55d15f9d8ed7ec890c32c38637623b5fab59e47b1e0fc10b469bb8e7",
+        "r2": 0.9009430725683382,
+        "rmse": 7.326515253018108,
+        "runtime_seconds": 22.745450799993705,
+        "total_count": 17549
+      },
+      "metadata": {
+        "result_id": "514c9895-1e4a-4e4b-b7b8-45012e7ca13a",
+        "run_id": "b3d019c9-2e01-4ac6-92ca-8a9ea1cc3544",
+        "experiment_id": "ab1e33a1-038d-4437-ad79-a6b7949a2fef",
+        "dataset_version_id": "8c283725-2d7d-5f8b-9c62-2431613d0ec2",
+        "algorithm": "kriging_rf_residual",
+        "parameters": {
+          "feature_version": "spatial_features.v1",
+          "inner_folds": 3,
+          "inner_seed": 20260813,
+          "kriging": {
+            "neighbor_count": 24,
+            "variogram_model": "exponential"
+          },
+          "random_forest": {
+            "max_depth": 18,
+            "max_features": 0.8,
+            "min_samples_leaf": 2,
+            "n_estimators": 80,
+            "random_state": 20260813
+          }
+        },
+        "dimension": "3d",
+        "shape": [
+          7,
+          23,
+          42
+        ],
+        "cell_count": 6762,
+        "bounds": [
+          [
+            -160,
+            -40
+          ],
+          [
+            220,
+            660
+          ],
+          [
+            -833.0047143,
+            -19.5999
+          ]
+        ],
+        "resolution": [
+          20,
+          20,
+          19.839141812195123
+        ],
+        "value_range": [
+          -19.270844650772013,
+          213.5058537044031
+        ],
+        "nodata_count": 0,
+        "grid_sha256": "5ab6073f4d3bcb74118bcf99149ed7a0bdc0f27c7f1756c11ff68e0c0ad4f6aa",
+        "source_sha256": "04c5914d992f397f7dcec3b0d1a6069a9ddeb4a214e5c7de121f37c861cec167",
+        "standardized_sha256": "e8bf066fdea36fd7744ed44cfb170775b1ae9da7291d2882ae44b7e580271336",
+        "fingerprint": "cd8756aec873ccda7aa741ebecfaa0ea6fd7f9a9ff8baf1836658b17dbe7e45a",
+        "validation": {
+          "folds": 5,
+          "holdout_fraction": 0.2,
+          "method": "spatial_kfold",
+          "seed": 20260723
+        },
+        "created_at": "2026-08-13T06:50:53.862453+00:00",
+        "property_name": "RHO",
+        "units": "Ω·m",
+        "coordinate_kind": "local_linear",
+        "ml_fields": {
+          "model_dispersion": {
+            "sha256": "de18eaf8ea11caaae8510609d216b7df0a466ef4a118c4d937895e308faa3ea0",
+            "shape": [
+              7,
+              23,
+              42
+            ],
+            "value_range": [
+              0.05057207027140031,
+              30.492681526007686
+            ],
+            "nodata_count": 0,
+            "unit": "Ω·m",
+            "palette_intent": "sequential_nonnegative"
+          },
+          "kriging_baseline": {
+            "sha256": "b423a4a4f4f20915f8fab21d0ba65d27df0a23187ba8906395b5ade67c17418d",
+            "shape": [
+              7,
+              23,
+              42
+            ],
+            "value_range": [
+              2.264230746888684,
+              133.09682272555222
+            ],
+            "nodata_count": 0,
+            "unit": "Ω·m",
+            "palette_intent": "property_default"
+          },
+          "residual_correction": {
+            "sha256": "e2316603e020861988f15f8620d5a14862cea381c7a72238ce733261fe700ebb",
+            "shape": [
+              7,
+              23,
+              42
+            ],
+            "value_range": [
+              -35.602192221499976,
+              80.4090309788509
+            ],
+            "nodata_count": 0,
+            "unit": "Ω·m",
+            "palette_intent": "diverging_zero_centered"
+          }
+        },
+        "ml": {
+          "feature_version": "spatial_features.v1",
+          "sklearn_version": "1.8.0",
+          "limitations": [
+            "模型离散度为树间预测标准差参考，不是严格概率置信区间。",
+            "机器学习结果必须结合空间交叉验证指标和地质背景解释。"
+          ]
+        },
+        "evaluation_summary": {
+          "common_valid_count": 17549,
+          "candidate_valid_count": 17549,
+          "candidate_nodata_count": 0,
+          "total_count": 17549,
+          "coverage": 1,
+          "rmse": 7.326515253018108,
+          "mae": 3.84168517077596,
+          "r2": 0.9009430725683382,
+          "bias": -0.19688476403007305,
+          "enhanced_evidence_available": false
+        },
+        "professional_analysis_supported": false
+      }
+    },
+    "residual_evidence": {
+      "algorithm": "kriging_rf_residual",
+      "comparison_status": "comparable",
+      "comparison_reason_code": null,
+      "baseline": {
+        "result_id": "add48e57-7ce1-4c72-8ec1-b98b748d114d",
+        "algorithm": "ordinary_kriging",
+        "rmse": 6.468624706230003,
+        "mae": 3.254933792606336,
+        "r2": 0.9227828360067315,
+        "bias": -0.09814332095220975,
+        "common_valid_count": 17549,
+        "fold_assignments_sha256": "90ce8855a5fc8b5ec9f0379da3373a1abd7edbc468dc80b31acef67e32a3dfc5"
+      },
+      "metric_change": {
+        "rmse_absolute": 0.8578905467881057,
+        "rmse_percent": 13.262332964870602,
+        "mae_absolute": 0.5867513781696241,
+        "mae_percent": 18.026522674668364
+      },
+      "improved_over_kriging": false,
+      "available_fields": [
+        "prediction",
+        "model_dispersion",
+        "kriging_baseline",
+        "residual_correction"
+      ],
+      "dispersion_semantics": "model_dispersion_reference",
+      "limitations": [
+        "模型离散度为树间预测标准差参考，不是严格概率置信区间。",
+        "机器学习结果必须结合空间交叉验证指标和地质背景解释。"
+      ],
+      "technical_details": {
+        "feature_version": "spatial_features.v1",
+        "sklearn_version": "1.8.0",
+        "validation_method": "spatial_kfold",
+        "common_valid_count": 17549,
+        "fold_assignments_sha256": "90ce8855a5fc8b5ec9f0379da3373a1abd7edbc468dc80b31acef67e32a3dfc5"
+      }
+    },
+    "microseismic_group_limit": 22
+  },
+  "fields": {
+    "prediction": {
+      "field": "prediction",
+      "id": "nc-e4c08cb2916eed9655f6846488ff4414",
+      "source_kind": "candidate_result",
+      "source_id": "514c9895-1e4a-4e4b-b7b8-45012e7ca13a",
+      "renderer": "supermap_voxelgrid_netcdf",
+      "status": "ready",
+      "grid_sha256": "5ab6073f4d3bcb74118bcf99149ed7a0bdc0f27c7f1756c11ff68e0c0ad4f6aa",
+      "netcdf_sha256": "3532896b478dbe4ec682d8bd7aef5158abba02941130401697cfedcb06390f62",
+      "manifest_url": "/api/render-assets/nc-e4c08cb2916eed9655f6846488ff4414/manifest",
+      "netcdf_url": "/api/render-assets/nc-e4c08cb2916eed9655f6846488ff4414/volume.nc",
+      "error": null
+    },
+    "model_dispersion": {
+      "field": "model_dispersion",
+      "id": "nc-028e3c04091663e0e8cbbec6d4667252",
+      "source_kind": "candidate_result",
+      "source_id": "514c9895-1e4a-4e4b-b7b8-45012e7ca13a::model_dispersion",
+      "renderer": "supermap_voxelgrid_netcdf",
+      "status": "ready",
+      "grid_sha256": "de18eaf8ea11caaae8510609d216b7df0a466ef4a118c4d937895e308faa3ea0",
+      "netcdf_sha256": "7c99c627ec67acc01c60bc16423cff1eff3cf69aa7bdabdf64adbe084426307e",
+      "manifest_url": "/api/render-assets/nc-028e3c04091663e0e8cbbec6d4667252/manifest",
+      "netcdf_url": "/api/render-assets/nc-028e3c04091663e0e8cbbec6d4667252/volume.nc",
+      "error": null
+    },
+    "kriging_baseline": {
+      "field": "kriging_baseline",
+      "id": "nc-7e225a25997abb7636641a25f02dbbb2",
+      "source_kind": "candidate_result",
+      "source_id": "514c9895-1e4a-4e4b-b7b8-45012e7ca13a::kriging_baseline",
+      "renderer": "supermap_voxelgrid_netcdf",
+      "status": "ready",
+      "grid_sha256": "b423a4a4f4f20915f8fab21d0ba65d27df0a23187ba8906395b5ade67c17418d",
+      "netcdf_sha256": "85e9d7f87959575fc70405ec1fd6e17b071491c93bb56ceb87986f69d68a2e9d",
+      "manifest_url": "/api/render-assets/nc-7e225a25997abb7636641a25f02dbbb2/manifest",
+      "netcdf_url": "/api/render-assets/nc-7e225a25997abb7636641a25f02dbbb2/volume.nc",
+      "error": null
+    },
+    "residual_correction": {
+      "field": "residual_correction",
+      "id": "nc-78af5fd9a3e197775abd5dc955fb28a1",
+      "source_kind": "candidate_result",
+      "source_id": "514c9895-1e4a-4e4b-b7b8-45012e7ca13a::residual_correction",
+      "renderer": "supermap_voxelgrid_netcdf",
+      "status": "ready",
+      "grid_sha256": "e2316603e020861988f15f8620d5a14862cea381c7a72238ce733261fe700ebb",
+      "netcdf_sha256": "c9d4ce242d475d6e1408b46eb2d5e21c21731aee29fe59e8a371df52df85b5f9",
+      "manifest_url": "/api/render-assets/nc-78af5fd9a3e197775abd5dc955fb28a1/manifest",
+      "netcdf_url": "/api/render-assets/nc-78af5fd9a3e197775abd5dc955fb28a1/volume.nc",
+      "error": null
+    }
+  }
+}
