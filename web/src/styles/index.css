@@ -150,6 +150,14 @@ html.dark {
   max-width: var(--s1-page-wide);
 }
 
+/* 主流短屏笔记本在 100% 浏览器缩放下压缩页面留白，但不缩小字号和
+   控件命中区。业务区仍按自然高度展开，由页面负责纵向滚动。 */
+@media (max-height: 819px) and (min-width: 901px) {
+  .product-page {
+    padding-block: var(--s1-space-3) var(--s1-space-6);
+  }
+}
+
 /* 跳转主内容的可访问性链接（AppShell 使用） */
 .skip-link {
   position: fixed;

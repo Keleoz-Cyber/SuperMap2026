@@ -57,13 +57,18 @@ onMounted(async () => {
   display: block;
 }
 
-.app-shell.immersive {
-  height: 100dvh;
-  overflow: hidden;
-}
+/* 成果页只有在桌面宽度和可用高度都足够时才锁成一屏工作台。
+   1280×720 / 1366×768 虽然属于桌面宽度，但应保留文档流滚动，
+   否则顶栏、三维舞台和证据坞会共同挤压可用高度。 */
+@media (min-width: 1200px) and (min-height: 820px) {
+  .app-shell.immersive {
+    height: 100dvh;
+    overflow: hidden;
+  }
 
-.app-shell.immersive .app-main {
-  min-height: 0;
-  overflow: hidden;
+  .app-shell.immersive .app-main {
+    min-height: 0;
+    overflow: hidden;
+  }
 }
 </style>

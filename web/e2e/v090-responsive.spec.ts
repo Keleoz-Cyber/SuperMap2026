@@ -3,12 +3,15 @@ import { installMockApi } from '../src/mocks/platformDemo'
 import { MOCK_VOLUME_FRAME_HTML } from './mockVolumeFrame'
 
 // v0.9.0 Task 14：响应式与零横向溢出像素级门（mock API + 协议 mock 子帧）。
-// 覆盖桌面大屏/普通笔记本/平板/手机四档视口；任何档位出现横向溢出、
-// 主动作缺失或未处理页面错误即失败。
+// 覆盖桌面大屏、主流笔记本、平板与手机；短屏业务深页还验证自然滚动
+// 和底部功能可达。任何档位出现横向溢出、主动作缺失或页面错误即失败。
 
 const VIEWPORTS = [
+  { name: 'desktop-1920', width: 1920, height: 1080 },
+  { name: 'laptop-1536', width: 1536, height: 864 },
   { name: 'desktop-1440', width: 1440, height: 900 },
-  { name: 'laptop-1280', width: 1280, height: 800 },
+  { name: 'laptop-1366', width: 1366, height: 768 },
+  { name: 'laptop-1280', width: 1280, height: 720 },
   { name: 'tablet-834', width: 834, height: 1112 },
   { name: 'phone-390', width: 390, height: 844 },
 ] as const
@@ -18,6 +21,87 @@ async function installFrameMock(page: Page) {
     (url) => url.pathname === '/supermap-volume-frame/index.html',
     (route) => route.fulfill({ status: 200, contentType: 'text/html', body: MOCK_VOLUME_FRAME_HTML }),
   )
+}
+
+for (const viewport of [
+  { name: 'laptop-1366', width: 1366, height: 768 },
+  { name: 'laptop-1280', width: 1280, height: 720 },
+] as const) {
+  test(`成果工作台短屏 ${viewport.name}：退出沉浸锁定并可滚动到全部功能`, async ({ page }) => {
+    await installMockApi(page)
+    await installFrameMock(page)
+    await page.setViewportSize({ width: viewport.width, height: viewport.height })
+    await page.goto('/#/results/cand-1')
+
+    await expect(page.getByTestId('native-volume-panel')).toBeVisible()
+    await expect(page.getByTestId('ge-tab-provenance')).toBeAttached()
+
+    const layout = await page.evaluate(() => {
+      const shell = document.querySelector<HTMLElement>('.app-shell')
+      return {
+        shellOverflowY: shell ? getComputedStyle(shell).overflowY : 'missing',
+        scrollHeight: document.documentElement.scrollHeight,
+        viewportHeight: window.innerHeight,
+        horizontalOverflow: document.documentElement.scrollWidth - window.innerWidth,
+      }
+    })
+    expect(layout.shellOverflowY).not.toBe('hidden')
+    expect(layout.scrollHeight).toBeGreaterThan(layout.viewportHeight)
+    expect(layout.horizontalOverflow).toBeLessThanOrEqual(0)
+
+    await page.getByTestId('ge-tab-provenance').scrollIntoViewIfNeeded()
+    await expect(page.getByTestId('ge-tab-provenance')).toBeVisible()
+    if (viewport.name === 'laptop-1280') {
+      await page.screenshot({ path: 'test-results/responsive-result-1280x720.png', fullPage: true })
+    }
+  })
+}
+
+const SHORT_SCREEN_ROUTES = [
+  {
+    name: '数据准备',
+    url: '/#/cases/case-e2e/datasets/ds-e2e/prepare',
+    root: 'data-intake-workbench',
+    action: 'abandon-preparation-btn',
+  },
+  {
+    name: '调参实验室',
+    url: '/#/cases/resistivity/experiments/new?dataset=ds-rho',
+    root: 'param-editor',
+    action: 'exp-submit',
+  },
+  {
+    name: '候选比较',
+    url: '/#/datasets/ds-rho/candidate-comparison?case=resistivity',
+    root: 'candidate-comparison-view',
+    action: 'compare-btn',
+  },
+  {
+    name: '分析中心',
+    url: '/#/datasets/ds-rho/analysis?case=resistivity',
+    root: 'analysis-center-view',
+    action: 'lower-area',
+  },
+] as const
+
+for (const route of SHORT_SCREEN_ROUTES) {
+  test(`${route.name} 1280×720：100% 缩放下无横向溢出且底部功能可达`, async ({ page }) => {
+    await installMockApi(page)
+    await installFrameMock(page)
+    await page.setViewportSize({ width: 1280, height: 720 })
+    await page.goto(route.url)
+
+    await expect(page.getByTestId(route.root)).toBeVisible()
+    const action = page.getByTestId(route.action)
+    await expect(action).toBeAttached()
+    await action.scrollIntoViewIfNeeded()
+    await expect(action).toBeVisible()
+
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - window.innerWidth,
+    )
+    expect(overflow).toBeLessThanOrEqual(0)
+  })
 }
 
 for (const viewport of VIEWPORTS) {
@@ -43,6 +127,10 @@ for (const viewport of VIEWPORTS) {
       () => document.documentElement.scrollWidth - window.innerWidth,
     )
     expect(overflow).toBeLessThanOrEqual(0)
+
+    if (viewport.name === 'laptop-1280') {
+      await page.screenshot({ path: 'test-results/responsive-home-1280x720.png', fullPage: true })
+    }
 
     expect(pageErrors).toEqual([])
   })

@@ -13,6 +13,8 @@ const motionCss = String(readFileSync('src/styles/motion.css'))
 const tokensCss = String(readFileSync('src/styles/tokens.css'))
 const globalCss = String(readFileSync('src/styles/index.css'))
 const caseRailSource = String(readFileSync('src/components/shell/CaseRail.vue'))
+const appShellSource = String(readFileSync('src/components/shell/AppShell.vue'))
+const resultWorkbenchSource = String(readFileSync('src/views/ResultWorkbenchView.vue'))
 
 // v0.9.0 Task 14：响应式/无障碍/动效合同（静态契约层；
 // 真实视口像素级门在 web/e2e/v090-responsive.spec.ts）。
@@ -110,6 +112,21 @@ describe('responsive & accessibility contracts', () => {
     expect(tokensCss).toContain('--s1-font-md: 14px')
     expect(tokensCss).toContain('--s1-page-standard: 1440px')
     expect(globalCss).toContain('.product-page')
+  })
+
+  it('only locks the immersive result workbench when the desktop viewport is tall enough', () => {
+    const tallDesktopQuery = '@media (min-width: 1200px) and (min-height: 820px)'
+    expect(appShellSource).toContain(tallDesktopQuery)
+    expect(resultWorkbenchSource).toContain(tallDesktopQuery)
+    const queryIndex = appShellSource.indexOf(tallDesktopQuery)
+    const overflowLockIndex = appShellSource.indexOf('overflow: hidden', queryIndex)
+    expect(overflowLockIndex).toBeGreaterThan(queryIndex)
+    expect(resultWorkbenchSource).not.toContain('@media (min-width: 1200px) {')
+  })
+
+  it('reduces shared page padding on short laptop screens without changing browser zoom', () => {
+    expect(globalCss).toContain('@media (max-height: 819px) and (min-width: 901px)')
+    expect(globalCss).toMatch(/@media \(max-height: 819px\)[\s\S]*?\.product-page\s*\{[^}]*padding-block:/s)
   })
 
   it('user-facing comparison pages consistently say 模型比较', () => {

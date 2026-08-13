@@ -632,8 +632,9 @@ onBeforeUnmount(clearShellContext)
   font-size: var(--s1-font-xs);
 }
 
-/* 大屏一屏外壳：页面不滚动；主舞台与证据窗内部自适应 */
-@media (min-width: 1200px) {
+/* 宽且高的演示屏使用一屏工作台；短屏桌面回到自然文档流，确保三维、
+   控件和证据坞都能通过页面滚动到达，而不是要求浏览器缩放。 */
+@media (min-width: 1200px) and (min-height: 820px) {
   .v6-result-page {
     height: 100%;
     overflow: hidden;
