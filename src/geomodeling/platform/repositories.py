@@ -2078,6 +2078,9 @@ def recent_results_for_case(
     from geomodeling.platform.schemas import WorkspaceResultSummary
 
     with runtime.session() as session:
+        case = session.get(Case, case_id)
+        case_config = tables.loads_canonical(case.config_json) if case else {}
+        exclude_featured = case_config.get("workspace_kind") == "builtin_preset"
         rows = (
             session.query(CandidateResult)
             .join(Run, CandidateResult.run_id == Run.id)
@@ -2092,18 +2095,39 @@ def recent_results_for_case(
         )
         result: list[dict[str, Any]] = []
         for cand in rows:
+            if exclude_featured and featured_result_id == cand.id:
+                continue
             run = session.get(Run, cand.run_id)
             exp = session.get(Experiment, run.experiment_id) if run else None
             if exp is None:
                 continue
             params = tables.loads_canonical(exp.params_json)
             algorithm = params.get("algorithm", "unknown")
+            metrics = tables.loads_canonical(cand.metrics_json)
+            candidate_params = tables.loads_canonical(cand.params_json)
+            validation = params.get("validation")
+            if not isinstance(validation, dict):
+                validation = {}
 
             summary = WorkspaceResultSummary(
                 result_id=cand.id,
                 experiment_id=exp.id,
+                experiment_name=exp.name,
                 algorithm=algorithm,
+                parameters=candidate_params,
+                metrics={
+                    "rmse": metrics.get("rmse"),
+                    "mae": metrics.get("mae"),
+                    "r2": metrics.get("r2"),
+                    "bias": metrics.get("bias"),
+                },
+                validation_summary={
+                    key: validation[key]
+                    for key in ("method", "folds", "seed", "holdout_fraction")
+                    if key in validation
+                },
                 materialized=cand.grid_path is not None,
+                materialization_status="ready" if cand.grid_path is not None else "pending",
                 featured=(featured_result_id == cand.id),
                 created_at=cand.created_at,
                 url=f"/results/{cand.id}",

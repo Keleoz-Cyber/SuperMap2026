@@ -1152,8 +1152,13 @@ export interface WorkspaceExperimentSummary {
 export interface WorkspaceResultSummary {
   result_id: string
   experiment_id: string
+  experiment_name: string
   algorithm: string
+  parameters: Record<string, unknown>
+  metrics: { rmse: number | null; mae: number | null; r2: number | null; bias: number | null }
+  validation_summary: Record<string, unknown>
   materialized: boolean
+  materialization_status: 'ready' | 'pending'
   featured: boolean
   created_at: string
   url: string

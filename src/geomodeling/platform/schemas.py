@@ -495,8 +495,13 @@ class WorkspaceResultSummary(ContractModel):
 
     result_id: str
     experiment_id: str
+    experiment_name: str
     algorithm: str
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    metrics: dict[str, float | None] = Field(default_factory=dict)
+    validation_summary: dict[str, Any] = Field(default_factory=dict)
     materialized: bool
+    materialization_status: Literal["ready", "pending"]
     featured: bool
     created_at: str
     url: str

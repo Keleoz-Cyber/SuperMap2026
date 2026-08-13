@@ -568,3 +568,60 @@ def test_workspace_includes_recent_experiments_and_results(seeded_client):
     assert body["recent_results"][0]["materialized"] is True
     assert "metrics_json" not in json.dumps(body)
     assert "source_path" not in json.dumps(body)
+
+
+def test_workspace_result_catalog_exposes_metrics_and_deduplicates_featured(seeded_client):
+    from geomodeling.platform import tables
+
+    runtime = seeded_client.app.state.platform_runtime
+    with runtime.session() as session:
+        session.add(tables.Case(
+            id="up-results", name="成果目录测试", case_type="generic",
+            config_json='{"workspace_kind":"builtin_preset"}',
+        ))
+        session.commit()
+    response = seeded_client.post(
+        "/api/cases/up-results/datasets/uploads",
+        files={"file": ("test.csv", b"x,y,z,v\n1,2,3,4\n", "text/csv")},
+    )
+    dataset_id = response.json()["id"]
+    with runtime.session() as session:
+        session.get(tables.DatasetVersion, dataset_id).status = "validated"
+        session.add(tables.Experiment(
+            id="exp-results", case_id="up-results", name="克里金实验",
+            params_json=json.dumps({
+                "algorithm": "ordinary_kriging",
+                "dataset_version_id": dataset_id,
+                "parameters": {"variogram_model": "exponential", "neighbors": 12},
+                "validation": {"method": "spatial_kfold", "folds": 5, "seed": 7},
+            }),
+        ))
+        session.flush()
+        session.add(tables.Run(id="run-results", experiment_id="exp-results", status="succeeded"))
+        session.flush()
+        session.add(tables.CandidateResult(
+            id="cand-featured", run_id="run-results", status="succeeded",
+            fingerprint="fp-featured", params_json=json.dumps({"neighbors": 12}),
+            metrics_json=json.dumps({"rmse": 1.2, "mae": 0.9, "r2": 0.7, "bias": 0.1}),
+            grid_path="/tmp/grid.npz",
+        ))
+        session.add(tables.CandidateResult(
+            id="cand-user", run_id="run-results", status="succeeded",
+            fingerprint="fp-user", params_json=json.dumps({"neighbors": 24}),
+            metrics_json=json.dumps({"rmse": 1.4, "mae": 1.0, "r2": None, "bias": -0.1}),
+        ))
+        session.commit()
+
+    response = seeded_client.get("/api/cases/up-results/workspace")
+    assert response.status_code == 200
+    # The fixture does not create a FormalSelection; use the result catalog helper
+    # directly with an explicit featured id to lock de-duplication semantics.
+    from geomodeling.platform.repositories import recent_results_for_case
+    catalog = recent_results_for_case(runtime, "up-results", "cand-featured", limit=5)
+    assert [item["result_id"] for item in catalog] == ["cand-user"]
+    item = catalog[0]
+    assert item["experiment_name"] == "克里金实验"
+    assert item["parameters"] == {"neighbors": 24}
+    assert item["metrics"] == {"rmse": 1.4, "mae": 1.0, "r2": None, "bias": -0.1}
+    assert item["validation_summary"] == {"method": "spatial_kfold", "folds": 5, "seed": 7}
+    assert item["materialization_status"] == "pending"

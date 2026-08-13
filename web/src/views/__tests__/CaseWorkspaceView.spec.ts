@@ -361,8 +361,13 @@ describe('CaseWorkspaceView', () => {
       {
         result_id: 'r-1',
         experiment_id: 'exp-1',
+        experiment_name: '实验一',
         algorithm: 'idw',
+        parameters: { power: 2 },
+        metrics: { rmse: 0.5, mae: 0.3, r2: 0.8, bias: 0.01 },
+        validation_summary: { method: 'spatial_kfold', folds: 5, seed: 1 },
         materialized: true,
+        materialization_status: 'ready',
         featured: false,
         created_at: '2026-08-05T00:00:00+00:00',
         url: '/results/r-1',
