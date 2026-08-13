@@ -242,4 +242,39 @@ const variableLabel = computed(() => {
 .mono {
   font-family: ui-monospace, monospace;
 }
+
+@media (max-width: 720px) {
+  .v6-summary {
+    height: auto;
+    min-width: 0;
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 14px;
+  }
+
+  .summary-right {
+    width: 100%;
+    min-width: 0;
+    flex: initial;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .case-select {
+    width: 100%;
+    max-width: none;
+  }
+
+  .summary-metric {
+    min-width: 0;
+    flex: 1 1 calc(50% - 4px);
+  }
+
+  .eval-link,
+  .export-action {
+    flex: 1 1 auto;
+    text-align: center;
+  }
+}
 </style>
