@@ -625,3 +625,70 @@ def test_workspace_result_catalog_exposes_metrics_and_deduplicates_featured(seed
     assert item["metrics"] == {"rmse": 1.4, "mae": 1.0, "r2": None, "bias": -0.1}
     assert item["validation_summary"] == {"method": "spatial_kfold", "folds": 5, "seed": 7}
     assert item["materialization_status"] == "pending"
+
+
+def test_builtin_preset_workspace_lists_user_results_without_repeating_official_result(seeded_client):
+    from geomodeling.platform import tables
+
+    runtime = seeded_client.app.state.platform_runtime
+    with runtime.session() as session:
+        session.add(tables.Case(
+            id="preset-results", name="预置成果目录测试", case_type="generic",
+            config_json='{"workspace_kind":"builtin_preset"}',
+        ))
+        session.add(tables.DatasetVersion(
+            id="ds-preset-results", case_id="preset-results", version=1,
+            status="validated", source_path="preset.csv",
+            profile_json=json.dumps({
+                "source_kind": "builtin_preset",
+                "dimension": "3d",
+                "mapping": {"x": "x", "y": "y", "z": "z", "value": "v"},
+            }),
+        ))
+        session.add(tables.Experiment(
+            id="exp-preset-official", case_id="preset-results", name="官方基线",
+            params_json=json.dumps({
+                "algorithm": "ordinary_kriging",
+                "dataset_version_id": "ds-preset-results",
+                "validation": {"method": "spatial_kfold", "folds": 5, "seed": 7},
+            }),
+        ))
+        session.add(tables.Experiment(
+            id="exp-preset-user", case_id="preset-results", name="用户实验",
+            params_json=json.dumps({
+                "algorithm": "idw",
+                "dataset_version_id": "ds-preset-results",
+                "validation": {"method": "spatial_kfold", "folds": 5, "seed": 7},
+            }),
+        ))
+        session.flush()
+        session.add(tables.Run(id="run-preset-official", experiment_id="exp-preset-official", status="succeeded"))
+        session.add(tables.Run(id="run-preset-user", experiment_id="exp-preset-user", status="succeeded"))
+        session.flush()
+        session.add(tables.CandidateResult(
+            id="cand-preset-official", run_id="run-preset-official", status="succeeded",
+            fingerprint="fp-preset-official", params_json="{}",
+            metrics_json=json.dumps({"rmse": 1.0}), grid_path="official-grid.npz",
+        ))
+        session.add(tables.CandidateResult(
+            id="cand-preset-user", run_id="run-preset-user", status="succeeded",
+            fingerprint="fp-preset-user", params_json=json.dumps({"power": 2}),
+            metrics_json=json.dumps({"rmse": 1.2}), grid_path="user-grid.npz",
+        ))
+        session.flush()
+        session.add(tables.FormalSelection(
+            id="selection-preset-official", case_id="preset-results",
+            candidate_result_id="cand-preset-official", selected_by="preset-seed",
+        ))
+        session.commit()
+
+    response = seeded_client.get("/api/cases/preset-results/workspace")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["featured_result"]["result_id"] == "cand-preset-official"
+    assert [row["result_id"] for row in body["recent_results"]] == ["cand-preset-user"]
+    assert body["recent_results"][0]["experiment_name"] == "用户实验"
+    assert {row["id"] for row in body["recent_experiments"]} == {
+        "exp-preset-official",
+        "exp-preset-user",
+    }

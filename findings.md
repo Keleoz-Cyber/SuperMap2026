@@ -167,3 +167,4 @@
 - 首页父级 `.scene-body` 已是 flex 容器，但 `NativeVolumePanel` 的 `presentation` 变体没有继承完整高度，画布仍受默认 16:9、`min-height` 和 `max-height` 约束，因而控制栏与画布底边无法共同填满舞台。
 - `workbench` 变体已有同类高度链，首页应使用独立 `presentation` 规则复用结构，不能修改共享默认样式或成果工作台行为。
 - Mock 预置成果的 NetCDF 渲染资产是懒创建合同；视觉几何测试必须先显式执行“准备体渲染数据”，否则页面正确停在资产准备态且不会挂载 iframe。
+- 真实运行库表明 builtin_preset 同样允许用户创建独立实验；工作台路由原先把该分支的 `recent_experiments` 和 `recent_results` 固定为空，仓储查询虽支持预置去重却从未被调用。成果目录必须对两类工作台共用，并仅排除预置官方主打成果本身。

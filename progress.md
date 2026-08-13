@@ -15,6 +15,7 @@
 - Task 6 RED 命中首页 `presentation` 变体缺少完整高度链；根因是父级场景可伸缩，但子面板仍沿用内容高度和 16:9 画布约束。
 - 为 `presentation` 增加独立的 panel/body/tools/scene/frame 高度约束，未改工作台变体；定向单元 46 passed，type-check/build 通过。
 - 首轮浏览器门因预置渲染资产按产品合同懒创建而等不到画布；测试改为显式点击“准备体渲染数据”后测量。1440×900 几何门 4 passed，响应式与手机全屏门 5 passed。
+- 真实 v080-demo 复验发现预置案例已有用户实验和成功候选，但工作台路由在 builtin_preset 分支硬编码清空 recent activity，导致成果目录只对上传案例生效。新增预置回归红测后，将 bounded activity 查询提升为两类工作台共用；官方主打成果仍由仓储层去重。`test_case_workspace_api.py` 18 passed。
 
 ## 2026-08-11
 
