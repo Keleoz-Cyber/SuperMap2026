@@ -4,7 +4,7 @@
 必须有限（``math.isfinite``），NaN/Inf fail-closed。「不适用」用类型化
 状态表达，绝不以空数组或 0 值代替。
 
-设计依据：docs/superpowers/specs/2026-08-10-v0.9.0-result-analysis-integration-design.md §5。
+当前合同依据：docs/architecture.md 的分析模块边界与 docs/acceptance.md。
 """
 
 from __future__ import annotations

@@ -36,7 +36,7 @@ XY 平面内从 +X 朝 +Y；3D ``R = Rz(azimuth) · Ry(−dip) · Rx(roll)``，
 ``require_neighbors`` 硬失败路径的结构化错误码；取消语义与
 ``modeling.idw`` 一致（``RUN_CANCELED`` / http 409）。
 
-设计依据：docs/superpowers/specs/2026-07-26-v0.6-professional-modeling-enhancements-design.md §8。
+当前合同依据：docs/architecture.md 的专业证据边界与 docs/acceptance.md。
 """
 
 from __future__ import annotations

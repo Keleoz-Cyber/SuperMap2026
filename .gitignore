@@ -64,6 +64,10 @@ var/geomodeling/render-sources/
 *.png
 !docs/**/*.png
 !web/src/**/*.png
+# 本机真实浏览器门按 run-* 写证据；只有人工筛选后的最终证据才显式 git add。
+docs/evidence/**/run-*/
+# Mock E2E 截图是临时工件，不作为真实验收证据入库。
+docs/evidence/v0.9.0-result-analysis-mock/
 
 # Playwright 测试产物
 web/test-results/

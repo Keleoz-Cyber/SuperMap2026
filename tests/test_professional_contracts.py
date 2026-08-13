@@ -1,7 +1,6 @@
 """v0.6 Task 1：专业分析契约与算法能力矩阵。
 
-设计依据 docs/superpowers/specs/2026-07-26-v0.6-professional-modeling-enhancements-design.md
-§3.3 能力矩阵、§6.3 方向定义、§8.1 搜索邻域、§10.2 经验误差尺度、§12.1 异常配置。
+当前合同依据 docs/architecture.md 与 docs/acceptance.md。
 """
 
 import math

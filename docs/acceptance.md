@@ -1,161 +1,144 @@
-# Acceptance Notes
+# 验收标准
 
-适用对象：当前代码基线（v0.1.0 电阻率基线 + 微震 v0.2a 审计底座 + v0.3.1 iServer 纵向闭环 + v0.4 通用建模平台 + v0.5 微震第二案例建模闭环（已随 v0.5.0 发布）+ v0.6 专业建模增强 + v0.6.1 NetCDF 原生体渲染 + v0.7.0 案例生命周期、用户流程整改与空间结构分析 + v0.8.0 电阻率散点迁移与 DSI-like + v0.8.1 统计与空间分析中心、第三批瓦斯预置案例 + v0.9.0 答辩级视觉产品与全流程体验重构）。
+本文定义当前 0.9.0 源码的发布门。历史测试数量不作为固定合同；是否通过以当前命令退出码、失败数和证据内容为准。
 
-v0.9.0 视觉产品验收（真实数据 + 真实浏览器为准；不以后端 mock 或构建通过代替视觉结论）：
+## 1. 便携质量门
 
-1. 设计与计划：[2026-08-10 设计规格](superpowers/specs/2026-08-10-v0.9.0-visual-product-redesign-design.md) 与 [实施计划](superpowers/plans/2026-08-10-v0.9.0-visual-product-redesign.md)；验收矩阵与测试实数见 [evidence/v0.9.0/verification.md](evidence/v0.9.0/verification.md)。
-2. 聚焦门：`npm --prefix web run test:e2e -- v090`（指挥舱/自定义数据全链/四档响应式/成果级分析，mock API + 协议 mock 子帧）；真实 SDK live 门 `npm --prefix web run test:e2e:live -- v090-answer-stage-live.spec.ts`（隔离 GEOMODELING_DATA_DIR，三案例内置源 seed，RTX GPU 像素门）。
-3. 界面语义红线：官方案例不出现上传步骤；每页唯一主动作；结论卡必须带 source/confidence/limitations；环图仅用于可加总部分-整体；瓦斯不输出危险/安全/储量结论；坐标恒标局部线性 + 显示锚点。
-4. 回归红线：三案例源哈希、官方基线指纹、渲染协议 v2、回收站与正式选择保护全部保持既有测试绿色；`local_data` 分层与既有 live 门不删减。
-5. 成果级分析集成门：`npm --prefix web run test:e2e:live -- result-analysis-live.spec.ts` 必须在隔离运行时中 seed 官方电阻率成果，显式创建 NetCDF 资产，并验证 `result_id + grid_sha256`、规则研判、组件标注/聚焦、四相机、Volume/Slice/Contour、权威切片、DeepSeek 未配置类型化降级和 1920×1080 页面级横纵溢出不超过 1 px。真实证据见 [evidence/v0.9.0-result-analysis-live/verification.md](evidence/v0.9.0-result-analysis-live/verification.md)。
-6. 合同红线：Python 与 TypeScript 的坐标类型、阈值来源、深度状态、发现类型/可信级别、AI 模式/状态必须为闭合枚举；未知值由 Pydantic fail-closed。前端手工 TS Mock 必须由自动测试与后端 `tests/fixtures_result_analysis` JSON 夹具保持语义一致。
-7. AI 边界：规则研判始终可用；DeepSeek 只接收结构化证据包，密钥只来自服务端环境变量。未配置时记录 `unavailable/DEEPSEEK_NOT_CONFIGURED`，不得伪造成功。当前真实浏览器证据只证明未配置降级；外部 DeepSeek 成功调用不在本次本机证据内。
-
-空间结构分析是普通克里金的可选建模依据，不适用于 IDW。每个成功物化的成果都有基础模型评估（RMSE/MAE/R2/Bias），增强证据按能力展开。旧 `/results/:id/professional` 路由重定向到 `/results/:id/evaluation`。
-
-## 验收命令
+在 **PowerShell** 中依次运行：
 
 ```powershell
-python -m pip install -e ".[api,test]"
-python -m pytest -q
 python -m pytest -q -m "not local_data"
-python -m pytest -q -m local_data
-npm --prefix web ci
 npm --prefix web run test:unit
 npm --prefix web run type-check
 npm --prefix web run build
 npm --prefix web run test:e2e
-geomodeling demo-check --json
-npm --prefix web run test:e2e:live   # 需先设置独立 GEOMODELING_DATA_DIR 与 GEOMODELING_MICROSEISMIC_CONFIG
-geomodeling run-all -o outputs/release_verify
-geomodeling microseismic run-audit --config config/microseismic.yaml -o outputs/microseismic_verify
-geomodeling microseismic derive --source-dir <DAT目录> -o outputs/microseismic_v05_verify   # 需真实 22 DAT
-geomodeling microseismic import-case --source-dir <DAT目录> --data-dir var/geomodeling       # 需真实 22 DAT
-geomodeling professional diagnose --data-dir var/geomodeling --dataset-id <数据版本id>
-geomodeling professional confirm --data-dir var/geomodeling --diagnosis-id <诊断id> --note "确认说明"
-geomodeling professional inspect-result --data-dir var/geomodeling --result-id <候选成果id>
-geomodeling professional extract-anomalies --data-dir var/geomodeling --result-id <候选成果id> --config-json '{"direction":"high","threshold":1.0}'
-geomodeling professional compare --data-dir var/geomodeling --first <候选A> --second <候选B>
-geomodeling verify-supermap -o outputs/release_verify
+git diff --check
 ```
 
-当前基线（Task 23 后实测，本分支）：后端全量 `1153 passed`（便携 1124 / `local_data 29` 分层），前端 vitest `97 passed`，Playwright mock 冒烟 `4 passed`，Live E2E `3 passed`。测试数量只允许因真实新增测试而增加，任何减少或失败都必须调查。
+要求全部退出码为 0。GitHub Actions 的 `portable-tests` 和 `browser-smoke` 必须成功。
 
-v0.6.1 当前基线（Task 14 后实测，`feat/v0.6.1-netcdf-native-rendering` 分支）：后端便携 `1274 passed`，前端 vitest `157 passed`，Mock E2E `5 passed`，Live E2E 真实 SDK 32^3/64^3 各 `1 passed` + 既有 `3 passed`。
-
-v0.8.0 第三批瓦斯预置案例验收（不依赖 iServer；seed 与便携测试不依赖任何外部私有源）：
-
-1. 数据合同与 seed 聚焦测试：
+`local_data` 测试只在相邻只读研究资料存在时运行：
 
 ```powershell
-python -m pytest tests/test_example_data_contract.py tests/test_gas_preset_contract.py tests/test_analysis_profiles.py tests/test_gas_preset_seed.py tests/test_platform_presets.py tests/test_gas_preset_baseline.py tests/test_gas_render_asset.py -q
+python -m pytest -q -m local_data
 ```
 
-   覆盖：三个 `example_data` CSV 存在性/字节 SHA-256/行数/表头/唯一 XYZ/全有限（字节身份由 `.gitattributes` 关闭文本规范化保证）；`gas_content` profile（CH4_content，ml/g，local_linear 米制）；seed 幂等/并发唯一/失败补偿；基线指纹 fail-closed（源、参数、折分或指标任一不符拒绝 seed）；网格 151×333×12 @[20,20,5] m（603,396 节点全有限、零 NoData）与渲染资产身份追溯到 candidate。
-2. seed 命令（内置 example_data 源，无外部私有源跳过门）：`python -m geomodeling.preset_cli seed-gas --data-dir <隔离数据目录>`；第二次调用幂等复用同一身份，并发调用只产生一条官方链。
-3. 官方基线：`config/presets/gas-official-baseline.json` winner `ordinary_kriging` spherical/neighbor=24（RMSE=8.298439、MAE=6.552100、R²=−0.109659、Bias=−0.068618，公共有效 58；58 点稀疏采样下 R² 为负，如实记为解释性估计）；DSI-like 条件评估通过仅作对照候选，不参与官方选择。
-4. NetCDF 与 API：`GET /api/cases/gas/workspace` 返回 validated 58 行数据版本与官方成果身份；analysis-summary/analysis-export 返回 `gas_content`/`ml/g` 与含量分布/Z 向分层/高低含量区域/梯度模块；前端 vitest、Mock E2E（`web/e2e/gas-preset.spec.ts`：首页三卡 → 工作台 → 成果页 → 分析中心 → 移动 390×844 无横向溢出）按基线通过。
-5. 真实 GPU live 门（本机发布门，不进 CI browser-live 过滤）：`npm --prefix web run test:e2e:live -- gas-preset-live.spec.ts`，隔离 `GEOMODELING_DATA_DIR`，内置源 seed（绝无 `GEOMODELING_RHO_SOURCE` 跳过门），覆盖首页/工作台/成果身份链、Volume/X/Y/Z Slice/Contour 五模式渲染门、普通刷新与持久化 profile 四缓存场景；证据目录 `docs/evidence/v0.8.0-batch-3-gas/`，入库 run 身份 JSON 的 `git_commit` 必须为 HEAD 祖先。真实 run 证据由后续单独提交补入，本文不预登记 run ID。
-6. 边界：瓦斯坐标为局部线性米制，不做 EPSG 配准与跨案例叠加；不输出「瓦斯危险/安全」规范结论；不接入 AI/iServer；v0.9 分析中心视觉重构不在本批。
+运行前后应核对原始资料 SHA-256 不变。
 
-v0.6.1 NetCDF 原生体渲染验收（不依赖 iServer；live SDK 门为本地发布门）：
-
-1. 聚焦后端测试：
+## 2. Live E2E
 
 ```powershell
-python -m pytest tests/test_render_coordinates.py tests/test_schema_v6_migration.py tests/test_render_asset_repository.py tests/test_render_source_resolution.py tests/test_legacy_render_sources.py tests/test_netcdf_volume.py tests/test_render_asset_publication.py tests/test_rendering_api.py tests/test_v061_rendering_contract.py tests/test_v061_docs.py -q
+npm --prefix web run test:e2e:live -- e2e-live/platform-live.spec.ts
 ```
 
-2. 版本与文档合同：`python -m pytest tests/test_v061_docs.py tests/test_version_consistency.py -q`（全部版本面 = 0.6.1、运行手册必需命令、状态文档措辞防护）。
-3. 渲染防护契约：`tests/test_v061_rendering_contract.py` 保证旧全局 Cesium、`Field3D`/`RhoScene3D`、自研光线步进 POC 与 three/cesium 依赖不复活。
-4. 前端：`npm --prefix web run test:unit`、`type-check`、`build`、`test:e2e` 按上表基线通过。
-5. live 真实 SDK 门（本地发布门，隔离 `GEOMODELING_DATA_DIR`，需先按 [v0.6.1 运行手册](v0.6.1-netcdf-native-rendering-runbook.md) §2/§8 完成 SDK 预检与前端构建）：
+要求使用隔离 `GEOMODELING_DATA_DIR`，真实启动 FastAPI、SQLite 和 Worker，结束后无残留进程。CI 的 `browser-live` 必须成功。
+
+需要 SuperMap SDK/GPU 的规格属于本机发布门，不得在缺少运行时的 CI 中用 Mock 替代：
 
 ```powershell
-$env:GEOMODELING_DATA_DIR = "$PWD/var/geomodeling-e2e-live"
-npm --prefix web run test:e2e:live -- e2e-live/supermap-volume-frame-live.spec.ts e2e-live/supermap-native-volume-live.spec.ts
-Remove-Item Env:GEOMODELING_DATA_DIR
+npm --prefix web run test:e2e:live -- e2e-live/v090-answer-stage-live.spec.ts
+npm --prefix web run test:e2e:live -- e2e-live/result-analysis-live.spec.ts
 ```
 
-   判定：32^3 与 64^3 各自 rendered 30s 门内（参考机实测 <2s）、64^3 交互 5s 门内像素稳定（实测 <0.5s）、filter/opacity/Slice/Contour 像素响应超静帧噪声、证据元数据来自同一运行。
-6. 操作语义验收：POST 是唯一资产创建路径（首个成功 201 / ready 幂等 200 / creating 409 / failed-interrupted 须 `retry_failed=true` 显式重试）；所有 GET 纯查询；manifest/grid/NetCDF 哈希双向核验，损坏资产原子隔离不自动删除；重启后 `creating` 原子转 `interrupted`。
-7. legacy 边界验收：未登记权威网格时内置电阻率返回 `LEGACY_RENDER_SOURCE_NOT_REGISTERED` 且页面只显示 auxiliary points 辅助层；登记只走 `python -m geomodeling.render_cli import-csv`。
-8. 历史回归：v0.6 专业建模、v0.5 微震黄金哈希、v0.4.1 固定演示路径、v0.3.1 电阻率只读回归全部保持既有口径。
+## 3. 数据接入
 
-v0.4 通用建模验收（不依赖 iServer）：
+- CSV/Excel 文件可上传并预览；不支持格式返回结构化错误。
+- 坐标、属性、单位、NoData 和维度映射明确。
+- 数值字段不能因导入推断为文本后继续建模。
+- 无效值、重复点、空间柱和有效样本数有报告。
+- 原始文件哈希登记；公开响应不暴露本机路径。
+- 数据质量未通过时，不允许创建正式建模实验。
 
-1. 便携端到端：`tests/test_platform_end_to_end.py` 一次跑通 创建案例 → 上传 3D 夹具 → 映射 → 质量门禁 → IDW + 普通克里金有限搜索 → 公共有效指标 → 正式选择 → Z/X/Y 切片 → ZIP 导出 → 运行时重启后全部资源仍可解析。
-2. 浏览器双层验证：Mock API 冒烟（`npm --prefix web run test:e2e`，页面契约与导航恢复）+ Live E2E（`test:e2e:live`，真实 FastAPI + 隔离 SQLite + 真实 Worker，独立 `GEOMODELING_DATA_DIR` 与端口 5201，结束不留监听）。
-3. 导航验收：所有主页面与加载失败页都有可见文字的「返回首页」；成果页可「返回实验」；返回首页不取消在途任务。
-4. 演示数据验收：`demo/platform_demo_3d.csv` 是唯一权威样例，SHA-256 固定为 `deb9c25f…2bb3`；下载端点内容与哈希一致且不泄露本机路径。
-5. 预检验收：`geomodeling demo-check` 区分 `passed/warning/blocked`；阻断项（前端未构建、演示数据哈希不符、数据目录不可写、SQLite 失败、端口被未知占用）退出码 1；iServer/S3M/凭据缺失仅警告，退出码 0。
-6. 真实浏览器验收：启动单进程 uvicorn 后按 [v0.4 运行说明](v0.4-generic-modeling-loop.md) §1 操作，截图证据存 `docs/evidence/v0.4/`；答辩执行手册见 [v0.4.1 运行手册](v0.4.1-demo-runbook.md)。
+## 4. 插值与预测
 
-v0.6 专业建模验收（不依赖 iServer；便携测试不依赖真实数据）：
+- IDW、普通克里金和 DSI-like 使用统一实验/任务/候选生命周期。
+- 普通克里金自动拟合只能使用训练折，不能读取验证行。
+- 手动变异函数参数必须满足 nugget、sill、range 的合同。
+- 空间折分保持同一 XY 柱/空间组不跨训练与验证。
+- 指标只在公共有效集上比较。
+- ML 适用性门必须按有效样本和独立 XY 组阻断不适用案例。
+- 克里金残差随机森林只能使用内部折外残差训练。
+- 模型离散度必须标注为树模型分歧参考，不表示概率意义上的可信范围。
 
-1. 便携测试：`tests/test_pair_sampling.py`、`tests/test_directional_variogram.py`、`tests/test_anisotropy_*.py`、`tests/test_neighborhood_selection.py`、`tests/test_kriging_variance.py`、`tests/test_empirical_uncertainty.py`、`tests/test_anomaly_*.py`、`tests/test_professional_*.py`、`tests/test_analysis_jobs.py` 等全量通过（数学单元、合成结构、平台合同、迁移与状态机、导出 fail-closed、legacy 只读兼容）。
-2. 版本与文档合同：`python -m pytest tests/test_version_consistency.py tests/test_demo_docs.py tests/test_v06_docs.py -q`（全部版本源一致、v0.5.0 已发布事实、运行手册两层不确定性与禁止表述扫描）。
-3. CLI 真实链路：任一已通过质量门禁的数据集依次执行 `geomodeling professional diagnose`（输出 `status=succeeded` 与采样披露）→ `confirm`（不可变快照指纹）→ 运行专业实验并物化 → `inspect-result`（能力/参数来源/manifest 摘要）→ `extract-anomalies`（component 计数）→ `compare`（compatible 结论与比较指纹）；JSON 输出不含绝对路径。
-4. 前端与端到端：vitest、Mock E2E（v0.6 专业建模流程 mock 链路）、Live E2E（v0.6 真实链路：上传合成 CSV → 质量门禁 → 诊断 → 确认 → 专业 Kriging 实验 → 折分/不确定性/异常/比较 → 导出 `professional/` 证据）按上表基线通过。
-5. 浏览器真实流程：按 [v0.6 运行手册](v0.6-professional-modeling-loop.md) 执行 诊断 → 人工确认 → 专业实验 → 专业分析台 → 异常保存 → 双候选比较 → 导出（ZIP 含 `professional/` 目录，manifest 哈希一致）。
-6. 历史回归：v0.5 微震黄金哈希与 1,925/1,911 口径不变、v0.4.1 固定演示路径通过、v0.3.1 电阻率只读回归通过；iServer 离线只按现有契约警告。
-
-v0.5 微震第二案例验收（不依赖 iServer，需真实 22 DAT 完成真实回归；便携测试不依赖真实数据）：
-
-1. 便携测试：`tests/test_microseismic_*.py` 全量通过（派生坐标/深度符号/单位、3σ 精确统计、canonical 字节稳定、黄金门禁 fail-closed、聚合溯源、导入补偿、API 路由）。
-2. 真实数据回归：`python -m pytest -q -m local_data` 中微震用例对真实 22 DAT 复算 2,006/2,005/80/1,925/1,911 全链条与两张黄金表 SHA-256。
-3. CLI 真实回归：`geomodeling microseismic derive --source-dir <DAT目录> -o <输出>` 输出 `golden_passed=True`、`downstream_gates` 全部解除、六层派生工件齐备；`import-case` 创建案例与数据集且 `validation_passed=True`。
-4. 前端与端到端：vitest、Mock E2E（微震导入向导与成果工作台三层诊断图层契约）、Live E2E 按上表基线通过。
-5. 浏览器真实流程：按 [v0.5 运行手册](v0.5-microseismic-loop.md) 执行 导入 DAT → 派生确认 → 质量门禁 → 调参 → 成果 → 导出（ZIP 含 `domain_evidence/` 七文件）。
-
-v0.3 浏览器闭环验收（需本机 iServer 已启动且 `WorkSpace.smwu` 已发布，见 [v0.3 运行说明](v0.3-iserver-loop.md)）：
+### v0.6 专业建模 CLI 回归
 
 ```powershell
-python scripts/fetch_iclient3d.py
-cd web; npm install; npm run build; npm run type-check; cd ..
-python -m uvicorn geomodeling.api.app:app --host 127.0.0.1 --port 8000
-# GET /api/health → {"status":"ok","version":"0.3.x"}
-# GET /api/cases/resistivity/publish-status → evidence_chain 中
-#   model_succeeded/artifact_exported/iserver_published/service_metadata_verified=True，
-#   浏览器打开 http://127.0.0.1:8000/ 完成一次场景渲染后 browser_loaded 亦转 True
+geomodeling professional diagnose --help
+geomodeling professional confirm --help
+geomodeling professional inspect-result --help
+geomodeling professional extract-anomalies --help
+geomodeling professional compare --help
 ```
 
-## 电阻率验收口径
+## 5. 候选比较与正式成果
 
-- 标准化/训练/验证行数：17,549 / 15,827 / 1,722。
-- 训练空间柱 264、验证空间柱 29，重叠 0。
-- 五份预测导出各 1,722 行，1,481 valid、241 NoData、XY mismatch 0。
-- 复算指标与 `插值精度对比_总体指标.csv` 在配置容差内一致（`baseline_passed=True`）。
-- SuperMap 配置成果 3 个，正式成果 1 个（`RHO_KRIG_FINAL_20M_40`）；本机存在 `../Project/expore1.udbx` 时 `udbx_exists=True`、`udbx_file_verified=True`。
+- 候选检查可以展示任意成果；严格排名只接受折分和公共有效集兼容的成果。
+- 不兼容时显示具体差异和行动建议，不返回伪排名。
+- OOF、折分和成果文件读取前重新验证大小和 SHA-256。
+- 正式选择要求 Run 和 CandidateResult 均为 `succeeded`。
+- 排名、选择理由和参数快照持久化。
+- 若机器学习未优于普通克里金，界面必须如实显示。
 
-## 微震验收口径
+## 6. 三维、切片与分析
 
-- 22 个 DAT（66,880 字节）、22 个 NUL 终止伪行。
-- 2,006 条源记录（L1/L2/L3 = 823/819/364）、2,005 条有限数值（822/819/364）、1 条无效数值（W8 `1.#QNAN0`）。
-- 三张标准表：3 / 23 / 2,006 行；W28 不在正式集合且序号与累计距离为空。
-- 15 项契约检查通过，源文件 SHA-256 处理前后不变，无伪造 XY/Z，`validation_passed=True`。
-- v0.5 派生口径：一次全局 3σ（样本标准差 `ddof=1`）剔除 80 条（深度 72、速度 8）、保留 1,925 条候选（792/783/350）；accepted/rejected 两张 canonical CSV（UTF-8 BOM + CRLF）SHA-256 与黄金表一致；13 个冲突组 / 27 条组内记录 / 坍缩 14 条，聚合输出 1,911 个唯一建模节点；`golden_passed=True` 时 `geometry/cleaning/interpolation` 三个 downstream gate 全部解除，否则导入阻断。
-- 退出码语义：只有契约检查或黄金门禁失败（`validation_passed=False`）时 CLI 返回 1，且仍尽量输出诊断报告；`validation_passed=True` 时返回 0。
+### v0.6.1 原生体渲染发布门
 
-## 证据边界（必须保持显式）
+```powershell
+python -m pytest tests/test_v061_docs.py -q
+npm --prefix web run test:e2e:live -- e2e-live/supermap-native-volume-live.spec.ts
+```
 
-- v0.5 起微震 downstream gates 由派生流程真实输出驱动：审计契约与黄金门禁全部通过才解除 `geometry/cleaning/interpolation_blocked`；任一失败保持阻断并使导入失败。2026-07-20 确认的局部坐标、深度、单位和有效值规则已随 v0.5 完成 schema、config、geometry、报告和回归测试升级；详见[data/microseismic.md](data/microseismic.md)。
-- `dataset_verified=False`：没有受支持的 SuperMap 数据集 API 适配器，只声明文件级验证。
-- 完整体元和水平切片为人工 iDesktopX 证据；垂直切片 `unverified`；原生等值面 `failed`，空数据集不进入正式成果。
-- `RHO >= 77` 仅为演示阈值；RHO 物理单位和 EPSG 未确认。
-- 微震`z_scale`只是距离计算实验参数（`0 < z_scale ≤ 20`），由空间验证比较，不代表已确认的地质各向异性。
+- RenderAsset 身份必须包含成果 ID 和规则网格哈希。
+- NetCDF 维度、坐标、变量、单位、值域和 NoData 与登记一致。
+- Volume、Contour、X/Y/Z Slice 使用同一成果。
+- 权威切片响应包含 axis、index、coordinate、relativePosition 和统计。
+- `valid + nodata = total`；统计口径与导出一致。
+- 图表选择能够定位同一三维成果或切片。
+- 渲染失败显示诊断，不回退为可能误导的点云或线框。
 
-## 仓库外派生与人工验收证据
+## 7. 三个内置案例
 
-- 微震：2,005条有限记录经3σ规则剔除80条（深度72、速度8），保留1,925条（L1/L2/L3 = 792/783/350）；候选表SHA-256为`4F7A0886B54BB1776E9D7CA98299F8F86E67897BA19236FB151C3FC9E2AE1513`，已在iDesktopX人工复现。**v0.5 起该对人工表作为黄金回归来源**：仓库代码从原始 DAT 重新生成并逐字节锁定两张表哈希，门禁不过即阻断。
-- 瓦斯（历史，已被 v0.8.0 第三批取代）：外部派生表含58条合格三维候选样本、28个位置，SHA-256为`FAB47D99926554255995BFB2D5FA299A389C14934D13B3F2D3BDB6E16EF5FC8F`；点图层能够显示，但`GAS_CH4_IDW_R1000_N12_P1`体元加入三维场景会触发iDesktopX原生崩溃。该证据只证明仓库外文件和人工试验存在；瓦斯正式能力以 v0.8.0 第三批内置合同与官方基线为准（见上文验收章节与 [data/gas.md](data/gas.md)）。
+### 电阻率
 
-## 未实现（当前 main）
+- 17,549 行内置源哈希与冻结合同一致。
+- RHO 对外单位统一为 Ω·m。
+- IDW、普通克里金、DSI-like 和两种机器学习可建立候选。
+- DSI-like 明确标注“不等同 GOCAD DSI”。
 
-- 微震绝对地理配准与跨案例空间叠加（需共同控制点证据）；iServer 自动发布（`manual_required` 保持）。
-- 煤层瓦斯体元稳定显示、程序化数据契约和正式模型验收。
-- DSI-like 插值内核与 GOCAD 工程转换。
-- iDesktopX 控件自动化、账户体系、云部署。
+### 微震
 
-下一阶段浏览器建模平台的目标验收标准见[product-blueprint.md](product-blueprint.md#11-mvp验收标准)。该蓝图是未来验收目标，不得与本页当前代码基线混报。
+- 22 DAT 只读；唯一非法 token `1.#QNAN0` 不改 0。
+- 一次全局 3σ：2,005 个有限样本剔除 80，得到 1,925 个黄金候选。
+- 完全相同局部坐标聚合为 1,911 个唯一节点，溯源不丢失。
+- 只有 22 个独立 XY 组，因此随机森林必须标记“实验性”。
+
+### 瓦斯
+
+- 58 个合格样品、28 个 XY 位置和字段单位与冻结合同一致。
+- 负 R² 不能隐藏或改写。
+- 机器学习适用性门必须拒绝该数据集。
+
+## 8. 导出与发布
+
+- 导出 ZIP 中每个工件都有 SHA-256 清单。
+- 微震领域证据和专业证据哈希不符时返回 409，且不登记可下载导出。
+- 导出失败时临时目录被清理，清理异常不覆盖原业务异常。
+- 通用成果发布保持 `manual_required`，除非获得实时 iServer 对象级验证。
+- 浏览器加载证据只接受身份精确匹配、成功且有效数量大于 0 的服务器接收回执。
+
+## 9. 演示验收
+
+- `python -m geomodeling.cli demo-check` 无阻断项。
+- 首页、案例工作台、调参、比较、成果和回收站均有返回路径。
+- 1920×1080 和 1440×900 无关键内容截断；390×844 无横向溢出。
+- iServer 在线时服务与场景身份匹配；离线时明确显示降级，不影响通用建模。
+- 控制台、页面和网络不得出现未解释错误。
+- 截图、视频与提交源码来自同一版本。
+
+## 10. 文档与仓库卫生
+
+- README、当前状态、产品蓝图、架构、数据和 SuperMap 文档相互一致。
+- Markdown 相对链接全部存在。
+- 不跟踪过程计划、Agent 提示词、交接副本和重复历史截图。
+- 不提交密钥、`.env`、本机绝对路径、运行数据库、日志、缓存或私有原始资料。
+- 测试代码保留在源码仓库；部署运行包按[比赛提交说明](contest-submission.md)排除测试和开发文件。
