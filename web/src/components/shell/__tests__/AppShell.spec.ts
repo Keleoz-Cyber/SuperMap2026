@@ -35,6 +35,7 @@ describe('AppShell', () => {
     expect(wrapper.find('[data-test="shell-nav-results"]').exists()).toBe(false)
     expect(wrapper.find('[aria-disabled="true"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="shell-trash-link"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="shell-ai-settings"]').exists()).toBe(true)
   })
 
   it('legacy /presentation deep links redirect home via the catch-all route', async () => {

@@ -213,6 +213,13 @@ def add_delivery_files(output: Path, seed_ids: dict[str, str]) -> None:
 4. 也可上传 CSV/XLSX，完成字段映射、质量校验、调参、空间验证和三维展示。
 5. 使用结束后双击“停止平台.cmd”。用户数据保存在 runtime 目录。
 
+AI 辅助研判（可选）：
+- 在页面右上角点击“AI 设置”，输入自己的 DeepSeek API Key，先测试连接再保存。
+- Key 由当前 Windows 用户的凭据管理器保存，不会写入本文件夹、浏览器或成果包。
+- 不配置 AI 不影响数据校验、插值、三维展示、规则分析和导出。
+- 不要将团队 API Key 写入本文件夹或随压缩包分发。
+- 管理员备用：可在启动进程前设置 DEEPSEEK_API_KEY 环境变量；该配置在页面中只读。
+
 不需要安装 Python、Node.js、数据库或 Docker。iServer 为可选增强能力，离线不影响核心建模。
 默认地址：http://127.0.0.1:8000/
 诊断命令：GeoModelingPlatform.exe doctor

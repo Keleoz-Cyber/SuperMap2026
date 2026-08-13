@@ -1594,3 +1594,30 @@ export interface AIAnalysisRecord {
   latency_ms: number | null
   created_at: string
 }
+
+export type AISettingsSource = 'environment' | 'windows_credential' | 'none'
+
+export interface AISettingsStatus {
+  configured: boolean
+  source: AISettingsSource
+  editable: boolean
+  storage_available: boolean
+  base_url: string
+  model: string
+  timeout_sec: number
+  max_tokens: number
+}
+
+export interface AISettingsPayload {
+  api_key: string
+  base_url: string
+  model: string
+  timeout_sec: number
+  max_tokens: number
+}
+
+export interface AISettingsTestResult {
+  ok: boolean
+  code: string
+  message: string
+}

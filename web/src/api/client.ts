@@ -1,6 +1,9 @@
 import type {
   AIAnalysisMode,
   AIAnalysisRecord,
+  AISettingsPayload,
+  AISettingsStatus,
+  AISettingsTestResult,
   AnalysisExportDownload,
   AnalysisExportFormat,
   AnalysisJobRecord,
@@ -116,8 +119,31 @@ function postJson<T>(path: string, payload: unknown): Promise<T> {
   })
 }
 
+function deleteJson<T>(path: string): Promise<T> {
+  return requestJson<T>(path, {
+    method: 'DELETE',
+    headers: { Accept: 'application/json' },
+  })
+}
+
 export function fetchHealth(): Promise<HealthResponse> {
   return getJson<HealthResponse>('/health')
+}
+
+export function fetchAISettings(): Promise<AISettingsStatus> {
+  return getJson<AISettingsStatus>('/settings/ai')
+}
+
+export function saveAISettings(payload: AISettingsPayload): Promise<AISettingsStatus> {
+  return postJson<AISettingsStatus>('/settings/ai', payload)
+}
+
+export function testAISettings(payload: Partial<AISettingsPayload>): Promise<AISettingsTestResult> {
+  return postJson<AISettingsTestResult>('/settings/ai/test', payload)
+}
+
+export function clearAISettings(): Promise<AISettingsStatus> {
+  return deleteJson<AISettingsStatus>('/settings/ai')
 }
 
 export function fetchCases(): Promise<CasesResponse> {

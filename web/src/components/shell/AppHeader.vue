@@ -2,13 +2,15 @@
 // v0.9.0：全局应用头。纯展示组件——不 fetch 页面数据、不创建路由实例；
 // 导航一律使用命名路由，服务状态与案例上下文由 AppShell/壳上下文传入。
 import { RouterLink } from 'vue-router'
-import { Delete, MoreFilled, Upload } from '@element-plus/icons-vue'
+import { Delete, MoreFilled, Setting, Upload } from '@element-plus/icons-vue'
 import { WEB_VERSION } from '../../version'
 
 const props = defineProps<{
   serviceState: 'unknown' | 'online' | 'offline'
   serviceVersion: string | null
 }>()
+
+const emit = defineEmits<{ (event: 'open-ai-settings'): void }>()
 
 void props
 </script>
@@ -54,6 +56,10 @@ void props
         {{ serviceState === 'online' ? '服务在线' : serviceState === 'offline' ? '服务离线' : '服务检测中' }}
       </span>
       <span class="version mono" data-test="shell-version">v{{ serviceVersion ?? WEB_VERSION }}</span>
+      <button type="button" class="action ghost" data-test="shell-ai-settings" @click="emit('open-ai-settings')">
+        <el-icon :size="15"><Setting /></el-icon>
+        <span class="ai-settings-label">AI 设置</span>
+      </button>
       <RouterLink
         :to="{ name: 'case-create' }"
         class="action primary"
@@ -85,6 +91,10 @@ void props
           <el-icon :size="15"><Delete /></el-icon>
           回收站
         </RouterLink>
+        <button type="button" data-test="shell-mobile-ai-settings" @click="emit('open-ai-settings')">
+          <el-icon :size="15"><Setting /></el-icon>
+          AI 服务设置
+        </button>
       </nav>
     </details>
   </header>
@@ -270,6 +280,7 @@ void props
 }
 
 .mobile-menu-panel a,
+.mobile-menu-panel button,
 .mobile-service {
   display: flex;
   align-items: center;
@@ -281,6 +292,8 @@ void props
   font-size: var(--s1-font-md);
 }
 
+.mobile-menu-panel button { border: 0; background: transparent; text-align: left; cursor: pointer; }
+
 .mobile-menu-panel a:hover {
   color: var(--s1-cyan-strong);
   background: var(--s1-cyan-ghost);
@@ -289,6 +302,16 @@ void props
 .mobile-service {
   color: var(--s1-text-dim);
   border-bottom: 1px solid var(--s1-border-soft);
+}
+
+@media (max-width: 1200px) {
+  .ai-settings-label {
+    display: none;
+  }
+
+  [data-test="shell-ai-settings"] {
+    padding-inline: 8px;
+  }
 }
 
 @media (max-width: 900px) {

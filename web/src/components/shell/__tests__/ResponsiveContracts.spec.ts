@@ -169,6 +169,12 @@ describe('responsive & accessibility contracts', () => {
     expect(headerSource).not.toContain('.action.primary {\n    padding: 6px 10px')
   })
 
+  it('keeps the new AI settings action compact on laptop-width screens', () => {
+    const headerSource = String(readFileSync('src/components/shell/AppHeader.vue'))
+    expect(headerSource).toContain('class="ai-settings-label"')
+    expect(headerSource).toMatch(/@media \(max-width: 1200px\)[\s\S]*\.ai-settings-label\s*\{[\s\S]*display:\s*none/)
+  })
+
   it('app shell exposes exactly one main landmark', async () => {
     const wrapper = await mountHome()
     expect(wrapper.findAll('main')).toHaveLength(1)

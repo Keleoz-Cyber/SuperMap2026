@@ -12,7 +12,6 @@ Design rules (design §9.4):
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -78,16 +77,36 @@ class DeepSeekAdapter:
 
     @classmethod
     def from_env(cls) -> "DeepSeekAdapter | None":
-        """Create adapter from environment; return None if not configured."""
-        api_key = os.environ.get(ENV_API_KEY, "").strip()
-        if not api_key:
+        """Resolve environment override, then the current Windows credential."""
+        from geomodeling.integrations.deepseek_credentials import (
+            DeepSeekCredentialConfig,
+            get_default_deepseek_settings_service,
+        )
+
+        # 先直接检查环境变量，保持既有单测/管理员覆盖的确定性；只有未设置
+        # 环境变量时才访问当前 Windows 用户的持久凭据。
+        config = DeepSeekCredentialConfig.from_environment()
+        if config is None:
+            return cls.from_settings(get_default_deepseek_settings_service())
+        return cls._from_config(config)
+
+    @classmethod
+    def from_settings(cls, service) -> "DeepSeekAdapter | None":
+        """Create an adapter from an injected settings service."""
+
+        config = service.resolve()
+        if config is None:
             return None
+        return cls._from_config(config)
+
+    @classmethod
+    def _from_config(cls, config) -> "DeepSeekAdapter":
         return cls(
-            api_key=api_key,
-            base_url=os.environ.get(ENV_BASE_URL, DEFAULT_BASE_URL).rstrip("/"),
-            model=os.environ.get(ENV_MODEL, DEFAULT_MODEL),
-            timeout=float(os.environ.get(ENV_TIMEOUT_SEC, str(DEFAULT_TIMEOUT_SEC))),
-            max_tokens=int(os.environ.get(ENV_MAX_TOKENS, str(DEFAULT_MAX_TOKENS))),
+            api_key=config.secret_value(),
+            base_url=config.base_url,
+            model=config.model,
+            timeout=config.timeout_sec,
+            max_tokens=config.max_tokens,
         )
 
     @property

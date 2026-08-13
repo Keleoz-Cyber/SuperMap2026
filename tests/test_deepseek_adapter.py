@@ -64,8 +64,35 @@ class TestDeepSeekAdapter:
         assert "sk-secret-key-12345" not in repr(adapter)
 
     def test_from_env_returns_none_when_not_configured(self, monkeypatch):
+        from geomodeling.integrations import deepseek_credentials
+        from geomodeling.integrations.deepseek_credentials import (
+            DeepSeekSettingsService,
+            InMemoryCredentialStore,
+        )
+
         monkeypatch.delenv(ENV_API_KEY, raising=False)
+        monkeypatch.setattr(
+            deepseek_credentials,
+            "_default_service",
+            DeepSeekSettingsService(store=InMemoryCredentialStore()),
+        )
         assert DeepSeekAdapter.from_env() is None
+
+    def test_from_settings_uses_persistent_credential_when_environment_is_empty(self, monkeypatch):
+        from geomodeling.integrations.deepseek_credentials import (
+            DeepSeekCredentialConfig,
+            DeepSeekSettingsService,
+            InMemoryCredentialStore,
+        )
+
+        monkeypatch.delenv(ENV_API_KEY, raising=False)
+        store = InMemoryCredentialStore()
+        store.write(DeepSeekCredentialConfig(api_key="sk-persisted"))
+
+        adapter = DeepSeekAdapter.from_settings(DeepSeekSettingsService(store=store))
+
+        assert adapter is not None
+        assert adapter.api_key == "sk-persisted"
 
     def test_from_env_creates_adapter(self, monkeypatch):
         monkeypatch.setenv(ENV_API_KEY, "sk-test-key")

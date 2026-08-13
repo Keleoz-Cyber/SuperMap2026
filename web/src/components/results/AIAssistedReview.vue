@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, inject, onMounted, ref, watch } from 'vue'
 import { ApiError, fetchLatestAiAnalysis, generateAiAnalysis } from '../../api/client'
 import type { AIAnalysisMode, AIAnalysisRecord, AIPerspective } from '../../api/types'
 import AsyncState from '../states/AsyncState.vue'
+import { openAISettingsKey } from '../settings/aiSettingsContext'
 
 const props = defineProps<{
   resultId: string
@@ -20,6 +21,7 @@ const generating = ref(false)
 const generateError = ref<string | null>(null)
 const mode = ref<AIAnalysisMode>('quick')
 let loadSequence = 0
+const openAISettings = inject(openAISettingsKey, null)
 
 const MODES: Array<{ key: AIAnalysisMode; label: string; description: string }> = [
   { key: 'quick', label: '快速解读', description: '提炼主要结论、关键依据和下一步动作' },
@@ -201,6 +203,13 @@ watch(
       <div v-else-if="record?.status === 'unavailable'" class="ai-state" data-test="ai-unavailable">
         <p class="state-title">AI 服务尚未配置</p>
         <p>规则分析仍可正常使用。请配置服务后再生成{{ activeMode.label }}。</p>
+        <button
+          v-if="openAISettings"
+          type="button"
+          class="action-button primary"
+          data-test="ai-open-settings"
+          @click="openAISettings"
+        >打开 AI 服务设置</button>
         <details class="technical-details">
           <summary>查看配置提示</summary>
           <p class="mono">{{ record.error_code }}</p>

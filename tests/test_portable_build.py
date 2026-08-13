@@ -32,3 +32,12 @@ def test_pyinstaller_command_avoids_collect_all_from_global_environment(tmp_path
 def test_isolated_builder_uses_build_directory_virtualenv() -> None:
     python = build_portable.isolated_python_path()
     assert python == build_portable.BUILD_ROOT / "venv" / "Scripts" / "python.exe"
+
+
+def test_portable_guide_uses_in_product_ai_settings_as_primary_path() -> None:
+    source = Path("scripts/build_portable.py").read_text(encoding="utf-8")
+    assert "AI 设置" in source
+    assert "Windows 用户的凭据管理器" in source
+    assert "不要将团队 API Key" in source
+    assert "DEEPSEEK_API_KEY" in source
+    assert "sk-" not in source
