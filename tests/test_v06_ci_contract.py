@@ -3,7 +3,7 @@
 在 v0.5 三 job 合同（``tests/test_v05_ci_contract.py``）之上锁定 v0.6 增量：
 
 - 三个 job（portable-tests / browser-smoke / browser-live）一个不少、不重复；
-- portable-tests 依旧跑整套排除 ``local_data`` 的便携 pytest——新的合成
+- 发布模式 portable-tests 依旧跑整套排除 ``local_data`` 的便携 pytest——新的合成
   结构验收测试不带 ``local_data`` 标记，默认进入该套件；
 - Mock E2E 规格（``web/e2e/platform-flow.spec.ts``）必须覆盖专业建模链
   （质量门禁数据集 → 诊断 → 确认 → 专业 Kriging 实验 → 折分检查 → 不确
@@ -78,10 +78,10 @@ def test_three_jobs_survive_unchanged():
     )
 
 
-def test_portable_job_still_runs_whole_portable_suite():
+def test_release_mode_still_runs_whole_portable_suite():
     steps = _steps(_jobs()["portable-tests"])
     assert any('pytest -q -m "not local_data"' in step for step in steps), (
-        "portable-tests 必须运行整套排除 local_data 的便携 pytest，"
+        "发布模式 portable-tests 必须保留整套排除 local_data 的便携 pytest，"
         "不得为跳过 v0.6 合成验收而缩小范围"
     )
 

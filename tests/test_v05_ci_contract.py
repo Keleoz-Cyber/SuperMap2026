@@ -1,7 +1,7 @@
 """Task 14: v0.5 CI contract — three jobs cover the microseismic browser loop.
 
 The workflow must keep exactly three jobs (portable-tests, browser-smoke,
-browser-live): portable pytest with ``local_data`` excluded, frontend
+browser-live): release-mode portable pytest with ``local_data`` excluded, frontend
 unit/type-check/build, the mock-API browser E2E, and the real-FastAPI live
 E2E. The live job allocates an isolated ``GEOMODELING_DATA_DIR`` and points
 ``GEOMODELING_MICROSEISMIC_CONFIG`` at the runtime-generated synthetic
@@ -49,7 +49,7 @@ def test_exactly_three_jobs_no_duplicate_e2e_job():
     assert live_runners == ["browser-live"], "Live E2E 必须且只能由 browser-live 运行"
 
 
-def test_portable_job_runs_portable_pytest_excluding_local_data():
+def test_release_mode_retains_portable_pytest_excluding_local_data():
     job = _jobs()["portable-tests"]
     steps = _steps(job)
     assert any('pytest -q -m "not local_data"' in step for step in steps), (

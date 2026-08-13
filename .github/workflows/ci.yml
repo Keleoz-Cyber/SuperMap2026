@@ -2,6 +2,8 @@ name: CI
 
 on:
   push:
+    branches: ["**"]
+    tags: ["v*"]
   pull_request:
   workflow_dispatch:
 
@@ -11,6 +13,8 @@ jobs:
     env:
       # Windows runner 默认 cp1252 控制台，中文 CLI 帮助会触发 UnicodeEncodeError
       PYTHONUTF8: "1"
+      # 普通 push/PR 走快速门；版本标签和人工触发才跑完整发布门。
+      FULL_CI: ${{ startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -30,7 +34,12 @@ jobs:
       - name: CLI help smoke
         run: python -m geomodeling.cli --help
 
-      - name: Run portable tests
+      - name: Run fast Python contract tests
+        if: env.FULL_CI != 'true'
+        run: python -m pytest -q tests/test_version_consistency.py tests/test_runtime_paths.py tests/test_portable.py tests/test_portable_build.py tests/test_api.py::test_health tests/test_platform_api_contract.py::test_health_reports_current_version tests/test_ci_contract.py tests/test_v05_ci_contract.py tests/test_v06_ci_contract.py tests/test_two_speed_ci_contract.py
+
+      - name: Run full portable tests
+        if: env.FULL_CI == 'true'
         run: python -m pytest -q -m "not local_data"
 
       - name: SuperMap3D installer help smoke
@@ -54,6 +63,7 @@ jobs:
         run: npm --prefix web run build
 
   browser-smoke:
+    if: ${{ startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' }}
     runs-on: windows-latest
     steps:
       - name: Checkout
@@ -77,6 +87,7 @@ jobs:
         run: npm --prefix web run test:e2e
 
   browser-live:
+    if: ${{ startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' }}
     runs-on: windows-latest
     steps:
       - name: Checkout
