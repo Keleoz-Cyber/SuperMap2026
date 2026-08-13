@@ -237,7 +237,7 @@ def _trace_candidate(runtime, result_id: str):
 def _resolve_candidate_grid(
     runtime, result_id: str
 ) -> tuple[RenderGridSource, ValidatedGrid]:
-    candidate, _, profile = _trace_candidate(runtime, result_id)
+    candidate, experiment, profile = _trace_candidate(runtime, result_id)
     if candidate.status != "succeeded":
         raise PlatformError(
             CANDIDATE_NOT_SUCCEEDED,
@@ -245,7 +245,7 @@ def _resolve_candidate_grid(
             {"result_id": result_id, "status": candidate.status},
             http_status=409,
         )
-    semantics = _mapping_property_semantics(profile)
+    semantics = _mapping_property_semantics(profile, case_id=experiment.case_id)
     grid_path = runtime.settings.result_grid(result_id)
     metadata_path = grid_path.parent / "metadata.json"
     if not grid_path.is_file() or not metadata_path.is_file():
@@ -347,11 +347,11 @@ def _best_effort_semantics(runtime, result_id: str):
     """能力报告的尽力语义回填：归属链可解析则取 profile 维度/属性，否则 None。"""
 
     try:
-        _, _, profile = _trace_candidate(runtime, result_id)
+        _, experiment, profile = _trace_candidate(runtime, result_id)
     except PlatformError:
         return None, None, None
     mapping = profile.get("mapping", {}) if isinstance(profile, dict) else {}
-    semantics = _mapping_property_semantics(profile)
+    semantics = _mapping_property_semantics(profile, case_id=experiment.case_id)
     return mapping.get("dimension"), semantics["property_name"], semantics["units"]
 
 

@@ -153,7 +153,9 @@ def _load_candidate(runtime, result_id: str):
         return candidate, run, experiment
 
 
-def _mapping_property_semantics(profile: dict[str, Any]) -> dict[str, str]:
+def _mapping_property_semantics(
+    profile: dict[str, Any], *, case_id: str | None = None
+) -> dict[str, str]:
     """property 三键（v0.6.1 渲染语义）：property_name/units/coordinate_kind。
 
     取自数据集 profile 的 ``mapping.value_name`` / ``mapping.value_unit`` /
@@ -163,10 +165,20 @@ def _mapping_property_semantics(profile: dict[str, Any]) -> dict[str, str]:
     兜底绕过验证写入的旧 profile。
     """
 
+    from geomodeling.platform.property_semantics import normalize_property_unit
+
     mapping = profile.get("mapping", {}) if isinstance(profile, dict) else {}
+    value_name = str(mapping.get("value_name") or "value")
+    workspace_kind = "builtin_preset" if case_id == "resistivity" else None
+    units = normalize_property_unit(
+        case_id=case_id,
+        workspace_kind=workspace_kind,
+        value_name=value_name,
+        value_unit=mapping.get("value_unit"),
+    )
     return {
-        "property_name": str(mapping.get("value_name") or "value"),
-        "units": str(mapping.get("value_unit") or "unknown"),
+        "property_name": value_name,
+        "units": str(units or "unknown"),
         "coordinate_kind": str(mapping.get("coordinate_kind") or "local_linear"),
     }
 
@@ -217,7 +229,7 @@ def _result_metadata(
         "validation": params.get("validation"),
         "created_at": tables.utc_now_iso(),
         # v0.6.1（Task 4）追加：渲染 property 语义三键（顺序锁定在尾部）
-        **_mapping_property_semantics(profile),
+        **_mapping_property_semantics(profile, case_id=experiment.case_id),
     }
 
 
@@ -501,7 +513,9 @@ def _write_ml_materialization(
             fields=fields,
             nodata=field_nodata,
             main_grid_sha256=grid_sha,
-            property_unit=_mapping_property_semantics(profile).get("units"),
+            property_unit=_mapping_property_semantics(
+                profile, case_id=experiment.case_id
+            ).get("units"),
         )
         metadata = _result_metadata(
             result_id=result_id,
@@ -930,7 +944,11 @@ def read_materialized_metadata(runtime: PlatformRuntime, result_id: str) -> dict
             {"result_id": result_id},
             http_status=404,
         )
-    return json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    _, _, experiment = _load_candidate(runtime, result_id)
+    if experiment.case_id == "resistivity" and metadata.get("property_name") == "RHO":
+        metadata["units"] = "Ω·m"
+    return metadata
 
 
 def load_grid(runtime: PlatformRuntime, result_id: str) -> GridResult:
