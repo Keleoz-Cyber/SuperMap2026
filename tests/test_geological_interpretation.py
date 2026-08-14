@@ -40,7 +40,7 @@ def test_resistivity_prefers_low_component_and_keeps_multisolution_boundary():
     assert interpretation.cards[0].component_id == 1_000_001
     assert interpretation.cards[0].direction == "low"
     assert "谷值 10" in interpretation.cards[0].summary
-    assert "模型中覆盖约 64000" in interpretation.cards[0].summary
+    assert "模型中覆盖约 64,000" in interpretation.cards[0].summary
     assert "网格支持体积" not in interpretation.cards[0].summary
     assert "峰值" not in interpretation.cards[0].summary
     assert "含水" in "".join(interpretation.cards[0].possible_interpretations)

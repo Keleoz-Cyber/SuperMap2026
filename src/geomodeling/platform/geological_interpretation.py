@@ -36,17 +36,23 @@ def _support_label(component: ComponentPreview) -> str:
     return "模型中覆盖约"
 
 
+def _format_number(value: float, decimals: int = 2) -> str:
+    """把界面数值写成常规小数，避免科学计数法和无意义的尾零。"""
+
+    return f"{value:,.{decimals}f}".rstrip("0").rstrip(".")
+
+
 def _component_summary(component: ComponentPreview, direction: str) -> str:
     depth = ""
     if len(component.bounds) >= 3:
         z0, z1 = component.bounds[2]
-        depth = f"位于 Z={z0:g}～{z1:g}，"
+        depth = f"位于 Z={_format_number(z0)}～{_format_number(z1)}，"
     boundary = "，范围延伸到模型边缘" if component.touches_grid_boundary else "，没有碰到模型边缘"
     extreme_label = "谷值" if direction == "low" else "峰值"
     extreme_value = component.value_min if direction == "low" else component.value_max
     return (
-        f"{depth}{_support_label(component)} {component.support_measure:g}，"
-        f"{extreme_label} {extreme_value:g}{boundary}"
+        f"{depth}{_support_label(component)} {_format_number(component.support_measure)}，"
+        f"{extreme_label} {_format_number(extreme_value, 3)}{boundary}"
     )
 
 
