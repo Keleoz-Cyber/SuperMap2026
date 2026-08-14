@@ -401,15 +401,15 @@ export const AI_RECORD_SUCCEEDED: AIAnalysisRecord = {
   status: 'succeeded',
   review: {
     spatial_pattern: {
-      summary: '高值体元集中在 20-30m 层段，A 区为最大高值连通区，B/C 区接触网格边界',
+      summary: '高值主要集中在 20～30m；A 区范围最大，B、C 区延伸到了模型边缘',
       evidence_refs: ['result_grid', 'depth_profile', 'component-1', 'depth_bin-2'],
     },
     model_reliability: {
-      summary: '公共有效点 50，RMSE 5.2，R² 0.92，正式模型为 Ordinary Kriging',
+      summary: '当前使用 Ordinary Kriging。共同参与比较的点有 50 个，RMSE 5.2，R² 0.92',
       evidence_refs: ['model_evidence'],
     },
     uncertainty_and_risk: {
-      summary: '不确定性证据已物化；B/C 区边界接触提示外推风险',
+      summary: '已有误差参考；B、C 区靠近模型边缘，实际范围还需要补充边缘测点后确认',
       evidence_refs: ['uncertainty', 'component-2', 'component-3'],
     },
     review_and_next_checks: {
@@ -417,13 +417,13 @@ export const AI_RECORD_SUCCEEDED: AIAnalysisRecord = {
       evidence_refs: ['current_slice', 'depth_bin-2', 'model_evidence'],
     },
     consensus: {
-      consensus: '四个视角一致支持：高值集中于中部层段，正式模型指标可接受',
-      disagreements: ['当前切片高值占比与完整场存在轻微口径差异'],
+      consensus: '几项分析都显示高值集中在中部深度，当前模型误差处于可接受范围',
+      disagreements: ['切片中的高值比例和完整模型略有不同'],
       recommended_checks: ['复核 20-30m 层段切片', '对比备选候选模型公共有效指标'],
       decision_options: [
         {
           label: '维持当前模型',
-          trigger: 'RMSE 与 R² 满足验收口径',
+          trigger: 'RMSE 和 R² 达到当前验收要求',
           benefit: '无需重新计算',
           cost: '无',
           evidence_refs: ['model_evidence'],
@@ -436,7 +436,7 @@ export const AI_RECORD_SUCCEEDED: AIAnalysisRecord = {
           evidence_refs: ['model_evidence', 'result_grid'],
         },
       ],
-      limitations: ['局部线性坐标，未做地理配准', '网格支持量非真实地质体积'],
+      limitations: ['当前使用局部坐标，尚未对应到真实地理位置', '模型覆盖大小不是真实地质体积'],
     },
     evidence_hash: AI_EVIDENCE_HASH,
     prompt_version: 'ai_review.v1',

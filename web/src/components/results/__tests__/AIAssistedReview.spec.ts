@@ -79,18 +79,18 @@ describe('AIAssistedReview', () => {
     vi.mocked(client.fetchLatestAiAnalysis).mockResolvedValue(AI_RECORD_SUCCEEDED)
     const wrapper = mountPanel()
     await flushPromises()
-    expect(wrapper.get('[data-test="ai-conclusion"]').text()).toContain('四个视角一致支持')
+    expect(wrapper.get('[data-test="ai-conclusion"]').text()).toContain('几项分析都显示')
     expect(wrapper.get('[data-test="ai-review"]').text()).toContain('快速解读')
     expect(wrapper.get('[data-test="ai-review"]').text()).toContain('需要留意的地方')
     expect(wrapper.get('[data-test="ai-review"]').text()).not.toContain('解释边界')
-    // 四视角
-    expect(wrapper.get('[data-test="ai-perspective-spatial_pattern"]').text()).toContain('高值体元集中')
+    // 分项分析
+    expect(wrapper.get('[data-test="ai-perspective-spatial_pattern"]').text()).toContain('高值主要集中')
     expect(wrapper.get('[data-test="ai-perspective-model_reliability"]').text()).toContain('RMSE 5.2')
-    expect(wrapper.get('[data-test="ai-perspective-uncertainty_and_risk"]').text()).toContain('外推风险')
+    expect(wrapper.get('[data-test="ai-perspective-uncertainty_and_risk"]').text()).toContain('补充边缘测点')
     expect(wrapper.get('[data-test="ai-perspective-review_and_next_checks"]').text()).toContain('建议复核')
     // 共识与分歧
-    expect(wrapper.get('[data-test="ai-consensus"]').text()).toContain('四个视角一致支持')
-    expect(wrapper.get('[data-test="ai-consensus"]').text()).toContain('轻微口径差异')
+    expect(wrapper.get('[data-test="ai-consensus"]').text()).toContain('几项分析都显示')
+    expect(wrapper.get('[data-test="ai-consensus"]').text()).toContain('略有不同')
     // 候选研判路径（条件/收益/代价）
     const options = wrapper.get('[data-test="ai-decision-options"]')
     expect(options.text()).toContain('维持当前模型')
@@ -98,7 +98,7 @@ describe('AIAssistedReview', () => {
     expect(options.text()).toContain('重新交叉验证耗时')
     // 复核清单与限制
     expect(wrapper.get('[data-test="ai-checks"]').text()).toContain('复核 20-30m 层段切片')
-    expect(wrapper.get('[data-test="ai-limitations"]').text()).toContain('局部线性坐标')
+    expect(wrapper.get('[data-test="ai-limitations"]').text()).toContain('当前使用局部坐标')
     // 身份尾注：provider/model/时间/prompt 版本/evidence hash 短码
     await wrapper.get('[data-test="ai-technical-details"]').trigger('click')
     const footer = wrapper.get('[data-test="ai-identity"]')

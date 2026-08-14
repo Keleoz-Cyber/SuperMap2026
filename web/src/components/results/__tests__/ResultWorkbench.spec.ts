@@ -545,7 +545,7 @@ describe('成果级分析接入', () => {
     const { wrapper } = await mountWorkbench(makeMetadata('3d'))
     expect(client.fetchResultAnalysisSummary).toHaveBeenCalledWith('r1')
     // 研判区渲染后端发现与组件行
-    expect(wrapper.get('[data-test="result-interpretation"]').text()).toContain('最大高值连通区为 A 区')
+    expect(wrapper.get('[data-test="result-interpretation"]').text()).toContain('最大的连续高值区')
     expect(wrapper.find('[data-test="component-2"]').exists()).toBe(true)
     // 三维标注 prop 来自同一响应（组件 ID 一致）
     const panel = wrapper.findComponent({ name: 'NativeVolumePanel' })

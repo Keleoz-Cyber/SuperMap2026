@@ -1570,15 +1570,15 @@ export async function installMockApi(page: Page): Promise<void> {
     status: 'succeeded',
     review: {
       spatial_pattern: {
-        summary: '高值体元集中于 -650–-500m 层段，A 区为最大连通区且不接触边界',
+        summary: '高值主要集中在 -650～-500m；A 区范围最大，而且没有延伸到模型边缘',
         evidence_refs: ['result_grid', 'depth_profile', 'component-1', 'depth_bin-1'],
       },
       model_reliability: {
-        summary: '公共有效点 96，RMSE 1.2，R² 0.94，模型指标可接受',
+        summary: '共同参与比较的点有 96 个，RMSE 1.2，R² 0.94，当前模型误差处于可接受范围',
         evidence_refs: ['model_evidence'],
       },
       uncertainty_and_risk: {
-        summary: 'B 区接触网格边界存在外推风险；不确定性证据缺失',
+        summary: 'B 区延伸到模型边缘，实际范围还要补充边缘测点后确认；当前没有误差参考',
         evidence_refs: ['component-2', 'uncertainty'],
       },
       review_and_next_checks: {
@@ -1586,13 +1586,13 @@ export async function installMockApi(page: Page): Promise<void> {
         evidence_refs: ['current_slice', 'depth_bin-1'],
       },
       consensus: {
-        consensus: '四视角一致：高值集中于中部层段，正式模型指标可接受',
-        disagreements: ['切片高值占比与完整场存在口径差异'],
+        consensus: '几项分析都显示高值集中在中部深度，当前模型误差处于可接受范围',
+        disagreements: ['切片中的高值比例和完整模型略有不同'],
         recommended_checks: ['复核 -650–-500m 层段切片', '对比备选候选模型指标'],
         decision_options: [
           {
             label: '维持当前模型',
-            trigger: 'RMSE 与 R² 满足验收口径',
+            trigger: 'RMSE 和 R² 达到当前验收要求',
             benefit: '无需重新计算',
             cost: '无',
             evidence_refs: ['model_evidence'],
@@ -1605,7 +1605,7 @@ export async function installMockApi(page: Page): Promise<void> {
             evidence_refs: ['model_evidence', 'result_grid'],
           },
         ],
-        limitations: ['局部线性坐标，未做地理配准', '网格支持量非真实地质体积'],
+        limitations: ['当前使用局部坐标，尚未对应到真实地理位置', '模型覆盖大小不是真实地质体积'],
       },
       evidence_hash: 'e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6',
       prompt_version: 'ai_review.v1',
