@@ -80,7 +80,7 @@ const coordinateLabel = computed(() => {
   if (kind === 'local_linear') return '局部线性米制坐标'
   if (kind === 'projected') return '投影坐标'
   if (kind === 'geographic') return '地理坐标'
-  return kind || '坐标口径未登记'
+  return kind || '坐标方式未登记'
 })
 const datasetReadyLabel = computed(() => {
   const status = workspace.value?.primary_dataset?.status
@@ -478,7 +478,7 @@ onBeforeUnmount(clearShellContext)
                 </article>
                 <article class="task-item">
                   <span class="task-index">02</span>
-                  <div><strong>空间口径已登记</strong><p>{{ coordinateLabel }}，当前用于局部工程场景的相对位置分析。</p></div>
+                  <div><strong>坐标方式已确认</strong><p>{{ coordinateLabel }}，当前用于局部工程场景的相对位置分析。</p></div>
                 </article>
                 <article class="task-item">
                   <span class="task-index">03</span>
@@ -739,7 +739,7 @@ onBeforeUnmount(clearShellContext)
             <p v-if="workspace.provenance_summary.badge" class="provenance-line">
               {{ workspace.provenance_summary.badge }}
             </p>
-            <p class="provenance-line">坐标口径：{{ coordinateLabel }}（显示锚点仅为展示变换，非真实地理配准）</p>
+            <p class="provenance-line">坐标方式：{{ coordinateLabel }}（显示位置只是为了方便查看，不是真实地理配准）</p>
             <p v-if="workspace.workspace_kind === 'builtin_preset'" class="provenance-line">
               官方案例正式选择只读；用户可基于预置数据版本新建建模实验并登记自己的正式成果。
             </p>
@@ -748,8 +748,8 @@ onBeforeUnmount(clearShellContext)
             </p>
             <ul class="evidence-boundaries" data-test="evidence-boundaries">
               <li><strong>数据依据</strong><span>样本数量、字段映射和质量状态来自当前数据版本。</span></li>
-              <li><strong>模型依据</strong><span>误差指标采用公共有效集空间验证口径，不代表区域外推精度。</span></li>
-              <li><strong>空间边界</strong><span>当前为局部工程坐标展示，不能替代真实地理配准或安全规范结论。</span></li>
+              <li><strong>模型误差</strong><span>所有候选都用相同数据和空间分组计算；这些数值不能说明区域外的精度。</span></li>
+              <li><strong>坐标说明</strong><span>当前显示局部工程坐标，不能当作真实地理位置或现场安全判断。</span></li>
             </ul>
             <details v-if="workspace.primary_dataset" class="dataset-technical" data-test="dataset-technical-details">
               <summary>技术详情</summary>

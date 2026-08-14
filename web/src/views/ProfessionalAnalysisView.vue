@@ -79,21 +79,21 @@ const showEnhanced = computed(
 const evaluationConclusion = computed(() => {
   if (leakageDetected.value) {
     return {
-      title: '基线指标可读，但增强证据已被泄漏检查阻断',
-      body: '训练与验证空间组存在重叠，逐折、残差和不确定性证据不应继续用于决策。',
+      title: '训练和验证分组有重叠',
+      body: '这种情况下，逐折结果和残差会偏乐观，先调整分组后再运行。',
       tone: 'warning',
     }
   }
   if (showEnhanced.value) {
     return {
-      title: '增强评估证据可用',
-      body: '基线指标、逐折验证、残差与不确定性证据已登记，且未检测到空间折分泄漏。',
+      title: '评估结果完整',
+      body: '总体指标、每折表现和残差都已生成；训练和验证分组没有重叠。',
       tone: 'success',
     }
   }
   return {
-    title: '基线指标已生成',
-    body: '可查看总体误差、拟合度与覆盖率；逐折与残差证据未生成，当前结论仅限基线评估。',
+    title: '先看总体误差',
+    body: '当前可查看总体误差、拟合度和覆盖率；还没有逐折结果和残差图。',
     tone: 'info',
   }
 })
@@ -307,7 +307,7 @@ function originLabel(value: string): string {
         data-test="evaluation-conclusion"
       >
         <div>
-          <span class="section-kicker">评估结论</span>
+          <span class="section-kicker">模型表现</span>
           <h2>{{ evaluationConclusion.title }}</h2>
           <p>{{ evaluationConclusion.body }}</p>
         </div>
@@ -336,10 +336,10 @@ function originLabel(value: string): string {
       <section v-if="baseline" class="baseline-section" data-test="baseline-metrics">
         <h2>总体指标</h2>
         <div class="metrics-grid">
-          <article data-test="baseline-rmse"><span>RMSE</span><strong>{{ fmtMetric(baseline.rmse) }}</strong><p>RMSE 反映典型误差尺度，适合在同一验证口径下比较候选。</p></article>
+          <article data-test="baseline-rmse"><span>RMSE</span><strong>{{ fmtMetric(baseline.rmse) }}</strong><p>RMSE 表示预测值通常会偏离观测值多少；只在使用同一份数据和相同分组方式时比较。</p></article>
           <article data-test="baseline-mae"><span>MAE</span><strong>{{ fmtMetric(baseline.mae) }}</strong><p>MAE 表示平均绝对偏差，对少量极端误差相对不敏感。</p></article>
-          <article data-test="baseline-r2"><span>R²</span><strong>{{ fmtR2(baseline.r2) }}</strong><p>{{ baseline.r2 === null ? 'R² 当前不可计算，不能据此评价解释度。' : 'R² 描述验证值变化被模型解释的比例，不等同于空间真实性。' }}</p></article>
-          <article data-test="baseline-bias"><span>Bias</span><strong>{{ fmtMetric(baseline.bias) }}</strong><p>Bias 用于判断整体高估或低估方向，接近零不代表局部无误差。</p></article>
+          <article data-test="baseline-r2"><span>R²</span><strong>{{ fmtR2(baseline.r2) }}</strong><p>{{ baseline.r2 === null ? 'R² 当前不可计算，不能据此评价解释度。' : 'R² 表示模型解释了多少观测变化，但不能说明每个位置都准确。' }}</p></article>
+          <article data-test="baseline-bias"><span>Bias</span><strong>{{ fmtMetric(baseline.bias) }}</strong><p>Bias 看模型整体偏高还是偏低；接近零也可能有局部误差。</p></article>
           <article v-if="baseline.coverage !== null" data-test="baseline-coverage"><span>覆盖率</span><strong>{{ fmtMetric(baseline.coverage) }}</strong><p>验证公共集上获得有限预测的比例。</p></article>
           <article v-if="baseline.candidate_valid_count !== null" data-test="baseline-valid-count"><span>有效节点</span><strong>{{ baseline.candidate_valid_count }}</strong><p>本候选参与总体指标计算的有效预测数量。</p></article>
           <article v-if="baseline.candidate_nodata_count !== null" data-test="baseline-nodata-count"><span>NoData 节点</span><strong>{{ baseline.candidate_nodata_count }}</strong><p>未形成有限预测的验证节点，需要结合覆盖率阅读。</p></article>
@@ -347,8 +347,8 @@ function originLabel(value: string): string {
       </section>
 
       <div v-if="leakageDetected" class="leakage-blocked" data-test="leakage-blocked">
-        折分泄漏检查失败：训练/验证空间组存在重叠，增强证据不可信。
-        基线评估仍可参考，请回到实验检查数据与验证配置后重新运行。
+        训练和验证分组有重叠，逐折结果可能偏乐观。总体指标仍可查看，
+        但建议先回到实验调整分组，再重新运行。
       </div>
 
       <div
@@ -356,7 +356,7 @@ function originLabel(value: string): string {
         class="baseline-only-note"
         data-test="baseline-only-note"
       >
-        基础评估可用；本结果未生成增强证据
+        目前只显示总体指标；如需逐折和残差分析，请重新运行完整评估
       </div>
 
       <template v-if="showEnhanced">

@@ -10,7 +10,7 @@ const BASE: PresentationFinding = {
   evidence: ['重复坐标 0'],
   source: { datasetId: 'ds-1', sourceSha256: 'abc', calculationVersion: 'analysis.v1' },
   confidence: 'verified',
-  limitations: ['质量口径来自数据版本质量报告'],
+  limitations: ['无效行没有参加插值'],
 }
 
 const WITH_TARGET: PresentationFinding = {
@@ -44,14 +44,15 @@ describe('FindingPanel', () => {
     expect((events?.[0] as [PresentationFinding])[0].id).toBe('spatial-anomaly')
   })
 
-  it('labels confidence truthfully including exploratory', () => {
+  it('uses a plain-language review label instead of exploratory jargon', () => {
     const wrapper = mount(FindingPanel, { props: { findings: [WITH_TARGET] } })
-    expect(wrapper.text()).toContain('探索性')
+    expect(wrapper.text()).toContain('建议复核')
+    expect(wrapper.text()).not.toContain('探索性')
   })
 
   it('shows limitations and evidence chips', () => {
     const wrapper = mount(FindingPanel, { props: { findings: [BASE] } })
-    expect(wrapper.text()).toContain('质量口径来自数据版本质量报告')
+    expect(wrapper.text()).toContain('无效行没有参加插值')
     expect(wrapper.text()).toContain('重复坐标 0')
   })
 })

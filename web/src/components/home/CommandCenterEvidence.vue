@@ -1,6 +1,5 @@
 <script setup lang="ts">
-// v0.9.0：指挥舱底部证据带。质量组成环图（仅部分-整体口径）、模型指标、
-// 异常支持占比与溯源摘要的紧凑组合；数据由 HomeView 传入，本组件不 fetch。
+// v0.9.0：首页底部集中展示数据质量、模型误差、高低值区域和数据来源。
 import { computed } from 'vue'
 import type { AnalysisSummaryResponse } from '../../api/types'
 import { comparisonCandidatesOf, formatNumber, spatialAnomalyOf } from '../analysis/analysisTypes'
@@ -43,7 +42,7 @@ const rmseMax = computed(() => {
   return values.length > 0 ? Math.max(...values) : 0
 })
 
-// ---- 异常支持占比（探索性口径） ----
+// ---- 按当前数据分位数划出的高低值区域 ----
 const anomaly = computed(() => {
   const module = props.summary?.modules.find((m) => m.module_id === 'spatial_anomaly')
   if (!module || module.status !== 'ok') return null
@@ -57,7 +56,7 @@ const variable = computed(() => props.summary?.variable ?? null)
 <template>
   <section class="evidence-band" data-test="home-evidence-dock" aria-label="证据摘要">
     <div class="evidence-cell">
-      <h4 class="cell-title">质量组成</h4>
+      <h4 class="cell-title">数据质量</h4>
       <div v-if="quality" class="donut-wrap">
         <svg viewBox="0 0 42 42" class="donut" role="img" :aria-label="`有效数据占比 ${(quality.ratio * 100).toFixed(1)}%`">
           <circle class="donut-track" cx="21" cy="21" r="15.9155" />
@@ -73,7 +72,7 @@ const variable = computed(() => props.summary?.variable ?? null)
     </div>
 
     <div class="evidence-cell">
-      <h4 class="cell-title">模型指标（RMSE）</h4>
+      <h4 class="cell-title">模型误差（RMSE，越小越好）</h4>
       <div v-if="candidates.length > 0" class="metric-bars">
         <div v-for="c in candidates.slice(0, 4)" :key="c.result_id" class="metric-row">
           <span class="metric-name" :class="{ formal: c.formal_selection }">{{ algorithmLabel(c.algorithm) }}</span>
@@ -91,7 +90,7 @@ const variable = computed(() => props.summary?.variable ?? null)
     </div>
 
     <div class="evidence-cell">
-      <h4 class="cell-title">异常支持占比<span class="cell-tag">探索性</span></h4>
+      <h4 class="cell-title">高低值区域<span class="cell-tag">建议复核</span></h4>
       <div v-if="anomaly && (anomaly.highVolumeRatio !== null || anomaly.lowVolumeRatio !== null)" class="anomaly-wrap">
         <div class="anomaly-bar">
           <span
@@ -107,13 +106,13 @@ const variable = computed(() => props.summary?.variable ?? null)
           <span><i class="swatch high" />高值 {{ anomaly.highVolumeRatio !== null ? `${(anomaly.highVolumeRatio * 100).toFixed(1)}%` : '—' }}</span>
           <span><i class="swatch low" />低值 {{ anomaly.lowVolumeRatio !== null ? `${(anomaly.lowVolumeRatio * 100).toFixed(1)}%` : '—' }}</span>
         </div>
-        <p class="cell-note">分位阈值的探索性网格支持占比</p>
+        <p class="cell-note">按当前数据的高低分位划分</p>
       </div>
       <p v-else class="cell-empty">{{ loading ? '加载中…' : '暂无异常分析' }}</p>
     </div>
 
     <div class="evidence-cell">
-      <h4 class="cell-title">溯源</h4>
+      <h4 class="cell-title">数据来源</h4>
       <div v-if="provenance" class="provenance">
         <p data-test="evidence-property">
           {{ variable ? propertyLabel(variable.name) : '—' }}<template v-if="variable?.unit">（{{ variable.unit }}）</template>

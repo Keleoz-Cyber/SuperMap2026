@@ -7,11 +7,13 @@ describe('AsyncState', () => {
     'renders a labelled %s state',
     (kind) => {
       const wrapper = mount(AsyncState, {
-        props: { kind, title: '状态标题', impact: '受影响能力', nextAction: '下一步操作' },
+        props: { kind, title: '状态标题', impact: '三维暂时不能查看', nextAction: '刷新页面后再试' },
       })
       expect(wrapper.get('[role="status"]').attributes('data-state')).toBe(kind)
-      expect(wrapper.text()).toContain('受影响能力')
-      expect(wrapper.text()).toContain('下一步操作')
+      expect(wrapper.text()).toContain('三维暂时不能查看')
+      expect(wrapper.text()).toContain('刷新页面后再试')
+      expect(wrapper.text()).not.toContain('受影响能力')
+      expect(wrapper.text()).not.toContain('下一步：')
     },
   )
 

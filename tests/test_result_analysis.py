@@ -690,6 +690,34 @@ class TestFindings:
         assert depth_finding.spatial_target is not None
         assert depth_finding.spatial_target.kind == "depth_bin"
 
+    def test_findings_use_plain_language_for_people_not_report_jargon(self):
+        grid = _make_3d_grid()
+        summary = analyze_result_grid(
+            grid,
+            result_id="r1",
+            grid_sha256="a" * 64,
+            variable_name="RHO",
+            variable_unit="ohm_m",
+            depth_bins=2,
+            component_limit=8,
+            min_support_nodes=1,
+            algorithm="ordinary_kriging",
+        )
+        by_kind = {finding.kind: finding for finding in summary.findings}
+        assert by_kind["dominant_depth_interval"].title == "哪个深度层高值最多"
+        assert "这一层的高值比例最高" in by_kind["dominant_depth_interval"].statement
+        assert by_kind["largest_high_component"].title == "最大的连续高值区"
+        assert "模型覆盖大小" in by_kind["largest_high_component"].limitations[0]
+        assert by_kind["boundary_contact"].title == "哪些区域延伸到模型边缘"
+        assert "实际范围可能比图上更大" in by_kind["boundary_contact"].statement
+        assert by_kind["uncertainty_availability"].title == "误差参考"
+        combined = " ".join(
+            finding.title + " " + finding.statement + " " + " ".join(finding.limitations)
+            for finding in summary.findings
+        )
+        assert "网格支持量最大的高值连通区" not in combined
+        assert "不确定性证据状态" not in combined
+
     def test_no_prohibited_claims_in_findings(self):
         grid = _make_3d_grid()
         summary = analyze_result_grid(

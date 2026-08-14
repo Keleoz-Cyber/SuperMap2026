@@ -106,6 +106,9 @@ describe('buildPresentationFindings', () => {
     expect(findings[0].source.calculationVersion).toBe('analysis.v1')
     expect(findings[2].confidence).toBe('exploratory')
     expect(findings[2].statement).not.toMatch(/危险|安全|储量/)
+    expect(findings[2].statement).toContain('模型中高值区域约占')
+    expect(findings[2].statement).not.toMatch(/口径|探索性网格支持/)
+    expect(findings.flatMap((item) => item.limitations).join(' ')).not.toContain('不构成')
     expect(findings.every((x) => x.limitations.length > 0)).toBe(true)
   })
 
@@ -137,6 +140,8 @@ describe('buildPresentationFindings', () => {
     const profile = findings.find((x) => x.id === 'profile-depth-slices')
     expect(profile?.spatialTarget?.axis).toBe('z')
     expect(profile?.spatialTarget?.range).toEqual([-25, 0])
+    expect(profile?.statement).toContain('这一层的高阻样本最多')
+    expect(profile?.statement).not.toContain('Z ∈')
   })
 
   it('generic_3d returns quality/distribution findings without official semantics', () => {

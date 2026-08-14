@@ -115,7 +115,7 @@ describe('ResultAnalysisWorkbench（V6 一屏布局）', () => {
     expect(wrapper.find('[data-test="v6-main-stage"]').exists()).toBe(true)
     expect(wrapper.get('[data-test="result-scene"]').text()).toContain('三维场景')
     expect(wrapper.find('[data-test="result-analysis-side"]').exists()).toBe(true)
-    expect(wrapper.get('[data-test="result-interpretation"]').text()).toContain('最大高值连通区为 A 区')
+    expect(wrapper.get('[data-test="result-interpretation"]').text()).toContain('最大的连续高值区')
     expect(wrapper.find('[data-test="result-evidence-dock"]').exists()).toBe(true)
     const tabs = wrapper.findAll('[data-test^="ge-tab-"]')
     expect(tabs.map((t) => t.text())).toEqual(['成果概览', '切片分析', '模型可信度', '数据与导出'])

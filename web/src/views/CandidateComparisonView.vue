@@ -294,7 +294,7 @@ function mismatchLabel(field: string): string {
   if (field.startsWith('validation_')) return '验证规则不同'
   if (field.startsWith('grid_')) return '成果网格规格不同'
   if (field.startsWith('common_valid_')) return '公共有效样本范围不同'
-  if (field.endsWith('_mismatch')) return '比较口径不同'
+  if (field.endsWith('_mismatch')) return '比较条件不同'
   return '候选成果的比较条件不同'
 }
 
@@ -336,7 +336,7 @@ watch(datasetId, (next, prev) => {
   <div class="comparison-page product-page" data-test="candidate-comparison-view">
     <PageContextHeader
       title="模型比较"
-      subtitle="在同一数据版本和验证口径下比较候选成果，避免把不可比指标放在一起排名。"
+      subtitle="使用同一份数据和相同分组方式比较候选成果，避免把不能直接比较的指标排在一起。"
       :case-id="queryCaseId || undefined"
       :dataset-id="datasetId"
     >
@@ -388,7 +388,7 @@ watch(datasetId, (next, prev) => {
             <div>
               <span class="section-kicker">建议起点</span>
               <h2>先比较当前 RMSE 最低的两个不同配置</h2>
-              <p>已为你选择两个候选；点击比较后，服务端会继续校验验证口径、公共有效集和网格兼容性。</p>
+              <p>已为你选择两个候选；点击比较后，系统会确认两项成果是否使用同一份数据、相同分组和兼容网格。</p>
             </div>
             <span class="selection-info" data-test="selection-info">已选 {{ selectedIdList.length }} / {{ MAX_SELECTION }}</span>
           </div>

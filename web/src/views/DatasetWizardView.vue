@@ -279,7 +279,7 @@ function onStart() {
           <details class="technical-details" data-test="dataset-technical-details">
             <summary>技术详情</summary>
             <dl>
-              <div><dt>坐标口径</dt><dd>{{ validatedSummary.coordinateKind }}</dd></div>
+              <div><dt>坐标方式</dt><dd>{{ validatedSummary.coordinateKind }}</dd></div>
               <div><dt>案例标识</dt><dd class="mono">{{ caseId }}</dd></div>
               <div><dt>数据版本标识</dt><dd class="mono">{{ datasetId }}</dd></div>
             </dl>

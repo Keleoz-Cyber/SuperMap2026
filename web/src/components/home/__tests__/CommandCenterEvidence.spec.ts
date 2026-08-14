@@ -56,4 +56,13 @@ describe('CommandCenterEvidence', () => {
     expect(details.text()).toContain('abcdef01')
     expect(details.text()).toContain('analysis.v1')
   })
+
+  it('describes high and low areas without report-style jargon', () => {
+    const source = String(readFileSync('src/components/home/CommandCenterEvidence.vue'))
+    expect(source).toContain('高低值区域')
+    expect(source).toContain('建议复核')
+    expect(source).toContain('按当前数据的高低分位划分')
+    expect(source).not.toContain('异常支持占比')
+    expect(source).not.toContain('探索性网格支持占比')
+  })
 })

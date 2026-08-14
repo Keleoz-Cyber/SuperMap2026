@@ -1040,7 +1040,7 @@ describe('DistributionPanel（gas_content 差异化）', () => {
 })
 
 describe('SpatialFeaturePanel（gas_content 高/低含量区域）', () => {
-  it('瓦斯 profile：高/低含量区域标题、图例、ml/g 与探索性分位口径', async () => {
+  it('瓦斯 profile：高/低含量区域标题、图例、ml/g 与直白的划分说明', async () => {
     const wrapper = mount(SpatialFeaturePanel, {
       props: {
         module: gasAnomalyModule(),
@@ -1060,7 +1060,8 @@ describe('SpatialFeaturePanel（gas_content 高/低含量区域）', () => {
     const summary = wrapper.find('[data-test="spatial-summary"]')
     expect(summary.text()).toContain('高含量区域')
     expect(summary.text()).toContain('低含量区域')
-    expect(summary.text()).toContain('探索性分位口径')
+    expect(summary.text()).toContain('按当前数据的高低分位划分')
+    expect(summary.text()).not.toContain('口径')
     const pieces = JSON.stringify(lastOption().visualMap)
     expect(pieces).toContain('高含量区域')
     expect(pieces).toContain('低含量区域')

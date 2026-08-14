@@ -9,10 +9,10 @@ const props = defineProps<{ finding: PresentationFinding }>()
 const emit = defineEmits<{ locate: [finding: PresentationFinding] }>()
 
 const CONFIDENCE_LABELS: Record<PresentationFinding['confidence'], string> = {
-  verified: '已验证',
-  exploratory: '探索性',
-  insufficient: '证据不足',
-  unavailable: '不可用',
+  verified: '已检查',
+  exploratory: '建议复核',
+  insufficient: '信息不足',
+  unavailable: '暂无结果',
 }
 
 const confidenceLabel = computed(() => CONFIDENCE_LABELS[props.finding.confidence])

@@ -85,7 +85,7 @@ export function qualityFinding(summary: AnalysisSummaryResponse): PresentationFi
     evidence,
     source: sourceOf(summary),
     confidence: consistent ? 'verified' : 'insufficient',
-    limitations: ['质量口径来自数据版本质量报告，无效行不参与插值建模'],
+    limitations: ['有效和无效数量来自数据检查结果；无效行没有参加插值'],
   }
 }
 
@@ -115,8 +115,8 @@ export function formalModelFinding(summary: AnalysisSummaryResponse): Presentati
     source: sourceOf(summary),
     confidence: 'verified',
     limitations: [
-      '误差指标为公共有效集空间折分验证口径，不代表区域外推精度',
-      ...(unit ? [] : ['变量单位未确认，结论仅限相对比较']),
+      '这些误差来自相同数据和相同空间分组，只适合比较当前候选；不能说明区域外的精度',
+      ...(unit ? [] : ['属性单位还没确认，当前只比较数值高低']),
     ],
     spatialTarget: { axis: 'xy', resultId: formal.result_id },
   }
@@ -142,10 +142,10 @@ export function anomalyFinding(summary: AnalysisSummaryResponse): PresentationFi
 
   const parts: string[] = []
   if (anomaly.highVolumeRatio !== null) {
-    parts.push(`${wording.high}区域样本占比 ${formatPercent(anomaly.highVolumeRatio)}`)
+    parts.push(`模型中高值区域约占 ${formatPercent(anomaly.highVolumeRatio)}（${wording.high}）`)
   }
   if (anomaly.lowVolumeRatio !== null) {
-    parts.push(`${wording.low}区域样本占比 ${formatPercent(anomaly.lowVolumeRatio)}`)
+    parts.push(`低值区域约占 ${formatPercent(anomaly.lowVolumeRatio)}（${wording.low}）`)
   }
   if (parts.length === 0) return null
 
@@ -170,13 +170,13 @@ export function anomalyFinding(summary: AnalysisSummaryResponse): PresentationFi
   return {
     id: 'spatial-anomaly',
     title: '空间异常',
-    statement: `${parts.join('，')}（探索性网格支持口径）`,
+    statement: parts.join('，'),
     evidence,
     source: sourceOf(summary),
     confidence: 'exploratory',
     limitations: [
-      '空间异常为分位阈值的探索性网格支持占比，不构成储量、危险或安全结论',
-      '体积/面积占比以样本计数为口径',
+      '高低值按当前数据的分位数划分，还没有经过现场确认',
+      '这里的占比按网格样本数量计算，不能直接当作真实体积、储量或安全判断',
     ],
     ...(spatialTarget ? { spatialTarget } : {}),
   }
@@ -200,18 +200,18 @@ export function strongestProfileFinding(
     }
     if (!best) return null
     const unit = summary.variable.unit ? ` ${summary.variable.unit}` : ''
-    const wording = profile === 'resistivity' ? '高阻样本占比最高' : '高含量样本占比最高'
+    const wording = profile === 'resistivity' ? '高阻样本最多' : '高含量样本最多'
     return {
       id: 'profile-depth-slices',
       title: profile === 'resistivity' ? '深度分层' : 'Z 向分层',
-      statement: `Z ∈ [${formatNumber(best.z0)}, ${formatNumber(best.z1)}] 层${wording}（${formatPercent(best.ratio)}）`,
-      evidence: [`属性 ${propertyLabel(summary.variable.name)}${unit}`, '层内占比以样本计数为口径'],
+      statement: `${formatNumber(best.z0)}～${formatNumber(best.z1)} 这一层的${wording}（${formatPercent(best.ratio)}）`,
+      evidence: [`属性 ${propertyLabel(summary.variable.name)}${unit}`, '按这一层的有效样本数量计算'],
       source: sourceOf(summary),
       confidence: 'exploratory',
       limitations:
         profile === 'gas_content'
-          ? ['稀疏采样下的分层结果为解释性估计，不构成规范阈值结论']
-          : ['深度分层为样本级 p25/p75 分位口径，异常阈值来源见空间异常证据'],
+          ? ['测点较少时，层间差异可能受采样位置影响；需要现场复核']
+          : ['高低值按本数据的 p25/p75 划分，具体阈值可在高低值区域中查看'],
       spatialTarget: { axis: 'z', range: [best.z0, best.z1] },
     }
   }
@@ -225,11 +225,11 @@ export function strongestProfileFinding(
     return {
       id: 'profile-gradient',
       title: '空间梯度',
-      statement: `局部空间梯度均值 ${formatNumber(mean)}${unit}（相邻单元差分口径）`,
-      evidence: [`参与统计的相邻单元对 ${count}`],
+      statement: `相邻位置的速度平均相差 ${formatNumber(mean)}${unit}`,
+      evidence: [`比较了 ${count} 对相邻网格`],
       source: sourceOf(summary),
       confidence: 'exploratory',
-      limitations: ['梯度为 XY 相邻单元均值差分幅值，不代表已确认地质各向异性'],
+      limitations: ['这里描述相邻网格的变化大小，不能单独说明地质方向性'],
     }
   }
   return null
@@ -249,10 +249,10 @@ function distributionFinding(summary: AnalysisSummaryResponse): PresentationFind
     id: 'distribution',
     title: '属性分布',
     statement: `有效值分布于 ${formatNumber(min)} ~ ${formatNumber(max)}${unit}（${count} 个有效样本）`,
-    evidence: ['分布为描述性统计'],
+    evidence: ['按有效值计算'],
     source: sourceOf(summary),
     confidence: 'verified',
-    limitations: ['自定义数据仅提供通用统计描述，不生成专业地质结论'],
+    limitations: ['当前只显示数值分布；字段的地质含义需要用户说明'],
   }
 }
 

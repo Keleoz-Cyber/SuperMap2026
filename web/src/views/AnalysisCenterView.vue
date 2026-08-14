@@ -50,11 +50,10 @@ function describeError(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
 }
 
-// 设计 §5.4：generic 降级必须写明为什么未启用专业分析（字段口径与后端
-// profiles.py 注册表一致，按 profile id 静态说明，绝不按案例 ID 分支）
+// generic 数据没有专属解释规则时，直接说明当前能看什么、还缺什么。
 const GENERIC_FALLBACK_TEXT =
-  '当前数据使用通用分析模板。系统尚未识别出可采用的微震速度、电阻率或瓦斯含量专属分析口径；' +
-  '本页仍提供数据质量、分布、空间范围、剖面与已有模型指标，不据此生成特定地质属性结论。'
+  '当前字段还没有专门的地质解释，系统先显示数据质量、数值分布、空间位置、剖面和模型结果。' +
+  '要自动解释它的地质意义，请先补充字段含义和判断规则。'
 
 // ---------------------------------------------------------------------------
 // 模块导航：右栏模块（quality/statistics/model_comparison）不进导航；
@@ -145,22 +144,22 @@ const profileConclusion = computed(() => {
   const medianText = median === null || median === undefined ? '' : `，中位数 ${median.toLocaleString('zh-CN')}${unit}`
   const profile = summary.value.analysis_profile
   if (profile === 'resistivity') {
-    return { title: '电阻率空间差异已形成可定位证据', body: `基于 ${valid} 个有效样本${medianText}；先查看高低值区域，再回到三维成果核对其空间连续性。` }
+    return { title: '电阻率高低值区域已经标出', body: `共 ${valid} 个有效样本${medianText}。先看高阻和低阻集中在哪里，再到三维成果中确认是否连续。` }
   }
   if (profile === 'microseismic_velocity') {
-    return { title: '微震速度的空间变化可分层查看', body: `基于 ${valid} 个有效样本${medianText}；结合空间分布与剖面趋势判断局部速度变化。` }
+    return { title: '微震速度在哪些位置变化较大', body: `共 ${valid} 个有效样本${medianText}。结合平面分布和剖面查看速度变化集中的位置。` }
   }
   if (profile === 'gas_content') {
-    return { title: '瓦斯含量的高低值区域可进一步核查', body: `基于 ${valid} 个有效样本${medianText}；结论仅描述样本分布与空间位置，不延伸为规范判断。` }
+    return { title: '瓦斯含量较高和较低的位置已经标出', body: `共 ${valid} 个有效样本${medianText}。这些只是模型中的相对高低，还要对照现场标准。` }
   }
-  return { title: '已生成通用数据分布与空间证据', body: `基于 ${valid} 个有效样本${medianText}；当前字段未匹配专属地质分析口径。` }
+  return { title: '已整理数值分布和空间位置', body: `共 ${valid} 个有效样本${medianText}。当前字段还没有专门的地质解释。` }
 })
 
 const contextEvidence = computed(() => {
-  if (activeModuleId.value === 'model_comparison') return '模型证据：比较同一数据版本下已有候选的公共验证指标。'
-  if (activeModuleId.value === 'distribution') return '分布证据：查看取值集中区间、偏态和长尾，不替代空间位置判断。'
-  if (activeModuleId.value === 'profile_slices') return '剖面证据：沿 X/Y/Z 方向检查属性变化，并可定位到三维成果。'
-  return '空间证据：查看样本或属性在 XY 平面的聚集与高低值位置，并与三维成果互相核对。'
+  if (activeModuleId.value === 'model_comparison') return '模型比较：用同一份数据和相同分组方式查看各候选的误差。'
+  if (activeModuleId.value === 'distribution') return '数值分布：看数据主要集中在哪、有没有偏斜或极端值。'
+  if (activeModuleId.value === 'profile_slices') return '剖面变化：沿 X/Y/Z 查看属性怎么变化，并可回到三维位置。'
+  return '空间位置：查看样本和高低值在 XY 平面集中在哪里。'
 })
 
 function openMaterializedResult() {
@@ -275,7 +274,7 @@ watch(datasetId, (next, prev) => {
 
       <section class="analysis-conclusion" data-test="analysis-conclusion">
         <div>
-          <span class="conclusion-kicker">本次分析结论</span>
+          <span class="conclusion-kicker">当前结果</span>
           <h2>{{ profileConclusion.title }}</h2>
           <p>{{ profileConclusion.body }}</p>
         </div>
@@ -374,14 +373,14 @@ watch(datasetId, (next, prev) => {
       </div>
 
       <el-collapse v-model="lowerActive" class="lower-area" data-test="lower-area">
-        <el-collapse-item title="数据质量与统计口径" name="quality">
+        <el-collapse-item title="数据质量与统计说明" name="quality">
           <QualitySummaryPanel
             :quality="summary.quality"
             :statistics="summary.statistics"
             :variable="summary.variable"
           />
         </el-collapse-item>
-        <el-collapse-item title="方法、导出与技术溯源" name="export">
+        <el-collapse-item title="计算方法、下载与数据来源" name="export">
           <AnalysisExportPanel
             :provenance="summary.provenance"
             :dataset-id="datasetId"

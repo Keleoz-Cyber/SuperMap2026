@@ -164,7 +164,7 @@ watch(
 
       <div v-if="comparison.compatible" class="comparison-result" data-test="comparison-compatible">
         <p class="result-line" data-test="common-valid-count">
-          成对公共有效节点 {{ comparison.common_valid_count }} 个（指标差 = first − second，同口径重算）
+          两项成果共同参与比较的节点 {{ comparison.common_valid_count }} 个（指标差 = 第一项 − 第二项，使用相同数据重新计算）
         </p>
         <table class="delta-table">
           <thead>

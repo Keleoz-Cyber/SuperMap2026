@@ -24,8 +24,8 @@ let loadSequence = 0
 const openAISettings = inject(openAISettingsKey, null)
 
 const MODES: Array<{ key: AIAnalysisMode; label: string; description: string }> = [
-  { key: 'quick', label: '快速解读', description: '提炼主要结论、关键依据和下一步动作' },
-  { key: 'review', label: '深度复核', description: '额外检查证据矛盾、解释边界和过度结论' },
+  { key: 'quick', label: '快速解读', description: '说明主要发现、相关数据和建议先做什么' },
+  { key: 'review', label: '深度复核', description: '进一步检查数据是否矛盾、哪些判断说得过头' },
 ]
 
 const PERSPECTIVES: Array<{
@@ -35,7 +35,7 @@ const PERSPECTIVES: Array<{
 }> = [
   { key: 'spatial_pattern', label: '空间分布怎么理解', kicker: '分布特征' },
   { key: 'model_reliability', label: '这个模型是否可信', kicker: '模型表现' },
-  { key: 'uncertainty_and_risk', label: '哪些地方需要谨慎', kicker: '解释边界' },
+  { key: 'uncertainty_and_risk', label: '哪些地方需要谨慎', kicker: '需要留意的地方' },
 ]
 
 const review = computed(() => (record.value?.status === 'succeeded' ? record.value.review : null))
@@ -68,10 +68,10 @@ function evidenceLabel(refId: string): string {
     model_evidence: '模型验证指标',
     uncertainty: '不确定性证据',
     input_quality: '输入数据质量',
-    constraints: '解释边界',
+    constraints: '注意事项',
     current_slice: '当前切片',
   }
-  return labels[refId] ?? '相关分析依据'
+  return labels[refId] ?? '相关数据'
 }
 
 function formatCreatedAt(value: string | null | undefined): string {
@@ -167,7 +167,7 @@ watch(
     </div>
 
     <p class="ai-note">
-      当前查看：{{ activeMode.label }}。切换模式只读取已有结果，不会自动调用外部服务；生成或重做时才会产生请求。规则研判始终可用。
+      切换只查看已有结果；点击生成或重做时才会调用 DeepSeek。没有 AI 也能使用地质研判。
     </p>
 
     <AsyncState v-if="loadState === 'loading'" kind="loading" :title="`${activeMode.label}加载中`" />
@@ -177,7 +177,7 @@ watch(
         kind="error"
         :title="`${activeMode.label}获取失败`"
         :impact="loadError ?? '未知错误'"
-        next-action="可以重试；规则研判不受影响"
+        next-action="可以重试；地质研判仍可使用"
         data-test="ai-load-error"
       />
       <button type="button" class="action-button" data-test="ai-reload" @click="loadLatest()">
@@ -188,7 +188,7 @@ watch(
     <template v-else>
       <div v-if="loadState === 'none'" class="ai-empty" data-test="ai-empty">
         <p class="empty-title">尚未生成{{ activeMode.label }}</p>
-        <p>{{ activeMode.description }}。生成会调用 DeepSeek；不生成也不影响规则分析。</p>
+        <p>{{ activeMode.description }}。生成会调用 DeepSeek；不生成也不影响地质研判。</p>
         <button
           type="button"
           class="action-button primary"
@@ -270,7 +270,7 @@ watch(
               class="evidence-details"
               :data-test="`ai-evidence-${perspective.key}`"
             >
-              <summary>查看数据依据</summary>
+              <summary>查看相关数据</summary>
               <div class="ref-row">
                 <button
                   v-for="refId in perspectiveOf(perspective.key)?.evidence_refs ?? []"
@@ -299,7 +299,7 @@ watch(
               <li v-for="item in review.consensus.recommended_checks" :key="item">{{ item }}</li>
             </ol>
             <details v-if="review.review_and_next_checks.evidence_refs.length" class="evidence-details" data-test="ai-evidence-review_and_next_checks">
-              <summary>查看行动依据</summary>
+              <summary>查看相关数据</summary>
               <div class="ref-row">
                 <button
                   v-for="refId in review.review_and_next_checks.evidence_refs"
@@ -357,7 +357,7 @@ watch(
       </div>
 
       <p v-if="generateError" class="generate-error" data-test="ai-generate-error" role="status">
-        生成失败：{{ generateError }}。原有分析仍保留，规则研判不受影响。
+        生成失败：{{ generateError }}。原有结果仍会保留，地质研判可以继续使用。
       </p>
     </template>
   </section>

@@ -25,7 +25,7 @@ const title = computed(() => {
     <dl>
       <div><dt>有效样本</dt><dd>{{ capability.valid_sample_count }} 个有效样本</dd></div>
       <div><dt>空间分组</dt><dd>{{ capability.spatial_group_count }} 个独立分组</dd></div>
-      <div><dt>验证口径</dt><dd>空间交叉验证</dd></div>
+      <div><dt>验证方式</dt><dd>空间交叉验证</dd></div>
     </dl>
   </section>
 </template>

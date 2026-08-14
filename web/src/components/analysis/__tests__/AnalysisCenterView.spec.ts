@@ -293,7 +293,8 @@ describe('AnalysisCenterView（A+B 壳）', () => {
     await wrapper.get('[data-test="module-nav-item-model_comparison"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-test="model-comparison-panel"]').exists()).toBe(true)
-    expect(wrapper.get('[data-test="context-evidence"]').text()).toContain('模型证据')
+    expect(wrapper.get('[data-test="context-evidence"]').text()).toContain('模型比较')
+    expect(wrapper.get('[data-test="context-evidence"]').text()).not.toContain('口径')
     wrapper.unmount()
   })
 
@@ -303,7 +304,7 @@ describe('AnalysisCenterView（A+B 壳）', () => {
 
     expect(wrapper.find('[data-test="analysis-profile-badge"]').text()).toContain('通用三维')
     const fallback = wrapper.get('[data-test="analysis-generic-fallback"]').text()
-    expect(fallback).toContain('当前数据使用通用分析模板')
+    expect(fallback).toContain('当前字段还没有专门的地质解释')
     expect(fallback).not.toContain('generic_3d')
     expect(fallback).not.toContain('CH4_content')
     expect(fallback).not.toContain('RHO')
@@ -361,7 +362,7 @@ describe('AnalysisCenterView（A+B 壳）', () => {
     const exportHeader = () =>
       wrapper
         .findAll('.el-collapse-item__header')
-        .find((header) => header.text().includes('方法、导出与技术溯源'))
+        .find((header) => header.text().includes('计算方法、下载与数据来源'))
     expect(exportHeader()?.classes()).not.toContain('is-active')
     await wrapper.find('[data-test="analysis-export-command"]').trigger('click')
     await flushPromises()

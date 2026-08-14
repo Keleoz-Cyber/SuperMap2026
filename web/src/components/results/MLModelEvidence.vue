@@ -54,7 +54,7 @@ function shortHash(value: string | null): string {
             <strong>{{ percentChange(evidence.metric_change.mae_percent, 'MAE') }}</strong>
           </article>
           <article>
-            <span>统一验证口径</span>
+            <span>相同验证方式</span>
             <strong>公共有效点 {{ evidence.baseline.common_valid_count.toLocaleString() }}</strong>
           </article>
         </div>

@@ -82,8 +82,8 @@ describe('ResultInterpretationPanel', () => {
     const wrapper = mountPanel()
     await flushPromises()
     const findings = wrapper.get('[data-test="interpretation-findings"]')
-    expect(findings.text()).toContain('高值主要集中在 20-30m 深度层段')
-    expect(findings.text()).toContain('最大高值连通区为 A 区')
+    expect(findings.text()).toContain('哪个深度层高值最多')
+    expect(findings.text()).toContain('最大的连续高值区')
     // 组件空间目标 → focus-component；层段目标 → focus-depth-bin
     await wrapper.get('[data-test="finding-locate-finding-largest-component"]').trigger('click')
     expect(wrapper.emitted('focus-component')).toEqual([[1]])

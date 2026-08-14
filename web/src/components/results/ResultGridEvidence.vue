@@ -438,13 +438,13 @@ const hasResiduals = computed(() => (props.residuals?.returned ?? 0) > 0)
                 @click="emit('focus-component', row.component_id)"
               >
                 {{ row.label }} · 峰值 {{ formatNumber(row.value_max) }} ·
-                {{ row.support_unit === 'volume_coordinate_unit3' ? '网格支持体积估计' : '网格支持面积估计' }}
+                {{ row.support_unit === 'volume_coordinate_unit3' ? '模型覆盖范围' : '模型覆盖面积' }}
                 {{ formatNumber(row.support_measure) }}
               </button>
             </div>
           </template>
           <p v-else-if="analysis" class="pane-note">当前阈值下无高值连通区</p>
-          <p v-else class="pane-note">成果异常区域分析暂不可用；当前切片证据不受影响。</p>
+          <p v-else class="pane-note">目前还不能分析完整成果中的高值区域；切片仍可正常查看。</p>
         </section>
       </div>
 

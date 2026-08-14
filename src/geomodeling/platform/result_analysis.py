@@ -270,10 +270,10 @@ def _build_findings(
         findings.append(Finding(
             id="finding-dominant-depth",
             kind=FindingKind.DOMINANT_DEPTH_INTERVAL.value,
-            title="高值占比最高的深度层段",
+            title="哪个深度层高值最多",
             statement=(
-                f"第 {best_index + 1} 层段（{best_bin.z_lower:.1f}-{best_bin.z_upper:.1f}）"
-                f"高值占比 {best_bin.high_ratio:.1%}，为所有层段最高"
+                f"第 {best_index + 1} 层（{best_bin.z_lower:.1f}～{best_bin.z_upper:.1f}），"
+                f"这一层的高值比例最高，为 {best_bin.high_ratio:.1%}"
             ),
             evidence=[
                 FindingEvidence(name="depth_bin_index", value=best_index),
@@ -281,7 +281,7 @@ def _build_findings(
                 FindingEvidence(name="valid_count", value=best_bin.valid_count),
             ],
             confidence=FindingConfidence.MEDIUM.value,
-            limitations=["局部坐标系"],
+            limitations=["当前使用局部坐标，深度只表示模型内的相对位置"],
             spatial_target=SpatialTarget(kind="depth_bin", depth_bin_index=best_index),
         ))
 
@@ -291,10 +291,10 @@ def _build_findings(
         findings.append(Finding(
             id="finding-largest-component",
             kind=FindingKind.LARGEST_HIGH_COMPONENT.value,
-            title="网格支持量最大的高值连通区",
+            title="最大的连续高值区",
             statement=(
-                f"{top.label} 区网格支持量 {top.support_measure:.1f}"
-                f"（{top.support_unit}），为最大连通区"
+                f"{top.label} 区覆盖约 {top.support_measure:.1f}"
+                f"（{top.support_unit}），是当前最大的连续区域"
             ),
             evidence=[
                 FindingEvidence(name="label", value=top.label),
@@ -302,7 +302,7 @@ def _build_findings(
                 FindingEvidence(name="value_max", value=top.value_max),
             ],
             confidence=FindingConfidence.HIGH.value,
-            limitations=["网格支持量非真实地质体积/面积"],
+            limitations=["这里只表示模型覆盖大小，不是真实地质体积或面积"],
             spatial_target=SpatialTarget(kind="component", component_id=top.component_id),
         ))
 
@@ -312,13 +312,13 @@ def _build_findings(
         findings.append(Finding(
             id="finding-boundary-contact",
             kind=FindingKind.BOUNDARY_CONTACT.value,
-            title="主要连通区接触网格边界",
+            title="哪些区域延伸到模型边缘",
             statement=(
-                f"{'、'.join(boundary_labels)} 区接触网格边界，需注意外推影响"
+                f"{'、'.join(boundary_labels)} 区延伸到模型边缘，实际范围可能比图上更大"
             ),
             evidence=[FindingEvidence(name="boundary_components", value=",".join(boundary_labels))],
             confidence=FindingConfidence.HIGH.value,
-            limitations=["边界接触不代表异常延伸范围"],
+            limitations=["需要扩大建模范围或补充边缘测点后再确认"],
             spatial_target=None,
         ))
 
@@ -332,37 +332,37 @@ def _build_findings(
     findings.append(Finding(
         id="finding-formal-model",
         kind=FindingKind.FORMAL_MODEL.value,
-        title=f"正式模型为 {model_ev.algorithm}",
+        title=f"当前使用 {model_ev.algorithm}",
         statement=(
-            f"公共有效点 {model_ev.common_valid_count or '未知'}，{metrics_str}"
+            f"共同参与比较的点有 {model_ev.common_valid_count or '未知'} 个，{metrics_str}"
         ),
         evidence=[
             FindingEvidence(name="algorithm", value=model_ev.algorithm),
             FindingEvidence(name="common_valid_count", value=model_ev.common_valid_count),
         ],
         confidence=FindingConfidence.HIGH.value,
-        limitations=["指标基于交叉验证"],
+        limitations=["这些指标来自空间交叉验证，只适合评价当前数据范围"],
         spatial_target=None,
     ))
 
     # uncertainty_availability
     if dimension == "2d":
         avail = "not_applicable"
-        statement = "2D 成果无深度分层；不确定性状态为不适用"
+        statement = "二维结果没有深度分层"
     elif uncertainty_available:
         avail = "available"
-        statement = "经验误差尺度和 Kriging 标准差均已物化"
+        statement = "已生成可查看的误差参考"
     else:
         avail = "missing"
-        statement = "该成果未物化专业不确定性层"
+        statement = "当前结果没有生成误差参考"
     findings.append(Finding(
         id="finding-uncertainty",
         kind=FindingKind.UNCERTAINTY_AVAILABILITY.value,
-        title="不确定性证据状态",
+        title="误差参考",
         statement=statement,
         evidence=[FindingEvidence(name="availability", value=avail)],
         confidence=FindingConfidence.HIGH.value,
-        limitations=[] if avail == "available" else ["不确定性分析不可用"],
+        limitations=[] if avail == "available" else ["当前无法查看模型在不同位置的稳定程度"],
         spatial_target=None,
     ))
 

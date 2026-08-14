@@ -239,7 +239,7 @@ describe('CandidateComparisonView', () => {
   it('标题为「模型比较」且使用可读算法标签', async () => {
     const { wrapper } = await mountView()
     expect(wrapper.find('h1').text()).toBe('模型比较')
-    expect(wrapper.text()).toContain('同一数据版本和验证口径下比较候选成果')
+    expect(wrapper.text()).toContain('使用同一份数据和相同分组方式比较候选成果')
     expect(wrapper.text()).toContain('IDW（反距离加权）')
     expect(wrapper.text()).toContain('普通克里金')
     expect(wrapper.text()).toContain('DSI-like 离散平滑插值')
@@ -282,7 +282,7 @@ describe('CandidateComparisonView', () => {
 
     expect(selected).toHaveLength(2)
     expect(wrapper.get('[data-test="comparison-start-summary"]').text()).toContain('已为你选择')
-    expect(wrapper.get('[data-test="comparison-start-summary"]').text()).toContain('兼容性')
+    expect(wrapper.get('[data-test="comparison-start-summary"]').text()).toContain('兼容网格')
     expect(wrapper.find('[data-test="compare-btn"]').attributes('disabled')).toBeUndefined()
     wrapper.unmount()
   })

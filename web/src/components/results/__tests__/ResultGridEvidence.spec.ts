@@ -204,7 +204,7 @@ describe('ResultGridEvidence（V6 四标签）', () => {
     expect(wrapper.find('[data-test="ge-slice-heatmap"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="ge-slice-statistics"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="ge-export-slice"]').exists()).toBe(true)
-    expect(pane.text()).toContain('成果异常区域分析暂不可用')
+    expect(pane.text()).toContain('目前还不能分析完整成果中的高值区域')
     expect(wrapper.find('[data-test="ge-empty"]').exists()).toBe(false)
   })
 

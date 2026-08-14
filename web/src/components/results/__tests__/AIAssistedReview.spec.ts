@@ -46,7 +46,7 @@ describe('AIAssistedReview', () => {
     expect(client.fetchLatestAiAnalysis).toHaveBeenCalledWith('r-3d-normal', 'quick')
     const empty = wrapper.get('[data-test="ai-empty"]')
     expect(empty.text()).toContain('尚未生成快速解读')
-    expect(wrapper.text()).toContain('规则研判')
+    expect(wrapper.text()).toContain('地质研判')
     await wrapper.get('[data-test="ai-generate"]').trigger('click')
     expect(client.generateAiAnalysis).toHaveBeenCalledWith('r-3d-normal', {
       mode: 'quick',
@@ -62,7 +62,7 @@ describe('AIAssistedReview', () => {
     expect(unavailable.text()).toContain('DEEPSEEK_NOT_CONFIGURED')
     expect(unavailable.text()).toContain('DEEPSEEK_API_KEY')
     // AI 不可用不拖垮规则研判
-    expect(wrapper.text()).toContain('规则研判')
+    expect(wrapper.text()).toContain('地质研判')
   })
 
   it('服务错误：错误码 + 消息 + 重试', async () => {
@@ -81,6 +81,8 @@ describe('AIAssistedReview', () => {
     await flushPromises()
     expect(wrapper.get('[data-test="ai-conclusion"]').text()).toContain('四个视角一致支持')
     expect(wrapper.get('[data-test="ai-review"]').text()).toContain('快速解读')
+    expect(wrapper.get('[data-test="ai-review"]').text()).toContain('需要留意的地方')
+    expect(wrapper.get('[data-test="ai-review"]').text()).not.toContain('解释边界')
     // 四视角
     expect(wrapper.get('[data-test="ai-perspective-spatial_pattern"]').text()).toContain('高值体元集中')
     expect(wrapper.get('[data-test="ai-perspective-model_reliability"]').text()).toContain('RMSE 5.2')

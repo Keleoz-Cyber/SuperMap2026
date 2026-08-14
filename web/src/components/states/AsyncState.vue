@@ -1,7 +1,6 @@
 <script setup lang="ts">
-// v0.9.0：全站统一异步状态组件。每种状态必须回答三件事：
-// 发生了什么（title）、哪些能力受影响（impact）、用户下一步做什么（nextAction）。
-// loading 绝不编造影响/建议文案；error/offline/degraded 必须如实给出。
+// v0.9.0：全站统一异步状态组件。直接说明发生了什么、具体影响和可采取的动作，
+// 不在每个状态前重复固定栏目名。
 import { computed } from 'vue'
 import {
   CircleClose,
@@ -41,12 +40,8 @@ const icon = computed(() => ICONS[props.kind])
       <component :is="icon" />
     </el-icon>
     <p class="state-title">{{ title }}</p>
-    <p v-if="impact" class="state-line">
-      <span class="line-label">受影响能力</span>{{ impact }}
-    </p>
-    <p v-if="nextAction" class="state-line">
-      <span class="line-label">下一步</span>{{ nextAction }}
-    </p>
+    <p v-if="impact" class="state-line">{{ impact }}</p>
+    <p v-if="nextAction" class="state-line state-next">{{ nextAction }}</p>
     <code v-if="errorCode" class="state-code mono">{{ errorCode }}</code>
     <div v-if="$slots.action" class="state-action">
       <slot name="action" />
@@ -111,10 +106,8 @@ const icon = computed(() => ICONS[props.kind])
   max-width: 520px;
 }
 
-.line-label {
-  display: inline-block;
-  margin-right: 8px;
-  color: var(--s1-text-faint);
+.state-next {
+  color: var(--s1-text);
 }
 
 .state-code {
