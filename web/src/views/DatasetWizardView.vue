@@ -403,7 +403,7 @@ function onStart() {
   width: 14px;
   height: 14px;
   flex: none;
-  border: 2px solid rgba(70, 194, 190, 0.24);
+  border: 2px solid rgba(74, 182, 232, 0.24);
   border-top-color: var(--s1-cyan);
   border-radius: 50%;
   animation: workflow-busy-spin 0.8s linear infinite;

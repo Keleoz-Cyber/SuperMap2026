@@ -320,7 +320,8 @@ onBeforeUnmount(clearShellContext)
 
 <style scoped>
 .command-center {
-  /* AppShell 的 app-main 为块级且有确定高度（flex 拉伸），此处直接占满 */
+  /* AppShell 的 app-main 为块级且有确定高度（flex 拉伸），此处直接占满；
+     大屏底色与网格纹理由全局 body 背景统一提供 */
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -337,8 +338,46 @@ onBeforeUnmount(clearShellContext)
     'rail scene findings'
     'evidence evidence evidence';
   gap: var(--s1-space-4);
-  padding: var(--s1-space-4) var(--s1-space-6) var(--s1-space-6);
+  padding: var(--s1-space-3) var(--s1-space-6) var(--s1-space-5);
 }
+
+/* ---- 面板大屏化：深蓝玻璃底 + 青色发光描边 ---- */
+.cc-grid :deep(.rail-item),
+.cc-grid :deep(.finding-card),
+.cc-grid :deep(.evidence-band) {
+  background: linear-gradient(180deg, rgba(14, 34, 68, 0.66), rgba(8, 20, 44, 0.78));
+  border-color: rgba(64, 158, 255, 0.26);
+  box-shadow:
+    0 0 16px rgba(30, 110, 220, 0.1),
+    inset 0 0 22px rgba(26, 84, 190, 0.08);
+}
+
+.cc-grid :deep(.rail-item:hover) {
+  background: linear-gradient(180deg, rgba(24, 54, 102, 0.66), rgba(12, 28, 58, 0.78));
+  border-color: rgba(84, 178, 255, 0.5);
+}
+
+/* 选中案例仍跟随案例主色，只叠加发光 */
+.cc-grid :deep(.rail-item.selected) {
+  box-shadow:
+    inset 0 0 0 1px var(--s1-case-accent),
+    0 0 18px color-mix(in srgb, var(--s1-case-accent) 34%, transparent);
+}
+
+.cc-grid > .scene-panel {
+  position: relative;
+  border-color: rgba(64, 158, 255, 0.3);
+  background: linear-gradient(180deg, rgba(9, 22, 48, 0.6), rgba(6, 15, 34, 0.72));
+  box-shadow:
+    0 0 24px rgba(30, 110, 220, 0.14),
+    inset 0 0 30px rgba(26, 84, 190, 0.07);
+}
+
+.cc-grid > .scene-panel :deep(.scene-head) {
+  border-bottom-color: rgba(64, 158, 255, 0.18);
+}
+
+/* 主舞台与证据带保持简洁圆角面板，不叠加四角装饰 */
 
 .cc-grid > .case-rail {
   grid-area: rail;
@@ -375,12 +414,13 @@ onBeforeUnmount(clearShellContext)
   gap: 6px;
   font-size: var(--s1-font-md);
   font-weight: 600;
-  color: #06110f;
-  background: var(--s1-case-accent);
+  color: #0a1208;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--s1-case-accent) 100%, #ffffff 12%), var(--s1-case-accent));
   border: none;
   border-radius: var(--s1-radius-sm);
   padding: 7px 16px;
   cursor: pointer;
+  box-shadow: 0 0 14px color-mix(in srgb, var(--s1-case-accent) 36%, transparent);
   transition:
     filter var(--s1-motion-fast) var(--s1-ease-out),
     transform var(--s1-motion-fast) var(--s1-ease-out);

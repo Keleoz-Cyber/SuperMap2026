@@ -99,7 +99,7 @@ const api = computed<NativeVolumeRenderApi | null>(() => {
 
 .scene-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: var(--s1-space-3);
   padding: var(--s1-space-3) var(--s1-space-4);
@@ -133,7 +133,8 @@ const api = computed<NativeVolumeRenderApi | null>(() => {
 
 .scene-chip.variable {
   color: var(--s1-case-accent);
-  border-color: var(--s1-case-accent);
+  border-color: color-mix(in srgb, var(--s1-case-accent) 38%, transparent);
+  background: color-mix(in srgb, var(--s1-case-accent) 10%, transparent);
   font-weight: 600;
 }
 

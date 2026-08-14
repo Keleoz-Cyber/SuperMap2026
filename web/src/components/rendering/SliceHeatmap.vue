@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { init as echartsInit, use as echartsUse } from 'echarts/core'
 import { HeatmapChart } from 'echarts/charts'
-import { GridComponent, TooltipComponent } from 'echarts/components'
+import { GridComponent, TooltipComponent, VisualMapComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import type { SliceAnalysisResponse } from '../../api/types'
 import {
@@ -14,12 +14,13 @@ import {
 
 // v0.7.0 Batch 2 Task 10：ECharts 剖面热力图（设计 §7.3）。
 // 系列数据 [col, row, displayValue, rawValue]：颜色只经 itemStyle 按 display
-// 归一化维度映射（不再使用 visualMap——其 pieces 曾用原始值域节点匹配 [0,1]
-// 的 display，导致所有切片同色）；tooltip 一律读取原始维度；NoData 显示
+// 归一化维度映射；tooltip 一律读取原始维度；NoData 显示
 // NoData，绝不显示伪造的 0。色带值域默认锁定全体数据 render_profile.value_range，
 // 逐切片统计漂移不改变同一真实值的颜色。
+// 注意：ECharts dev 模式强制 heatmap 必须挂 visualMap（生产构建不校验），
+// 因此挂一个隐藏且 inRange 为空（不参与着色）的 visualMap 仅为满足该合同。
 
-echartsUse([HeatmapChart, GridComponent, TooltipComponent, CanvasRenderer])
+echartsUse([HeatmapChart, GridComponent, TooltipComponent, VisualMapComponent, CanvasRenderer])
 
 const props = defineProps<{
   analysis: SliceAnalysisResponse
@@ -75,6 +76,15 @@ function buildOption() {
         if (raw === null) return `${head}<br/>NoData`
         return `${head}<br/>${property.value.name}：${raw} ${property.value.unit}`
       },
+    },
+    // 隐藏 visualMap：仅为满足 dev 模式 heatmap 合同，inRange 为空不着色
+    visualMap: {
+      show: false,
+      seriesIndex: 0,
+      dimension: 2,
+      min: 0,
+      max: 1,
+      inRange: {},
     },
     series: [
       {

@@ -23,6 +23,11 @@
   --gmp-red: var(--s1-error);
 }
 
+:root {
+  /* 告知 UA 深色方案：原生 select 下拉、滚动条等系统控件自动转深色 */
+  color-scheme: dark;
+}
+
 html,
 body,
 #app {
@@ -31,8 +36,51 @@ body,
   padding: 0;
 }
 
+/* 全局链接：默认不显示 UA 紫/蓝下划线样式，由组件自行决定装饰 */
+a {
+  color: var(--s1-cyan-strong);
+  text-decoration: none;
+}
+
+/* .gmp-btn 全局基底：历史上各视图 scoped 重复定义，缺定义的页面会退化为裸链接 */
+.gmp-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 16px;
+  border: 1px solid var(--s1-border);
+  border-radius: var(--s1-radius-sm);
+  background: rgba(20, 42, 82, 0.55);
+  color: var(--s1-text);
+  font-size: var(--s1-font-md);
+  cursor: pointer;
+}
+
+.gmp-btn:hover {
+  border-color: var(--s1-cyan-dim);
+  color: var(--s1-cyan-strong);
+}
+
+.gmp-btn.primary {
+  background: linear-gradient(135deg, rgba(74, 182, 232, 0.32), rgba(47, 131, 184, 0.3));
+  border-color: var(--s1-cyan-dim);
+  color: #d8f1ff;
+  box-shadow: 0 0 12px rgba(74, 182, 232, 0.22);
+}
+
 body {
-  background: var(--s1-canvas);
+  /* 大屏底色：深蓝黑渐变 + 顶部青光晕 + 隐约细网格（全局统一背景） */
+  background:
+    radial-gradient(1200px 520px at 50% -10%, rgba(46, 128, 220, 0.2), transparent 62%),
+    linear-gradient(rgba(64, 150, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(64, 150, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(180deg, #050c1e 0%, #081327 55%, #050b1a 100%);
+  background-size:
+    auto,
+    36px 36px,
+    36px 36px,
+    auto;
+  background-attachment: fixed;
   color: var(--s1-text);
   font-family:
     'Helvetica Neue',
@@ -50,22 +98,149 @@ body {
   outline-offset: 2px;
 }
 
-/* Element Plus 暗色变量微调，贴近 S1 墨绿黑系 */
+/* Element Plus 暗色变量微调，贴近 S1 大屏深蓝系 */
 html.dark {
   --el-bg-color: var(--s1-surface-2);
-  --el-bg-color-overlay: #14221c;
+  --el-bg-color-overlay: #12203e;
   --el-bg-color-page: var(--s1-canvas);
   --el-border-color: var(--s1-border);
   --el-border-color-light: var(--s1-border-soft);
-  --el-border-color-lighter: #182720;
-  --el-border-color-extra-light: #13201a;
+  --el-border-color-lighter: #1a2c50;
+  --el-border-color-extra-light: #14233f;
   --el-fill-color-blank: var(--s1-surface-2);
-  --el-fill-color: #1a2b24;
-  --el-fill-color-light: #15241e;
+  --el-fill-color: #1a2c50;
+  --el-fill-color-light: #15264a;
   --el-text-color-primary: var(--s1-text);
-  --el-text-color-regular: #b9c6c0;
+  --el-text-color-regular: #b9c8de;
   --el-text-color-secondary: var(--s1-text-dim);
   --el-color-primary: var(--s1-cyan);
+}
+
+/* ================= Element Plus 大屏化皮肤（全局） =================
+   统一深蓝玻璃质感：半透明蓝底、青色描边、选中/悬停带发光。
+   只覆写外观，不改组件行为与尺寸契约。 */
+
+/* 按钮：默认玻璃蓝；primary 青色发光 */
+html.dark .el-button {
+  background: rgba(20, 42, 82, 0.55);
+  border-color: var(--s1-border);
+  color: var(--s1-text);
+}
+
+html.dark .el-button:hover:not(:disabled) {
+  background: rgba(34, 66, 122, 0.6);
+  border-color: var(--s1-cyan-dim);
+  color: var(--s1-cyan-strong);
+}
+
+html.dark .el-button--primary {
+  background: linear-gradient(135deg, rgba(74, 182, 232, 0.32), rgba(47, 131, 184, 0.3));
+  border-color: var(--s1-cyan-dim);
+  color: #d8f1ff;
+  box-shadow: 0 0 12px rgba(74, 182, 232, 0.22);
+}
+
+html.dark .el-button--primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, rgba(74, 182, 232, 0.46), rgba(47, 131, 184, 0.42));
+  color: #ffffff;
+  box-shadow: 0 0 16px rgba(74, 182, 232, 0.34);
+}
+
+/* 分段单选（表达方式等）：玻璃轨道 + 选中发光 */
+html.dark .el-radio-group .el-radio-button__inner {
+  background: rgba(14, 32, 64, 0.55);
+  border-color: var(--s1-border);
+  color: var(--s1-text-dim);
+  box-shadow: none;
+}
+
+html.dark .el-radio-group .el-radio-button__inner:hover {
+  color: var(--s1-cyan-strong);
+}
+
+html.dark .el-radio-button.is-active .el-radio-button__inner,
+html.dark .el-radio-button__original-radio:checked + .el-radio-button__inner {
+  background: linear-gradient(135deg, rgba(74, 182, 232, 0.34), rgba(47, 131, 184, 0.3));
+  border-color: var(--s1-cyan);
+  color: #eaf7ff;
+  box-shadow: 0 0 10px rgba(74, 182, 232, 0.3);
+}
+
+/* 普通 radio / checkbox 的选中圆点与对勾框 */
+html.dark .el-radio__input.is-checked .el-radio__inner,
+html.dark .el-checkbox__input.is-checked .el-checkbox__inner {
+  background: var(--s1-cyan);
+  border-color: var(--s1-cyan);
+  box-shadow: 0 0 8px rgba(74, 182, 232, 0.45);
+}
+
+html.dark .el-radio__inner,
+html.dark .el-checkbox__inner {
+  background: rgba(14, 32, 64, 0.55);
+  border-color: var(--s1-border-strong);
+}
+
+html.dark .el-checkbox__input.is-checked + .el-checkbox__label,
+html.dark .el-radio__input.is-checked + .el-radio__label {
+  color: var(--s1-cyan-strong);
+}
+
+/* 滑块：轨道深空蓝，已选段与手柄青色发光 */
+html.dark .el-slider__runway {
+  background: rgba(20, 42, 82, 0.8);
+}
+
+html.dark .el-slider__bar {
+  background: linear-gradient(90deg, var(--s1-cyan-dim), var(--s1-cyan));
+  box-shadow: 0 0 8px rgba(74, 182, 232, 0.4);
+}
+
+html.dark .el-slider__button {
+  border-color: var(--s1-cyan-strong);
+  background: #0b1730;
+  box-shadow: 0 0 10px rgba(127, 208, 247, 0.55);
+}
+
+/* 输入框 / 选择器 */
+html.dark .el-input__wrapper,
+html.dark .el-select__wrapper {
+  background: rgba(12, 26, 54, 0.6);
+  box-shadow: 0 0 0 1px var(--s1-border) inset;
+}
+
+html.dark .el-input__wrapper.is-focus,
+html.dark .el-select__wrapper.is-focused {
+  box-shadow:
+    0 0 0 1px var(--s1-cyan) inset,
+    0 0 10px rgba(74, 182, 232, 0.25);
+}
+
+/* 提示条：信息型转为玻璃蓝 */
+html.dark .el-alert--info {
+  background: rgba(16, 36, 72, 0.55);
+  border: 1px solid rgba(74, 182, 232, 0.24);
+  color: var(--s1-text);
+}
+
+/* 标签页下划线与选中态 */
+html.dark .el-tabs__item {
+  color: var(--s1-text-dim);
+}
+
+html.dark .el-tabs__item.is-active,
+html.dark .el-tabs__item:hover {
+  color: var(--s1-cyan-strong);
+}
+
+html.dark .el-tabs__active-bar {
+  background: var(--s1-cyan);
+  box-shadow: 0 0 8px rgba(74, 182, 232, 0.5);
+}
+
+/* 开关 */
+html.dark .el-switch.is-checked .el-switch__core {
+  background: var(--s1-cyan-dim);
+  border-color: var(--s1-cyan);
 }
 
 /* 通用工具类 */
@@ -184,12 +359,12 @@ html.dark {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #233730;
+  background: #22385c;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #2f4a3f;
+  background: #31507e;
 }
 
 ::-webkit-scrollbar-track {

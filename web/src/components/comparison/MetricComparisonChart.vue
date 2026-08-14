@@ -95,14 +95,14 @@ function buildOption() {
         type: 'bar',
         yAxisIndex: 0,
         data: rows.map((c) => metricValue(c, 'rmse')),
-        itemStyle: { color: '#46c2be' },
+        itemStyle: { color: '#4ab6e8' },
       },
       {
         name: 'MAE',
         type: 'bar',
         yAxisIndex: 0,
         data: rows.map((c) => metricValue(c, 'mae')),
-        itemStyle: { color: '#2e8b88' },
+        itemStyle: { color: '#2f83b8' },
       },
       {
         name: 'R²',

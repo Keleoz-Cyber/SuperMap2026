@@ -492,24 +492,27 @@ describe('NativeVolumePanel 能力与资产', () => {
     expect(wrapper.findComponent(FrameStub).get('[data-test="volume-frame-stub"]').attributes('data-instance-token')).not.toBe(firstInstanceToken)
   })
 
-  it('刷新状态显示进行中与完成反馈', async () => {
+  it('工作台就绪态不显示刷新按钮；未就绪时可刷新并给出完成反馈', async () => {
     let resolveFetch!: (asset: RenderAssetRecord) => void
     const api = makeApi({
       fetchAsset: vi.fn()
-        .mockResolvedValueOnce(ASSET)
+        .mockResolvedValueOnce({ ...ASSET, status: 'creating' })
         .mockImplementationOnce(() => new Promise<RenderAssetRecord>((resolve) => {
           resolveFetch = resolve
         })),
     })
     const wrapper = mountPanel(api, null, { showReadyDiagnostics: true, variant: 'workbench' })
     await flushPromises()
-    expect(wrapper.get('[data-test="volume-status-bar"]').find('[data-test="refresh-asset"]').exists()).toBe(true)
+    const statusBar = wrapper.get('[data-test="volume-status-bar"]')
+    expect(statusBar.find('[data-test="refresh-asset"]').exists()).toBe(true)
     expect(wrapper.get('.scene-column').find(':scope > .asset-actions').exists()).toBe(false)
-    await wrapper.get('[data-test="refresh-asset"]').trigger('click')
-    expect(wrapper.get('[data-test="refresh-asset"]').text()).toContain('正在刷新')
+    await statusBar.get('[data-test="refresh-asset"]').trigger('click')
+    expect(statusBar.get('[data-test="refresh-asset"]').text()).toContain('正在刷新')
     resolveFetch(ASSET)
     await flushPromises()
-    expect(wrapper.get('[data-test="refresh-feedback"]').text()).toContain('状态已更新')
+    expect(statusBar.find('[data-test="refresh-feedback"]').text()).toContain('状态已更新')
+    // 就绪后按钮退出主层
+    expect(statusBar.find('[data-test="refresh-asset"]').exists()).toBe(false)
   })
 })
 

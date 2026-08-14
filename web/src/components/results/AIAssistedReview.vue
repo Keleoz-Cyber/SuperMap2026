@@ -365,7 +365,7 @@ watch(
 
 <style scoped>
 .ai-review { display: flex; flex-direction: column; gap: 14px; min-width: 0; color: var(--s1-text); }
-.ai-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.ai-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .ai-header h3 { margin: 3px 0 0; font-size: 20px; line-height: 1.3; }
 .ai-eyebrow { margin: 0; color: var(--s1-cyan-strong); font-size: 12px; font-weight: 700; letter-spacing: .12em; }
 .assist-badge { flex: none; padding: 4px 9px; border: 1px solid rgba(217,168,78,.5); border-radius: 999px; color: var(--s1-gold); font-size: 13px; }

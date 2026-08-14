@@ -159,7 +159,7 @@ const liveMessage = computed(() => {
   width: 13px;
   height: 13px;
   flex: none;
-  border: 2px solid rgba(70, 194, 190, 0.24);
+  border: 2px solid rgba(74, 182, 232, 0.24);
   border-top-color: var(--gmp-accent);
   border-radius: 50%;
   animation: run-status-spin 0.8s linear infinite;

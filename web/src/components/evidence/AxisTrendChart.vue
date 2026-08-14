@@ -25,7 +25,7 @@ const emit = defineEmits<{
 const host = ref<HTMLElement | null>(null)
 let chart: ReturnType<typeof echartsInit> | null = null
 
-const AXIS_COLORS: Record<string, string> = { x: '#46c2be', y: '#9b8cf2', z: '#e4bd63' }
+const AXIS_COLORS: Record<string, string> = { x: '#4ab6e8', y: '#9b8cf2', z: '#e4bd63' }
 
 function buildOption() {
   return {
@@ -53,8 +53,8 @@ function buildOption() {
       type: 'line' as const,
       smooth: true,
       symbolSize: 7,
-      itemStyle: { color: AXIS_COLORS[entry.axis] ?? '#46c2be' },
-      lineStyle: { color: AXIS_COLORS[entry.axis] ?? '#46c2be', width: 2 },
+      itemStyle: { color: AXIS_COLORS[entry.axis] ?? '#4ab6e8' },
+      lineStyle: { color: AXIS_COLORS[entry.axis] ?? '#4ab6e8', width: 2 },
       // 点横轴取分箱中点；点击时经 dataIndex 回查分箱区间
       data: entry.bins.map((bin) => [
         (bin.lower + bin.upper) / 2,

@@ -210,7 +210,7 @@ const estimated = computed(() => props.run?.status === 'running')
 .pipeline-node.active .node-dot {
   border-color: var(--s1-cyan);
   background: var(--s1-cyan-ghost);
-  box-shadow: 0 0 8px rgba(70, 194, 190, 0.5);
+  box-shadow: 0 0 8px rgba(74, 182, 232, 0.5);
   animation: pipeline-stage-pulse 1.4s var(--s1-ease-in-out) infinite;
 }
 

@@ -58,8 +58,8 @@ function buildOption() {
       },
     ],
     series: [
-      { name: 'RMSE', type: 'bar' as const, yAxisIndex: 0, data: rows.map((c) => metric(c, 'rmse')), itemStyle: { color: '#46c2be' } },
-      { name: 'MAE', type: 'bar' as const, yAxisIndex: 0, data: rows.map((c) => metric(c, 'mae')), itemStyle: { color: '#2e8b88' } },
+      { name: 'RMSE', type: 'bar' as const, yAxisIndex: 0, data: rows.map((c) => metric(c, 'rmse')), itemStyle: { color: '#4ab6e8' } },
+      { name: 'MAE', type: 'bar' as const, yAxisIndex: 0, data: rows.map((c) => metric(c, 'mae')), itemStyle: { color: '#2f83b8' } },
       { name: 'R²', type: 'bar' as const, yAxisIndex: 1, data: rows.map((c) => metric(c, 'r2')), itemStyle: { color: '#e4bd63' } },
     ],
   }

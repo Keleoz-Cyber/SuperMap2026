@@ -178,19 +178,29 @@ const variableLabel = computed(() => {
 .case-select {
   max-width: 160px;
   border: 1px solid var(--s1-border);
-  background: var(--s1-bg-soft);
+  background: rgba(12, 26, 54, 0.6);
   color: var(--s1-text);
   padding: 0 10px;
 }
 
+.case-select:hover,
+.case-select:focus-visible {
+  border-color: var(--s1-cyan-dim);
+}
+
 .export-action {
-  border: 1px solid var(--s1-cyan-strong);
-  background: var(--s1-cyan-strong);
-  color: #06110f;
+  border: 1px solid var(--s1-cyan-dim);
+  background: linear-gradient(135deg, rgba(74, 182, 232, 0.85), rgba(47, 131, 184, 0.8));
+  color: #04101f;
   padding: 0 14px;
   font-weight: 700;
   cursor: pointer;
   white-space: nowrap;
+  box-shadow: 0 0 14px rgba(74, 182, 232, 0.3);
+}
+
+.export-action:hover:not(:disabled) {
+  filter: brightness(1.12);
 }
 
 .export-action:disabled {

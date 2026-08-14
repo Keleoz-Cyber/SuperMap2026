@@ -95,7 +95,7 @@ const qualityBadge = computed<QualityBadge>(() => {
 <style scoped>
 .analysis-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
   background: var(--gmp-card);

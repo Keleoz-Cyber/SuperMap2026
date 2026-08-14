@@ -68,7 +68,7 @@ function buildOption() {
         type: 'scatter' as const,
         symbolSize: 6,
         data: pairs.value,
-        itemStyle: { color: '#46c2be', opacity: 0.75 },
+        itemStyle: { color: '#4ab6e8', opacity: 0.75 },
       },
       ...(diag
         ? [

@@ -752,8 +752,9 @@ watch(
           data-test="refresh-feedback"
           role="status"
         >{{ refreshFeedback }}</span>
+        <!-- 就绪态不提供手动刷新（只读成果页）；仅资产缺失/未就绪时给出恢复入口。 -->
         <button
-          v-if="capability && (showReadyDiagnostics || !asset || asset.status !== 'ready')"
+          v-if="capability && (!asset || asset.status !== 'ready')"
           class="link-button compact"
           data-test="refresh-asset"
           :disabled="creating || refreshing"
@@ -1001,12 +1002,20 @@ watch(
   max-height: 100%;
 }
 
-/* 工作台变体：场景画布吃掉剩余高度（不被 16/9 上限压小） */
+/* 工作台变体：场景画布吃掉剩余高度（不被 16/9 上限压小）。
+   文档流（矮屏）模式下画布给固定视口比例高度，避免被最高栏拉伸成大片空区。 */
 .native-volume-panel.workbench :deep(.volume-frame) {
   aspect-ratio: auto;
-  flex: 1;
-  min-height: 300px;
+  height: clamp(420px, 55vh, 640px);
   max-height: none;
+}
+
+@media (min-width: 1200px) and (min-height: 820px) {
+  .native-volume-panel.workbench :deep(.volume-frame) {
+    height: auto;
+    flex: 1;
+    min-height: 300px;
+  }
 }
 
 /* 首页展示变体：控制栏与三维画布共享场景主体的完整高度。 */
@@ -1014,6 +1023,29 @@ watch(
   height: 100%;
   min-height: 0;
   gap: 8px;
+  position: relative;
+}
+
+/* 展示变体不再显示“三维体渲染”小标题（与场景头重复），
+   阶段文本收为画布右上角的浮动状态徽标 */
+.native-volume-panel.presentation .panel-header {
+  position: absolute;
+  top: 6px;
+  right: 10px;
+  z-index: 5;
+}
+
+.native-volume-panel.presentation .panel-header .panel-title {
+  display: none;
+}
+
+.native-volume-panel.presentation .panel-header .volume-phase {
+  display: inline-block;
+  padding: 2px 10px;
+  border: 1px solid rgba(74, 182, 232, 0.3);
+  border-radius: 999px;
+  background: rgba(8, 18, 40, 0.72);
+  color: var(--s1-cyan-strong);
 }
 
 .native-volume-panel.presentation .panel-body {

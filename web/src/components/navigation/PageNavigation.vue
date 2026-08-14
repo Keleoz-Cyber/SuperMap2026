@@ -90,8 +90,9 @@ const caseLabel = computed(() => props.caseName ?? '案例')
 }
 
 .crumb-current {
-  color: var(--gmp-text);
-  font-weight: 600;
+  /* 当前页面包屑只是路径终点，不作为第二个页面标题（避免与下方 h1 重复抢眼） */
+  color: var(--gmp-text-dim);
+  font-weight: 500;
   padding: 4px 0;
 }
 </style>

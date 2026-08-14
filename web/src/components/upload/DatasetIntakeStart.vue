@@ -124,7 +124,7 @@ const fileSize = computed(() => {
 .intake-heading h1 { margin:6px 0 8px; font-size:28px; }
 .intake-heading p { margin:0; max-width:680px; color:var(--s1-text-dim); line-height:1.65; }
 .intake-steps { display:flex; margin:0; padding:0; list-style:none; }
-.intake-steps li { display:flex; align-items:center; gap:8px; color:var(--s1-text-faint); font-size:var(--s1-font-sm); }
+.intake-steps li { display:flex; align-items:center; gap:8px; color:var(--s1-text-faint); font-size:var(--s1-font-sm); white-space:nowrap; }
 .intake-steps li:not(:last-child)::after { content:''; width:36px; height:1px; margin:0 10px; background:var(--s1-border); }
 .intake-steps b { display:grid; place-items:center; width:24px; height:24px; border:1px solid var(--s1-border); border-radius:50%; }
 .intake-steps .active { color:var(--s1-text); }

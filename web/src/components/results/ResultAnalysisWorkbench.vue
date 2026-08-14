@@ -270,7 +270,7 @@ function onFocusEvidence(ref: string) {
 .focus-switcher {
   display: flex;
   gap: 2px;
-  align-self: flex-end;
+  align-self: center;
   margin: 0 var(--s1-space-3);
   padding: 3px;
   border: 1px solid var(--s1-border);
@@ -298,10 +298,18 @@ function onFocusEvidence(ref: string) {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 390px;
   gap: var(--s1-space-3);
-  align-items: stretch;
+  /* 文档流（矮屏）模式：三栏顶对齐，中栏画布不被最高栏拉高，避免大片留空。 */
+  align-items: start;
   flex: 1;
   min-height: 0;
   padding: 0 var(--s1-space-3);
+}
+
+/* 一屏工作台模式：栏高撑满舞台，画布吃满剩余高度。 */
+@media (min-width: 1200px) and (min-height: 820px) {
+  .workbench-grid {
+    align-items: stretch;
+  }
 }
 
 .workbench-scene {

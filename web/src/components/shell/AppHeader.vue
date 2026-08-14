@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // v0.9.0：全局应用头。纯展示组件——不 fetch 页面数据、不创建路由实例；
 // 导航一律使用命名路由，服务状态与案例上下文由 AppShell/壳上下文传入。
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { Delete, MoreFilled, Setting, Upload } from '@element-plus/icons-vue'
 import { WEB_VERSION } from '../../version'
@@ -10,6 +11,29 @@ const props = defineProps<{
   serviceVersion: string | null
 }>()
 
+// 大屏时钟：真实本地时间
+const now = ref(new Date())
+let clockTimer: number | undefined
+
+function pad2(n: number): string {
+  return String(n).padStart(2, '0')
+}
+
+const clockText = computed(() => {
+  const d = now.value
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ` +
+    `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`
+})
+
+onMounted(() => {
+  clockTimer = window.setInterval(() => {
+    now.value = new Date()
+  }, 1000)
+})
+onBeforeUnmount(() => {
+  if (clockTimer !== undefined) window.clearInterval(clockTimer)
+})
+
 const emit = defineEmits<{ (event: 'open-ai-settings'): void }>()
 
 void props
@@ -18,34 +42,17 @@ void props
 <template>
   <header class="app-header">
     <div class="header-left">
-      <RouterLink
-        :to="{ name: 'home' }"
-        class="brand"
-        data-test="shell-brand"
-        aria-label="返回首页"
-        title="返回首页"
-      >
-        <span class="brand-mark" aria-hidden="true">G</span>
-      </RouterLink>
+      <span class="version mono" data-test="shell-version">v{{ serviceVersion ?? WEB_VERSION }}</span>
       <nav class="product-nav" aria-label="产品主导航">
         <RouterLink
           :to="{ name: 'home' }"
-          class="product-link"
+          class="product-link action ghost"
           data-test="shell-home-link"
         >
           首页
         </RouterLink>
-        <RouterLink :to="{ name: 'case-create' }" class="product-link" data-test="shell-nav-ingest">
-          数据接入
-        </RouterLink>
       </nav>
-    </div>
-
-    <div class="platform-title" data-test="shell-platform-title">
-      地质属性三维建模与空间分析平台
-    </div>
-
-    <div class="header-right">
+      <span class="hero-clock mono" aria-hidden="true">{{ clockText }}</span>
       <span
         class="service-pill"
         :class="serviceState"
@@ -55,7 +62,15 @@ void props
         <span class="dot" :class="serviceState === 'online' ? 'ok' : serviceState === 'offline' ? 'bad' : 'pending'"></span>
         {{ serviceState === 'online' ? '服务在线' : serviceState === 'offline' ? '服务离线' : '服务检测中' }}
       </span>
-      <span class="version mono" data-test="shell-version">v{{ serviceVersion ?? WEB_VERSION }}</span>
+    </div>
+
+    <div class="platform-hero" data-test="shell-platform-title" aria-hidden="true">
+      <span class="hero-line"></span>
+      <span class="hero-title">地质属性三维建模与智能分析平台</span>
+      <span class="hero-line right"></span>
+    </div>
+
+    <div class="header-right">
       <button type="button" class="action ghost" data-test="shell-ai-settings" @click="emit('open-ai-settings')">
         <el-icon :size="15"><Setting /></el-icon>
         <span class="ai-settings-label">AI 设置</span>
@@ -108,28 +123,87 @@ void props
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--s1-space-4);
+  gap: var(--s1-space-3);
   padding: 0 var(--s1-space-6);
-  height: 52px;
-  background: var(--s1-surface-glass);
+  height: 60px;
+  background: linear-gradient(180deg, rgba(9, 20, 44, 0.92), rgba(7, 15, 34, 0.78));
   backdrop-filter: blur(10px);
-  border-bottom: 1px solid var(--s1-border-soft);
+  border-bottom: 1px solid rgba(74, 182, 232, 0.22);
+  box-shadow: 0 1px 18px rgba(30, 110, 220, 0.14);
 }
 
-.platform-title {
+/* 全局主标题：相对整个头部绝对居中，两侧渐变流线 */
+.platform-hero {
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
-  max-width: min(42vw, 620px);
-  overflow: hidden;
-  color: var(--s1-text-strong);
-  font-size: 21px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-align: center;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 26px;
   pointer-events: none;
+}
+
+.hero-line {
+  flex: none;
+  width: clamp(48px, 10vw, 160px);
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(70, 190, 255, 0.75));
+  position: relative;
+}
+
+.hero-line::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: -2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #8fdcff;
+  box-shadow: 0 0 10px rgba(70, 200, 255, 0.9);
+}
+
+.hero-line.right {
+  transform: scaleX(-1);
+}
+
+.hero-title {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-indent: 0.22em;
+  white-space: nowrap;
+  background: linear-gradient(180deg, #f0faff 15%, #79ccff 85%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: 0 0 22px rgba(70, 190, 255, 0.4);
+}
+
+.hero-clock {
+  color: #9fd8ff;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
+/* 窄屏收敛：先收时钟和流线，再收标题档，最后整体隐藏 */
+@media (max-width: 1400px) {
+  .hero-clock,
+  .hero-line {
+    display: none;
+  }
+
+  .hero-title {
+    font-size: 19px;
+  }
+}
+
+@media (max-width: 1150px) {
+  .platform-hero {
+    display: none;
+  }
 }
 
 .header-left,
@@ -140,41 +214,38 @@ void props
   min-width: 0;
 }
 
-.brand {
-  display: flex;
-  align-items: center;
-  text-decoration: none;
-  color: var(--s1-text-strong);
+/* 左列信息层级：版本号弱化垫底，时钟与状态留出呼吸间距 */
+.header-left .version {
+  margin-right: 2px;
 }
 
-.brand-mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  font-weight: 700;
-  font-size: 15px;
-  color: #06110f;
-  background: linear-gradient(135deg, var(--s1-cyan-strong), var(--s1-cyan));
-  box-shadow: 0 0 12px rgba(70, 194, 190, 0.35);
+.header-left .hero-clock {
+  margin-left: var(--s1-space-2);
 }
 
 .product-nav {
   display: flex;
   align-items: center;
-  gap: 4px;
-  margin-left: var(--s1-space-3);
+  gap: 2px;
 }
 
 .product-link {
   color: var(--s1-text-dim);
   text-decoration: none;
   font-size: var(--s1-font-md);
-  padding: 7px 11px;
+  padding: 6px 14px;
   border-radius: var(--s1-radius-sm);
   white-space: nowrap;
+}
+
+/* 首页入口采用与右侧操作一致的幽灵按钮样式 */
+.product-link.action.ghost {
+  color: var(--s1-text-dim);
+}
+
+.product-link.action.ghost:hover {
+  color: var(--s1-cyan-strong);
+  background: transparent;
 }
 
 .product-link:hover,
@@ -220,7 +291,7 @@ void props
 }
 
 .action.primary:hover {
-  background: rgba(70, 194, 190, 0.22);
+  background: rgba(74, 182, 232, 0.22);
 }
 
 .action.ghost {
@@ -324,12 +395,6 @@ void props
     display: none;
   }
 
-  .platform-title {
-    max-width: 38vw;
-    font-size: 16px;
-    letter-spacing: 0.05em;
-  }
-
   .product-link {
     padding-inline: 7px;
   }
@@ -359,10 +424,6 @@ void props
 
   .mobile-menu {
     display: block;
-  }
-
-  .platform-title {
-    display: none;
   }
 }
 

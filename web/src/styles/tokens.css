@@ -2,32 +2,32 @@
    所有全局颜色必须引用本文件 token；组件局部样式逐步迁移，不新增字面量色值。 */
 
 :root {
-  /* ---- 画布与表面：带轻微绿相的深墨黑，不用纯黑大平面 ---- */
-  --s1-canvas: #081009;
-  --s1-canvas-soft: #0b1512;
-  --s1-surface-1: #0e1a17;
-  --s1-surface-2: #122019;
-  --s1-surface-3: #16261f;
-  --s1-surface-hover: #1a2d25;
-  --s1-surface-glass: rgba(14, 26, 23, 0.82);
+  /* ---- 画布与表面：大屏深蓝黑，不用纯黑大平面 ---- */
+  --s1-canvas: #050c1e;
+  --s1-canvas-soft: #081229;
+  --s1-surface-1: #0b1730;
+  --s1-surface-2: #101e3c;
+  --s1-surface-3: #152647;
+  --s1-surface-hover: #1a2d55;
+  --s1-surface-glass: rgba(11, 23, 48, 0.82);
 
   /* ---- 文本 ---- */
-  --s1-text: #dce7e2;
-  --s1-text-strong: #f2f7f4;
-  --s1-text-dim: #8fa39b;
+  --s1-text: #dbe7f6;
+  --s1-text-strong: #f0f6ff;
+  --s1-text-dim: #8ba1c2;
   /* 投影可读性：faint 在全部深表面上对比度 ≥ 4.5:1（合同测试锁定） */
-  --s1-text-faint: #87998f;
+  --s1-text-faint: #8ba1bd;
 
   /* ---- 描边 ---- */
-  --s1-border: #21382f;
-  --s1-border-soft: #1a2b24;
-  --s1-border-strong: #2e4d40;
+  --s1-border: #22385c;
+  --s1-border-soft: #18294a;
+  --s1-border-strong: #31507e;
 
-  /* ---- 结构色：低饱和青，用于空间坐标、连线、选中与运行状态 ---- */
-  --s1-cyan: #46c2be;
-  --s1-cyan-strong: #6fd8d3;
-  --s1-cyan-dim: #2e8b88;
-  --s1-cyan-ghost: rgba(70, 194, 190, 0.14);
+  /* ---- 结构色：大屏天蓝，用于空间坐标、连线、选中与运行状态 ---- */
+  --s1-cyan: #4ab6e8;
+  --s1-cyan-strong: #7fd0f7;
+  --s1-cyan-dim: #2f83b8;
+  --s1-cyan-ghost: rgba(74, 182, 232, 0.14);
 
   /* ---- 核心色：少量金，仅用于正式成果、关键结论与答辩焦点 ---- */
   --s1-gold: #e4bd63;
@@ -48,8 +48,8 @@
   --s1-accent-violet-soft: rgba(155, 140, 242, 0.16);
   --s1-accent-jade: #4cc494;
   --s1-accent-jade-soft: rgba(76, 196, 148, 0.16);
-  --s1-accent-cyan: #46c2be;
-  --s1-accent-cyan-soft: rgba(70, 194, 190, 0.16);
+  --s1-accent-cyan: #4ab6e8;
+  --s1-accent-cyan-soft: rgba(74, 182, 232, 0.16);
 
   /* 当前案例辅助色：由各案例上下文容器按 accent 覆写 */
   --s1-case-accent: var(--s1-accent-cyan);
@@ -93,9 +93,9 @@
 
   /* ---- 三维舞台 ---- */
   --s1-stage-bg:
-    radial-gradient(120% 90% at 50% 0%, rgba(70, 194, 190, 0.06) 0%, transparent 55%),
-    linear-gradient(180deg, #0a1512 0%, #081009 100%);
-  --s1-stage-grid: rgba(70, 194, 190, 0.08);
+    radial-gradient(120% 90% at 50% 0%, rgba(74, 182, 232, 0.07) 0%, transparent 55%),
+    linear-gradient(180deg, #0a1528 0%, #060d1f 100%);
+  --s1-stage-grid: rgba(80, 170, 255, 0.08);
 }
 
 /* 案例辅助色上下文覆写：容器声明 data-case-accent 后，
