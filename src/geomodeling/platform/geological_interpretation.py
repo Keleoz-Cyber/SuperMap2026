@@ -33,15 +33,15 @@ def resolve_domain_profile(variable_name: str, variable_unit: str) -> str:
 
 
 def _support_label(component: ComponentPreview) -> str:
-    return "网格支持体积" if component.support_unit == "volume_coordinate_unit3" else "网格支持面积"
+    return "模型中覆盖约"
 
 
 def _component_summary(component: ComponentPreview, direction: str) -> str:
     depth = ""
     if len(component.bounds) >= 3:
         z0, z1 = component.bounds[2]
-        depth = f"Z={z0:g}～{z1:g}；"
-    boundary = "，并接触模型边界" if component.touches_grid_boundary else "，未接触模型边界"
+        depth = f"位于 Z={z0:g}～{z1:g}，"
+    boundary = "，范围延伸到模型边缘" if component.touches_grid_boundary else "，没有碰到模型边缘"
     extreme_label = "谷值" if direction == "low" else "峰值"
     extreme_value = component.value_min if direction == "low" else component.value_max
     return (
@@ -52,10 +52,10 @@ def _component_summary(component: ComponentPreview, direction: str) -> str:
 
 def _evidence(component: ComponentPreview) -> list[str]:
     return [
-        f"异常体 {component.label}",
-        f"有效网格节点 {component.support_node_count}",
-        f"属性范围 {component.value_min:g}～{component.value_max:g}",
-        f"中心坐标 ({', '.join(f'{value:g}' for value in component.centroid)})",
+        f"区域 {component.label}",
+        f"覆盖 {component.support_node_count} 个网格点",
+        f"数值 {component.value_min:g}～{component.value_max:g}",
+        f"中心位置 ({', '.join(f'{value:g}' for value in component.centroid)})",
     ]
 
 
@@ -63,45 +63,45 @@ def _rule_copy(profile: str, direction: str) -> dict[str, object]:
     rules: dict[tuple[str, str], dict[str, object]] = {
         ("resistivity", "low"): {
             "title": "低阻异常区",
-            "interpretations": ["可能与含水、裂隙发育、黏土富集或其他导电介质有关"],
-            "impacts": ["提示地下介质电性结构存在差异，可作为水文与构造核查的优先区域"],
-            "actions": ["结合钻孔、水文资料和其他物探成果进行交叉验证"],
-            "limitations": ["低电阻率具有多解性，不能直接认定为含水区"],
+            "interpretations": ["这一带的电阻率明显偏低，常见于含水、裂隙较多、黏土富集或其他导电介质"],
+            "impacts": ["如果钻孔或水文资料也显示异常，应优先检查这里的含水和构造情况"],
+            "actions": ["先对照钻孔、水文记录和其他物探结果，再决定是否现场复测"],
+            "limitations": ["低阻有多种成因，不能只凭低阻结果判断这里有水"],
         },
         ("resistivity", "high"): {
             "title": "高阻异常区",
-            "interpretations": ["可能与较致密、较干燥介质或高阻岩性有关"],
-            "impacts": ["提示地下介质电性分区，可辅助识别岩性或含水条件变化"],
-            "actions": ["结合岩性、构造和钻孔资料核查高阻成因"],
-            "limitations": ["高电阻率不能单独证明岩体完整、干燥或特定岩性"],
+            "interpretations": ["这一带的电阻率明显偏高，常见于较致密、较干燥的介质或高阻岩性"],
+            "impacts": ["它可以帮助判断岩性或含水条件是否发生变化"],
+            "actions": ["对照岩性、构造和钻孔记录，看看高阻变化能否相互印证"],
+            "limitations": ["高阻也有多种成因，不能只凭这张图判断岩体完整或干燥"],
         },
         ("microseismic_velocity", "low"): {
             "title": "低速度异常区",
-            "interpretations": ["可能与松散、破碎、裂隙、孔隙或流体条件差异有关"],
-            "impacts": ["提示介质传播特性发生变化，可作为结构薄弱区复核线索"],
-            "actions": ["结合测线覆盖、岩性、钻孔与其他地球物理资料核查"],
-            "limitations": ["速度异常不代表微震事件活跃度，也不能直接认定为断层"],
+            "interpretations": ["速度偏低常见于介质较松散、破碎、裂隙或孔隙较多，也可能受流体影响"],
+            "impacts": ["这里值得优先检查是否存在结构较弱或介质变化明显的地段"],
+            "actions": ["先检查测线覆盖，再对照岩性、钻孔和其他物探资料"],
+            "limitations": ["不能用这张速度图判断微震事件是否活跃，也不能直接把异常区当成断层"],
         },
         ("microseismic_velocity", "high"): {
             "title": "高速度异常区",
-            "interpretations": ["可能与较致密、较完整介质或岩性、应力状态差异有关"],
-            "impacts": ["提示介质力学与传播性质分区，可作为后续结构解释线索"],
-            "actions": ["结合岩性、应力与测线几何资料复核异常成因"],
-            "limitations": ["高速度不等于高稳定性，也不提供震源能量或时间演化证据"],
+            "interpretations": ["速度偏高常见于较致密的介质，也可能与岩性或应力状态变化有关"],
+            "impacts": ["这类变化可用于辅助划分不同的介质结构"],
+            "actions": ["对照岩性、应力资料和测线位置，确认高速度变化是否可靠"],
+            "limitations": ["速度高不等于一定更稳定，这份数据也没有震源能量和时间变化信息"],
         },
         ("gas_content", "high"): {
             "title": "高瓦斯含量区",
-            "interpretations": ["模型显示该区域瓦斯含量相对较高，可能形成局部富集特征"],
-            "impacts": ["可作为钻孔复核、抽采和通风方案布置的重点复核区域"],
-            "actions": ["结合矿区分级阈值、瓦斯压力、钻孔、抽采与通风资料核查"],
-            "limitations": ["分位高值不是法定危险等级，不能直接替代矿井安全评价"],
+            "interpretations": ["模型显示这里的瓦斯含量比周围更高，可能存在局部富集"],
+            "impacts": ["这类位置应优先安排复测，并纳入抽采和通风方案核对"],
+            "actions": ["对照瓦斯压力、钻孔、抽采和通风记录，再按矿区标准判断"],
+            "limitations": ["这里是模型中的相对高值，不是法定危险等级，不能替代矿井安全评价"],
         },
         ("gas_content", "low"): {
             "title": "低瓦斯含量区",
-            "interpretations": ["模型显示该区域瓦斯含量相对较低"],
-            "impacts": ["可用于理解含量空间分区，但不能据此认定为安全区域"],
-            "actions": ["复核采样覆盖与钻孔深度，避免把稀疏区外推结果作为现场结论"],
-            "limitations": ["低含量不等于安全等级，仍需执行矿区规定的监测与评价"],
+            "interpretations": ["模型显示这里的瓦斯含量比周围更低"],
+            "impacts": ["它可以帮助了解含量变化，但不能直接说明这里安全"],
+            "actions": ["检查采样覆盖和钻孔深度，确认低值不是由测点稀疏造成的"],
+            "limitations": ["低含量不等于安全，现场仍要按矿区规定监测和评价"],
         },
     }
     return rules[(profile, direction)]
@@ -111,7 +111,7 @@ def _card(profile: str, direction: str, component: ComponentPreview) -> DomainIn
     rule = _rule_copy(profile, direction)
     limitations = list(rule["limitations"])
     if component.touches_grid_boundary:
-        limitations.append("该异常体接触模型边界，空间范围可能被截断")
+        limitations.append("这片区域延伸到模型边缘，实际范围可能比图上更大")
     return DomainInterpretationCard(
         id=f"domain-{direction}-{component.component_id}",
         component_id=component.component_id,
@@ -145,9 +145,9 @@ def build_domain_interpretation(
             panel_label="规则研判",
             narrative_label="通用三维属性分析",
             status="not_applicable",
-            overview="当前属性未匹配受控专业规则库，仅展示数值事实，不生成专业地质结论。",
+            overview="这个字段还没有对应的地质解释规则，当前只展示数值分布。",
             cards=[],
-            global_limitations=["自定义属性的专业含义需由用户提供可追溯规则"],
+            global_limitations=["如需自动解释，请先说明这个字段的实际含义和判断规则"],
         )
 
     labels = {
@@ -163,17 +163,17 @@ def build_domain_interpretation(
 
     if cards:
         lead = cards[0]
-        overview = f"识别出 {len(cards)} 个可解释异常体；优先关注{lead.title}。{lead.summary}"
+        overview = f"共找到 {len(cards)} 个值得复核的区域。先看{lead.title}：{lead.summary}。"
     else:
-        overview = "当前分位阈值和最小支持度条件下未识别出可解释异常体。"
+        overview = "按当前设置没有找到连续、明显的高低值区域。"
 
-    global_limitations = ["当前结论来自完整成果网格的 p25/p75 分位异常，仅用于探索性解释"]
+    global_limitations = ["这些高低值按模型自身的数值分布划分，尚未经过现场确认"]
     if profile == "resistivity":
-        global_limitations.append("电阻率异常具有多解性，必须结合地质、水文与钻孔资料")
+        global_limitations.append("电阻率异常可能有多种成因，需要对照地质、水文和钻孔资料")
     elif profile == "microseismic_velocity":
-        global_limitations.append("当前数据是速度场，不包含事件位置、时间或能量信息")
+        global_limitations.append("这里展示的是速度分布，不包含微震事件的位置、时间和能量")
     else:
-        global_limitations.append("未登记矿区权威阈值，不生成危险等级、安全等级或储量结论")
+        global_limitations.append("系统还没有矿区正式阈值，因此不会给出危险等级、安全等级或储量判断")
 
     return DomainInterpretation(
         rule_version=RULE_VERSION,

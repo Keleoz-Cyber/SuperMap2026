@@ -1,4 +1,4 @@
-"""地质属性解释规则：只把既有数值证据翻译为受控探索性语义。"""
+"""地质属性解释规则：把既有数值翻译成自然、可复核的现场提示。"""
 
 from __future__ import annotations
 
@@ -40,9 +40,13 @@ def test_resistivity_prefers_low_component_and_keeps_multisolution_boundary():
     assert interpretation.cards[0].component_id == 1_000_001
     assert interpretation.cards[0].direction == "low"
     assert "谷值 10" in interpretation.cards[0].summary
+    assert "模型中覆盖约 64000" in interpretation.cards[0].summary
+    assert "网格支持体积" not in interpretation.cards[0].summary
     assert "峰值" not in interpretation.cards[0].summary
     assert "含水" in "".join(interpretation.cards[0].possible_interpretations)
-    assert "不能直接认定为含水区" in "".join(interpretation.cards[0].limitations)
+    assert "不能只凭低阻结果判断这里有水" in "".join(interpretation.cards[0].limitations)
+    assert "先看低阻异常区" in interpretation.overview
+    assert "探索性解释" not in "".join(interpretation.global_limitations)
 
 
 def test_microseismic_velocity_describes_medium_not_event_activity():
@@ -57,7 +61,8 @@ def test_microseismic_velocity_describes_medium_not_event_activity():
     assert interpretation.cards[0].direction == "low"
     text = interpretation.model_dump_json()
     assert "裂隙" in text
-    assert "不代表微震事件活跃度" in text
+    assert "不能用这张速度图判断微震事件是否活跃" in text
+    assert "检查测线覆盖" in text
     assert "已确认断层" not in text
 
 
@@ -71,7 +76,10 @@ def test_gas_prioritizes_high_content_without_inventing_risk_grade():
 
     assert interpretation.profile == "gas_content"
     assert interpretation.cards[0].direction == "high"
-    assert "重点复核" in "".join(interpretation.cards[0].potential_impacts)
+    assert "优先安排复测" in "".join(interpretation.cards[0].potential_impacts)
+    assert "对照瓦斯压力、钻孔、抽采和通风记录" in "".join(
+        interpretation.cards[0].recommended_actions
+    )
     assert "危险等级" in "".join(interpretation.global_limitations)
     assert all(card.confidence == "exploratory" for card in interpretation.cards)
 
@@ -88,4 +96,4 @@ def test_generic_variable_has_safe_not_applicable_fallback():
     assert interpretation.panel_label == "规则研判"
     assert interpretation.status == "not_applicable"
     assert interpretation.cards == []
-    assert "不生成专业地质结论" in interpretation.overview
+    assert "还没有对应的地质解释规则" in interpretation.overview
