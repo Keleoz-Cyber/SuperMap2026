@@ -1,6 +1,6 @@
 # GeoModelingPlatform 项目完整说明
 
-> 更新时间：2026-08-14；适用源码版本：0.9.2。本文是当前项目说明的唯一权威入口。版本是否正式发布以 [GitHub Releases](https://github.com/Keleoz-Cyber/SuperMap2026/releases) 为准，历史过程以 Git 记录为准。
+> 更新时间：2026-08-14；适用源码版本：0.9.3。本文是当前项目说明的唯一权威入口。版本是否正式发布以 [GitHub Releases](https://github.com/Keleoz-Cyber/SuperMap2026/releases) 为准，历史过程以 Git 记录为准。
 
 ## 1. 项目定位
 
@@ -202,7 +202,7 @@ URL 中的 `1201` 是官方文档路径；演示时仍应核对本机产品构�
 
 ### 8.1 Windows 免安装包
 
-下载 `GeoModelingPlatform-0.9.2-win-x64.zip`，完整解压到可写目录，双击 `启动平台.cmd`，浏览器打开 <http://127.0.0.1:8000/>；结束后双击 `停止平台.cmd`。包内含运行时、前端、SuperMap3D SDK、SQLite、三个内置案例和 `portable-manifest.json` 完整性清单。
+下载 `GeoModelingPlatform-0.9.3-win-x64.zip`，完整解压到可写目录，双击 `启动平台.cmd`，浏览器打开 <http://127.0.0.1:8000/>；结束后双击 `停止平台.cmd`。包内含运行时、前端、SuperMap3D SDK、SQLite、三个内置案例和 `portable-manifest.json` 完整性清单。
 
 首次启动从只读模板复制 `runtime` 工作目录；用户数据只写入该目录。端口身份不明、包内哈希不符或文件损坏时启动器 fail-closed。诊断命令：
 

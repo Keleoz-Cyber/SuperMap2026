@@ -2,11 +2,11 @@
 
 面向 SuperMap 杯答辩的浏览器三维地质属性建模平台：上传数据后，可完成字段映射、质量校验、插值/预测调参、空间交叉验证、候选比较、三维成果与正交切片展示，以及带来源哈希的证据导出。
 
-当前版本：**0.9.2**。发布包与历史版本见 [GitHub Releases](https://github.com/Keleoz-Cyber/SuperMap2026/releases)。
+当前版本：**0.9.3**。发布包与历史版本见 [GitHub Releases](https://github.com/Keleoz-Cyber/SuperMap2026/releases)。
 
 ## 直接体验
 
-评测组使用 Windows x64 免安装包：下载 `GeoModelingPlatform-0.9.2-win-x64.zip`，完整解压后双击 `启动平台.cmd`。包内已包含 Python 运行时、前端、SuperMap3D SDK、SQLite 和三个内置案例，无需安装 Python、Node.js、Docker 或 iServer。
+评测组使用 Windows x64 免安装包：下载 `GeoModelingPlatform-0.9.3-win-x64.zip`，完整解压后双击 `启动平台.cmd`。包内已包含 Python 运行时、前端、SuperMap3D SDK、SQLite 和三个内置案例，无需安装 Python、Node.js、Docker 或 iServer。
 
 默认地址：<http://127.0.0.1:8000/>；退出时双击 `停止平台.cmd`。
 

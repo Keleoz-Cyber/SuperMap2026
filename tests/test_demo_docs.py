@@ -19,7 +19,7 @@ def test_readme_points_to_single_canonical_guide():
     text = _read(README)
     assert "docs/project-guide.md" in text
     assert "唯一权威" in text
-    assert "0.9.2" in text
+    assert "0.9.3" in text
 
 
 def test_guide_covers_product_architecture_runtime_and_submission():
