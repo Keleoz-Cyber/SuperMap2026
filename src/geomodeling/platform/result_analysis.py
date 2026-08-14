@@ -260,6 +260,18 @@ def _build_findings(
 
     findings: list[Finding] = []
 
+    algorithm_labels = {
+        "idw": "反距离加权（IDW）",
+        "ordinary_kriging": "普通克里金",
+        "random_forest_spatial": "空间随机森林",
+        "kriging_rf_residual": "克里金与随机森林残差模型",
+        "dsi_like": "DSI-like",
+    }
+    support_unit_labels = {
+        "area_coordinate_unit2": "模型坐标平方单位",
+        "volume_coordinate_unit3": "模型坐标立方单位",
+    }
+
     # dominant_depth_interval
     if depth_prof.status == "applicable" and depth_prof.bins:
         best_bin = max(
@@ -293,8 +305,9 @@ def _build_findings(
             kind=FindingKind.LARGEST_HIGH_COMPONENT.value,
             title="最大的连续高值区",
             statement=(
-                f"{top.label} 区覆盖约 {top.support_measure:.1f}"
-                f"（{top.support_unit}），是当前最大的连续区域"
+                f"{top.label} 区覆盖约 {top.support_measure:,.1f}"
+                f"（{support_unit_labels.get(top.support_unit, '模型坐标单位')}），"
+                "是当前最大的连续区域"
             ),
             evidence=[
                 FindingEvidence(name="label", value=top.label),
@@ -324,17 +337,27 @@ def _build_findings(
 
     # formal_model
     metrics_parts = []
-    for k in ("rmse", "mae", "r2", "coverage"):
-        v = model_ev.metrics.get(k)
-        if v is not None:
-            metrics_parts.append(f"{k.upper()}={v}")
+    metric_labels = {"rmse": "RMSE", "mae": "MAE", "r2": "R²"}
+    for key in ("rmse", "mae", "r2"):
+        value = model_ev.metrics.get(key)
+        if value is not None:
+            metrics_parts.append(f"{metric_labels[key]} {float(value):.3f}")
+    coverage = model_ev.metrics.get("coverage")
+    if coverage is not None:
+        metrics_parts.append(f"覆盖率 {float(coverage):.1%}")
     metrics_str = "，".join(metrics_parts) if metrics_parts else "无可用指标"
+    algorithm_label = algorithm_labels.get(model_ev.algorithm, model_ev.algorithm)
+    count_label = (
+        f"{model_ev.common_valid_count:,}"
+        if model_ev.common_valid_count is not None
+        else "未知"
+    )
     findings.append(Finding(
         id="finding-formal-model",
         kind=FindingKind.FORMAL_MODEL.value,
-        title=f"当前使用 {model_ev.algorithm}",
+        title=f"当前使用{algorithm_label}",
         statement=(
-            f"共同参与比较的点有 {model_ev.common_valid_count or '未知'} 个，{metrics_str}"
+            f"共同参与比较的点有 {count_label} 个，{metrics_str}"
         ),
         evidence=[
             FindingEvidence(name="algorithm", value=model_ev.algorithm),

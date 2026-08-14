@@ -702,14 +702,23 @@ class TestFindings:
             component_limit=8,
             min_support_nodes=1,
             algorithm="ordinary_kriging",
+            model_metrics={"rmse": 0.26826092589268974, "mae": 0.21278721948784854, "r2": 0.8442501479446578, "coverage": 1.0},
+            common_valid_count=1911,
         )
         by_kind = {finding.kind: finding for finding in summary.findings}
         assert by_kind["dominant_depth_interval"].title == "哪个深度层高值最多"
         assert "这一层的高值比例最高" in by_kind["dominant_depth_interval"].statement
         assert by_kind["largest_high_component"].title == "最大的连续高值区"
+        assert "模型坐标立方单位" in by_kind["largest_high_component"].statement
+        assert "volume_coordinate_unit3" not in by_kind["largest_high_component"].statement
         assert "模型覆盖大小" in by_kind["largest_high_component"].limitations[0]
         assert by_kind["boundary_contact"].title == "哪些区域延伸到模型边缘"
         assert "实际范围可能比图上更大" in by_kind["boundary_contact"].statement
+        assert by_kind["formal_model"].title == "当前使用普通克里金"
+        assert by_kind["formal_model"].statement == (
+            "共同参与比较的点有 1,911 个，RMSE 0.268，MAE 0.213，"
+            "R² 0.844，覆盖率 100.0%"
+        )
         assert by_kind["uncertainty_availability"].title == "误差参考"
         combined = " ".join(
             finding.title + " " + finding.statement + " " + " ".join(finding.limitations)
