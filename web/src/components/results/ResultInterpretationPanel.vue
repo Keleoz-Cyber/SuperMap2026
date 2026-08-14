@@ -483,7 +483,7 @@ function findingStatement(finding: NonNullable<ResultAnalysisSummary['findings']
   box-shadow: 0 0 0 1px var(--domain-accent), 0 0 22px color-mix(in srgb, var(--domain-accent) 16%, transparent);
 }
 
-.domain-card summary {
+.domain-card > summary {
   display: grid;
   grid-template-columns: 10px minmax(0, 1fr) auto;
   gap: 9px;
@@ -493,7 +493,7 @@ function findingStatement(finding: NonNullable<ResultAnalysisSummary['findings']
   list-style: none;
 }
 
-.domain-card summary::-webkit-details-marker { display: none; }
+.domain-card > summary::-webkit-details-marker { display: none; }
 .direction-dot {
   width: 8px;
   height: 8px;
@@ -528,7 +528,7 @@ function findingStatement(finding: NonNullable<ResultAnalysisSummary['findings']
 .card-limitations { color: var(--s1-text-faint); }
 .card-limitations strong { color: var(--s1-warning); }
 .card-values { color: var(--s1-text-faint); font-size: var(--s1-font-xs); }
-.card-values summary { color: var(--domain-accent); }
+.card-values summary { color: var(--domain-accent); cursor: pointer; }
 .card-values p { margin-top: 6px; color: var(--s1-text-faint); }
 .card-limitations {
   padding-top: 7px;
