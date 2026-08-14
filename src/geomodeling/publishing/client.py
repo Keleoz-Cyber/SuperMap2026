@@ -1,6 +1,6 @@
 """Thin SuperMap iServer REST client used by the publishing adapter.
 
-Design rules (docs/project-guide.md):
+Design rules (docs/architecture.md):
 - The browser never holds iServer admin credentials; this client runs only
   inside the FastAPI backend.
 - Every call degrades gracefully: when iServer is down the client reports

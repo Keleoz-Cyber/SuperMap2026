@@ -1,6 +1,6 @@
 """v0.6 Task 1：专业分析契约与算法能力矩阵。
 
-当前合同依据 docs/project-guide.md。
+当前合同依据 docs/architecture.md 与 docs/product-guide.md。
 """
 
 import math

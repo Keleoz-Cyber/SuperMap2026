@@ -23,7 +23,7 @@ bin 边界为 ``linspace(0, max_distance, lag_count+1)``：恰好落在内部边
 （total/used/rate/seed）。不调用 ``scipy.spatial.distance.pdist``，
 不分配 n×n 距离矩阵；取消在每个有界批次前检查。
 
-当前合同依据：docs/project-guide.md。
+当前合同依据：docs/architecture.md。
 """
 
 from __future__ import annotations

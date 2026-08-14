@@ -1,8 +1,8 @@
-"""当前渲染与切片协议必须只在统一项目说明中维护。"""
+"""当前渲染与切片协议必须只在权威文档（README + 技术架构）中维护。"""
 
 from pathlib import Path
 
-DOCS = (Path("README.md"), Path("docs/project-guide.md"))
+DOCS = (Path("README.md"), Path("docs/architecture.md"))
 
 
 def _corpus() -> str:

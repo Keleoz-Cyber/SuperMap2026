@@ -8,7 +8,7 @@
 进程时间；同一输入与配置产生相同的点对身份与字节。全程不分配 ``n×n``
 距离矩阵，也不调用 ``scipy.spatial.distance.pdist``。
 
-当前合同依据：docs/project-guide.md。
+当前合同依据：docs/architecture.md。
 """
 
 from __future__ import annotations

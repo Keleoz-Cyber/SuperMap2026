@@ -1,17 +1,17 @@
-"""专业建模在统一项目说明中的合同。"""
+"""专业建模合同在技术架构文档中的记载合同。"""
 
 from pathlib import Path
 
-GUIDE = Path("docs/project-guide.md")
+ARCHITECTURE = Path("docs/architecture.md")
 
 
-def _guide() -> str:
-    assert GUIDE.exists()
-    return GUIDE.read_text(encoding="utf-8")
+def _doc() -> str:
+    assert ARCHITECTURE.exists()
+    return ARCHITECTURE.read_text(encoding="utf-8")
 
 
-def test_guide_documents_professional_module_boundaries():
-    text = _guide()
+def test_architecture_documents_professional_module_boundaries():
+    text = _doc()
     for token in (
         "professional_contracts",
         "pair_sampling",
@@ -26,8 +26,8 @@ def test_guide_documents_professional_module_boundaries():
         assert token in text
 
 
-def test_guide_documents_professional_evidence_contract():
-    text = _guide()
+def test_architecture_documents_professional_evidence_contract():
+    text = _doc()
     for token in (
         "50,000",
         "SHA-256",
@@ -45,11 +45,11 @@ def test_guide_documents_professional_evidence_contract():
         "6 邻接",
         "Voronoi",
     ):
-        assert token in text, f"统一说明缺少专业合同 {token}"
+        assert token in text, f"技术架构缺少专业合同 {token}"
 
 
-def test_guide_documents_uncertainty_without_overclaiming():
-    text = _guide()
+def test_architecture_documents_uncertainty_without_overclaiming():
+    text = _doc()
     assert "σ² = λᵀγ₀ + μ" in text
     assert "经验误差尺度" in text
     assert "距离加权局部 RMSE" in text

@@ -5,7 +5,7 @@
 未知字段拒绝；所有浮点字段必须有限。AI 引用只能指向当前
 EvidencePacket 的合法证据 ID。
 
-当前合同依据：docs/project-guide.md。
+当前合同依据：docs/architecture.md。
 """
 
 from __future__ import annotations

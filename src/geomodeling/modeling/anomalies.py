@@ -25,7 +25,7 @@
 ``modeling.uncertainty`` 一致（``RUN_CANCELED`` / http 409，按连通
 区批检查）。
 
-当前合同依据：docs/project-guide.md。
+当前合同依据：docs/architecture.md。
 """
 
 from __future__ import annotations

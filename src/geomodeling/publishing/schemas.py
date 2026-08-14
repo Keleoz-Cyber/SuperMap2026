@@ -2,7 +2,7 @@
 
 These models describe *runtime* evidence collected from a live iServer.
 They never mutate the v0.1/v0.2a registries; they sit next to them as a
-separate evidence layer, per docs/project-guide.md.
+separate evidence layer, per docs/architecture.md.
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ class VoxelCacheIdentity(BaseModel):
 
 
 class EvidenceStateName(str, Enum):
-    """Ordered publish evidence states from docs/project-guide.md."""
+    """Ordered publish evidence states from docs/architecture.md."""
 
     MODEL_SUCCEEDED = "model_succeeded"
     ARTIFACT_EXPORTED = "artifact_exported"

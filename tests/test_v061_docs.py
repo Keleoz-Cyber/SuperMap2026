@@ -1,4 +1,7 @@
-"""版本一致性与 NetCDF/SuperMap 统一说明合同。"""
+"""版本一致性与 NetCDF/SuperMap 渲染、SDK 预检与恢复的文档合同。
+
+渲染合同记载于 docs/architecture.md；SDK 预检与中断恢复记载于 docs/operations.md。
+"""
 
 from __future__ import annotations
 
@@ -7,7 +10,8 @@ import tomllib
 from pathlib import Path
 
 EXPECTED = "1.0.0"
-GUIDE = Path("docs/project-guide.md")
+ARCHITECTURE = Path("docs/architecture.md")
+OPERATIONS = Path("docs/operations.md")
 
 
 def test_all_version_surfaces_are_current():
@@ -29,8 +33,8 @@ def test_python_and_web_runtime_version_sources_are_current():
     assert EXPECTED not in web_version
 
 
-def test_guide_covers_render_asset_and_supermap_boundaries():
-    text = GUIDE.read_text(encoding="utf-8")
+def test_architecture_covers_render_asset_and_supermap_boundaries():
+    text = ARCHITECTURE.read_text(encoding="utf-8")
     for token in (
         "NetCDF classic/v3",
         "VoxelGridLayer3D",
@@ -45,11 +49,11 @@ def test_guide_covers_render_asset_and_supermap_boundaries():
         "legacy_render_sources",
         "rendering",
     ):
-        assert token in text, f"统一说明缺少渲染合同 {token}"
+        assert token in text, f"技术架构缺少渲染合同 {token}"
 
 
-def test_guide_covers_sdk_preflight_and_recovery():
-    text = GUIDE.read_text(encoding="utf-8")
+def test_operations_covers_sdk_preflight_and_recovery():
+    text = OPERATIONS.read_text(encoding="utf-8")
     for token in (
         "scripts/install_supermap3d.py",
         "--expected-sha256",
@@ -64,4 +68,4 @@ def test_guide_covers_sdk_preflight_and_recovery():
         "interrupted",
         "retry_failed",
     ):
-        assert token in text
+        assert token in text, f"运维手册缺少预检/恢复合同 {token}"

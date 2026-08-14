@@ -1,6 +1,6 @@
 # 演示数据说明
 
-`platform_demo_3d.csv` 是 GeoModelingPlatform v0.4.1 的**唯一权威演示数据文件**。
+`platform_demo_3d.csv` 是 GeoModelingPlatform 的**唯一权威演示数据文件**（自 v0.4.1 起沿用至今，长期有效）。
 
 ## 性质
 
