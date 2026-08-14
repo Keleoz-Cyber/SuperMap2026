@@ -27,7 +27,7 @@ function mountPanel(props: Record<string, unknown> = {}) {
 }
 
 describe('ResultInterpretationPanel', () => {
-  it('renders domain interpretation as fact, meaning, impact and action with 3D focus', async () => {
+  it('renders domain interpretation as a natural narrative with one concrete action', async () => {
     const analysis = structuredClone(RESULT_ANALYSIS_MOCK_3D) as typeof RESULT_ANALYSIS_MOCK_3D & {
       domain_interpretation: Record<string, unknown>
     }
@@ -37,34 +37,43 @@ describe('ResultInterpretationPanel', () => {
       panel_label: '地质研判',
       narrative_label: '地下电性结构',
       status: 'exploratory',
-      overview: '识别出 1 个可解释异常体；优先关注低阻异常区 低-A。',
+      overview: '共找到 1 个值得复核的区域。先看低阻异常区 低-A。',
       cards: [
         {
           id: 'domain-low-1000001',
           component_id: 1000001,
           direction: 'low',
           title: '低阻异常区 低-A',
-          summary: 'Z=-610～-420；网格支持体积 64000，未接触模型边界',
-          evidence: ['有效网格节点 8', '属性范围 10～12'],
-          possible_interpretations: ['可能与含水、裂隙发育或黏土富集有关'],
-          potential_impacts: ['可作为水文与构造核查的优先区域'],
-          recommended_actions: ['结合钻孔、水文资料和其他物探成果进行交叉验证'],
+          summary: '位于 Z=-610～-420，模型中覆盖约 64000，没有碰到模型边缘',
+          evidence: ['覆盖 8 个网格点', '数值 10～12'],
+          possible_interpretations: ['这一带的低阻可能与含水、裂隙较多或黏土富集有关'],
+          potential_impacts: ['如果钻孔或水文记录也有异常，应优先检查这里'],
+          recommended_actions: ['先对照钻孔、水文记录和其他物探结果'],
           confidence: 'exploratory',
-          limitations: ['低电阻率具有多解性，不能直接认定为含水区'],
+          limitations: ['低阻有多种成因，不能只凭低阻结果判断这里有水'],
           spatial_target: { kind: 'component', component_id: 1000001, depth_bin_index: null },
         },
       ],
-      global_limitations: ['当前结论来自 p25/p75 分位异常'],
+      global_limitations: ['这些高低值按模型自身的数值分布划分，尚未经过现场确认'],
     }
     const wrapper = mountPanel({ analysis })
     await flushPromises()
 
     expect(wrapper.get('[data-test="domain-overview"]').text()).toContain('低阻异常')
     const card = wrapper.get('[data-test="domain-card-low-1000001"]')
-    expect(card.text()).toContain('可能解释')
-    expect(card.text()).toContain('潜在影响')
-    expect(card.text()).toContain('建议核查')
-    expect(card.text()).toContain('不能直接认定为含水区')
+    expect(card.text()).toContain('这一带的低阻可能与含水')
+    expect(card.text()).toContain('如果钻孔或水文记录也有异常')
+    expect(card.text()).toContain('建议：先对照钻孔、水文记录')
+    expect(card.text()).toContain('注意：低阻有多种成因')
+    expect(card.text()).toContain('查看数值')
+    expect(card.text()).not.toContain('事实')
+    expect(card.text()).not.toContain('可能解释')
+    expect(card.text()).not.toContain('潜在影响')
+    expect(card.text()).not.toContain('建议核查')
+    expect(wrapper.get('[data-test="domain-overview"]').text()).toContain('建议复核')
+    expect(wrapper.get('[data-test="technical-evidence"]').text()).toContain('计算说明')
+    expect(wrapper.text()).not.toContain('技术证据与模型口径')
+    expect(wrapper.text()).not.toContain('证据边界')
     await wrapper.get('[data-test="domain-locate-1000001"]').trigger('click')
     expect(wrapper.emitted('focus-component')).toEqual([[1000001]])
   })
@@ -82,8 +91,8 @@ describe('ResultInterpretationPanel', () => {
     expect(wrapper.emitted('focus-depth-bin')).toEqual([[2]])
     // 无空间目标的发现不显示定位按钮
     expect(wrapper.find('[data-test="finding-locate-finding-boundary-contact"]').exists()).toBe(false)
-    // 限制文案如实展示（网格支持量非真实地质体积）
-    expect(findings.text()).toContain('网格支持体积估计非真实地质体积')
+    // 限制文案使用普通表达，同时保留“不是真实体积”的必要提醒
+    expect(findings.text()).toContain('这里只表示模型覆盖大小，不是真实地质体积')
     expect(findings.text()).toContain('正式模型：普通克里金')
     expect(findings.text()).not.toContain('Ordinary Kriging')
   })
@@ -118,7 +127,7 @@ describe('ResultInterpretationPanel', () => {
     expect(rowA.text()).toContain('A')
     expect(rowA.text()).toContain('100')
     expect(rowA.text()).toContain('500')
-    expect(rowA.text()).toContain('网格支持体积估计')
+    expect(rowA.text()).toContain('模型覆盖范围估计')
     // A 区不接触边界；B/C 接触边界徽标
     expect(rowA.text()).not.toContain('接触边界')
     expect(wrapper.get('[data-test="component-2"]').text()).toContain('接触边界')
@@ -151,7 +160,7 @@ describe('ResultInterpretationPanel', () => {
     expect(slice.text()).toContain('-400')
     expect(slice.text()).toContain('有效 11')
     // 共享完整网格阈值的组成（夹具：低 3 / 正常 5 / 高 3）
-    expect(slice.text()).toContain('沿用完整网格 p25/p75 阈值')
+    expect(slice.text()).toContain('按完整模型的 p25/p75 划分')
     expect(slice.text()).toContain('27.3%')
     expect(slice.text()).toContain('45.5%')
     // 与完整场高值占比差值（切片 27.3% - 全场 25.0%）
@@ -173,8 +182,8 @@ describe('ResultInterpretationPanel', () => {
     expect(model.text()).not.toContain('ordinary_kriging')
     expect(model.text()).toContain('5.2')
     expect(model.text()).toContain('0.92')
-    expect(model.text()).toContain('公共有效点 50')
-    expect(model.text()).toContain('正式模型已登记')
+    expect(model.text()).toContain('共同参与比较的点 50')
+    expect(model.text()).toContain('当前使用的正式模型')
     expect(model.text()).not.toContain('最佳候选')
     expect(model.text()).not.toContain('candidate_valid_count')
     expect(model.text()).not.toContain('candidate_nodata_count')
@@ -220,7 +229,7 @@ describe('ResultInterpretationPanel', () => {
     const overview = wrapper.get('[data-test="interpretation-overview"]')
     expect(overview.text()).toContain('深度分层不适用')
     // 2D 支持量口径为面积
-    expect(wrapper.get('[data-test="component-1"]').text()).toContain('网格支持面积估计')
+    expect(wrapper.get('[data-test="component-1"]').text()).toContain('模型覆盖范围估计')
   })
 
   it('shows typed empty, loading and error states without stale numbers', async () => {

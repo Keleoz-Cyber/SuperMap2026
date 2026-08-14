@@ -30,7 +30,7 @@ const emit = defineEmits<{
   (e: 'focus-depth-bin', index: number): void
 }>()
 
-const CONFIDENCE_LABELS: Record<string, string> = { high: '高', medium: '中', low: '低' }
+const CONFIDENCE_LABELS: Record<string, string> = { high: '较强', medium: '一般', low: '有限' }
 const METRIC_LABELS: Record<string, string> = {
   rmse: 'RMSE',
   mae: 'MAE',
@@ -39,8 +39,8 @@ const METRIC_LABELS: Record<string, string> = {
   bias: 'Bias',
 }
 const DOMAIN_CONFIDENCE_LABELS: Record<string, string> = {
-  rule_supported: '规则支持',
-  exploratory: '探索性',
+  rule_supported: '可直接参考',
+  exploratory: '建议复核',
 }
 
 const domain = computed(() => props.analysis?.domain_interpretation ?? null)
@@ -51,7 +51,9 @@ function percent(ratio: number | null | undefined): string {
 }
 
 function supportUnitLabel(unit: ResultComponentPreview['support_unit']): string {
-  return unit === 'volume_coordinate_unit3' ? '网格支持体积估计' : '网格支持面积估计'
+  return unit === 'volume_coordinate_unit3'
+    ? '模型覆盖范围估计（三维网格）'
+    : '模型覆盖范围估计（平面网格）'
 }
 
 // 成果组成桶：保持后端返回顺序与数值，只补显示标签
@@ -82,6 +84,10 @@ const modelMetrics = computed(() => {
 
 function productFindingCopy(text: string): string {
   return text
+    .replaceAll('网格支持体积估计非真实地质体积', '这里只表示模型覆盖大小，不是真实地质体积')
+    .replaceAll('网格支持面积估计非真实地质面积', '这里只表示模型覆盖大小，不是真实地质面积')
+    .replaceAll('网格支持体积估计', '模型覆盖范围估计')
+    .replaceAll('网格支持面积估计', '模型覆盖范围估计')
     .replaceAll('volume_coordinate_unit3', '网格坐标单位³')
     .replaceAll('area_coordinate_unit2', '网格坐标单位²')
 }
@@ -179,12 +185,12 @@ function findingStatement(finding: NonNullable<ResultAnalysisSummary['findings']
       >
         <div class="domain-kicker">
           <span>{{ domain.narrative_label }}</span>
-          <span class="domain-status">{{ domain.status === 'not_applicable' ? '不适用' : '探索性研判' }}</span>
+          <span class="domain-status">{{ domain.status === 'not_applicable' ? '仅看数值' : '建议复核' }}</span>
         </div>
         <h3>{{ domain.panel_label }}</h3>
         <p>{{ domain.overview }}</p>
         <div v-if="domain.global_limitations.length" class="domain-boundary">
-          <strong>证据边界</strong>
+          <strong>注意</strong>
           <span>{{ domain.global_limitations.join('；') }}</span>
         </div>
       </section>
@@ -207,23 +213,15 @@ function findingStatement(finding: NonNullable<ResultAnalysisSummary['findings']
             <span class="domain-confidence">{{ DOMAIN_CONFIDENCE_LABELS[card.confidence] }}</span>
           </summary>
           <div class="domain-card-body">
-            <div class="judgement-section">
-              <span class="judgement-label">事实</span>
+            <p class="domain-narrative">
+              {{ card.possible_interpretations.join('；') }}。{{ card.potential_impacts.join('；') }}。
+            </p>
+            <p class="domain-action"><strong>建议：</strong>{{ card.recommended_actions.join('；') }}</p>
+            <p class="card-limitations"><strong>注意：</strong>{{ card.limitations.join('；') }}</p>
+            <details class="card-values">
+              <summary>查看数值</summary>
               <p>{{ card.evidence.join(' · ') }}</p>
-            </div>
-            <div class="judgement-section">
-              <span class="judgement-label">可能解释</span>
-              <p>{{ card.possible_interpretations.join('；') }}</p>
-            </div>
-            <div class="judgement-section">
-              <span class="judgement-label">潜在影响</span>
-              <p>{{ card.potential_impacts.join('；') }}</p>
-            </div>
-            <div class="judgement-section action">
-              <span class="judgement-label">建议核查</span>
-              <p>{{ card.recommended_actions.join('；') }}</p>
-            </div>
-            <div class="card-limitations">{{ card.limitations.join('；') }}</div>
+            </details>
             <button
               type="button"
               class="domain-locate"
@@ -242,8 +240,8 @@ function findingStatement(finding: NonNullable<ResultAnalysisSummary['findings']
         data-test="technical-evidence"
       >
         <summary>
-          <span>技术证据与模型口径</span>
-          <small>阈值、连通区、切片与验证指标</small>
+          <span>计算说明</span>
+          <small>查看阈值、区域划分、切片和模型指标</small>
         </summary>
         <div class="technical-evidence-body">
       <!-- 结构化发现：后端受控模板文案 + 空间定位 -->
@@ -258,12 +256,12 @@ function findingStatement(finding: NonNullable<ResultAnalysisSummary['findings']
           <header class="finding-head">
             <span class="finding-title">{{ findingTitle(finding) }}</span>
             <span class="confidence" :data-confidence="finding.confidence">
-              可信度 {{ CONFIDENCE_LABELS[finding.confidence] ?? finding.confidence }}
+              数据支持 {{ CONFIDENCE_LABELS[finding.confidence] ?? finding.confidence }}
             </span>
           </header>
           <p class="finding-statement">{{ findingStatement(finding) }}</p>
           <ul v-if="finding.limitations.length > 0" class="finding-limits">
-            <li v-for="limit in finding.limitations" :key="limit">{{ limit }}</li>
+            <li v-for="limit in finding.limitations" :key="limit">{{ productFindingCopy(limit) }}</li>
           </ul>
           <button
             v-if="finding.spatial_target && finding.spatial_target.kind !== 'grid'"
@@ -356,7 +354,7 @@ function findingStatement(finding: NonNullable<ResultAnalysisSummary['findings']
             均值 {{ formatNumber(sliceStats?.mean) }}
           </p>
           <template v-if="sliceStats && sliceStats.thresholds">
-            <p class="scope-note">低/正常/高组成沿用完整网格 p25/p75 阈值</p>
+            <p class="scope-note">低值和高值按完整模型的 p25/p75 划分</p>
             <div class="bucket-row compact">
               <div class="bucket" data-category="low">
                 <span class="bucket-label">低值</span>
@@ -371,7 +369,7 @@ function findingStatement(finding: NonNullable<ResultAnalysisSummary['findings']
                 <span class="bucket-value mono">{{ percent(sliceStats.high_ratio) }}</span>
               </div>
             </div>
-            <p class="scope-note">与完整场高值占比差值：{{ formatDelta(sliceHighDelta) }}</p>
+            <p class="scope-note">这个切片的高值占比较完整模型相差：{{ formatDelta(sliceHighDelta) }}</p>
           </template>
           <p v-else class="scope-note">未提供完整网格阈值，切片组成不可用</p>
         </template>
@@ -379,7 +377,7 @@ function findingStatement(finding: NonNullable<ResultAnalysisSummary['findings']
 
       <!-- 模型与不确定性 -->
       <section class="block" data-test="interpretation-model">
-        <h3 class="block-title">模型与不确定性</h3>
+        <h3 class="block-title">模型表现</h3>
         <p class="scope-note">算法 {{ algorithmLabel(analysis.model_evidence.algorithm) }}</p>
         <div v-if="modelMetrics.length > 0" class="metric-row">
           <div v-for="metric in modelMetrics" :key="metric.label" class="metric">
@@ -388,11 +386,11 @@ function findingStatement(finding: NonNullable<ResultAnalysisSummary['findings']
           </div>
         </div>
         <p v-if="analysis.model_evidence.common_valid_count !== null" class="scope-note">
-          公共有效点 {{ analysis.model_evidence.common_valid_count.toLocaleString() }}
+          共同参与比较的点 {{ analysis.model_evidence.common_valid_count.toLocaleString() }}
         </p>
         <p class="scope-note">
           <template v-if="analysis.model_evidence.formal_selection_id">
-            正式模型已登记
+            当前使用的正式模型
           </template>
           <template v-else>未选择正式模型</template>
         </p>
@@ -510,15 +508,28 @@ function findingStatement(finding: NonNullable<ResultAnalysisSummary['findings']
 .domain-card-heading small { color: var(--s1-text-faint); font-size: var(--s1-font-xs); line-height: 1.45; }
 .domain-confidence { color: var(--domain-accent); font-size: var(--s1-font-xs); white-space: nowrap; }
 .domain-card-body { display: grid; gap: 8px; padding: 0 12px 12px 31px; }
-.judgement-section { display: grid; grid-template-columns: 60px minmax(0, 1fr); gap: 8px; }
-.judgement-label { color: var(--domain-accent); font-size: var(--s1-font-xs); }
-.judgement-section p { margin: 0; color: var(--s1-text-dim); font-size: var(--s1-font-xs); line-height: 1.55; }
-.judgement-section.action {
+.domain-narrative,
+.domain-action,
+.card-limitations,
+.card-values p {
+  margin: 0;
+  font-size: var(--s1-font-xs);
+  line-height: 1.65;
+}
+.domain-narrative { color: var(--s1-text-dim); }
+.domain-action {
   padding: 8px;
   margin-left: -8px;
   border-radius: 7px;
   background: color-mix(in srgb, var(--domain-accent) 9%, transparent);
+  color: var(--s1-text);
 }
+.domain-action strong { color: var(--domain-accent); }
+.card-limitations { color: var(--s1-text-faint); }
+.card-limitations strong { color: var(--s1-warning); }
+.card-values { color: var(--s1-text-faint); font-size: var(--s1-font-xs); }
+.card-values summary { color: var(--domain-accent); }
+.card-values p { margin-top: 6px; color: var(--s1-text-faint); }
 .card-limitations {
   padding-top: 7px;
   border-top: 1px dashed var(--s1-border-soft);
