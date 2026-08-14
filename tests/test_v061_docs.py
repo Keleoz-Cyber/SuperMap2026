@@ -6,7 +6,7 @@ import json
 import tomllib
 from pathlib import Path
 
-EXPECTED = "0.9.3"
+EXPECTED = "1.0.0"
 GUIDE = Path("docs/project-guide.md")
 
 

@@ -117,7 +117,7 @@ def test_health(tmp_path):
     client = make_client(tmp_path)
     body = client.get("/api/health").json()
     assert body["status"] == "ok"
-    assert body["version"] == "0.9.3"
+    assert body["version"] == "1.0.0"
 
 
 def test_cases_cards(tmp_path):

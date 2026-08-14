@@ -19,9 +19,9 @@ from geomodeling.portable import (
 
 
 def test_health_identity_requires_exact_version() -> None:
-    assert _is_this_platform({"status": "ok", "version": "0.9.3"})
+    assert _is_this_platform({"status": "ok", "version": "1.0.0"})
     assert not _is_this_platform({"status": "ok", "version": "0.9.2"})
-    assert not _is_this_platform({"status": "healthy", "version": "0.9.3"})
+    assert not _is_this_platform({"status": "healthy", "version": "1.0.0"})
 
 
 def test_template_root_marker_is_not_an_absolute_machine_path() -> None:
