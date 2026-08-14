@@ -529,6 +529,31 @@ def _make_two_region_grid() -> GridResult:
 
 
 class TestConnectedComponents:
+    def test_high_and_low_components_have_unique_directional_identity(self):
+        grid = _make_two_region_grid()
+        summary = analyze_result_grid(
+            grid,
+            result_id="r-directions",
+            grid_sha256="f" * 64,
+            variable_name="RHO",
+            variable_unit="Ω·m",
+            depth_bins=2,
+            component_limit=8,
+            min_support_nodes=1,
+        )
+
+        assert summary.components_preview.rows
+        assert summary.low_components_preview is not None
+        assert summary.low_components_preview.rows
+        assert {row.direction for row in summary.components_preview.rows} == {"high"}
+        assert {row.direction for row in summary.low_components_preview.rows} == {"low"}
+        assert {row.component_id for row in summary.components_preview.rows}.isdisjoint(
+            {row.component_id for row in summary.low_components_preview.rows}
+        )
+        assert all(row.component_id > 1_000_000 for row in summary.low_components_preview.rows)
+        assert summary.domain_interpretation is not None
+        assert summary.domain_interpretation.profile == "resistivity"
+
     def test_two_regions_separated(self):
         grid = _make_two_region_grid()
         summary = analyze_result_grid(

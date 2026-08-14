@@ -8,7 +8,7 @@ export const RESULT_ANALYSIS_MOCK_3D: ResultAnalysisSummary = {
   identity: {
     result_id: 'r-3d-normal',
     grid_sha256: 'a64charhexhash00000000000000000000000000000000000000000000000000',
-    analysis_version: 'result_analysis.v1',
+    analysis_version: 'result_analysis.v2',
     dimension: '3d',
     coordinate_type: 'local_linear',
   },
@@ -144,7 +144,7 @@ export const RESULT_ANALYSIS_MOCK_3D: ResultAnalysisSummary = {
   ],
   provenance: {
     grid_sha256: 'a64charhexhash00000000000000000000000000000000000000000000000000',
-    calculation_version: 'result_analysis.v1',
+    calculation_version: 'result_analysis.v2',
     threshold_method: 'numpy_linear_p25_p75',
   },
 }
@@ -153,7 +153,7 @@ export const RESULT_ANALYSIS_MOCK_2D: ResultAnalysisSummary = {
   identity: {
     result_id: 'r-2d-na',
     grid_sha256: 'b64charhexhash00000000000000000000000000000000000000000000000000',
-    analysis_version: 'result_analysis.v1',
+    analysis_version: 'result_analysis.v2',
     dimension: '2d',
     coordinate_type: 'local_linear',
   },
@@ -260,7 +260,7 @@ export const RESULT_ANALYSIS_MOCK_2D: ResultAnalysisSummary = {
   ],
   provenance: {
     grid_sha256: 'b64charhexhash00000000000000000000000000000000000000000000000000',
-    calculation_version: 'result_analysis.v1',
+    calculation_version: 'result_analysis.v2',
     threshold_method: 'numpy_linear_p25_p75',
   },
 }

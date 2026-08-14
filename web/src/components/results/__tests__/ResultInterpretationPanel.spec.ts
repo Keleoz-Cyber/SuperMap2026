@@ -27,6 +27,48 @@ function mountPanel(props: Record<string, unknown> = {}) {
 }
 
 describe('ResultInterpretationPanel', () => {
+  it('renders domain interpretation as fact, meaning, impact and action with 3D focus', async () => {
+    const analysis = structuredClone(RESULT_ANALYSIS_MOCK_3D) as typeof RESULT_ANALYSIS_MOCK_3D & {
+      domain_interpretation: Record<string, unknown>
+    }
+    analysis.domain_interpretation = {
+      rule_version: 'geological_interpretation.v1',
+      profile: 'resistivity',
+      panel_label: '地质研判',
+      narrative_label: '地下电性结构',
+      status: 'exploratory',
+      overview: '识别出 1 个可解释异常体；优先关注低阻异常区 低-A。',
+      cards: [
+        {
+          id: 'domain-low-1000001',
+          component_id: 1000001,
+          direction: 'low',
+          title: '低阻异常区 低-A',
+          summary: 'Z=-610～-420；网格支持体积 64000，未接触模型边界',
+          evidence: ['有效网格节点 8', '属性范围 10～12'],
+          possible_interpretations: ['可能与含水、裂隙发育或黏土富集有关'],
+          potential_impacts: ['可作为水文与构造核查的优先区域'],
+          recommended_actions: ['结合钻孔、水文资料和其他物探成果进行交叉验证'],
+          confidence: 'exploratory',
+          limitations: ['低电阻率具有多解性，不能直接认定为含水区'],
+          spatial_target: { kind: 'component', component_id: 1000001, depth_bin_index: null },
+        },
+      ],
+      global_limitations: ['当前结论来自 p25/p75 分位异常'],
+    }
+    const wrapper = mountPanel({ analysis })
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="domain-overview"]').text()).toContain('低阻异常')
+    const card = wrapper.get('[data-test="domain-card-low-1000001"]')
+    expect(card.text()).toContain('可能解释')
+    expect(card.text()).toContain('潜在影响')
+    expect(card.text()).toContain('建议核查')
+    expect(card.text()).toContain('不能直接认定为含水区')
+    await wrapper.get('[data-test="domain-locate-1000001"]').trigger('click')
+    expect(wrapper.emitted('focus-component')).toEqual([[1000001]])
+  })
+
   it('renders backend findings with confidence, limitations and spatial locate emission', async () => {
     const wrapper = mountPanel()
     await flushPromises()

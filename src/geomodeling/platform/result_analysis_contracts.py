@@ -19,6 +19,7 @@ from geomodeling.platform.schemas import ContractModel
 
 __all__ = [
     "RESULT_ANALYSIS_VERSION",
+    "LOW_COMPONENT_ID_BASE",
     "RESULT_ANALYSIS_NO_VALID_CELLS",
     "RESULT_ANALYSIS_GRID_CORRUPT",
     "RESULT_ANALYSIS_NOT_APPLICABLE",
@@ -36,6 +37,8 @@ __all__ = [
     "DepthProfile",
     "ComponentPreview",
     "ComponentsPreview",
+    "DomainInterpretationCard",
+    "DomainInterpretation",
     "ModelEvidence",
     "SpatialTarget",
     "FindingEvidence",
@@ -44,7 +47,8 @@ __all__ = [
     "ResultAnalysisSummary",
 ]
 
-RESULT_ANALYSIS_VERSION = "result_analysis.v1"
+RESULT_ANALYSIS_VERSION = "result_analysis.v2"
+LOW_COMPONENT_ID_BASE = 1_000_000
 
 RESULT_ANALYSIS_NO_VALID_CELLS = "RESULT_ANALYSIS_NO_VALID_CELLS"
 RESULT_ANALYSIS_GRID_CORRUPT = "RESULT_ANALYSIS_GRID_CORRUPT"
@@ -167,6 +171,7 @@ class ComponentPreview(ContractModel):
     rank: int
     label: str
     component_id: int
+    direction: Literal["high", "low"] = "high"
     support_node_count: int
     support_measure: float
     support_unit: Literal["area_coordinate_unit2", "volume_coordinate_unit3"]
@@ -242,6 +247,34 @@ class SpatialTarget(ContractModel):
     depth_bin_index: int | None = None
 
 
+class DomainInterpretationCard(ContractModel):
+    id: str
+    component_id: int
+    direction: Literal["high", "low"]
+    title: str
+    summary: str
+    evidence: list[str]
+    possible_interpretations: list[str]
+    potential_impacts: list[str]
+    recommended_actions: list[str]
+    confidence: Literal["rule_supported", "exploratory"]
+    limitations: list[str]
+    spatial_target: SpatialTarget
+
+
+class DomainInterpretation(ContractModel):
+    rule_version: str
+    profile: Literal[
+        "resistivity", "microseismic_velocity", "gas_content", "generic_3d"
+    ]
+    panel_label: Literal["地质研判", "规则研判"]
+    narrative_label: str
+    status: Literal["rule_supported", "exploratory", "not_applicable"]
+    overview: str
+    cards: list[DomainInterpretationCard]
+    global_limitations: list[str]
+
+
 class FindingEvidence(ContractModel):
     name: str
     value: float | int | str | None = None
@@ -279,6 +312,8 @@ class ResultAnalysisSummary(ContractModel):
     composition: Composition
     depth_profile: DepthProfile
     components_preview: ComponentsPreview
+    low_components_preview: ComponentsPreview | None = None
+    domain_interpretation: DomainInterpretation | None = None
     model_evidence: ModelEvidence
     findings: list[Finding]
     provenance: Provenance

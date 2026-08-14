@@ -105,13 +105,18 @@ class TestAnalysisSummaryApi:
         data = resp.json()
         assert data["identity"]["result_id"] == candidate_id
         assert len(data["identity"]["grid_sha256"]) == 64
-        assert data["identity"]["analysis_version"] == "result_analysis.v1"
+        assert data["identity"]["analysis_version"] == "result_analysis.v2"
         assert data["identity"]["dimension"] == "3d"
         assert data["grid"]["valid_count"] > 0
         assert data["thresholds"]["source"] == "full_grid_quartile"
         assert len(data["composition"]["buckets"]) == 3
         assert data["depth_profile"]["status"] == "applicable"
         assert len(data["findings"]) >= 4
+        assert data["low_components_preview"] is not None
+        assert data["domain_interpretation"]["profile"] == "generic_3d"
+        assert data["domain_interpretation"]["status"] == "not_applicable"
+        from geomodeling.api.routes import result_analysis
+        assert any(key.startswith("result_analysis.v2:") for key in result_analysis._cache)
 
     def test_unmaterialized_returns_404(self, tmp_path):
         client, runtime = make_client(tmp_path)

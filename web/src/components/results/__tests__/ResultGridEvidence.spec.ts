@@ -238,7 +238,7 @@ describe('ResultGridEvidence（V6 四标签）', () => {
     const pane = wrapper.get('[data-test="ge-pane-provenance"]')
     expect(pane.text()).toContain('输入样本')
     expect(pane.text()).toContain('96')
-    expect(pane.text()).toContain('result_analysis.v1')
+    expect(pane.text()).toContain('result_analysis.v2')
     expect(pane.text()).toContain('numpy_linear_p25_p75')
     expect(pane.text()).toContain('a64charhex')
     expect(pane.text()).toContain('nc-abc123')

@@ -43,6 +43,7 @@ GeoModelingPlatform 是“上传数据后完成校验、调参建模、空间验
 5. SuperMap 三维场与后端权威切片、统计、异常和数据血统一致联动。
 6. 来源哈希、不可变参数快照、工件清单和发布回执形成可审计证据链。
 7. 对 DSI-like、局部坐标、模型离散度和 AI 解释设置清晰命名边界。
+8. 将高低异常转成“事实—可能解释—潜在影响—建议核查”链，并与三维异常体双向定位；专业规则失配时安全降级为纯数值事实。
 
 ## 3. 技术架构
 
@@ -66,7 +67,8 @@ SuperMap iServer / SuperMap3D / iDesktopX（表达与发布层）
 
 - `geomodeling.platform`：Case、DatasetVersion、Experiment、Run、CandidateResult、FormalSelection、持久化任务和补偿事务。
 - `geomodeling.modeling`：IDW、普通克里金、DSI-like、机器学习、空间折分、指标和规则网格。
-- `geomodeling.analysis`：质量、分布、剖面、模型、残差、异常和规则研判。
+- `geomodeling.analysis`：质量、分布、剖面、模型、残差和异常。
+- `geomodeling.platform.geological_interpretation`：版本化电阻率、微震速度和瓦斯含量解释规则；不调用外部 AI，不重算模型。
 - `geomodeling.microseismic`：DAT 解析、局部 XYZ、一次全局 3σ、黄金门禁和重复坐标聚合。
 - `geomodeling.publishing`：iServer 探测、RenderAsset、NetCDF、历史 S3M 兼容和浏览器回执。
 - `geomodeling.api.routes`：只负责 HTTP 校验、调用领域服务和 DTO 转换。
@@ -160,6 +162,14 @@ SuperMap iServer / SuperMap3D / iDesktopX（表达与发布层）
 - 经验误差尺度是折外残差在显式邻域内的距离加权局部 RMSE，**不是标准误**。
 - 异常连通区使用显式阈值：2D 为 4 邻接、3D 为 6 邻接；Voronoi 支持只称“网格支持面积/体积估计”，不是地质储量。
 - 不适用能力返回 `not_applicable`；旧成果缺失专业计算返回 `LEGACY_RESULT_NOT_COMPUTED`，不伪造零值。
+
+### 6.4 地质属性研判
+
+成果页右侧以确定性规则为主，将同一成果网格的高、低值连通区组织为“数值事实 → 可能解释 → 潜在影响 → 建议核查”。电阻率优先展示低阻异常，微震速度优先展示低速度异常，瓦斯含量优先展示高值异常；卡片与三维标注共享组件 ID，高值为暖色、低值为冷色，可相互定位。
+
+规则只翻译既有证据，不产生新数值，也不把分位异常升级为已确认地质对象。当前阈值是完整成果网格的 p25/p75，因此所有专业卡片均标记为探索性：低阻具有含水、裂隙、黏土等多解性；速度场不包含事件时间、位置或能量；瓦斯未登记矿区法定分级阈值。自定义属性没有受控规则时返回 `not_applicable`，只保留通用统计和技术证据。
+
+DeepSeek 位于独立的“AI 辅助”标签，只消费结构化证据。未配置 API Key、网络失败或响应无效，都不影响地质研判、三维定位和建模主链。
 
 ## 7. 三维渲染、切片与 SuperMap
 

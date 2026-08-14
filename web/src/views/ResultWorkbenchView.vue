@@ -74,9 +74,16 @@ const resultAnalysisLoading = ref(false)
 const currentSlice = ref<SliceAnalysisResponse | null>(null)
 const focusedComponentId = ref<number | null>(null)
 const volumePanelRef = ref<InstanceType<typeof NativeVolumePanel> | null>(null)
-// 三维舞台与异常清单必须共享同一份完整组件集合，避免 D–H 可点击却无法定位。
+// 三维舞台与异常清单必须共享同一份完整组件集合，避免卡片可点击却无法定位。
 // 视觉拥挤由渲染层的聚焦/显隐策略解决，不能通过截断数据身份规避。
-const sceneComponents = computed(() => resultAnalysis.value?.components_preview.rows ?? null)
+const sceneComponents = computed(() => {
+  const summary = resultAnalysis.value
+  if (!summary) return null
+  return [
+    ...summary.components_preview.rows,
+    ...(summary.low_components_preview?.rows ?? []),
+  ]
+})
 
 // v0.9.0 V6：顶栏/摘要条上下文（案例、案例列表、正式成果状态、导出状态）
 const caseRecord = ref<PlatformCaseRecord | null>(null)

@@ -38,6 +38,12 @@ const METRIC_LABELS: Record<string, string> = {
   coverage: '覆盖率',
   bias: 'Bias',
 }
+const DOMAIN_CONFIDENCE_LABELS: Record<string, string> = {
+  rule_supported: '规则支持',
+  exploratory: '探索性',
+}
+
+const domain = computed(() => props.analysis?.domain_interpretation ?? null)
 
 function percent(ratio: number | null | undefined): string {
   if (ratio === null || ratio === undefined || !Number.isFinite(ratio)) return '—'
@@ -135,7 +141,12 @@ function findingStatement(finding: NonNullable<ResultAnalysisSummary['findings']
 </script>
 
 <template>
-  <section class="interpretation" data-test="result-interpretation" aria-label="规则研判">
+  <section
+    class="interpretation"
+    :class="domain ? `domain-${domain.profile}` : ''"
+    data-test="result-interpretation"
+    :aria-label="domain?.panel_label ?? '规则研判'"
+  >
     <AsyncState
       v-if="loading"
       kind="loading"
@@ -160,8 +171,83 @@ function findingStatement(finding: NonNullable<ResultAnalysisSummary['findings']
     />
 
     <template v-else>
+      <section
+        v-if="domain"
+        class="domain-overview"
+        data-test="domain-overview"
+        :data-status="domain.status"
+      >
+        <div class="domain-kicker">
+          <span>{{ domain.narrative_label }}</span>
+          <span class="domain-status">{{ domain.status === 'not_applicable' ? '不适用' : '探索性研判' }}</span>
+        </div>
+        <h3>{{ domain.panel_label }}</h3>
+        <p>{{ domain.overview }}</p>
+        <div v-if="domain.global_limitations.length" class="domain-boundary">
+          <strong>证据边界</strong>
+          <span>{{ domain.global_limitations.join('；') }}</span>
+        </div>
+      </section>
+
+      <section v-if="domain?.cards.length" class="domain-cards" data-test="domain-cards">
+        <details
+          v-for="(card, index) in domain.cards"
+          :key="card.id"
+          class="domain-card"
+          :class="[`direction-${card.direction}`, { focused: card.component_id === focusedComponentId }]"
+          :open="index === 0 || card.component_id === focusedComponentId"
+          :data-test="`domain-card-${card.direction}-${card.component_id}`"
+        >
+          <summary>
+            <span class="direction-dot" aria-hidden="true"></span>
+            <span class="domain-card-heading">
+              <strong>{{ card.title }}</strong>
+              <small>{{ card.summary }}</small>
+            </span>
+            <span class="domain-confidence">{{ DOMAIN_CONFIDENCE_LABELS[card.confidence] }}</span>
+          </summary>
+          <div class="domain-card-body">
+            <div class="judgement-section">
+              <span class="judgement-label">事实</span>
+              <p>{{ card.evidence.join(' · ') }}</p>
+            </div>
+            <div class="judgement-section">
+              <span class="judgement-label">可能解释</span>
+              <p>{{ card.possible_interpretations.join('；') }}</p>
+            </div>
+            <div class="judgement-section">
+              <span class="judgement-label">潜在影响</span>
+              <p>{{ card.potential_impacts.join('；') }}</p>
+            </div>
+            <div class="judgement-section action">
+              <span class="judgement-label">建议核查</span>
+              <p>{{ card.recommended_actions.join('；') }}</p>
+            </div>
+            <div class="card-limitations">{{ card.limitations.join('；') }}</div>
+            <button
+              type="button"
+              class="domain-locate"
+              :data-test="`domain-locate-${card.component_id}`"
+              @click="emit('focus-component', card.component_id)"
+            >
+              定位三维
+            </button>
+          </div>
+        </details>
+      </section>
+
+      <details
+        class="technical-evidence"
+        :open="domain?.status === 'not_applicable'"
+        data-test="technical-evidence"
+      >
+        <summary>
+          <span>技术证据与模型口径</span>
+          <small>阈值、连通区、切片与验证指标</small>
+        </summary>
+        <div class="technical-evidence-body">
       <!-- 结构化发现：后端受控模板文案 + 空间定位 -->
-      <section class="block" data-test="interpretation-findings">
+      <section class="block technical-block" data-test="interpretation-findings">
         <h3 class="block-title">关键发现</h3>
         <article
           v-for="finding in analysis.findings"
@@ -312,6 +398,8 @@ function findingStatement(finding: NonNullable<ResultAnalysisSummary['findings']
         </p>
         <p class="scope-note">{{ uncertaintyStatement }}</p>
       </section>
+        </div>
+      </details>
     </template>
   </section>
 </template>
@@ -322,6 +410,170 @@ function findingStatement(finding: NonNullable<ResultAnalysisSummary['findings']
   flex-direction: column;
   gap: var(--s1-space-3);
   min-width: 0;
+}
+
+.domain-overview {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--domain-accent, var(--s1-cyan-strong)) 55%, transparent);
+  border-radius: 14px;
+  padding: 14px;
+  background:
+    radial-gradient(circle at 100% 0, color-mix(in srgb, var(--domain-accent, var(--s1-cyan-strong)) 18%, transparent), transparent 48%),
+    var(--s1-surface-1);
+}
+
+.domain-resistivity { --domain-accent: #e8b84b; --domain-low: #4d8de0; }
+.domain-microseismic_velocity { --domain-accent: #9d87ff; --domain-low: #54d5d0; }
+.domain-gas_content { --domain-accent: #ef8a4c; --domain-low: #54d6a8; }
+.domain-generic_3d { --domain-accent: var(--s1-cyan-strong); --domain-low: var(--s1-cyan-strong); }
+
+.domain-kicker {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--domain-accent);
+  font-size: var(--s1-font-xs);
+  letter-spacing: 0.08em;
+}
+
+.domain-status {
+  border: 1px solid color-mix(in srgb, var(--domain-accent) 45%, transparent);
+  border-radius: 999px;
+  padding: 1px 7px;
+  letter-spacing: 0;
+}
+
+.domain-overview h3 {
+  margin: 8px 0 4px;
+  font-size: 20px;
+  color: var(--s1-text);
+}
+
+.domain-overview > p {
+  margin: 0;
+  color: var(--s1-text-dim);
+  font-size: var(--s1-font-sm);
+  line-height: 1.65;
+}
+
+.domain-boundary {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--s1-border-soft);
+  font-size: var(--s1-font-xs);
+  color: var(--s1-text-faint);
+  line-height: 1.55;
+}
+
+.domain-boundary strong { color: var(--domain-accent); }
+.domain-cards { display: grid; gap: 8px; }
+
+.domain-card {
+  border: 1px solid var(--s1-border-soft);
+  border-left: 3px solid var(--domain-accent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--s1-surface-1) 94%, var(--domain-accent) 6%);
+  overflow: hidden;
+}
+
+.domain-card.direction-low { border-left-color: var(--domain-low); }
+.domain-card.focused {
+  box-shadow: 0 0 0 1px var(--domain-accent), 0 0 22px color-mix(in srgb, var(--domain-accent) 16%, transparent);
+}
+
+.domain-card summary {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  gap: 9px;
+  align-items: start;
+  cursor: pointer;
+  padding: 11px 12px;
+  list-style: none;
+}
+
+.domain-card summary::-webkit-details-marker { display: none; }
+.direction-dot {
+  width: 8px;
+  height: 8px;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: var(--domain-accent);
+  box-shadow: 0 0 10px var(--domain-accent);
+}
+.direction-low .direction-dot { background: var(--domain-low); box-shadow: 0 0 10px var(--domain-low); }
+.domain-card-heading { display: grid; gap: 3px; min-width: 0; }
+.domain-card-heading strong { color: var(--s1-text); font-size: var(--s1-font-sm); }
+.domain-card-heading small { color: var(--s1-text-faint); font-size: var(--s1-font-xs); line-height: 1.45; }
+.domain-confidence { color: var(--domain-accent); font-size: var(--s1-font-xs); white-space: nowrap; }
+.domain-card-body { display: grid; gap: 8px; padding: 0 12px 12px 31px; }
+.judgement-section { display: grid; grid-template-columns: 60px minmax(0, 1fr); gap: 8px; }
+.judgement-label { color: var(--domain-accent); font-size: var(--s1-font-xs); }
+.judgement-section p { margin: 0; color: var(--s1-text-dim); font-size: var(--s1-font-xs); line-height: 1.55; }
+.judgement-section.action {
+  padding: 8px;
+  margin-left: -8px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--domain-accent) 9%, transparent);
+}
+.card-limitations {
+  padding-top: 7px;
+  border-top: 1px dashed var(--s1-border-soft);
+  color: var(--s1-text-faint);
+  font-size: var(--s1-font-xs);
+  line-height: 1.5;
+}
+.domain-locate {
+  justify-self: start;
+  border: 1px solid color-mix(in srgb, var(--domain-accent) 55%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--domain-accent) 10%, transparent);
+  color: var(--domain-accent);
+  padding: 5px 12px;
+  cursor: pointer;
+}
+.technical-block { opacity: 0.82; }
+
+.technical-evidence {
+  border: 1px solid color-mix(in srgb, var(--s1-border) 82%, transparent);
+  border-radius: var(--s1-radius-md);
+  background: color-mix(in srgb, var(--s1-surface-2) 76%, transparent);
+}
+
+.technical-evidence > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s1-space-2);
+  padding: 10px 12px;
+  color: var(--s1-text);
+  cursor: pointer;
+  list-style: none;
+}
+
+.technical-evidence > summary::-webkit-details-marker { display: none; }
+
+.technical-evidence > summary::after {
+  content: '展开';
+  color: var(--s1-accent);
+  font-size: var(--s1-font-xs);
+}
+
+.technical-evidence[open] > summary::after { content: '收起'; }
+
+.technical-evidence > summary small {
+  margin-left: auto;
+  color: var(--s1-text-dim);
+  font-size: var(--s1-font-xs);
+}
+
+.technical-evidence-body {
+  display: grid;
+  gap: var(--s1-space-3);
+  padding: 0 8px 8px;
 }
 
 .block {

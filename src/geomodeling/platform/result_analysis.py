@@ -26,9 +26,11 @@ from geomodeling.modeling.anomalies import (
 )
 from geomodeling.modeling.slices import GridResult
 from geomodeling.platform.errors import PlatformError
+from geomodeling.platform.geological_interpretation import build_domain_interpretation
 from geomodeling.platform.result_analysis_contracts import (
     RESULT_ANALYSIS_NO_VALID_CELLS,
     RESULT_ANALYSIS_VERSION,
+    LOW_COMPONENT_ID_BASE,
     Composition,
     CompositionBucket,
     ComponentPreview,
@@ -168,23 +170,25 @@ def depth_profile(
 
 def _build_components_preview(
     grid: GridResult,
-    high_threshold: float,
+    threshold: float,
     component_limit: int,
     min_support_nodes: int,
     empirical_layer: UncertaintyLayer | None = None,
     kriging_layer: UncertaintyLayer | None = None,
+    *,
+    direction: str = "high",
 ) -> ComponentsPreview:
     """调用既有 ``extract_anomalies`` 生成连通区预览（design §5.3）。
 
-    - ``direction=high``, ``threshold=p75``
+    - ``direction=high`` 使用 p75；``direction=low`` 使用 p25
     - 连通区排序：先按 ``support_measure`` 降序，再按 ``value_max`` 降序，再按原始 component_id 升序
     - 标签：前 26 个按 A-Z
     - 不创建 ``AnomalyExtractionRecord``
     """
 
     spec = AnomalyExtractionSpec(
-        direction="high",
-        threshold=high_threshold,
+        direction=direction,
+        threshold=threshold,
         min_support_nodes=min_support_nodes,
     )
     result = extract_anomalies(
@@ -198,17 +202,27 @@ def _build_components_preview(
 
     sorted_components = sorted(
         result.components,
-        key=lambda c: (-c.support_measure, -c.value_max, c.component_id),
+        key=(
+            (lambda c: (-c.support_measure, -c.value_max, c.component_id))
+            if direction == "high"
+            else (lambda c: (-c.support_measure, c.value_min, c.component_id))
+        ),
     )
     capped = sorted_components[:component_limit]
     labels = [chr(ord("A") + i) for i in range(min(26, len(capped)))]
 
     rows: list[ComponentPreview] = []
     for rank, (comp, label) in enumerate(zip(capped, labels), start=1):
+        component_id = (
+            comp.component_id
+            if direction == "high"
+            else LOW_COMPONENT_ID_BASE + comp.component_id
+        )
         rows.append(ComponentPreview(
             rank=rank,
-            label=label,
-            component_id=comp.component_id,
+            label=label if direction == "high" else f"低-{label}",
+            component_id=component_id,
+            direction=direction,
             support_node_count=comp.support_node_count,
             support_measure=comp.support_measure,
             support_unit=comp.support_unit,
@@ -227,7 +241,7 @@ def _build_components_preview(
         ))
 
     return ComponentsPreview(
-        threshold=high_threshold,
+        threshold=threshold,
         connectivity_rule=spec.connectivity_rule,
         total=len(result.components),
         returned=len(rows),
@@ -419,6 +433,12 @@ def analyze_result_grid(
     components = _build_components_preview(
         grid, high, component_limit, min_support_nodes,
         empirical_layer, kriging_layer,
+        direction="high",
+    )
+    low_components = _build_components_preview(
+        grid, low, component_limit, min_support_nodes,
+        empirical_layer, kriging_layer,
+        direction="low",
     )
 
     # Model evidence
@@ -439,6 +459,12 @@ def analyze_result_grid(
 
     uncertainty_available = empirical_layer is not None or kriging_layer is not None
     findings = _build_findings(dp, components, model_ev, uncertainty_available, grid.dimension)
+    domain_interpretation = build_domain_interpretation(
+        variable_name=variable_name,
+        variable_unit=variable_unit,
+        high_components=components.rows,
+        low_components=low_components.rows,
+    )
 
     identity = ResultIdentity(
         result_id=result_id,
@@ -462,6 +488,8 @@ def analyze_result_grid(
         composition=composition,
         depth_profile=dp,
         components_preview=components,
+        low_components_preview=low_components,
+        domain_interpretation=domain_interpretation,
         model_evidence=model_ev,
         findings=findings,
         provenance=provenance,

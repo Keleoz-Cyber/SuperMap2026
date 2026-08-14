@@ -19,6 +19,7 @@ from geomodeling.platform import PlatformRuntime, tables
 from geomodeling.platform.repositories import require_active_candidate
 from geomodeling.platform.results import load_grid, read_materialized_metadata
 from geomodeling.platform.result_analysis import analyze_result_grid
+from geomodeling.platform.result_analysis_contracts import RESULT_ANALYSIS_VERSION
 from geomodeling.platform.schemas import SpatialValidationSpec
 
 router = APIRouter(tags=["v0.9-result-analysis"])
@@ -258,7 +259,8 @@ def get_analysis_summary(
     ml_evidence = _machine_learning_evidence(runtime, result_id, metadata)
 
     cache_key = (
-        f"{result_id}:{grid_sha256}:{depth_bins}:{component_limit}:{min_support_nodes}"
+        f"{RESULT_ANALYSIS_VERSION}:{result_id}:{grid_sha256}:"
+        f"{depth_bins}:{component_limit}:{min_support_nodes}"
     )
     cached = _cache_get(cache_key)
     if cached is not None:

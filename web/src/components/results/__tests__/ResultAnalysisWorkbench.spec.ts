@@ -121,6 +121,29 @@ describe('ResultAnalysisWorkbench（V6 一屏布局）', () => {
     expect(tabs.map((t) => t.text())).toEqual(['成果概览', '切片分析', '模型可信度', '数据与导出'])
   })
 
+  it('uses geological judgement label and exposes a dedicated judgement focus mode', async () => {
+    const analysis = structuredClone(RESULT_ANALYSIS_MOCK_3D) as typeof RESULT_ANALYSIS_MOCK_3D & {
+      domain_interpretation: Record<string, unknown>
+    }
+    analysis.domain_interpretation = {
+      rule_version: 'geological_interpretation.v1',
+      profile: 'resistivity',
+      panel_label: '地质研判',
+      narrative_label: '地下电性结构',
+      status: 'exploratory',
+      overview: '低阻异常解释',
+      cards: [],
+      global_limitations: [],
+    }
+    const wrapper = mountWorkbench({ analysis })
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="side-tab-rules"]').text()).toBe('地质研判')
+    await wrapper.get('[data-test="workbench-focus-judgement"]').trigger('click')
+    expect(wrapper.get('[data-test="result-analysis-workbench"]').classes()).toContain('focus-judgement')
+    expect(wrapper.find('[data-test="result-analysis-side"]').exists()).toBe(true)
+  })
+
   it('expands and collapses the evidence dock without remounting the scene', async () => {
     const wrapper = mountWorkbench()
     await flushPromises()

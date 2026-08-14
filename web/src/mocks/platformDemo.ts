@@ -1378,11 +1378,11 @@ export async function installMockApi(page: Page): Promise<void> {
     identity: {
       result_id: 'cand-1',
       grid_sha256: SHA,
-      analysis_version: 'result_analysis.v1',
+      analysis_version: 'result_analysis.v2',
       dimension: '3d',
       coordinate_type: 'local_linear',
     },
-    variable: { name: '电阻率', unit: 'unknown' },
+    variable: { name: 'RHO', unit: 'ohm_m' },
     grid: {
       shape: [11, 11, 11],
       valid_count: 1296,
@@ -1435,6 +1435,61 @@ export async function installMockApi(page: Page): Promise<void> {
           value_min: 35, value_max: 45, value_mean: 39.1,
           touches_grid_boundary: true,
         },
+      ],
+    },
+    low_components_preview: {
+      threshold: 15,
+      connectivity_rule: 'face_2d4_3d6_v1',
+      total: 1,
+      returned: 1,
+      rows: [
+        {
+          rank: 1, label: '低-A', component_id: 1000001, direction: 'low',
+          support_node_count: 36, support_measure: 900,
+          support_unit: 'volume_coordinate_unit3',
+          bounds: [[-150, -110], [470, 540], [-760, -650]],
+          centroid: [-130, 505, -705],
+          value_min: 10, value_max: 14.8, value_mean: 12.6,
+          touches_grid_boundary: false,
+        },
+      ],
+    },
+    domain_interpretation: {
+      rule_version: 'geological_interpretation.v1',
+      profile: 'resistivity',
+      panel_label: '地质研判',
+      narrative_label: '地下电性结构',
+      status: 'exploratory',
+      overview: '识别出 3 个可解释异常体；优先关注低阻异常区 低-A。Z=-760～-650；网格支持体积 900，谷值 10，未接触模型边界',
+      cards: [
+        {
+          id: 'domain-low-1000001', component_id: 1000001, direction: 'low',
+          title: '低阻异常区 低-A',
+          summary: 'Z=-760～-650；网格支持体积 900，谷值 10，未接触模型边界',
+          evidence: ['异常体 低-A', '有效网格节点 36', '属性范围 10～14.8', '中心坐标 (-130, 505, -705)'],
+          possible_interpretations: ['可能与含水、裂隙发育、黏土富集或其他导电介质有关'],
+          potential_impacts: ['提示地下介质电性结构存在差异，可作为水文与构造核查的优先区域'],
+          recommended_actions: ['结合钻孔、水文资料和其他物探成果进行交叉验证'],
+          confidence: 'exploratory',
+          limitations: ['低电阻率具有多解性，不能直接认定为含水区'],
+          spatial_target: { kind: 'component', component_id: 1000001, depth_bin_index: null },
+        },
+        {
+          id: 'domain-high-1', component_id: 1, direction: 'high',
+          title: '高阻异常区 A',
+          summary: 'Z=-650～-550；网格支持体积 1200，峰值 58，未接触模型边界',
+          evidence: ['异常体 A', '有效网格节点 48', '属性范围 35.2～58', '中心坐标 (-100, 400, -600)'],
+          possible_interpretations: ['可能与较致密、较干燥介质或高阻岩性有关'],
+          potential_impacts: ['提示地下介质电性分区，可辅助识别岩性或含水条件变化'],
+          recommended_actions: ['结合岩性、构造和钻孔资料核查高阻成因'],
+          confidence: 'exploratory',
+          limitations: ['高电阻率不能单独证明岩体完整、干燥或特定岩性'],
+          spatial_target: { kind: 'component', component_id: 1, depth_bin_index: null },
+        },
+      ],
+      global_limitations: [
+        '当前结论来自完整成果网格的 p25/p75 分位异常，仅用于探索性解释',
+        '电阻率异常具有多解性，必须结合地质、水文与钻孔资料',
       ],
     },
     model_evidence: {
@@ -1498,7 +1553,7 @@ export async function installMockApi(page: Page): Promise<void> {
     ],
     provenance: {
       grid_sha256: SHA,
-      calculation_version: 'result_analysis.v1',
+      calculation_version: 'result_analysis.v2',
       threshold_method: 'numpy_linear_p25_p75',
     },
   }
@@ -2903,7 +2958,7 @@ export async function installMockApi(page: Page): Promise<void> {
       evaluation_summary: mlCandidate.metrics,
     })
     const mlAnalysisSummary = () => ({
-      identity: { result_id: ML_RF_RESULT_ID, grid_sha256: RHO_GRID_SHA, analysis_version: 'result_analysis.v1', dimension: '3d', coordinate_type: 'local_linear' },
+      identity: { result_id: ML_RF_RESULT_ID, grid_sha256: RHO_GRID_SHA, analysis_version: 'result_analysis.v2', dimension: '3d', coordinate_type: 'local_linear' },
       variable: { name: 'RHO', unit: RHO_VALUE_UNIT },
       grid: { shape: RHO_GRID_SHAPE, valid_count: 6254, nodata_count: 508, min: 1.03, max: 149.98, mean: 54.2, median: 42.1, p25: 18.4, p75: 77.6 },
       thresholds: { low: 18.4, high: 77.6, source: 'full_grid_quartile', method: 'numpy_linear_p25_p75' },
@@ -2924,7 +2979,7 @@ export async function installMockApi(page: Page): Promise<void> {
         technical_details: { feature_version: 'spatial_features.v1', sklearn_version: '1.7.2', validation_method: 'spatial_kfold', common_valid_count: 17041, fold_assignments_sha256: 'b'.repeat(64) },
       },
       findings: [],
-      provenance: { grid_sha256: RHO_GRID_SHA, calculation_version: 'result_analysis.v1', threshold_method: 'numpy_linear_p25_p75' },
+      provenance: { grid_sha256: RHO_GRID_SHA, calculation_version: 'result_analysis.v2', threshold_method: 'numpy_linear_p25_p75' },
     })
     if (path === `/results/${ML_RF_RESULT_ID}` && method === 'GET') {
       if (!state.mlResultMaterialized) return json(route, { error: { code: 'RESULT_NOT_MATERIALIZED', message: '成果尚未生成', details: {} } }, 404)

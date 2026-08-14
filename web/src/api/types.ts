@@ -1411,6 +1411,7 @@ export interface ResultComponentPreview {
   rank: number
   label: string
   component_id: number
+  direction?: 'high' | 'low'
   support_node_count: number
   support_measure: number
   support_unit: ResultSupportUnit
@@ -1493,6 +1494,32 @@ export interface ResultSpatialTarget {
   depth_bin_index: number | null
 }
 
+export interface DomainInterpretationCard {
+  id: string
+  component_id: number
+  direction: 'high' | 'low'
+  title: string
+  summary: string
+  evidence: string[]
+  possible_interpretations: string[]
+  potential_impacts: string[]
+  recommended_actions: string[]
+  confidence: 'rule_supported' | 'exploratory'
+  limitations: string[]
+  spatial_target: ResultSpatialTarget
+}
+
+export interface DomainInterpretation {
+  rule_version: string
+  profile: 'resistivity' | 'microseismic_velocity' | 'gas_content' | 'generic_3d'
+  panel_label: '地质研判' | '规则研判'
+  narrative_label: string
+  status: 'rule_supported' | 'exploratory' | 'not_applicable'
+  overview: string
+  cards: DomainInterpretationCard[]
+  global_limitations: string[]
+}
+
 export interface ResultFindingEvidence {
   name: string
   value: number | string | null
@@ -1528,6 +1555,8 @@ export interface ResultAnalysisSummary {
   composition: ResultComposition
   depth_profile: ResultDepthProfile
   components_preview: ResultComponentsPreview
+  low_components_preview?: ResultComponentsPreview | null
+  domain_interpretation?: DomainInterpretation | null
   model_evidence: ResultModelEvidence
   machine_learning?: MLResultEvidence
   findings: ResultAnalysisFinding[]

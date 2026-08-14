@@ -3,7 +3,7 @@
 // 主舞台三栏（显示工具 328px / 成果场景 1fr / 分析研判 390px），
 // 底部证据窗四个一级标签（综合分析/切片与异常/模型证据/数据溯源）。
 // 组合器不 fetch：一切 DTO 由路由视图（ResultWorkbenchView）注入。
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import type {
   AnalysisSummaryResponse,
   ResidualEvidence,
@@ -55,7 +55,10 @@ const dockTabModel = defineModel<'overview' | 'slices' | 'model' | 'provenance'>
 // 右侧研判区：规则研判（默认）/ AI 辅助切换；AI 不可用不拖垮规则研判
 const sideTab = ref<'rules' | 'ai'>('rules')
 const evidenceExpanded = ref(false)
-const focusMode = ref<'all' | 'scene' | 'controls' | 'analysis'>('all')
+const focusMode = ref<'all' | 'scene' | 'controls' | 'judgement' | 'analysis'>('all')
+const judgementLabel = computed(
+  () => props.analysis?.domain_interpretation?.panel_label ?? '规则研判',
+)
 
 function setFocus(mode: typeof focusMode.value) {
   focusMode.value = mode
@@ -120,6 +123,12 @@ function onFocusEvidence(ref: string) {
       >控制</button>
       <button
         type="button"
+        data-test="workbench-focus-judgement"
+        :aria-pressed="focusMode === 'judgement'"
+        @click="setFocus('judgement')"
+      >研判</button>
+      <button
+        type="button"
         data-test="workbench-focus-analysis"
         :aria-pressed="focusMode === 'analysis'"
             @click="setFocus('analysis'); dockTabModel = 'overview'"
@@ -141,7 +150,7 @@ function onFocusEvidence(ref: string) {
             data-test="side-tab-rules"
             @click="sideTab = 'rules'"
           >
-            规则研判
+            {{ judgementLabel }}
           </button>
           <button
             type="button"
@@ -404,8 +413,19 @@ function onFocusEvidence(ref: string) {
 .focus-scene .workbench-side,
 .focus-scene .workbench-dock,
 .focus-controls .workbench-side,
-.focus-controls .workbench-dock {
+.focus-controls .workbench-dock,
+.focus-judgement .workbench-scene,
+.focus-judgement .workbench-dock {
   display: none;
+}
+
+.focus-judgement .workbench-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.focus-judgement .workbench-side {
+  border-left: 0;
+  padding-left: 0;
 }
 
 .focus-scene .workbench-scene :deep(.native-volume-panel.workbench .panel-body) {
@@ -435,7 +455,7 @@ function onFocusEvidence(ref: string) {
   pointer-events: auto;
 }
 
-@media (max-width: 1199px) {
+@media (max-width: 1439px) {
   .workbench-grid {
     grid-template-columns: 1fr;
   }
@@ -485,14 +505,17 @@ function onFocusEvidence(ref: string) {
 
   .focus-analysis .workbench-grid,
   .focus-scene .workbench-grid,
-  .focus-controls .workbench-grid {
+  .focus-controls .workbench-grid,
+  .focus-judgement .workbench-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 
   .focus-scene .workbench-side,
   .focus-scene .workbench-dock,
   .focus-controls .workbench-side,
-  .focus-controls .workbench-dock {
+  .focus-controls .workbench-dock,
+  .focus-judgement .workbench-scene,
+  .focus-judgement .workbench-dock {
     display: none;
   }
 

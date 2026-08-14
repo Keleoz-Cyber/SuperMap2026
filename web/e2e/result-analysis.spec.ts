@@ -36,7 +36,16 @@ test.describe('成果级分析工作台（mock 协议帧）', () => {
     await page.goto('/#/results/cand-1')
     await expect(page.getByTestId('native-volume-panel')).toBeVisible()
 
-    // 成果级分析按 result_id 获取：研判区显示后端发现与 A/B 组件
+    // 成果级分析按 result_id 获取：领域卡片明确事实→解释→影响→核查链
+    await expect(page.getByTestId('side-tab-rules')).toHaveText('地质研判')
+    await expect(page.getByTestId('domain-overview')).toContainText('地下电性结构')
+    const lowCard = page.getByTestId('domain-card-low-1000001')
+    await expect(lowCard).toContainText('低阻异常区')
+    await expect(lowCard).toContainText('可能解释')
+    await expect(lowCard).toContainText('潜在影响')
+    await expect(lowCard).toContainText('建议核查')
+    await expect(lowCard).toContainText('不能直接认定为含水区')
+    // 技术证据默认收起，仍可追溯原有发现与 A/B 组件
     await expect(page.getByTestId('result-interpretation')).toContainText('最大高值连通区为 A 区')
     await expect(page.getByTestId('component-1')).toContainText('网格支持体积估计')
     await expect(page.getByTestId('component-2')).toContainText('接触边界')
@@ -58,11 +67,21 @@ test.describe('成果级分析工作台（mock 协议帧）', () => {
 
     // INIT 初始状态携带组件标注（与研判区同一响应，ID 一致）与场景辅助
     const init = (await frameMessages()).find((m) => m.type === 'INIT')
-    expect(init?.state?.annotations?.map((a) => a.id)).toEqual(['component-1', 'component-2'])
+    expect(init?.state?.annotations?.map((a) => a.id)).toEqual([
+      'component-1',
+      'component-2',
+      'component-1000001',
+    ])
     expect(init?.state?.annotations?.[0]).toMatchObject({ label: 'A', visible: true })
+    expect(init?.state?.annotations?.[2]).toMatchObject({
+      label: '低-A',
+      color: '#48a9ff',
+      visible: true,
+    })
     expect(init?.state?.sceneAids).toEqual({ axes: true, depthTicks: true })
 
     // 研判区点击组件 B → FOCUS_ANNOTATION + 状态聚焦 + 高亮
+    await page.getByTestId('technical-evidence').locator('summary').click()
     await page.getByTestId('component-2').click()
     await expect(page.getByTestId('component-2')).toHaveClass(/focused/)
     await expect
@@ -100,6 +119,17 @@ test.describe('成果级分析工作台（mock 协议帧）', () => {
     await expect(page.getByTestId('component-1')).toHaveClass(/focused/)
     await expect(page.getByTestId('component-2')).not.toHaveClass(/focused/)
 
+    // 领域低阻卡片定位同一低值组件身份，不与高值 ID 冲突
+    await page.getByTestId('domain-locate-1000001').click()
+    await expect
+      .poll(async () =>
+        (await frameMessages())
+          .filter((m) => m.type === 'FOCUS_ANNOTATION')
+          .map((m) => m.annotationId)
+          .at(-1),
+      )
+      .toBe('component-1000001')
+
     // 首屏截图（体积模式 + 组件标注 + 研判区 + 证据带）；先回顶部
     await page.evaluate(() => window.scrollTo(0, 0))
     await page.screenshot({ path: `${EVIDENCE_DIR}/01-workbench-volume.png` })
@@ -123,7 +153,7 @@ test.describe('成果级分析工作台（mock 协议帧）', () => {
     await expect(page.getByTestId('ge-pane-model')).toContainText('RMSE')
     await page.getByTestId('ge-tab-provenance').click()
     await expect(page.getByTestId('ge-pane-provenance')).toContainText('输入样本')
-    await expect(page.getByTestId('ge-pane-provenance')).toContainText('result_analysis.v1')
+    await expect(page.getByTestId('ge-pane-provenance')).toContainText('result_analysis.v2')
     await page.evaluate(() => window.scrollTo(0, 0))
     await page.screenshot({ path: `${EVIDENCE_DIR}/03-evidence-provenance.png` })
 

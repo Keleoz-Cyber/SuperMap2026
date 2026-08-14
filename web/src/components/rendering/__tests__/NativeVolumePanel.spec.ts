@@ -1129,6 +1129,36 @@ describe('NativeVolumePanel v0.9 异常标注联动', () => {
     wrapper.unmount()
   })
 
+  it('高低异常使用独立身份与暖冷配色，低值组件可被聚焦', async () => {
+    const high = { ...COMPONENTS[0], direction: 'high' as const }
+    const low = {
+      ...COMPONENTS[0],
+      rank: 1,
+      label: '低-A',
+      component_id: 1_000_001,
+      direction: 'low' as const,
+      value_min: 1,
+      value_max: 20,
+    }
+    const api = makeApi({ fetchAsset: vi.fn().mockResolvedValue(ASSET) })
+    const wrapper = mountWithComponents(api, {
+      components: [high, low],
+      focusedComponentId: low.component_id,
+    })
+    await flushPromises()
+    await emitRendered(wrapper)
+
+    const initial = wrapper.findComponent(FrameStub).props('initialState') as RenderStateV2
+    expect(initial.annotations?.map((item) => item.id)).toEqual([
+      'component-1',
+      'component-1000001',
+    ])
+    expect(initial.annotations?.[0].color).toBe('#d9a84e')
+    expect(initial.annotations?.[1].color).toBe('#48a9ff')
+    expect(initial.focusedAnnotationId).toBe('component-1000001')
+    wrapper.unmount()
+  })
+
   it('focusedComponentId prop 写入 focusedAnnotationId 并随状态推送', async () => {
     const wrapper = await mountRenderedWithComponents({ focusedComponentId: 2 })
     await flushPromises()

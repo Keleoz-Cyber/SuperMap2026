@@ -553,6 +553,35 @@ describe('成果级分析接入', () => {
     expect(panel.props('components')[1].component_id).toBe(2)
   })
 
+  it('高低异常组件合并进入同一三维标注集合且身份不冲突', async () => {
+    const low = {
+      ...RESULT_ANALYSIS_MOCK_3D.components_preview.rows[0],
+      rank: 1,
+      label: '低-A',
+      component_id: 1_000_001,
+      direction: 'low' as const,
+      value_min: 1,
+      value_max: 20,
+    }
+    vi.mocked(client.fetchResultAnalysisSummary).mockResolvedValue({
+      ...RESULT_ANALYSIS_MOCK_3D,
+      low_components_preview: {
+        threshold: 25,
+        connectivity_rule: 'face_2d4_3d6_v1',
+        total: 1,
+        returned: 1,
+        rows: [low],
+      },
+    })
+
+    const { wrapper } = await mountWorkbench(makeMetadata('3d'))
+    const components = wrapper.findComponent({ name: 'NativeVolumePanel' }).props('components')
+    expect(components.map((row: { component_id: number }) => row.component_id)).toEqual([
+      1, 2, 3, 1_000_001,
+    ])
+    expect(components.at(-1).direction).toBe('low')
+  })
+
   it('研判与三维场共享完整连通区身份，D–H 定位不会再命中未知标注', async () => {
     const base = RESULT_ANALYSIS_MOCK_3D.components_preview.rows[0]
     const rows = Array.from({ length: 8 }, (_, index) => ({

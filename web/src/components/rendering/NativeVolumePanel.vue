@@ -133,9 +133,11 @@ const auxVisible = ref(false)
 // v0.9.0 Task 9：成果异常标注编排（纯函数部分，必须在 renderState 初始化前
 // 声明——initialRenderState 在 setup 期同步调用，const 有 TDZ 限制）。
 // components prop（后端连通区预览）是标注唯一事实源；身份变化立即整体重建，
-// 绝不跨成果残留旧标注/旧聚焦。颜色按 rank 确定性分配，组件 ID 与研判面板一致。
+// 绝不跨成果残留旧标注/旧聚焦。高值使用暖色、低值使用冷色，同方向再按
+// rank 确定性分配；组件 ID 与研判面板一致。
 // ---------------------------------------------------------------------------
 const ANNOTATION_COLORS = ['#d9a84e', '#64dab1', '#e07a54', '#4d8de0', '#b37feb', '#5ec9e0']
+const LOW_ANNOTATION_COLORS = ['#48a9ff', '#38d4d9', '#6f8cff', '#66c7e8', '#8b9cff', '#4bc5b8']
 
 function componentToAnnotation(row: ResultComponentPreview, visible: boolean): AnnotationWire {
   const pad = (pair: number[] | undefined): [number, number] =>
@@ -148,7 +150,9 @@ function componentToAnnotation(row: ResultComponentPreview, visible: boolean): A
     valueMax: row.value_max,
     supportMeasure: row.support_measure,
     supportUnit: row.support_unit,
-    color: ANNOTATION_COLORS[(row.rank - 1) % ANNOTATION_COLORS.length],
+    color: (row.direction === 'low' ? LOW_ANNOTATION_COLORS : ANNOTATION_COLORS)[
+      (row.rank - 1) % ANNOTATION_COLORS.length
+    ],
     visible,
   }
 }

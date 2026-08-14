@@ -36,6 +36,11 @@ for (const viewport of [
     await expect(page.getByTestId('native-volume-panel')).toBeVisible()
     await expect(page.getByTestId('ge-tab-provenance')).toBeAttached()
 
+    await page.getByTestId('workbench-focus-judgement').click()
+    await expect(page.getByTestId('result-analysis-workbench')).toHaveClass(/focus-judgement/)
+    await expect(page.getByTestId('result-analysis-side')).toBeVisible()
+    await expect(page.getByTestId('domain-overview')).toBeVisible()
+
     const layout = await page.evaluate(() => {
       const shell = document.querySelector<HTMLElement>('.app-shell')
       return {
@@ -49,6 +54,7 @@ for (const viewport of [
     expect(layout.scrollHeight).toBeGreaterThan(layout.viewportHeight)
     expect(layout.horizontalOverflow).toBeLessThanOrEqual(0)
 
+    await page.getByTestId('workbench-focus-analysis').click()
     await page.getByTestId('ge-tab-provenance').scrollIntoViewIfNeeded()
     await expect(page.getByTestId('ge-tab-provenance')).toBeVisible()
     if (viewport.name === 'laptop-1280') {
