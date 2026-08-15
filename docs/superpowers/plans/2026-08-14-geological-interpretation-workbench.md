@@ -1,6 +1,5 @@
 # Geological Interpretation Workbench Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 将电阻率、微震速度和瓦斯成果的高低异常转换为可定位、可追溯、带专业边界的地质研判卡，并保持通用数据安全降级。
 

@@ -1,6 +1,5 @@
 # AI Service Settings Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 为 Windows 免安装版增加安全、可视化的 DeepSeek 配置闭环。
 

@@ -1,6 +1,5 @@
 # Plain-Language Analysis Copy Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 把系统中面向用户的分析文案改成自然、具体、可行动的中文，同时保持现有数值、规则和安全限制不变。
 
