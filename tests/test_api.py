@@ -9,6 +9,7 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
+from geomodeling import __version__
 from geomodeling.api.app import create_app
 from geomodeling.api.deps import ApiSettings, get_app_config, get_iserver_client, get_settings
 from geomodeling.config import AppConfig
@@ -117,7 +118,7 @@ def test_health(tmp_path):
     client = make_client(tmp_path)
     body = client.get("/api/health").json()
     assert body["status"] == "ok"
-    assert body["version"] == "1.0.0"
+    assert body["version"] == __version__
 
 
 def test_cases_cards(tmp_path):

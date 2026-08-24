@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from geomodeling import __version__
 from geomodeling.api.app import create_app
 from geomodeling.api.deps import ApiSettings, get_app_config, get_iserver_client, get_settings
 from geomodeling.platform.repositories import FormalSelectionRepository
@@ -53,7 +54,7 @@ def test_health_reports_current_version(tmp_path, monkeypatch):
     app = make_integrated_app(tmp_path, monkeypatch)
     with TestClient(app) as client:
         body = client.get("/api/health").json()
-    assert body["version"] == "1.0.0"
+    assert body["version"] == __version__
 
 
 def test_cases_merges_legacy_card_and_upload_cases(tmp_path, monkeypatch):
