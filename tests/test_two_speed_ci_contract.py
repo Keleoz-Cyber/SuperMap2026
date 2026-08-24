@@ -19,11 +19,18 @@ def _steps(job: dict) -> list[dict]:
     return list(job["steps"])
 
 
-def test_workflow_declares_branch_and_release_tag_pushes() -> None:
-    text = CI.read_text(encoding="utf-8")
-    assert 'branches: ["**"]' in text
-    assert 'tags: ["v*"]' in text
-    assert "workflow_dispatch:" in text
+def test_workflow_runs_once_on_main_and_skips_document_only_pushes() -> None:
+    document = _document()
+    # PyYAML 采用 YAML 1.1，会把未加引号的 on 解析成布尔 True。
+    triggers = document.get("on", document.get(True))
+    assert isinstance(triggers, dict)
+    assert triggers["push"]["branches"] == ["main"]
+    assert triggers["push"]["tags"] == ["v*"]
+    assert "pull_request" not in triggers
+    ignored = triggers["push"]["paths-ignore"]
+    assert "**/*.md" in ignored
+    assert "docs/**" in ignored
+    assert "workflow_dispatch" in triggers
 
 
 def test_portable_job_exposes_full_mode_expression() -> None:

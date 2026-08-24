@@ -454,6 +454,11 @@ onBeforeUnmount(clearShellContext)
     gap: 6px;
   }
 
+  .cc-grid :deep(.rail-item) {
+    padding: 10px 12px;
+    gap: 6px;
+  }
+
   .cc-findings {
     gap: var(--s1-space-2);
   }

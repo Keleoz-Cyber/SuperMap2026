@@ -164,15 +164,21 @@ describe('SliceHeatmap', () => {
     expect(blob.type).toBe('image/png')
   })
 
-  it('颜色由 itemStyle 按 display 归一化维度映射：不同值必须不同色，无 visualMap 残留', async () => {
+  it('颜色由 itemStyle 按 display 归一化维度映射：不同值必须不同色，visualMap 不参与着色', async () => {
     mount(SliceHeatmap, {
       props: { analysis: makeAnalysis(), palette: 'viridis', scale: 'linear' },
       attachTo: document.body,
     })
     await flushPromises()
     const option = chartInstances[0].setOption.mock.calls[0][0]
-    // 不得再有 visualMap（pieces 用原始值域节点匹配 [0,1] 的 display 是全同色 bug）
-    expect(option.visualMap).toBeUndefined()
+    // ECharts dev 模式要求 heatmap 注册 visualMap；这里允许一个隐藏且
+    // inRange 为空的占位配置，但禁止它覆盖 itemStyle 的真实颜色映射。
+    expect(option.visualMap).toMatchObject({
+      show: false,
+      seriesIndex: 0,
+      dimension: 2,
+      inRange: {},
+    })
     const color = option.series[0].itemStyle.color
     // 同一切片内多个不同值 → 不同颜色（display 已归一化，直接驱动分段）
     const low = color({ data: [0, 0, 0.0, 1] })

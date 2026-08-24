@@ -26,9 +26,11 @@ test('随机森林完整链：创建、空间验证、成果证据与多字段�
   await installMLDemo(page)
   await openRandomForestResult(page)
 
+  await page.getByTestId('workbench-focus-analysis').click()
   await page.getByTestId('ge-tab-model').click()
   await expect(page.getByTestId('ml-model-evidence')).toContainText('未优于普通克里金')
   await expect(page.getByTestId('ml-model-evidence')).toContainText('公共有效')
+  await page.getByTestId('workbench-focus-controls').click()
   await expect(page.getByTestId('ml-field-selector')).toBeVisible()
 
   await page.getByTestId('create-asset').click()

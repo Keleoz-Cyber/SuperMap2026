@@ -9,7 +9,7 @@ test.describe('v0.4 通用建模流程（mock API）', () => {
 
     // 首页 → 新建案例（v0.9.0：全局壳品牌与版本徽标）
     await page.goto('/')
-    await expect(page.getByTestId('shell-platform-title')).toHaveText('地质属性三维建模与空间分析平台')
+    await expect(page.getByTestId('shell-platform-title')).toHaveText('地质属性三维建模与智能分析平台')
     await expect(page.getByTestId('shell-version')).toHaveText(/^v\d+\.\d+\.\d+$/)
     await page.getByTestId('create-case-card').click()
 
@@ -46,10 +46,12 @@ test.describe('v0.4 通用建模流程（mock API）', () => {
     // 成果工作台：3D 工具栏是唯一切片入口；资产未创建时按能力门禁禁用
     await page.getByTestId('open-result').first().click()
     await expect(page).toHaveURL(/#\/results\/cand-1/)
+    await page.getByTestId('workbench-focus-controls').click()
     await expect(page.getByTestId('mode-slice')).toBeDisabled()
     await expect(page.getByTestId('tab-slices')).toHaveCount(0)
 
     // 正式选择（理由必填）与导出/发布状态分离
+    await page.getByTestId('workbench-focus-judgement').click()
     await page.getByTestId('selection-submit').click()
     await expect(page.getByTestId('selection-error')).toBeVisible()
     await page.getByTestId('selection-note').fill('公共验证 RMSE 最低')
@@ -57,6 +59,7 @@ test.describe('v0.4 通用建模流程（mock API）', () => {
     await expect(page.getByTestId('formal-selection-panel')).toContainText('公共验证 RMSE 最低')
 
     // v0.9.0 V6：导出与发布归入证据窗「数据溯源」标签，先切换再操作
+    await page.getByTestId('workbench-focus-analysis').click()
     await page.getByTestId('ge-tab-provenance').click()
     await expect(page.getByTestId('publication-status')).toContainText('未请求')
     await page.getByTestId('export-button').click()
@@ -68,7 +71,7 @@ test.describe('v0.4 通用建模流程（mock API）', () => {
     // 导航回归：成果 → 实验 → 首页，无死路
     await page.getByTestId('result-back-experiment').click()
     await expect(page).toHaveURL(/#\/experiments\/exp-e2e/)
-    await page.getByTestId('shell-brand').click()
+    await page.getByTestId('shell-home-link').click()
     await expect(page).toHaveURL(/#\/$/)
     await expect(page.getByTestId('create-case-card')).toBeVisible()
   })
@@ -232,6 +235,7 @@ test.describe('v0.6.1 体积基准卡直达成果（mock API）', () => {
     await page.goto('/')
     await primary.click()
     await expect(page).toHaveURL(/#\/results\/cand-1/)
+    await page.getByTestId('workbench-focus-controls').click()
     await expect(page.getByTestId('mode-slice')).toBeVisible()
   })
 })
@@ -271,6 +275,7 @@ test.describe('v0.6.1 实验成果状态区（mock API）', () => {
     // 主入口：多候选取排行榜首名（cand-1，RMSE 1.2 < 2.4），一键直达成果工作台
     await page.getByTestId('view-result').click()
     await expect(page).toHaveURL(/#\/results\/cand-1/)
+    await page.getByTestId('workbench-focus-controls').click()
     await expect(page.getByTestId('mode-slice')).toBeVisible()
   })
 })

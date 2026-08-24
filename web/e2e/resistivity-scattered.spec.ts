@@ -93,10 +93,12 @@ test.describe('v0.8.0 电阻率散点预置与 DSI-like（mock API）', () => {
     await expect(page.getByTestId('volume-phase')).toContainText('已渲染')
     // V6：资产身份移入证据窗「数据溯源」标签，主舞台不显示调试块
     await expect(page.getByTestId('asset-identity')).toHaveCount(0)
+    await page.getByTestId('workbench-focus-analysis').click()
     await page.getByTestId('ge-tab-provenance').click()
     await expect(page.getByTestId('ge-asset-identity')).toContainText('supermap_voxelgrid_netcdf')
 
     // ---- X/Y/Z 正交剖面控件（坐标标签只来自权威剖面响应）----
+    await page.getByTestId('workbench-focus-controls').click()
     await page.getByTestId('mode-slice').click()
     await expect(page.getByTestId('slice-controls')).toBeVisible()
     await expect(page.getByTestId('slice-coordinate')).toContainText('Z = -400')
@@ -108,6 +110,8 @@ test.describe('v0.8.0 电阻率散点预置与 DSI-like（mock API）', () => {
     await expect(page.getByTestId('slice-coordinate')).toContainText('Z = -400')
 
     // ---- 剖面分析入口（统计 + 导出命令）----
+    await page.getByTestId('workbench-focus-analysis').click()
+    await page.getByTestId('ge-tab-slices').click()
     await expect(page.getByTestId('ge-pane-slices')).toBeVisible()
     await expect(page.getByTestId('ge-slice-heatmap')).toBeVisible()
     await expect(page.getByTestId('ge-slice-statistics')).toContainText('均值')

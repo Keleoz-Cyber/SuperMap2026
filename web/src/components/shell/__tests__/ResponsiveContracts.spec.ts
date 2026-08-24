@@ -103,8 +103,8 @@ describe('responsive & accessibility contracts', () => {
 
   it('places the Chinese platform title at the geometric center of the global header', () => {
     const source = String(readFileSync('src/components/shell/AppHeader.vue'))
-    expect(source).toContain('地质属性三维建模与空间分析平台')
-    expect(source).toMatch(/\.platform-title\s*\{[^}]*position:\s*absolute;[^}]*left:\s*50%;[^}]*transform:\s*translateX\(-50%\);/s)
+    expect(source).toContain('地质属性三维建模与智能分析平台')
+    expect(source).toMatch(/\.platform-hero\s*\{[^}]*position:\s*absolute;[^}]*left:\s*50%;[^}]*transform:\s*translateX\(-50%\);/s)
   })
 
   it('uses a readable global type scale and shared product-page grid', () => {

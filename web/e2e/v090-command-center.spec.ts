@@ -50,7 +50,7 @@ test.describe('v0.9.0 指挥舱（mock API）', () => {
 
     // 关键发现与证据带真实更新（质量结论来自分析摘要 DTO）
     await expect(page.getByTestId('home-findings')).toContainText('有效数据')
-    await expect(page.getByTestId('home-evidence-dock')).toContainText('溯源')
+    await expect(page.getByTestId('home-evidence-dock')).toContainText('数据来源')
 
     expect(consoleErrors).toEqual([])
   })

@@ -2,9 +2,11 @@ name: CI
 
 on:
   push:
-    branches: ["**"]
+    branches: ["main"]
     tags: ["v*"]
-  pull_request:
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
   workflow_dispatch:
 
 jobs:
@@ -13,7 +15,7 @@ jobs:
     env:
       # Windows runner 默认 cp1252 控制台，中文 CLI 帮助会触发 UnicodeEncodeError
       PYTHONUTF8: "1"
-      # 普通 push/PR 走快速门；版本标签和人工触发才跑完整发布门。
+      # main 普通 push 走快速门；版本标签和人工触发才跑完整发布门。
       FULL_CI: ${{ startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' }}
     steps:
       - name: Checkout

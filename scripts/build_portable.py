@@ -247,7 +247,65 @@ def write_manifest(output: Path) -> Path:
     return manifest_path
 
 
+def validate_release_tree(output: Path) -> None:
+    """Reject a portable tree that changed after its manifest was written.
+
+    ``runtime`` is created only on the evaluator's first launch.  Its presence
+    in a release tree means the build output was started in place and now
+    contains machine-local state that must never be redistributed.
+    """
+
+    runtime = output / "runtime"
+    if runtime.exists():
+        raise RuntimeError(
+            "发行目录包含 runtime 运行态数据；请重新执行干净构建，不要在 release 目录内启动平台"
+        )
+
+    manifest_path = output / "portable-manifest.json"
+    if not manifest_path.is_file():
+        raise RuntimeError("发行目录缺少 portable-manifest.json")
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    entries = payload.get("files")
+    if not isinstance(entries, list) or not entries:
+        raise RuntimeError("portable-manifest.json 文件清单无效")
+
+    declared: dict[str, tuple[int, str]] = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise RuntimeError("portable-manifest.json 包含无效条目")
+        relative = entry.get("path")
+        size = entry.get("size")
+        digest = entry.get("sha256")
+        if not isinstance(relative, str) or not isinstance(size, int) or not isinstance(digest, str):
+            raise RuntimeError("portable-manifest.json 包含无效条目")
+        candidate = (output / relative).resolve()
+        if output.resolve() not in candidate.parents or relative in declared:
+            raise RuntimeError(f"portable-manifest.json 包含非法或重复路径：{relative}")
+        declared[relative] = (size, digest)
+
+    actual = {
+        path.relative_to(output).as_posix()
+        for path in output.rglob("*")
+        if path.is_file() and path != manifest_path
+    }
+    missing = sorted(set(declared) - actual)
+    extra = sorted(actual - set(declared))
+    if missing:
+        raise RuntimeError(f"发行目录缺少清单文件：{missing[:5]}")
+    if extra:
+        raise RuntimeError(f"发行目录包含清单外文件：{extra[:5]}")
+
+    mismatched = []
+    for relative, (expected_size, expected_digest) in declared.items():
+        path = output / relative
+        if path.stat().st_size != expected_size or sha256(path) != expected_digest:
+            mismatched.append(relative)
+    if mismatched:
+        raise RuntimeError(f"发行目录清单校验失败：{mismatched[:5]}")
+
+
 def create_zip(output: Path) -> Path:
+    validate_release_tree(output)
     archive = DIST_ROOT / f"{output.name}.zip"
     archive.unlink(missing_ok=True)
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as bundle:

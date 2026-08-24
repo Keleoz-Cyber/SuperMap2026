@@ -78,9 +78,11 @@ test('3D 成果工作台：物化 + 原生体渲染 + 工具栏完整状态 + �
 
   // 协议握手：mock 子帧 FRAME_READY → INIT → RENDER_STATE rendered
   // v0.9.0 V6：资产身份在证据窗「数据溯源」标签
+  await page.getByTestId('workbench-focus-analysis').click()
   await page.getByTestId('ge-tab-provenance').click()
   await expect(page.getByTestId('ge-asset-identity')).toContainText('supermap_voxelgrid_netcdf')
   await page.getByTestId('ge-tab-overview').click()
+  await page.getByTestId('workbench-focus-controls').click()
   const frame = page.frames().find((f) => f.url().includes('/supermap-volume-frame/index.html'))
   expect(frame).toBeTruthy()
   const frameMessages = async () =>
@@ -193,6 +195,8 @@ test('3D 成果工作台：物化 + 原生体渲染 + 工具栏完整状态 + �
   // 剖面导出：multipart POST（axis/index/image），保持在最后（触发下载语义）
   await page.getByTestId('mode-slice').click()
   await expect(page.getByTestId('slice-coordinate')).toContainText('Z = -400')
+  await page.getByTestId('workbench-focus-analysis').click()
+  await page.getByTestId('ge-tab-slices').click()
   await expect(page.getByTestId('ge-pane-slices')).toBeVisible()
   await page.getByTestId('ge-export-slice').click()
   await expect.poll(() => sliceExportPosts.length).toBe(1)
@@ -201,7 +205,9 @@ test('3D 成果工作台：物化 + 原生体渲染 + 工具栏完整状态 + �
   // 正式选择/导出控件保留；专业分析对 IDW 成果禁用
   // v0.9.0：导出与发布归入证据与溯源抽屉，先展开再断言
   await expect(page.getByTestId('model-evaluation-entry')).toBeVisible()
+  await page.getByTestId('workbench-focus-judgement').click()
   await expect(page.getByTestId('selection-submit')).toBeVisible()
+  await page.getByTestId('workbench-focus-analysis').click()
   await page.getByTestId('ge-tab-provenance').click()
   await expect(page.getByTestId('export-button')).toBeVisible()
 

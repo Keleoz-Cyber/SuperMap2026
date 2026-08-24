@@ -67,6 +67,7 @@ test('自定义数据完整链：上传 → 映射 → 质量 → 实验 → 成
   await expect(page).toHaveURL(/#\/results\/cand-1/)
   await expect(page.getByTestId('result-analysis-workbench')).toBeVisible()
   await expect(page.getByTestId('result-scene')).toBeVisible()
+  await page.getByTestId('workbench-focus-analysis').click()
   await expect(page.getByTestId('result-evidence-dock')).toBeVisible()
   await expect(page.getByTestId('ge-tab-provenance')).toBeVisible()
   await page.getByTestId('ge-tab-provenance').click()

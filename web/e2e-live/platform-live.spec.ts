@@ -133,6 +133,7 @@ test('真实链路：上传 → 映射 → 质量 → IDW → 排行榜 → 成�
   await expect(page.getByTestId('create-asset')).toBeVisible({ timeout: 30_000 })
   // 此时资产尚未创建，切片模式按钮存在但按能力门禁禁用；后续公开 HTTP
   // 合同继续验证三轴分析与导出，不渲染已退役的第二套 SlicePanel。
+  await page.getByTestId('workbench-focus-controls').click()
   await expect(page.getByTestId('mode-slice')).toBeVisible()
   await expect(page.getByTestId('tab-slices')).toHaveCount(0)
 
@@ -232,6 +233,7 @@ test('真实链路：上传 → 映射 → 质量 → IDW → 排行榜 → 成�
   })
 
   // 7. 正式选择（理由必填）并持久化
+  await page.getByTestId('workbench-focus-judgement').click()
   const reason = `Live 选择 ${Date.now()}`
   await page.getByTestId('selection-note').fill(reason)
   await page.getByTestId('selection-submit').click()
@@ -243,6 +245,7 @@ test('真实链路：上传 → 映射 → 质量 → IDW → 排行榜 → 成�
 
   // 8. 导出证据 ZIP（下载事件验证真实 ZIP 字节）
   // v0.9.0：导出与发布归入证据与溯源抽屉，先展开再操作
+  await page.getByTestId('workbench-focus-analysis').click()
   await page.getByTestId('ge-tab-provenance').click()
   await page.getByTestId('export-button').click()
   const downloadPromise = page.waitForEvent('download', { timeout: 60_000 })
@@ -255,7 +258,7 @@ test('真实链路：上传 → 映射 → 质量 → IDW → 排行榜 → 成�
   expect(zipBytes.subarray(0, 2).toString()).toBe('PK')
 
   // 9. 成果页通过全局首页返回；案例卡持久化可见
-  await page.getByTestId('shell-brand').click()
+  await page.getByTestId('shell-home-link').click()
   await expect(page).toHaveURL(/#\/$/)
   await expect(page.getByText(caseName)).toBeVisible()
 })
@@ -393,11 +396,12 @@ test.describe('v0.6 专业建模流程（真实链路）', () => {
     await page.getByTestId('comparison-run').click()
     await expect(page.getByTestId('comparison-compatible')).toBeVisible({ timeout: 30_000 })
     await expect(page.getByTestId('common-valid-count')).toContainText(
-      /成对公共有效节点 [1-9]\d* 个/,
+      /共同参与比较的节点 [1-9]\d* 个/,
     )
 
     // 12. 回成果工作台导出证据 ZIP：真实字节 + professional/ 逻辑名核对
     await page.goto(resultUrl)
+    await page.getByTestId('workbench-focus-analysis').click()
     await page.getByTestId('ge-tab-provenance').click()
     await page.getByTestId('export-button').click()
     const downloadPromise = page.waitForEvent('download', { timeout: 60_000 })
@@ -435,7 +439,7 @@ test.describe('v0.6 专业建模流程（真实链路）', () => {
     ).toBe(true)
 
     // 13. 返回首页；案例卡持久化可见
-    await page.getByTestId('shell-brand').click()
+    await page.getByTestId('shell-home-link').click()
     await expect(page).toHaveURL(/#\/$/)
     await expect(page.getByText(caseName)).toBeVisible()
   })

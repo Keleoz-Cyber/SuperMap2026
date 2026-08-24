@@ -100,11 +100,13 @@ test.describe('v0.8.0 第三批瓦斯含量预置（mock API）', () => {
     // NetCDF 资产懒创建：显式创建入口 → 已渲染
     await page.getByTestId('create-asset').click()
     await expect(page.getByTestId('volume-phase')).toContainText('已渲染')
+    await page.getByTestId('workbench-focus-analysis').click()
     await page.getByTestId('ge-tab-provenance').click()
     await expect(page.getByTestId('ge-asset-identity')).toContainText('supermap_voxelgrid_netcdf')
     await page.getByTestId('ge-tab-overview').click()
 
     // ---- X/Y/Z 正交剖面控件（坐标标签只来自权威剖面响应）----
+    await page.getByTestId('workbench-focus-controls').click()
     await page.getByTestId('mode-slice').click()
     await expect(page.getByTestId('slice-controls')).toBeVisible()
     await expect(page.getByTestId('slice-coordinate')).toContainText('Z = -400')
@@ -116,6 +118,8 @@ test.describe('v0.8.0 第三批瓦斯含量预置（mock API）', () => {
     await expect(page.getByTestId('slice-coordinate')).toContainText('Z = -400')
 
     // ---- 剖面分析入口（统计 + 导出命令）----
+    await page.getByTestId('workbench-focus-analysis').click()
+    await page.getByTestId('ge-tab-slices').click()
     await expect(page.getByTestId('ge-pane-slices')).toBeVisible()
     await expect(page.getByTestId('ge-slice-statistics')).toContainText('均值')
     await expect(page.getByTestId('ge-export-slice')).toBeEnabled()

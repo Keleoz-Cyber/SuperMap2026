@@ -7,6 +7,7 @@ from pathlib import Path
 import yaml
 
 CI = Path(".github/workflows/ci.yml")
+MOCK_PLAYWRIGHT = Path("web/playwright.config.ts")
 
 
 def _jobs() -> dict:
@@ -45,6 +46,13 @@ def test_browser_smoke_does_not_fetch_proprietary_sdks():
     text = "\n".join(_steps(_jobs()["browser-smoke"]))
     assert "install_supermap3d" not in text
     assert "fetch_iclient3d" not in text
+
+
+def test_mock_browser_port_is_configurable_and_avoids_reserved_3000() -> None:
+    source = MOCK_PLAYWRIGHT.read_text(encoding="utf-8")
+    assert "GEOMODELING_MOCK_PORT" in source
+    assert "?? 4173" in source
+    assert "127.0.0.1:3000" not in source
 
 
 def test_live_job_installs_and_builds_before_running():

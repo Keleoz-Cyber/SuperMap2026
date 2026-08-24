@@ -202,7 +202,7 @@ test('指挥舱三案例切换真实渲染（桌面 1440×900）', async ({ page
     const metrics = await analyzeVolumePixels(page, await page.getByTestId('volume-frame').screenshot())
     expectVolumeContent(metrics, `${tag} Volume`, { minNonBg: 2000, minCoverage: 0.15 })
     await expect(page.getByTestId('home-findings')).toContainText('有效数据')
-    await expect(page.getByTestId('home-evidence-dock')).toContainText('溯源')
+    await expect(page.getByTestId('home-evidence-dock')).toContainText('数据来源')
 
     const pageShot = await writer.savePageShot(page, tag)
     const frameShot = await writer.saveFrameShot(page, tag)
