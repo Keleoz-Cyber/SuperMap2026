@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DIST_ROOT = ROOT / "release"
 BUILD_ROOT = ROOT / "build" / "portable"
 APP_NAME = "GeoModelingPlatform"
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 ISOLATED_ENV_FLAG = "GMP_PORTABLE_BUILD_ENV"
 
 

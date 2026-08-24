@@ -2,7 +2,7 @@
 
 > 受众：团队成员与答辩操作者。本文是答辩演示路线、比赛提交结构、特色口径与边界话术的唯一权威说明。案例指标数字见 [product-guide.md](product-guide.md)；版本演进见 [CHANGELOG.md](../CHANGELOG.md)；技术细节见 [architecture.md](architecture.md)。
 >
-> 更新时间：2026-08-15；适用版本：1.0.0。
+> 更新时间：2026-08-25；适用版本：1.0.1。
 
 ## 1. 答辩演示路线
 

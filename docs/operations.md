@@ -2,13 +2,13 @@
 
 > 受众：平台维护者与发布执行者。本文是免安装包、源码开发、打包发布、测试 CI 与故障排查的唯一权威说明。命令用法全表见 [api-reference.md](api-reference.md)。
 >
-> 更新时间：2026-08-25；适用版本：1.0.0。除特别注明外，Windows 命令在仓库根目录的 **PowerShell** 中运行，macOS 命令在 Terminal 中运行。
+> 更新时间：2026-08-25；适用版本：1.0.1。除特别注明外，Windows 命令在仓库根目录的 **PowerShell** 中运行，macOS 命令在 Terminal 中运行。
 
 ## 1. Windows 免安装包与 macOS ARM64 免安装包
 
 ### 1.1 使用
 
-1. 下载与本机匹配的 `GeoModelingPlatform-1.0.0-win-x64.zip` 或 `GeoModelingPlatform-1.0.0-macos-arm64.zip`，完整解压到可写目录；
+1. 下载与本机匹配的 `GeoModelingPlatform-1.0.1-win-x64.zip` 或 `GeoModelingPlatform-1.0.1-macos-arm64.zip`，完整解压到可写目录；
 2. Windows 双击 `启动平台.cmd`，macOS 双击 `启动平台.command`，浏览器自动打开 <http://127.0.0.1:8000/>；
 3. 结束后双击对应系统的停止脚本。
 

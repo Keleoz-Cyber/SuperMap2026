@@ -7,7 +7,7 @@ import re
 import tomllib
 from pathlib import Path
 
-EXPECTED = "1.0.0"
+EXPECTED = "1.0.1"
 
 
 def test_pyproject_version():

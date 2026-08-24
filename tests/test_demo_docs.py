@@ -51,7 +51,7 @@ def test_readme_points_to_documentation_index():
         "evidence/",
     ):
         assert name in text, f"README 文档索引缺少 {name}"
-    assert "1.0.0" in text
+    assert "1.0.1" in text
 
 
 def test_doc_index_defines_standard_and_evidence_index():

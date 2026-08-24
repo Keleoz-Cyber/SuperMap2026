@@ -11,6 +11,9 @@ import pytest
 from scripts import build_portable
 
 
+MACOS_WORKFLOW = Path(".github/workflows/build-macos-portable.yml")
+
+
 def test_windows_batch_entrypoint_is_resolved_for_subprocess() -> None:
     resolved = build_portable.resolve_command(["npm", "--version"])
     expected = "npm.cmd" if os.name == "nt" else "npm"
@@ -120,6 +123,19 @@ def test_macos_manifest_records_native_platform(tmp_path: Path) -> None:
 
     payload = json.loads(manifest.read_text(encoding="utf-8"))
     assert payload["platform"] == "macos-arm64"
+
+
+def test_macos_portable_workflow_is_manual_native_and_uploads_release_assets() -> None:
+    source = MACOS_WORKFLOW.read_text(encoding="utf-8")
+
+    assert "workflow_dispatch:" in source
+    assert "runs-on: macos-15" in source
+    assert "architecture: arm64" in source
+    assert "GeoModelingPlatform-1.0.0-win-x64.zip" in source
+    assert "scripts/install_supermap3d.py" in source
+    assert "python scripts/build_portable.py" in source
+    assert "GeoModelingPlatform-1.0.1-macos-arm64.zip" in source
+    assert "actions/upload-artifact@v4" in source
 
 
 def test_portable_guide_uses_in_product_ai_settings_as_primary_path() -> None:

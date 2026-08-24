@@ -2,7 +2,7 @@
 
 浏览器三维地质属性建模与空间分析平台（SuperMap 杯作品）：选择内置案例或上传 CSV/Excel 数据，依次完成字段映射、质量门禁、多算法调参、空间交叉验证与候选比较，物化为三维属性场后在 SuperMap3D 中体渲染、切片与统计分析，最终产出地质研判和带来源哈希的可审计证据包。
 
-当前版本：**1.0.0**；发布包与历史版本见 [GitHub Releases](https://github.com/Keleoz-Cyber/SuperMap2026/releases)。
+当前版本：**1.0.1**；发布包与历史版本见 [GitHub Releases](https://github.com/Keleoz-Cyber/SuperMap2026/releases)。
 
 ## 平台闭环
 
@@ -22,7 +22,7 @@
 
 ## 直接体验（本地免安装包）
 
-下载与本机匹配的 `GeoModelingPlatform-1.0.0-win-x64.zip` 或 `GeoModelingPlatform-1.0.0-macos-arm64.zip`，完整解压到可写目录。Windows 双击 `启动平台.cmd`；Apple Silicon Mac 双击 `启动平台.command`。包内已含 Python 运行时、前端、SuperMap3D SDK、SQLite 和三个内置案例，无需安装 Python、Node.js、Docker 或 iServer。
+下载与本机匹配的 `GeoModelingPlatform-1.0.1-win-x64.zip` 或 `GeoModelingPlatform-1.0.1-macos-arm64.zip`，完整解压到可写目录。Windows 双击 `启动平台.cmd`；Apple Silicon Mac 双击 `启动平台.command`。包内已含 Python 运行时、前端、SuperMap3D SDK、SQLite 和三个内置案例，无需安装 Python、Node.js、Docker 或 iServer。
 
 - 默认地址：<http://127.0.0.1:8000/>；结束后双击对应系统的停止脚本
 - 完整性诊断：Windows 使用 `GeoModelingPlatform.exe doctor`，macOS 使用 `./GeoModelingPlatform doctor`

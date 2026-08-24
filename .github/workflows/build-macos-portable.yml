@@ -1,0 +1,69 @@
+name: Build macOS ARM64 Portable
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-macos-arm64:
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12 ARM64
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          architecture: arm64
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Restore pinned SuperMap3D SDK from v1.0.0 release
+        env:
+          SDK_SOURCE_URL: https://github.com/Keleoz-Cyber/SuperMap2026/releases/download/v1.0.0/GeoModelingPlatform-1.0.0-win-x64.zip
+          SDK_SHA256: d69dadab01fc452a79f1fa88a46aced3cf29885df7bf4febbd6f24ce5b578120
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = "arm64"
+          curl --fail --location --retry 3 "$SDK_SOURCE_URL" --output "$RUNNER_TEMP/sdk-source.zip"
+          unzip -q "$RUNNER_TEMP/sdk-source.zip" \
+            "GeoModelingPlatform-1.0.0-win-x64/_internal/web/dist/SuperMap3D-2026/*" \
+            -d "$RUNNER_TEMP/sdk-source"
+          mkdir -p web/public
+          mv "$RUNNER_TEMP/sdk-source/GeoModelingPlatform-1.0.0-win-x64/_internal/web/dist/SuperMap3D-2026" \
+            web/public/SuperMap3D-2026
+          python scripts/install_supermap3d.py \
+            --destination web/public/SuperMap3D-2026 \
+            --verify-only \
+            --expected-sha256 "$SDK_SHA256"
+
+      - name: Build and smoke-test macOS ARM64 package
+        env:
+          PYTHONUTF8: "1"
+        run: python scripts/build_portable.py
+
+      - name: Verify release assets
+        run: |
+          set -euo pipefail
+          test -f release/GeoModelingPlatform-1.0.1-macos-arm64.zip
+          test -f release/GeoModelingPlatform-1.0.1-macos-arm64.zip.sha256
+          cd release
+          shasum -a 256 -c GeoModelingPlatform-1.0.1-macos-arm64.zip.sha256
+
+      - name: Upload macOS ARM64 package
+        uses: actions/upload-artifact@v4
+        with:
+          name: GeoModelingPlatform-1.0.1-macos-arm64
+          path: |
+            release/GeoModelingPlatform-1.0.1-macos-arm64.zip
+            release/GeoModelingPlatform-1.0.1-macos-arm64.zip.sha256
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14

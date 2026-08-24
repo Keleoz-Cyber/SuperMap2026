@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from geomodeling import __version__
 from geomodeling.portable import (
     ORIGIN_FILE,
     TEMPLATE_ROOT_MARKER,
@@ -23,9 +24,9 @@ from geomodeling.portable import (
 
 
 def test_health_identity_requires_exact_version() -> None:
-    assert _is_this_platform({"status": "ok", "version": "1.0.0"})
-    assert not _is_this_platform({"status": "ok", "version": "0.9.2"})
-    assert not _is_this_platform({"status": "healthy", "version": "1.0.0"})
+    assert _is_this_platform({"status": "ok", "version": __version__})
+    assert not _is_this_platform({"status": "ok", "version": "1.0.0"})
+    assert not _is_this_platform({"status": "healthy", "version": __version__})
 
 
 def test_template_root_marker_is_not_an_absolute_machine_path() -> None:
@@ -156,8 +157,8 @@ def test_posix_termination_targets_server_process_group(monkeypatch: pytest.Monk
 def test_shutdown_waits_until_platform_health_disappears() -> None:
     responses = iter(
         [
-            {"status": "ok", "version": "1.0.0"},
-            {"status": "ok", "version": "1.0.0"},
+            {"status": "ok", "version": __version__},
+            {"status": "ok", "version": __version__},
             None,
         ]
     )
