@@ -132,6 +132,7 @@ def test_macos_portable_workflow_is_manual_native_and_uploads_release_assets() -
     assert "runs-on: macos-15" in source
     assert "architecture: arm64" in source
     assert "GeoModelingPlatform-1.0.0-win-x64.zip" in source
+    assert "zipfile.ZipFile" in source
     assert "scripts/install_supermap3d.py" in source
     assert "python scripts/build_portable.py" in source
     assert "GeoModelingPlatform-1.0.1-macos-arm64.zip" in source

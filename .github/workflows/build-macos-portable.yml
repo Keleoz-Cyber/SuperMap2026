@@ -33,9 +33,20 @@ jobs:
           set -euo pipefail
           test "$(uname -m)" = "arm64"
           curl --fail --location --retry 3 "$SDK_SOURCE_URL" --output "$RUNNER_TEMP/sdk-source.zip"
-          unzip -q "$RUNNER_TEMP/sdk-source.zip" \
-            "GeoModelingPlatform-1.0.0-win-x64/_internal/web/dist/SuperMap3D-2026/*" \
-            -d "$RUNNER_TEMP/sdk-source"
+          python - <<'PY'
+          import os
+          import zipfile
+          from pathlib import Path
+
+          archive = Path(os.environ["RUNNER_TEMP"]) / "sdk-source.zip"
+          destination = Path(os.environ["RUNNER_TEMP"]) / "sdk-source"
+          prefix = "GeoModelingPlatform-1.0.0-win-x64/_internal/web/dist/SuperMap3D-2026/"
+          with zipfile.ZipFile(archive) as bundle:
+              members = [item for item in bundle.infolist() if item.filename.startswith(prefix)]
+              if not members:
+                  raise SystemExit("SuperMap3D SDK not found in the pinned Windows release")
+              bundle.extractall(destination, members)
+          PY
           mkdir -p web/public
           mv "$RUNNER_TEMP/sdk-source/GeoModelingPlatform-1.0.0-win-x64/_internal/web/dist/SuperMap3D-2026" \
             web/public/SuperMap3D-2026
