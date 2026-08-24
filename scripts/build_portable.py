@@ -1,4 +1,4 @@
-"""Build the offline Windows x64 one-directory evaluation package."""
+"""Build native Windows x64 and macOS ARM64 one-directory packages."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import os
+import platform
 import shutil
 import subprocess
 import sys
@@ -13,6 +14,7 @@ import tempfile
 import time
 import urllib.request
 import zipfile
+from dataclasses import dataclass
 from pathlib import Path
 
 
@@ -24,6 +26,51 @@ VERSION = "1.0.0"
 ISOLATED_ENV_FLAG = "GMP_PORTABLE_BUILD_ENV"
 
 
+@dataclass(frozen=True)
+class BuildTarget:
+    tag: str
+    manifest_platform: str
+    executable_name: str
+    python_relative: Path
+    launchers: tuple[str, str]
+    credential_label: str
+
+    @property
+    def is_macos(self) -> bool:
+        return self.tag == "macos-arm64"
+
+
+def detect_build_target(
+    *, system: str | None = None, machine: str | None = None
+) -> BuildTarget:
+    """Resolve the only two native package targets supported by this project."""
+
+    detected_system = system or platform.system()
+    detected_machine = (machine or platform.machine()).lower()
+    if detected_system == "Windows" and detected_machine in {"amd64", "x86_64"}:
+        return BuildTarget(
+            tag="win-x64",
+            manifest_platform="windows-x64",
+            executable_name=f"{APP_NAME}.exe",
+            python_relative=Path("venv/Scripts/python.exe"),
+            launchers=("启动平台.cmd", "停止平台.cmd"),
+            credential_label="当前 Windows 用户的凭据管理器",
+        )
+    if detected_system == "Darwin" and detected_machine in {"arm64", "aarch64"}:
+        return BuildTarget(
+            tag="macos-arm64",
+            manifest_platform="macos-arm64",
+            executable_name=APP_NAME,
+            python_relative=Path("venv/bin/python"),
+            launchers=("启动平台.command", "停止平台.command"),
+            credential_label="当前 macOS 用户的钥匙串",
+        )
+    raise RuntimeError(
+        f"不支持的便携包构建平台：{detected_system}/{detected_machine}；"
+        "仅支持 Windows x64 和 macOS ARM64。"
+    )
+
+
 def resolve_command(command: list[str]) -> list[str]:
     """Resolve Windows batch-based CLI entry points for ``CreateProcess``."""
 
@@ -33,8 +80,8 @@ def resolve_command(command: list[str]) -> list[str]:
     return resolved
 
 
-def isolated_python_path() -> Path:
-    return BUILD_ROOT / "venv" / "Scripts" / "python.exe"
+def isolated_python_path(target: BuildTarget | None = None) -> Path:
+    return BUILD_ROOT / (target or detect_build_target()).python_relative
 
 
 def relaunch_in_isolated_environment() -> int | None:
@@ -129,8 +176,13 @@ def build_frontend() -> None:
         raise RuntimeError(f"frontend build is incomplete: {missing}")
 
 
-def build_executable(template: Path, clean: bool) -> Path:
-    output = DIST_ROOT / f"{APP_NAME}-{VERSION}-win-x64"
+def build_executable(
+    template: Path,
+    clean: bool,
+    target: BuildTarget | None = None,
+) -> Path:
+    resolved_target = target or detect_build_target()
+    output = DIST_ROOT / f"{APP_NAME}-{VERSION}-{resolved_target.tag}"
     work = BUILD_ROOT / "pyinstaller"
     spec = BUILD_ROOT / "spec"
     if clean:
@@ -148,7 +200,7 @@ def build_executable(template: Path, clean: bool) -> Path:
         (ROOT / "web" / "dist", "web/dist"),
         (template, "runtime-template"),
     ]
-    command = pyinstaller_command(template, work, spec)
+    command = pyinstaller_command(template, work, spec, resolved_target)
     for source, destination in add_data:
         command.extend(["--add-data", f"{source}{separator}{destination}"])
     command.append(str(ROOT / "src" / "geomodeling" / "portable.py"))
@@ -160,10 +212,16 @@ def build_executable(template: Path, clean: bool) -> Path:
     return output
 
 
-def pyinstaller_command(template: Path, work: Path, spec: Path) -> list[str]:
+def pyinstaller_command(
+    template: Path,
+    work: Path,
+    spec: Path,
+    target: BuildTarget | None = None,
+) -> list[str]:
     """Return a deterministic command without collecting unrelated global packages."""
 
-    return [
+    resolved_target = target or detect_build_target()
+    command = [
         sys.executable,
         "-m",
         "PyInstaller",
@@ -196,40 +254,59 @@ def pyinstaller_command(template: Path, work: Path, spec: Path) -> list[str]:
         "--hidden-import",
         "uvicorn.lifespan.on",
     ]
+    if resolved_target.is_macos:
+        command.extend(
+            [
+                "--hidden-import",
+                "keyring.backends.macOS",
+                "--copy-metadata",
+                "keyring",
+            ]
+        )
+    return command
 
 
-def add_delivery_files(output: Path, seed_ids: dict[str, str]) -> None:
-    shutil.copy2(ROOT / "portable" / "启动平台.cmd", output / "启动平台.cmd")
-    shutil.copy2(ROOT / "portable" / "停止平台.cmd", output / "停止平台.cmd")
+def add_delivery_files(
+    output: Path,
+    seed_ids: dict[str, str],
+    target: BuildTarget | None = None,
+) -> None:
+    resolved_target = target or detect_build_target()
+    for launcher in resolved_target.launchers:
+        destination = output / launcher
+        shutil.copy2(ROOT / "portable" / launcher, destination)
+        if resolved_target.is_macos:
+            destination.chmod(destination.stat().st_mode | 0o111)
     shutil.copy2(
         ROOT / "portable" / "THIRD_PARTY_NOTICES.txt",
         output / "THIRD_PARTY_NOTICES.txt",
     )
-    guide = f"""GeoModelingPlatform {VERSION} 评测组使用说明
+    guide = f"""GeoModelingPlatform {VERSION} 本地免安装版使用说明
 
 1. 将整个文件夹解压到本机可写目录，不要只运行压缩包内的程序。
-2. 双击“启动平台.cmd”，等待浏览器自动打开。
+2. 双击“{resolved_target.launchers[0]}”，等待浏览器自动打开。
 3. 首页已内置电阻率、微震波速和瓦斯含量三个案例。
 4. 也可上传 CSV/XLSX，完成字段映射、质量校验、调参、空间验证和三维展示。
-5. 使用结束后双击“停止平台.cmd”。用户数据保存在 runtime 目录。
+5. 使用结束后双击“{resolved_target.launchers[1]}”。用户数据保存在 runtime 目录。
 
 AI 辅助研判（可选）：
 - 在页面右上角点击“AI 设置”，输入自己的 DeepSeek API Key，先测试连接再保存。
-- Key 由当前 Windows 用户的凭据管理器保存，不会写入本文件夹、浏览器或成果包。
+- Key 由{resolved_target.credential_label}保存，不会写入本文件夹、浏览器或成果包。
 - 不配置 AI 不影响数据校验、插值、三维展示、规则分析和导出。
 - 不要将团队 API Key 写入本文件夹或随压缩包分发。
 - 管理员备用：可在启动进程前设置 DEEPSEEK_API_KEY 环境变量；该配置在页面中只读。
 
 不需要安装 Python、Node.js、数据库或 Docker。iServer 为可选增强能力，离线不影响核心建模。
 默认地址：http://127.0.0.1:8000/
-诊断命令：GeoModelingPlatform.exe doctor
+诊断命令：{resolved_target.executable_name} doctor
 版本：{VERSION}
 内置成果身份：{json.dumps(seed_ids, ensure_ascii=False)}
 """
     (output / "使用说明.txt").write_text(guide, encoding="utf-8-sig")
 
 
-def write_manifest(output: Path) -> Path:
+def write_manifest(output: Path, target: BuildTarget | None = None) -> Path:
+    resolved_target = target or detect_build_target()
     manifest_path = output / "portable-manifest.json"
     entries = []
     for path in sorted(output.rglob("*")):
@@ -240,7 +317,7 @@ def write_manifest(output: Path) -> Path:
     payload = {
         "format": "geomodeling-portable/v1",
         "version": VERSION,
-        "platform": "windows-x64",
+        "platform": resolved_target.manifest_platform,
         "files": entries,
     }
     manifest_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -318,11 +395,46 @@ def create_zip(output: Path) -> Path:
     return archive
 
 
-def smoke_test_moved_package(output: Path, port: int = 18080) -> None:
+def macos_archive_command(output: Path, archive: Path) -> list[str]:
+    """Use the native archiver so Finder extraction preserves executable modes."""
+
+    return [
+        "ditto",
+        "-c",
+        "-k",
+        "--sequesterRsrc",
+        "--keepParent",
+        str(output),
+        str(archive),
+    ]
+
+
+def create_archive(output: Path, target: BuildTarget | None = None) -> Path:
+    resolved_target = target or detect_build_target()
+    if not resolved_target.is_macos:
+        return create_zip(output)
+    validate_release_tree(output)
+    archive = DIST_ROOT / f"{output.name}.zip"
+    archive.unlink(missing_ok=True)
+    run(macos_archive_command(output, archive))
+    if not archive.is_file():
+        raise RuntimeError("ditto 未生成 macOS 便携包。")
+    (archive.with_suffix(archive.suffix + ".sha256")).write_text(
+        f"{sha256(archive)}  {archive.name}\n", encoding="ascii"
+    )
+    return archive
+
+
+def smoke_test_moved_package(
+    output: Path,
+    port: int = 18080,
+    target: BuildTarget | None = None,
+) -> None:
+    resolved_target = target or detect_build_target()
     with tempfile.TemporaryDirectory(prefix="GMP 评测 移动测试 ") as temp:
         moved = Path(temp) / "GeoModelingPlatform 便携版"
         shutil.copytree(output, moved)
-        executable = moved / f"{APP_NAME}.exe"
+        executable = moved / resolved_target.executable_name
         run_at = lambda args: subprocess.run(
             [str(executable), *args], cwd=moved, check=True, text=True, capture_output=True
         )
@@ -354,6 +466,7 @@ def smoke_test_moved_package(output: Path, port: int = 18080) -> None:
 
 
 def main() -> int:
+    target = detect_build_target()
     isolated_exit = relaunch_in_isolated_environment()
     if isolated_exit is not None:
         return isolated_exit
@@ -364,12 +477,12 @@ def main() -> int:
     build_frontend()
     template = BUILD_ROOT / "runtime-template"
     seed_ids = prepare_runtime_template(template)
-    output = build_executable(template, clean=not args.no_clean)
-    add_delivery_files(output, seed_ids)
-    write_manifest(output)
+    output = build_executable(template, clean=not args.no_clean, target=target)
+    add_delivery_files(output, seed_ids, target)
+    write_manifest(output, target)
     if not args.skip_smoke:
-        smoke_test_moved_package(output)
-    archive = create_zip(output)
+        smoke_test_moved_package(output, target=target)
+    archive = create_archive(output, target)
     print(json.dumps({"output": str(output), "archive": str(archive), "sha256": sha256(archive)}, indent=2))
     return 0
 

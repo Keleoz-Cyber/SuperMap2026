@@ -84,7 +84,7 @@ class DeepSeekAdapter:
         )
 
         # 先直接检查环境变量，保持既有单测/管理员覆盖的确定性；只有未设置
-        # 环境变量时才访问当前 Windows 用户的持久凭据。
+        # 环境变量未配置时才访问当前操作系统用户的安全凭据存储。
         config = DeepSeekCredentialConfig.from_environment()
         if config is None:
             return cls.from_settings(get_default_deepseek_settings_service())

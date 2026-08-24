@@ -20,13 +20,14 @@
 
 任何阶段失败都显式给出原因；禁止用空图、点云或线框冒充体渲染成果（no silent fallback）。
 
-## 直接体验（Windows 免安装包）
+## 直接体验（本地免安装包）
 
-评测机器使用 Windows x64 免安装包：下载 `GeoModelingPlatform-1.0.0-win-x64.zip`，完整解压后双击 `启动平台.cmd`。包内已含 Python 运行时、前端、SuperMap3D SDK、SQLite 和三个内置案例，无需安装 Python、Node.js、Docker 或 iServer。
+下载与本机匹配的 `GeoModelingPlatform-1.0.0-win-x64.zip` 或 `GeoModelingPlatform-1.0.0-macos-arm64.zip`，完整解压到可写目录。Windows 双击 `启动平台.cmd`；Apple Silicon Mac 双击 `启动平台.command`。包内已含 Python 运行时、前端、SuperMap3D SDK、SQLite 和三个内置案例，无需安装 Python、Node.js、Docker 或 iServer。
 
-- 默认地址：<http://127.0.0.1:8000/>；结束后双击 `停止平台.cmd`
-- 完整性诊断：`GeoModelingPlatform.exe doctor`
+- 默认地址：<http://127.0.0.1:8000/>；结束后双击对应系统的停止脚本
+- 完整性诊断：Windows 使用 `GeoModelingPlatform.exe doctor`，macOS 使用 `./GeoModelingPlatform doctor`
 - 可选 AI 研判：右上角「AI 设置」配置自己的 DeepSeek API Key（不配置不影响任何主链功能）
+- macOS ARM64 包当前不签名、不公证；首次运行可能需要在 Finder 右键打开或到「隐私与安全性」中允许
 
 ## 三个内置案例
 
@@ -46,7 +47,7 @@
 - 专业分析：方向半变异函数与证据拟合、人工确认各向异性（不可变快照）、旋转扇区邻域、经验误差尺度、异常连通区提取与双候选比较。
 - 成果表达：SuperMap3D NetCDF 体渲染（Volume / Contour / Slice）、X/Y/Z 正交切片权威统计、统计分析中心、首页指挥舱与确定性发现卡。
 - 地质研判：版本化确定性规则（p25/p75 探索性异常）优先，DeepSeek 仅作可选辅助解释；AI 失败不影响主链。
-- 交付能力：正式成果选择、SQLite 持久化与任务恢复、证据 ZIP 导出、Windows 免安装发行包（SHA-256 完整性清单）。
+- 交付能力：正式成果选择、SQLite 持久化与任务恢复、证据 ZIP 导出、Windows x64 与 macOS ARM64 免安装发行包（SHA-256 完整性清单）。
 
 ## 源码启动（PowerShell）
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import signal
 from pathlib import Path
 
 import pytest
@@ -11,7 +12,10 @@ from geomodeling.portable import (
     TEMPLATE_ROOT_MARKER,
     PortableError,
     PortableLayout,
+    _background_process_options,
     _is_this_platform,
+    _terminate_process,
+    _wait_for_shutdown,
     initialize_runtime,
     relocate_runtime,
     verify_manifest,
@@ -126,3 +130,46 @@ def test_relocate_runtime_rewrites_text_and_json_paths(tmp_path: Path) -> None:
     manifest_text = (runtime / "manifest.json").read_text(encoding="utf-8")
     assert "D:" in manifest_text and "C:" not in manifest_text
     assert b"C:\\build\\runtime" not in (runtime / "platform.sqlite3").read_bytes()
+
+
+def test_posix_background_server_starts_in_independent_session() -> None:
+    options = _background_process_options(os_name="posix")
+
+    assert options["creationflags"] == 0
+    assert options["start_new_session"] is True
+
+
+def test_posix_termination_targets_server_process_group(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple[int, signal.Signals]] = []
+    monkeypatch.setattr("geomodeling.portable.os.getpgid", lambda pid: pid, raising=False)
+    monkeypatch.setattr(
+        "geomodeling.portable.os.killpg",
+        lambda pid, sig: calls.append((pid, sig)),
+        raising=False,
+    )
+
+    _terminate_process(4321, os_name="posix")
+
+    assert calls == [(4321, signal.SIGTERM)]
+
+
+def test_shutdown_waits_until_platform_health_disappears() -> None:
+    responses = iter(
+        [
+            {"status": "ok", "version": "1.0.0"},
+            {"status": "ok", "version": "1.0.0"},
+            None,
+        ]
+    )
+    sleeps: list[float] = []
+
+    stopped = _wait_for_shutdown(
+        "127.0.0.1",
+        8000,
+        timeout=1,
+        probe=lambda _host, _port: next(responses),
+        sleep=sleeps.append,
+    )
+
+    assert stopped is True
+    assert sleeps == [0.1, 0.1]

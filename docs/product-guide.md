@@ -210,15 +210,21 @@ AI 研判是可选功能：未配置 Key、网络失败或响应无效都不影�
 3. 点「测试连接」确认鉴权与网络可用；
 4. 点「保存配置」，无需重启即可在成果工作台生成 AI 辅助研判。
 
-Key 保存于当前 Windows 用户的凭据管理器（Generic Credential），页面只显示「已配置」，不回显完整 Key。平台只允许 DeepSeek 官方 HTTPS 服务地址；清除密钥在同一弹窗完成。环境变量方式配置时优先级更高，页面配置变为只读。
+Windows 将 Key 保存到当前用户的凭据管理器（Generic Credential），macOS 将 Key 保存到当前用户钥匙串。页面只显示「已配置」，不回显完整 Key。平台只允许 DeepSeek 官方 HTTPS 服务地址；清除密钥在同一弹窗完成。环境变量方式配置时优先级更高，页面配置变为只读。
 
 ### 13.2 管理员环境变量临时启动（关闭窗口后失效）
 
-免安装包解压目录打开 CMD：
+Windows 免安装包解压目录打开 CMD：
 
 ```cmd
 set "DEEPSEEK_API_KEY=在这里填写自己的APIKey"
 GeoModelingPlatform.exe start
+```
+
+macOS 免安装包解压目录打开 Terminal：
+
+```sh
+DEEPSEEK_API_KEY="在这里填写自己的APIKey" ./GeoModelingPlatform start
 ```
 
 其余变量用源码默认值即可；如需覆盖：

@@ -70,7 +70,7 @@ def save_ai_settings(payload: AISettingsInput, service: DeepSeekSettingsService 
     try:
         service.save(payload.private_config())
     except OSError:
-        raise PlatformError("AI_CREDENTIAL_STORE_UNAVAILABLE", "Windows 凭据管理器不可用，配置未保存", http_status=503)
+        raise PlatformError("AI_CREDENTIAL_STORE_UNAVAILABLE", "系统安全凭据存储不可用，配置未保存", http_status=503)
     return _status(service)
 
 
@@ -87,5 +87,5 @@ def clear_ai_settings(service: DeepSeekSettingsService = Depends(get_ai_settings
     try:
         service.clear()
     except OSError:
-        raise PlatformError("AI_CREDENTIAL_STORE_UNAVAILABLE", "Windows 凭据管理器不可用，配置未清除", http_status=503)
+        raise PlatformError("AI_CREDENTIAL_STORE_UNAVAILABLE", "系统安全凭据存储不可用，配置未清除", http_status=503)
     return _status(service)

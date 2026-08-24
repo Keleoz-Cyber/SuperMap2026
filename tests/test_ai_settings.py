@@ -8,6 +8,8 @@ from geomodeling.integrations.deepseek_credentials import (
     DeepSeekCredentialConfig,
     DeepSeekSettingsService,
     InMemoryCredentialStore,
+    MacOSKeychainStore,
+    default_credential_store,
 )
 
 
@@ -93,3 +95,38 @@ def test_in_memory_store_repr_does_not_expose_secret():
     store = InMemoryCredentialStore()
     store.write(_config())
     assert "sk-test-secret" not in repr(store)
+
+
+class FakeKeyring:
+    def __init__(self) -> None:
+        self.values: dict[tuple[str, str], str] = {}
+
+    def get_password(self, service: str, username: str) -> str | None:
+        return self.values.get((service, username))
+
+    def set_password(self, service: str, username: str, password: str) -> None:
+        self.values[(service, username)] = password
+
+    def delete_password(self, service: str, username: str) -> None:
+        self.values.pop((service, username), None)
+
+
+def test_macos_keychain_store_round_trips_without_exposing_secret() -> None:
+    store = MacOSKeychainStore(backend=FakeKeyring())
+    service = DeepSeekSettingsService(store=store)
+
+    service.save(_config())
+
+    assert service.resolve() is not None
+    assert service.resolve().secret_value() == "sk-test-secret"
+    assert service.status().source == "macos_keychain"
+    assert "sk-test-secret" not in repr(store)
+    service.clear()
+    assert service.resolve() is None
+
+
+def test_default_credential_store_selects_macos_keychain() -> None:
+    store = default_credential_store(platform_name="darwin")
+
+    assert isinstance(store, MacOSKeychainStore)
+    assert store.source == "macos_keychain"

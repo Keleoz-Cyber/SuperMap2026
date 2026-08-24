@@ -1624,7 +1624,7 @@ export interface AIAnalysisRecord {
   created_at: string
 }
 
-export type AISettingsSource = 'environment' | 'windows_credential' | 'none'
+export type AISettingsSource = 'environment' | 'windows_credential' | 'macos_keychain' | 'none'
 
 export interface AISettingsStatus {
   configured: boolean

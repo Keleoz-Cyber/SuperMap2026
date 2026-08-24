@@ -49,6 +49,14 @@ describe('AIServiceSettingsDialog', () => {
     expect(wrapper.text()).not.toContain('sk-')
   })
 
+  it('identifies credentials stored in the macOS keychain', async () => {
+    vi.mocked(client.fetchAISettings).mockResolvedValue({ ...EMPTY, configured: true, source: 'macos_keychain' })
+    const wrapper = mountDialog()
+    await flushPromises()
+    expect(wrapper.get('[data-test="ai-settings-status"]').text()).toContain('macOS 钥匙串')
+    expect(wrapper.text()).not.toContain('Windows 凭据管理器')
+  })
+
   it('tests the entered key without saving it', async () => {
     vi.mocked(client.testAISettings).mockResolvedValue({ ok: true, code: 'DEEPSEEK_AVAILABLE', message: '连接成功' })
     const wrapper = mountDialog()

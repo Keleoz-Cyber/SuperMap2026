@@ -37,7 +37,7 @@
 | 存储 | SQLite + 不可变文件工件 |
 | 三维成果格式 | NetCDF classic/v3 RenderAsset |
 | 自动化质量 | pytest、Vitest、Playwright、GitHub Actions 双速 CI |
-| 发布 | Windows x64 免安装 ZIP、SHA-256 完整性清单 |
+| 发布 | Windows x64 / macOS ARM64 免安装 ZIP、SHA-256 完整性清单 |
 
 ## 2. 后端结构与模块边界
 
@@ -180,7 +180,7 @@ CandidateResult 规则网格
 
 - **成果级分析**（`result_analysis`）：只读已物化网格的确定性分析（值统计、NoData、结构异常连通区、深度剖面、与克里金基线的联动对比），LRU 缓存；结果与三维标注共享稳定组件 ID。
 - **地质研判规则**（`geological_interpretation`，版本化 `geological_interpretation.v1`）：按属性域（电阻率/微震速度/瓦斯含量 × 高/低异常）将连通区组织为"数值事实 -> 可能解释 -> 潜在影响 -> 建议核查"；规则只翻译既有证据，不产生新数值；自定义属性无受控规则时安全降级通用分析。
-- **AI 研判**（`ai_analysis` + `integrations/deepseek`）：确定性分析 -> 严格合同 EvidencePacket -> prompt（quick/review 两档）-> DeepSeek（JSON 模式、温度 0）-> 严格校验（禁用断言词表：含水/危险/储量等正向断言直接拒绝）-> 记录（相同证据哈希默认复用）。Key 只存服务端（环境变量或 Windows 凭据管理器），不进浏览器、日志、SQLite、导出包与 Git；AI 不可用时规则分析照常成功。
+- **AI 研判**（`ai_analysis` + `integrations/deepseek`）：确定性分析 -> 严格合同 EvidencePacket -> prompt（quick/review 两档）-> DeepSeek（JSON 模式、温度 0）-> 严格校验（禁用断言词表：含水/危险/储量等正向断言直接拒绝）-> 记录（相同证据哈希默认复用）。Key 只存服务端（环境变量、Windows 凭据管理器或 macOS 钥匙串），不进浏览器、日志、SQLite、导出包与 Git；AI 不可用时规则分析照常成功。
 
 ## 11. 错误处理与 fail-closed 纪律
 

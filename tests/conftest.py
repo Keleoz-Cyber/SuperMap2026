@@ -7,7 +7,7 @@ from geomodeling.config import load_config
 
 @pytest.fixture(autouse=True)
 def isolate_deepseek_credentials(monkeypatch):
-    """测试不得读取开发机当前 Windows 用户保存的真实 API 凭据。"""
+    """测试不得读取开发机当前操作系统用户保存的真实 API 凭据。"""
 
     from geomodeling.integrations import deepseek_credentials
     from geomodeling.integrations.deepseek_credentials import (

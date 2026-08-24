@@ -32,6 +32,7 @@ const form = reactive<AISettingsPayload>({
 const sourceLabel = computed(() => {
   if (status.value?.source === 'environment') return '已由环境变量配置（只读）'
   if (status.value?.source === 'windows_credential') return '已安全保存到 Windows 凭据管理器'
+  if (status.value?.source === 'macos_keychain') return '已安全保存到 macOS 钥匙串'
   return '尚未配置'
 })
 
@@ -172,7 +173,7 @@ watch(
       >{{ feedback.text }}</p>
 
       <p class="security-note">
-        Key 仅发送到本机后端并由当前 Windows 用户的凭据管理器保存；不会写入浏览器、项目文件、SQLite、日志、成果包或 Git。
+        Key 仅发送到本机后端并由操作系统安全凭据存储保存；不会写入浏览器、项目文件、SQLite、日志、成果包或 Git。
       </p>
     </div>
 

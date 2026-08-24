@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import tomllib
 import zipfile
@@ -35,6 +36,90 @@ def test_pyinstaller_command_avoids_collect_all_from_global_environment(tmp_path
 def test_isolated_builder_uses_build_directory_virtualenv() -> None:
     python = build_portable.isolated_python_path()
     assert python == build_portable.BUILD_ROOT / "venv" / "Scripts" / "python.exe"
+
+
+def test_macos_arm64_target_uses_posix_runtime_and_launchers() -> None:
+    target = build_portable.detect_build_target(system="Darwin", machine="arm64")
+
+    assert target.tag == "macos-arm64"
+    assert target.executable_name == "GeoModelingPlatform"
+    assert target.python_relative == Path("venv/bin/python")
+    assert target.launchers == ("启动平台.command", "停止平台.command")
+    assert build_portable.isolated_python_path(target) == (
+        build_portable.BUILD_ROOT / "venv" / "bin" / "python"
+    )
+
+
+@pytest.mark.parametrize(
+    ("system", "machine"),
+    [("Darwin", "x86_64"), ("Linux", "x86_64"), ("Windows", "ARM64")],
+)
+def test_unsupported_portable_build_target_is_rejected(system: str, machine: str) -> None:
+    with pytest.raises(RuntimeError, match="不支持的便携包构建平台"):
+        build_portable.detect_build_target(system=system, machine=machine)
+
+
+def test_macos_pyinstaller_command_collects_keychain_backend(tmp_path: Path) -> None:
+    target = build_portable.detect_build_target(system="Darwin", machine="arm64")
+
+    command = build_portable.pyinstaller_command(tmp_path, tmp_path, tmp_path, target)
+
+    joined = " ".join(command)
+    assert "--hidden-import keyring.backends.macOS" in joined
+    assert "--copy-metadata keyring" in joined
+
+
+def test_macos_launchers_are_present_and_use_local_executable() -> None:
+    portable = Path("portable")
+
+    start = (portable / "启动平台.command").read_text(encoding="utf-8")
+    stop = (portable / "停止平台.command").read_text(encoding="utf-8")
+
+    assert './GeoModelingPlatform start' in start
+    assert './GeoModelingPlatform stop' in stop
+
+
+def test_macos_delivery_uses_command_launchers_and_keychain_guide(tmp_path: Path) -> None:
+    target = build_portable.detect_build_target(system="Darwin", machine="arm64")
+    output = tmp_path / f"GeoModelingPlatform-1.0.0-{target.tag}"
+    output.mkdir()
+
+    build_portable.add_delivery_files(output, {"resistivity": "result-1"}, target)
+
+    assert (output / "启动平台.command").is_file()
+    assert (output / "停止平台.command").is_file()
+    assert not (output / "启动平台.cmd").exists()
+    guide = (output / "使用说明.txt").read_text(encoding="utf-8-sig")
+    assert "macOS 用户的钥匙串" in guide
+    assert "GeoModelingPlatform doctor" in guide
+    assert ".exe" not in guide
+
+
+def test_macos_archive_command_preserves_finder_metadata(tmp_path: Path) -> None:
+    output = tmp_path / "GeoModelingPlatform-1.0.0-macos-arm64"
+    archive = tmp_path / f"{output.name}.zip"
+
+    assert build_portable.macos_archive_command(output, archive) == [
+        "ditto",
+        "-c",
+        "-k",
+        "--sequesterRsrc",
+        "--keepParent",
+        str(output),
+        str(archive),
+    ]
+
+
+def test_macos_manifest_records_native_platform(tmp_path: Path) -> None:
+    target = build_portable.detect_build_target(system="Darwin", machine="arm64")
+    output = tmp_path / "GeoModelingPlatform-1.0.0-macos-arm64"
+    output.mkdir()
+    (output / "GeoModelingPlatform").write_bytes(b"binary")
+
+    manifest = build_portable.write_manifest(output, target)
+
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    assert payload["platform"] == "macos-arm64"
 
 
 def test_portable_guide_uses_in_product_ai_settings_as_primary_path() -> None:

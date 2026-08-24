@@ -1,8 +1,8 @@
-"""DeepSeek configuration resolved from environment or Windows Credentials.
+"""DeepSeek configuration resolved from environment or the operating-system keyring.
 
 The API key never enters SQLite, project files, browser storage, logs, exports,
 or public DTOs.  Environment variables are an administrator/development
-override; the Windows Generic Credential is the end-user configuration path.
+override; Windows Credential Manager and macOS Keychain are user configuration paths.
 """
 
 from __future__ import annotations
@@ -10,6 +10,7 @@ from __future__ import annotations
 import ctypes
 import json
 import os
+import sys
 from ctypes import wintypes
 from dataclasses import dataclass, field
 from typing import Callable, Literal, Protocol
@@ -30,6 +31,7 @@ from geomodeling.integrations.deepseek import (
 )
 
 CREDENTIAL_TARGET = "GeoModelingPlatform/DeepSeek"
+CREDENTIAL_USERNAME = "DeepSeek API"
 # V4 是产品界面提供的当前模型；两个旧别名仍由 DeepSeek 官方兼容，保留
 # 给环境变量管理员与既有自动化，避免配置功能造成回归。
 ALLOWED_MODELS = {
@@ -96,9 +98,12 @@ class DeepSeekCredentialConfig(BaseModel):
         )
 
 
+CredentialSource = Literal["environment", "windows_credential", "macos_keychain", "none"]
+
+
 class DeepSeekSettingsStatus(BaseModel):
     configured: bool
-    source: Literal["environment", "windows_credential", "none"]
+    source: CredentialSource
     editable: bool
     storage_available: bool
     base_url: str
@@ -109,6 +114,7 @@ class DeepSeekSettingsStatus(BaseModel):
 
 class CredentialStore(Protocol):
     available: bool
+    source: Literal["windows_credential", "macos_keychain"]
 
     def read(self) -> DeepSeekCredentialConfig | None: ...
     def write(self, config: DeepSeekCredentialConfig) -> None: ...
@@ -120,6 +126,7 @@ class InMemoryCredentialStore:
     """Injectable test store; repr intentionally excludes its secret value."""
 
     available: bool = True
+    source: Literal["windows_credential", "macos_keychain"] = "windows_credential"
     _config: DeepSeekCredentialConfig | None = field(default=None, repr=False)
 
     def read(self) -> DeepSeekCredentialConfig | None:
@@ -156,6 +163,7 @@ class WindowsCredentialStore:
     """Minimal WinCred wrapper using the current user's Generic Credentials."""
 
     available = os.name == "nt"
+    source: Literal["windows_credential"] = "windows_credential"
     _TYPE_GENERIC = 1
     _PERSIST_LOCAL_MACHINE = 2
     _ERROR_NOT_FOUND = 1168
@@ -208,7 +216,7 @@ class WindowsCredentialStore:
         credential.CredentialBlobSize = len(payload)
         credential.CredentialBlob = ctypes.cast(blob, ctypes.POINTER(ctypes.c_ubyte))
         credential.Persist = self._PERSIST_LOCAL_MACHINE
-        credential.UserName = "DeepSeek API"
+        credential.UserName = CREDENTIAL_USERNAME
         if not advapi.CredWriteW(ctypes.byref(credential), 0):
             raise ctypes.WinError(ctypes.get_last_error())
 
@@ -219,6 +227,93 @@ class WindowsCredentialStore:
         error = ctypes.get_last_error()
         if error != self._ERROR_NOT_FOUND:
             raise ctypes.WinError(error)
+
+
+class KeyringBackend(Protocol):
+    def get_password(self, service: str, username: str) -> str | None: ...
+    def set_password(self, service: str, username: str, password: str) -> None: ...
+    def delete_password(self, service: str, username: str) -> None: ...
+
+
+@dataclass
+class MacOSKeychainStore:
+    """Store the private JSON payload in the current user's macOS Keychain."""
+
+    backend: KeyringBackend | None = field(default=None, repr=False)
+    source: Literal["macos_keychain"] = field(default="macos_keychain", init=False)
+
+    def _keyring(self) -> KeyringBackend:
+        if self.backend is not None:
+            return self.backend
+        try:
+            import keyring
+        except ImportError as exc:
+            raise OSError("macOS 钥匙串组件不可用") from exc
+        return keyring
+
+    @property
+    def available(self) -> bool:
+        if self.backend is not None:
+            return True
+        if sys.platform != "darwin":
+            return False
+        try:
+            import keyring
+
+            return float(keyring.get_keyring().priority) > 0
+        except (ImportError, RuntimeError, TypeError, ValueError):
+            return False
+
+    def read(self) -> DeepSeekCredentialConfig | None:
+        if not self.available:
+            raise OSError("macOS 钥匙串不可用")
+        try:
+            raw = self._keyring().get_password(CREDENTIAL_TARGET, CREDENTIAL_USERNAME)
+        except Exception as exc:
+            raise OSError("无法读取 macOS 钥匙串") from exc
+        if raw is None:
+            return None
+        try:
+            return DeepSeekCredentialConfig.model_validate_json(raw)
+        except ValueError as exc:
+            raise OSError("macOS 钥匙串中的 AI 配置无效") from exc
+
+    def write(self, config: DeepSeekCredentialConfig) -> None:
+        if not self.available:
+            raise OSError("macOS 钥匙串不可用")
+        payload = json.dumps(
+            {
+                "api_key": config.secret_value(),
+                "base_url": config.base_url,
+                "model": config.model,
+                "timeout_sec": config.timeout_sec,
+                "max_tokens": config.max_tokens,
+            },
+            separators=(",", ":"),
+        )
+        try:
+            self._keyring().set_password(CREDENTIAL_TARGET, CREDENTIAL_USERNAME, payload)
+        except Exception as exc:
+            raise OSError("无法写入 macOS 钥匙串") from exc
+
+    def clear(self) -> None:
+        if not self.available:
+            raise OSError("macOS 钥匙串不可用")
+        keyring_backend = self._keyring()
+        try:
+            if keyring_backend.get_password(CREDENTIAL_TARGET, CREDENTIAL_USERNAME) is not None:
+                keyring_backend.delete_password(CREDENTIAL_TARGET, CREDENTIAL_USERNAME)
+        except Exception as exc:
+            raise OSError("无法清除 macOS 钥匙串") from exc
+
+
+def default_credential_store(*, platform_name: str | None = None) -> CredentialStore:
+    resolved = platform_name or sys.platform
+    if resolved == "win32":
+        return WindowsCredentialStore()
+    if resolved == "darwin":
+        return MacOSKeychainStore()
+    return InMemoryCredentialStore(available=False)
 
 
 @dataclass
@@ -234,7 +329,7 @@ class DeepSeekSettingsService:
         store: CredentialStore | None = None,
         http_handler: Callable[[httpx.Request], httpx.Response] | None = None,
     ) -> None:
-        self.store = store or WindowsCredentialStore()
+        self.store = store or default_credential_store()
         self._http_handler = http_handler
 
     @staticmethod
@@ -255,7 +350,7 @@ class DeepSeekSettingsService:
         resolved = environment or stored
         return DeepSeekSettingsStatus(
             configured=resolved is not None,
-            source="environment" if environment else "windows_credential" if stored else "none",
+            source="environment" if environment else self.store.source if stored else "none",
             editable=environment is None and self.store.available,
             storage_available=self.store.available,
             base_url=resolved.base_url if resolved else DEFAULT_BASE_URL,
@@ -266,12 +361,12 @@ class DeepSeekSettingsService:
 
     def save(self, config: DeepSeekCredentialConfig) -> None:
         if not self.store.available:
-            raise OSError("Windows 凭据管理器不可用")
+            raise OSError("系统安全凭据存储不可用")
         self.store.write(config)
 
     def clear(self) -> None:
         if not self.store.available:
-            raise OSError("Windows 凭据管理器不可用")
+            raise OSError("系统安全凭据存储不可用")
         self.store.clear()
 
     def test(self, config: DeepSeekCredentialConfig | None = None) -> DeepSeekConnectionResult:

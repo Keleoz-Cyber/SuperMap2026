@@ -1,4 +1,4 @@
-"""Windows one-directory launcher for the contest evaluation package."""
+"""Native one-directory launcher for Windows x64 and macOS ARM64 packages."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import os
+import signal
 import shutil
 import socket
 import sqlite3
@@ -17,7 +18,7 @@ import urllib.request
 import webbrowser
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import Callable, Iterable
 
 import uvicorn
 
@@ -273,7 +274,7 @@ def _spawn_server(layout: PortableLayout, host: str, port: int) -> subprocess.Po
             "--port",
             str(port),
         ]
-    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    process_options = _background_process_options()
     try:
         return subprocess.Popen(
             command,
@@ -282,11 +283,22 @@ def _spawn_server(layout: PortableLayout, host: str, port: int) -> subprocess.Po
             stdin=subprocess.DEVNULL,
             stdout=log_handle,
             stderr=subprocess.STDOUT,
-            creationflags=flags,
+            creationflags=process_options["creationflags"],
+            start_new_session=process_options["start_new_session"],
             close_fds=True,
         )
     finally:
         log_handle.close()
+
+
+def _background_process_options(*, os_name: str | None = None) -> dict[str, int | bool]:
+    """Detach POSIX servers so closing a Finder-launched terminal keeps them alive."""
+
+    resolved = os_name or os.name
+    return {
+        "creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0) if resolved == "nt" else 0,
+        "start_new_session": resolved != "nt",
+    }
 
 
 def start(layout: PortableLayout, host: str, port: int, *, open_browser: bool) -> int:
@@ -328,6 +340,40 @@ def _read_state(layout: PortableLayout) -> dict | None:
     return payload
 
 
+def _terminate_process(pid: int, *, os_name: str | None = None) -> None:
+    resolved = os_name or os.name
+    if resolved == "nt":
+        completed = subprocess.run(
+            ["taskkill", "/PID", str(pid), "/T", "/F"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if completed.returncode not in (0, 128):
+            raise PortableError(f"无法停止平台进程 PID {pid}。")
+        return
+    try:
+        os.killpg(os.getpgid(pid), signal.SIGTERM)
+    except ProcessLookupError:
+        return
+
+
+def _wait_for_shutdown(
+    host: str,
+    port: int,
+    *,
+    timeout: float = 5.0,
+    probe: Callable[[str, int], dict | None] = probe_health,
+    sleep: Callable[[float], None] = time.sleep,
+) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if not _is_this_platform(probe(host, port)):
+            return True
+        sleep(0.1)
+    return not _is_this_platform(probe(host, port))
+
+
 def stop(layout: PortableLayout) -> int:
     state = _read_state(layout)
     if state is None:
@@ -341,17 +387,9 @@ def stop(layout: PortableLayout) -> int:
         layout.state_path.unlink(missing_ok=True)
         print("状态文件已过期；未停止任何进程。")
         return 0
-    if os.name == "nt":
-        completed = subprocess.run(
-            ["taskkill", "/PID", str(pid), "/T", "/F"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if completed.returncode not in (0, 128):
-            raise PortableError(f"无法停止平台进程 PID {pid}。")
-    else:
-        os.kill(pid, 15)
+    _terminate_process(pid)
+    if not _wait_for_shutdown(host, port):
+        raise PortableError(f"平台进程 PID {pid} 未在 5 秒内停止。")
     layout.state_path.unlink(missing_ok=True)
     print("平台已停止。")
     return 0
