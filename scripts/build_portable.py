@@ -519,6 +519,12 @@ def create_archive(output: Path, target: BuildTarget | None = None) -> Path:
     return archive
 
 
+def copy_portable_tree(source: Path, destination: Path) -> None:
+    """Preserve macOS app-bundle links during moved-package smoke tests."""
+
+    shutil.copytree(source, destination, symlinks=True)
+
+
 def smoke_test_moved_package(
     output: Path,
     port: int = 18080,
@@ -527,7 +533,7 @@ def smoke_test_moved_package(
     resolved_target = target or detect_build_target()
     with tempfile.TemporaryDirectory(prefix="GMP 评测 移动测试 ") as temp:
         moved = Path(temp) / "GeoModelingPlatform 便携版"
-        shutil.copytree(output, moved)
+        copy_portable_tree(output, moved)
         executable = moved / resolved_target.executable_relative
         run_at = lambda args: subprocess.run(
             [str(executable), *args], cwd=moved, check=True, text=True, capture_output=True

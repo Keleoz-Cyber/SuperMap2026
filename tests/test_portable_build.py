@@ -135,6 +135,23 @@ def test_macos_app_is_ad_hoc_signed_before_manifest() -> None:
     ]
 
 
+def test_moved_package_copy_preserves_app_bundle_symlinks(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    calls: list[tuple[Path, Path, bool]] = []
+
+    def fake_copytree(source: Path, destination: Path, *, symlinks: bool) -> None:
+        calls.append((source, destination, symlinks))
+
+    monkeypatch.setattr(build_portable.shutil, "copytree", fake_copytree)
+    source = tmp_path / "source"
+    destination = tmp_path / "destination"
+
+    build_portable.copy_portable_tree(source, destination)
+
+    assert calls == [(source, destination, True)]
+
+
 def test_macos_delivery_uses_command_launchers_and_keychain_guide(tmp_path: Path) -> None:
     target = build_portable.detect_build_target(system="Darwin", machine="arm64")
     output = tmp_path / f"GeoModelingPlatform-1.0.0-{target.tag}"
