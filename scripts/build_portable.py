@@ -17,6 +17,7 @@ import urllib.request
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -233,6 +234,8 @@ def wrap_macos_app(
     pyinstaller_output: Path,
     output: Path,
     target: BuildTarget,
+    *,
+    linker: Callable[..., None] = os.symlink,
 ) -> Path:
     """Wrap the console-capable onedir payload in a standard Finder app bundle."""
 
@@ -243,9 +246,24 @@ def wrap_macos_app(
     app = output / target.app_bundle_name
     contents = app / "Contents"
     macos = contents / "MacOS"
+    resources = contents / "Resources"
     output.mkdir(parents=True, exist_ok=True)
-    contents.mkdir(parents=True, exist_ok=True)
-    pyinstaller_output.rename(macos)
+    macos.mkdir(parents=True, exist_ok=True)
+    resources.mkdir(parents=True, exist_ok=True)
+    executable = pyinstaller_output / target.executable_name
+    executable.rename(macos / target.executable_name)
+    internal = pyinstaller_output / "_internal"
+    if not internal.is_dir():
+        raise RuntimeError("PyInstaller macOS _internal 目录缺失。")
+    internal.rename(resources / "_internal")
+    for child in list(pyinstaller_output.iterdir()):
+        child.rename(resources / child.name)
+    pyinstaller_output.rmdir()
+    linker(
+        "../Resources/_internal",
+        macos / "_internal",
+        target_is_directory=True,
+    )
     info = {
         "CFBundleDevelopmentRegion": "zh_CN",
         "CFBundleDisplayName": APP_NAME,

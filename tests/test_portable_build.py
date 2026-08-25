@@ -96,12 +96,28 @@ def test_macos_app_bundle_wraps_pyinstaller_onedir_output(tmp_path: Path) -> Non
     (pyinstaller_output / "_internal").mkdir()
     (pyinstaller_output / "_internal" / "resource.bin").write_bytes(b"resource")
     output = tmp_path / "GeoModelingPlatform-1.0.1-macos-arm64"
+    links: list[tuple[str, Path, bool]] = []
 
-    app = build_portable.wrap_macos_app(pyinstaller_output, output, target)
+    def fake_link(source: str, link: Path, *, target_is_directory: bool) -> None:
+        links.append((source, link, target_is_directory))
+
+    app = build_portable.wrap_macos_app(
+        pyinstaller_output,
+        output,
+        target,
+        linker=fake_link,
+    )
 
     assert app == output / "GeoModelingPlatform.app"
     assert (app / "Contents/MacOS/GeoModelingPlatform").read_bytes() == b"mach-o"
-    assert (app / "Contents/MacOS/_internal/resource.bin").read_bytes() == b"resource"
+    assert (app / "Contents/Resources/_internal/resource.bin").read_bytes() == b"resource"
+    assert links == [
+        (
+            "../Resources/_internal",
+            app / "Contents/MacOS/_internal",
+            True,
+        )
+    ]
     info = plistlib.loads((app / "Contents/Info.plist").read_bytes())
     assert info["CFBundleExecutable"] == "GeoModelingPlatform"
     assert info["CFBundleIdentifier"] == "com.keleoz.geomodelingplatform"
