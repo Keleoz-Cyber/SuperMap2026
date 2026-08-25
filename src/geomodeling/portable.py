@@ -424,8 +424,15 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _normalize_launcher_args(argv: Iterable[str]) -> list[str]:
+    """Ignore the legacy Finder process-serial argument when present."""
+
+    return [argument for argument in argv if not argument.startswith("-psn_")]
+
+
 def main(argv: Iterable[str] | None = None) -> int:
-    args = build_parser().parse_args(list(argv) if argv is not None else None)
+    raw_args = list(argv) if argv is not None else sys.argv[1:]
+    args = build_parser().parse_args(_normalize_launcher_args(raw_args))
     command = args.command or "start"
     layout = PortableLayout.resolve()
     try:

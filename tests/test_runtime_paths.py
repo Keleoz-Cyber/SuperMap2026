@@ -15,3 +15,19 @@ def test_resource_path_uses_resolved_root(monkeypatch, tmp_path: Path) -> None:
     assert runtime_paths.resource_path("config", "default.yaml") == (
         tmp_path / "config" / "default.yaml"
     )
+
+
+def test_frozen_macos_app_uses_writable_outer_package_root(
+    monkeypatch, tmp_path: Path
+) -> None:
+    executable = (
+        tmp_path
+        / "GeoModelingPlatform.app"
+        / "Contents"
+        / "MacOS"
+        / "GeoModelingPlatform"
+    )
+    monkeypatch.setattr(runtime_paths.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(runtime_paths.sys, "executable", str(executable))
+
+    assert runtime_paths.executable_root() == tmp_path.resolve()

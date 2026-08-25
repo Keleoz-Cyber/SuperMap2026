@@ -224,7 +224,7 @@ GeoModelingPlatform.exe start
 macOS 免安装包解压目录打开 Terminal：
 
 ```sh
-DEEPSEEK_API_KEY="在这里填写自己的APIKey" ./GeoModelingPlatform start
+DEEPSEEK_API_KEY="在这里填写自己的APIKey" ./GeoModelingPlatform.app/Contents/MacOS/GeoModelingPlatform start
 ```
 
 其余变量用源码默认值即可；如需覆盖：

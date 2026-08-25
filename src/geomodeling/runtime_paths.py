@@ -31,7 +31,11 @@ def executable_root() -> Path:
     """Return the writable portable-package root or the source repository root."""
 
     if getattr(sys, "frozen", False):
-        return Path(sys.executable).resolve().parent
+        executable = Path(sys.executable).resolve()
+        for parent in executable.parents:
+            if parent.suffix.lower() == ".app":
+                return parent.parent.resolve()
+        return executable.parent
     return resource_root()
 
 

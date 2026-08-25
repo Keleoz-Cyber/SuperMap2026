@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import platform
+import plistlib
 import shutil
 import subprocess
 import sys
@@ -31,9 +32,13 @@ class BuildTarget:
     tag: str
     manifest_platform: str
     executable_name: str
+    executable_relative: Path
     python_relative: Path
     launchers: tuple[str, str]
     credential_label: str
+    start_label: str
+    stop_label: str
+    app_bundle_name: str | None = None
 
     @property
     def is_macos(self) -> bool:
@@ -52,18 +57,27 @@ def detect_build_target(
             tag="win-x64",
             manifest_platform="windows-x64",
             executable_name=f"{APP_NAME}.exe",
+            executable_relative=Path(f"{APP_NAME}.exe"),
             python_relative=Path("venv/Scripts/python.exe"),
             launchers=("启动平台.cmd", "停止平台.cmd"),
             credential_label="当前 Windows 用户的凭据管理器",
+            start_label="启动平台.cmd",
+            stop_label="停止平台.cmd",
         )
     if detected_system == "Darwin" and detected_machine in {"arm64", "aarch64"}:
         return BuildTarget(
             tag="macos-arm64",
             manifest_platform="macos-arm64",
             executable_name=APP_NAME,
+            executable_relative=Path(
+                f"{APP_NAME}.app/Contents/MacOS/{APP_NAME}"
+            ),
             python_relative=Path("venv/bin/python"),
             launchers=("启动平台.command", "停止平台.command"),
             credential_label="当前 macOS 用户的钥匙串",
+            start_label=f"{APP_NAME}.app",
+            stop_label="停止平台.command",
+            app_bundle_name=f"{APP_NAME}.app",
         )
     raise RuntimeError(
         f"不支持的便携包构建平台：{detected_system}/{detected_machine}；"
@@ -208,8 +222,47 @@ def build_executable(
     pyinstaller_output = DIST_ROOT / APP_NAME
     if output.exists():
         shutil.rmtree(output)
-    pyinstaller_output.rename(output)
+    if resolved_target.is_macos:
+        wrap_macos_app(pyinstaller_output, output, resolved_target)
+    else:
+        pyinstaller_output.rename(output)
     return output
+
+
+def wrap_macos_app(
+    pyinstaller_output: Path,
+    output: Path,
+    target: BuildTarget,
+) -> Path:
+    """Wrap the console-capable onedir payload in a standard Finder app bundle."""
+
+    if not target.is_macos or target.app_bundle_name is None:
+        raise RuntimeError("仅 macOS ARM64 目标可以生成 .app。")
+    if not (pyinstaller_output / target.executable_name).is_file():
+        raise RuntimeError("PyInstaller macOS 可执行文件缺失。")
+    app = output / target.app_bundle_name
+    contents = app / "Contents"
+    macos = contents / "MacOS"
+    output.mkdir(parents=True, exist_ok=True)
+    contents.mkdir(parents=True, exist_ok=True)
+    pyinstaller_output.rename(macos)
+    info = {
+        "CFBundleDevelopmentRegion": "zh_CN",
+        "CFBundleDisplayName": APP_NAME,
+        "CFBundleExecutable": APP_NAME,
+        "CFBundleIdentifier": "com.keleoz.geomodelingplatform",
+        "CFBundleInfoDictionaryVersion": "6.0",
+        "CFBundleName": APP_NAME,
+        "CFBundlePackageType": "APPL",
+        "CFBundleShortVersionString": VERSION,
+        "CFBundleVersion": VERSION,
+        "LSMinimumSystemVersion": "11.0",
+        "LSUIElement": True,
+        "NSHighResolutionCapable": True,
+    }
+    (contents / "Info.plist").write_bytes(plistlib.dumps(info, sort_keys=True))
+    (contents / "PkgInfo").write_text("APPL????", encoding="ascii")
+    return app
 
 
 def pyinstaller_command(
@@ -284,10 +337,10 @@ def add_delivery_files(
     guide = f"""GeoModelingPlatform {VERSION} 本地免安装版使用说明
 
 1. 将整个文件夹解压到本机可写目录，不要只运行压缩包内的程序。
-2. 双击“{resolved_target.launchers[0]}”，等待浏览器自动打开。
+2. 双击“{resolved_target.start_label}”，等待浏览器自动打开。
 3. 首页已内置电阻率、微震波速和瓦斯含量三个案例。
 4. 也可上传 CSV/XLSX，完成字段映射、质量校验、调参、空间验证和三维展示。
-5. 使用结束后双击“{resolved_target.launchers[1]}”。用户数据保存在 runtime 目录。
+5. 使用结束后双击“{resolved_target.stop_label}”。用户数据保存在 runtime 目录。
 
 AI 辅助研判（可选）：
 - 在页面右上角点击“AI 设置”，输入自己的 DeepSeek API Key，先测试连接再保存。
@@ -298,7 +351,7 @@ AI 辅助研判（可选）：
 
 不需要安装 Python、Node.js、数据库或 Docker。iServer 为可选增强能力，离线不影响核心建模。
 默认地址：http://127.0.0.1:8000/
-诊断命令：{resolved_target.executable_name} doctor
+诊断命令：{resolved_target.executable_relative.as_posix()} doctor
 版本：{VERSION}
 内置成果身份：{json.dumps(seed_ids, ensure_ascii=False)}
 """
@@ -409,6 +462,30 @@ def macos_archive_command(output: Path, archive: Path) -> list[str]:
     ]
 
 
+def macos_sign_commands(app: Path, target: BuildTarget) -> list[list[str]]:
+    if not target.is_macos:
+        return []
+    return [
+        ["codesign", "--force", "--deep", "--sign", "-", str(app)],
+        [
+            "codesign",
+            "--verify",
+            "--deep",
+            "--strict",
+            "--verbose=2",
+            str(app),
+        ],
+    ]
+
+
+def sign_macos_app(output: Path, target: BuildTarget) -> None:
+    if not target.is_macos or target.app_bundle_name is None:
+        return
+    app = output / target.app_bundle_name
+    for command in macos_sign_commands(app, target):
+        run(command)
+
+
 def create_archive(output: Path, target: BuildTarget | None = None) -> Path:
     resolved_target = target or detect_build_target()
     if not resolved_target.is_macos:
@@ -434,7 +511,7 @@ def smoke_test_moved_package(
     with tempfile.TemporaryDirectory(prefix="GMP 评测 移动测试 ") as temp:
         moved = Path(temp) / "GeoModelingPlatform 便携版"
         shutil.copytree(output, moved)
-        executable = moved / resolved_target.executable_name
+        executable = moved / resolved_target.executable_relative
         run_at = lambda args: subprocess.run(
             [str(executable), *args], cwd=moved, check=True, text=True, capture_output=True
         )
@@ -479,6 +556,7 @@ def main() -> int:
     seed_ids = prepare_runtime_template(template)
     output = build_executable(template, clean=not args.no_clean, target=target)
     add_delivery_files(output, seed_ids, target)
+    sign_macos_app(output, target)
     write_manifest(output, target)
     if not args.skip_smoke:
         smoke_test_moved_package(output, target=target)

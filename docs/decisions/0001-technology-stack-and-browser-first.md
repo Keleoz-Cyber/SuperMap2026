@@ -12,7 +12,7 @@
 
 - 架构：Vue 3 + TypeScript 浏览器前端 / FastAPI 后端 / SQLite + 不可变文件工件存储 / SuperMap3D 浏览器 SDK 表达层；iDesktopX 与 iServer 只作人工复核与可选发布层，不是主链依赖。
 - 浏览器只与自建 API 通信（同源），不直连数据库或外部服务；凭据只在服务端。
-- 交付形态：源码仓库 + Windows x64 / macOS ARM64 原生免安装发行包（PyInstaller onedir + 内置运行时与三案例）；两套产物在对应系统构建，不引入桌面壳。
+- 交付形态：源码仓库 + Windows x64 / macOS ARM64 原生免安装发行包（PyInstaller onedir + 内置运行时与三案例）；macOS 将同一 onedir 载荷封装为标准 `.app`，两套产物在对应系统构建，不引入 Electron/Tauri 桌面壳。
 - 不引入 Docker、消息队列或服务型数据库；任务执行为单进程单工作线程。
 
 ## 后果

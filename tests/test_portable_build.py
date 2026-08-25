@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import plistlib
 import tomllib
 import zipfile
 from pathlib import Path
@@ -46,6 +47,11 @@ def test_macos_arm64_target_uses_posix_runtime_and_launchers() -> None:
 
     assert target.tag == "macos-arm64"
     assert target.executable_name == "GeoModelingPlatform"
+    assert target.app_bundle_name == "GeoModelingPlatform.app"
+    assert target.executable_relative == Path(
+        "GeoModelingPlatform.app/Contents/MacOS/GeoModelingPlatform"
+    )
+    assert target.start_label == "GeoModelingPlatform.app"
     assert target.python_relative == Path("venv/bin/python")
     assert target.launchers == ("启动平台.command", "停止平台.command")
     assert build_portable.isolated_python_path(target) == (
@@ -78,8 +84,39 @@ def test_macos_launchers_are_present_and_use_local_executable() -> None:
     start = (portable / "启动平台.command").read_text(encoding="utf-8")
     stop = (portable / "停止平台.command").read_text(encoding="utf-8")
 
-    assert './GeoModelingPlatform start' in start
-    assert './GeoModelingPlatform stop' in stop
+    assert './GeoModelingPlatform.app/Contents/MacOS/GeoModelingPlatform start' in start
+    assert './GeoModelingPlatform.app/Contents/MacOS/GeoModelingPlatform stop' in stop
+
+
+def test_macos_app_bundle_wraps_pyinstaller_onedir_output(tmp_path: Path) -> None:
+    target = build_portable.detect_build_target(system="Darwin", machine="arm64")
+    pyinstaller_output = tmp_path / "GeoModelingPlatform"
+    pyinstaller_output.mkdir()
+    (pyinstaller_output / "GeoModelingPlatform").write_bytes(b"mach-o")
+    (pyinstaller_output / "_internal").mkdir()
+    (pyinstaller_output / "_internal" / "resource.bin").write_bytes(b"resource")
+    output = tmp_path / "GeoModelingPlatform-1.0.1-macos-arm64"
+
+    app = build_portable.wrap_macos_app(pyinstaller_output, output, target)
+
+    assert app == output / "GeoModelingPlatform.app"
+    assert (app / "Contents/MacOS/GeoModelingPlatform").read_bytes() == b"mach-o"
+    assert (app / "Contents/MacOS/_internal/resource.bin").read_bytes() == b"resource"
+    info = plistlib.loads((app / "Contents/Info.plist").read_bytes())
+    assert info["CFBundleExecutable"] == "GeoModelingPlatform"
+    assert info["CFBundleIdentifier"] == "com.keleoz.geomodelingplatform"
+    assert info["CFBundleShortVersionString"] == "1.0.1"
+    assert info["LSUIElement"] is True
+
+
+def test_macos_app_is_ad_hoc_signed_before_manifest() -> None:
+    target = build_portable.detect_build_target(system="Darwin", machine="arm64")
+    app = Path("release/GeoModelingPlatform.app")
+
+    assert build_portable.macos_sign_commands(app, target) == [
+        ["codesign", "--force", "--deep", "--sign", "-", str(app)],
+        ["codesign", "--verify", "--deep", "--strict", "--verbose=2", str(app)],
+    ]
 
 
 def test_macos_delivery_uses_command_launchers_and_keychain_guide(tmp_path: Path) -> None:
@@ -136,6 +173,8 @@ def test_macos_portable_workflow_is_manual_native_and_uploads_release_assets() -
     assert "scripts/install_supermap3d.py" in source
     assert "python scripts/build_portable.py" in source
     assert "GeoModelingPlatform-1.0.1-macos-arm64.zip" in source
+    assert "GeoModelingPlatform.app" in source
+    assert "codesign --verify --deep --strict" in source
     assert "actions/upload-artifact@v4" in source
 
 

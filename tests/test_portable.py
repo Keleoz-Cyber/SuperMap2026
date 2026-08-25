@@ -15,6 +15,7 @@ from geomodeling.portable import (
     PortableLayout,
     _background_process_options,
     _is_this_platform,
+    _normalize_launcher_args,
     _terminate_process,
     _wait_for_shutdown,
     initialize_runtime,
@@ -27,6 +28,11 @@ def test_health_identity_requires_exact_version() -> None:
     assert _is_this_platform({"status": "ok", "version": __version__})
     assert not _is_this_platform({"status": "ok", "version": "1.0.0"})
     assert not _is_this_platform({"status": "healthy", "version": __version__})
+
+
+def test_finder_process_serial_number_does_not_break_default_start() -> None:
+    assert _normalize_launcher_args(["-psn_0_12345"]) == []
+    assert _normalize_launcher_args(["doctor", "-psn_0_12345"]) == ["doctor"]
 
 
 def test_template_root_marker_is_not_an_absolute_machine_path() -> None:

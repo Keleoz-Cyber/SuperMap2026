@@ -5,7 +5,7 @@
 | 脚本 | 作用 |
 |---|---|
 | `start_demo.ps1` | 答辩演示启动：使用独立数据目录（避免污染开发库）-> 先跑 `geomodeling demo-check --json` -> 端口占用检测 -> 健康等待后开浏览器 -> 前台运行 uvicorn（Ctrl+C 结束）。 |
-| `build_portable.py` | 原生 Windows x64 / macOS ARM64 免安装包构建：自动识别目标，隔离 venv -> 前端构建 -> seed 三案例与渲染资产 -> PyInstaller 单目录打包 -> manifest -> 移动后冒烟 -> 输出 zip 与 `.zip.sha256`。两套产物必须分别在对应系统构建。 |
+| `build_portable.py` | 原生 Windows x64 / macOS ARM64 免安装包构建：自动识别目标，隔离 venv -> 前端构建 -> seed 三案例与渲染资产 -> PyInstaller 单目录打包 -> macOS `.app` 封装与 ad-hoc 签名 -> manifest -> 移动后冒烟 -> 输出 zip 与 `.zip.sha256`。两套产物必须分别在对应系统构建。 |
 | `install_supermap3d.py` | SuperMap3D SDK 安装/校验：从本地发行版复制到 `web/public/SuperMap3D-2026`，staging + 原子替换，钉住 `SuperMap3D.js` SHA-256（`--expected-sha256`），支持 `--verify-only` 只读校验。 |
 
 ## 规则

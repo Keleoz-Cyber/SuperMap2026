@@ -9,12 +9,12 @@
 ### 1.1 使用
 
 1. 下载与本机匹配的 `GeoModelingPlatform-1.0.1-win-x64.zip` 或 `GeoModelingPlatform-1.0.1-macos-arm64.zip`，完整解压到可写目录；
-2. Windows 双击 `启动平台.cmd`，macOS 双击 `启动平台.command`，浏览器自动打开 <http://127.0.0.1:8000/>；
+2. Windows 双击 `启动平台.cmd`，macOS 双击 `GeoModelingPlatform.app`，浏览器自动打开 <http://127.0.0.1:8000/>；
 3. 结束后双击对应系统的停止脚本。
 
 包内含 Python 运行时、前端、SuperMap3D SDK、SQLite 与三个内置案例，无需安装 Python、Node.js、Docker 或 iServer。首次启动从只读模板复制 `runtime` 工作目录，用户数据只写入该目录。
 
-macOS 包仅支持 Apple Silicon ARM64。当前包不签名、不公证，首次启动可能需要在 Finder 右键打开，或到「系统设置 -> 隐私与安全性」允许；这不影响后续本地运行。
+macOS 包仅支持 Apple Silicon ARM64。`.app` 构建时执行 ad-hoc 完整性签名，但没有 Developer ID 且未公证；首次启动可能需要在 Finder 右键打开，或到「系统设置 -> 隐私与安全性」允许。若下载隔离属性仍阻止启动，可对整个解压目录执行 `xattr -dr com.apple.quarantine <解压目录>`。
 
 ### 1.2 诊断
 
@@ -23,7 +23,7 @@ GeoModelingPlatform.exe doctor
 ```
 
 ```sh
-./GeoModelingPlatform doctor
+./GeoModelingPlatform.app/Contents/MacOS/GeoModelingPlatform doctor
 ```
 
 检查包完整性（`portable-manifest.json` 逐文件 SHA-256）、端口占用与运行状态。端口身份不明、哈希不符或文件损坏时启动器 fail-closed，拒绝启动。
@@ -65,7 +65,7 @@ python -m pip install -e ".[api,package]"
 python scripts/build_portable.py
 ```
 
-Windows x64 构建输出 `*-win-x64.zip`；Apple Silicon Mac 必须使用原生 ARM64 Python（不能在 Rosetta 下构建），输出 `*-macos-arm64.zip`。PyInstaller 不跨系统编译，两套产物分别在对应系统构建。流程：隔离 venv -> 前端构建（校验 dist 与 SDK 存在）-> 用真实后端 seed 三个预置案例并预生成渲染资产（runtime-template）-> PyInstaller 单目录打包 -> 复制系统启动脚本与三方声明 -> 写 `portable-manifest.json` 全文件 SHA-256 -> 移动后冒烟测试（doctor/start/health/内置案例断言）-> 输出 zip 与 `.zip.sha256` 到 `release/`。macOS 使用系统 `ditto` 归档以保留执行权限。
+Windows x64 构建输出 `*-win-x64.zip`；Apple Silicon Mac 必须使用原生 ARM64 Python（不能在 Rosetta 下构建），输出包含 `GeoModelingPlatform.app` 的 `*-macos-arm64.zip`。PyInstaller 不跨系统编译，两套产物分别在对应系统构建。流程：隔离 venv -> 前端构建（校验 dist 与 SDK 存在）-> 用真实后端 seed 三个预置案例并预生成渲染资产（runtime-template）-> PyInstaller 单目录打包 -> macOS 封装 `.app` 并 ad-hoc 签名 -> 复制系统启动脚本与三方声明 -> 写 `portable-manifest.json` 全文件 SHA-256 -> 移动后冒烟测试（doctor/start/health/内置案例断言）-> 输出 zip 与 `.zip.sha256` 到 `release/`。macOS 使用系统 `ditto` 归档以保留应用结构与执行权限。
 
 发布前需通过中文/空格路径移动验收。`build/`、`release/`、运行数据库、日志与缓存均不进入 Git。
 

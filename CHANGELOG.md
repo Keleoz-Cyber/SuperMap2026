@@ -6,7 +6,7 @@
 
 ## v1.0.1（2026-08-25）
 
-- 保留 Windows x64 免安装包，新增 macOS Apple Silicon ARM64 原生免安装包构建与移动后冒烟。
+- 保留 Windows x64 免安装包，新增 macOS Apple Silicon ARM64 `GeoModelingPlatform.app` 构建、ad-hoc 签名与移动后冒烟。
 - macOS 使用 `.command` 启停入口、独立后台进程会话和系统钥匙串保存 DeepSeek Key。
 - 增加手工触发的 Apple Silicon 构建工作流；两平台包继续使用同一前端、后端、SuperMap3D SDK、内置案例与完整性清单。
 

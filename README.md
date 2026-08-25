@@ -22,12 +22,12 @@
 
 ## 直接体验（本地免安装包）
 
-下载与本机匹配的 `GeoModelingPlatform-1.0.1-win-x64.zip` 或 `GeoModelingPlatform-1.0.1-macos-arm64.zip`，完整解压到可写目录。Windows 双击 `启动平台.cmd`；Apple Silicon Mac 双击 `启动平台.command`。包内已含 Python 运行时、前端、SuperMap3D SDK、SQLite 和三个内置案例，无需安装 Python、Node.js、Docker 或 iServer。
+下载与本机匹配的 `GeoModelingPlatform-1.0.1-win-x64.zip` 或 `GeoModelingPlatform-1.0.1-macos-arm64.zip`，完整解压到可写目录。Windows 双击 `启动平台.cmd`；Apple Silicon Mac 双击 `GeoModelingPlatform.app`。包内已含 Python 运行时、前端、SuperMap3D SDK、SQLite 和三个内置案例，无需安装 Python、Node.js、Docker 或 iServer。
 
 - 默认地址：<http://127.0.0.1:8000/>；结束后双击对应系统的停止脚本
 - 完整性诊断：Windows 使用 `GeoModelingPlatform.exe doctor`，macOS 使用 `./GeoModelingPlatform doctor`
 - 可选 AI 研判：右上角「AI 设置」配置自己的 DeepSeek API Key（不配置不影响任何主链功能）
-- macOS ARM64 包当前不签名、不公证；首次运行可能需要在 Finder 右键打开或到「隐私与安全性」中允许
+- macOS ARM64 `.app` 已做 ad-hoc 完整性签名但未使用 Developer ID、未公证；首次运行可能需要在 Finder 右键打开或到「隐私与安全性」中允许
 
 ## 三个内置案例
 
