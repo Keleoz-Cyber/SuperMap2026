@@ -7,7 +7,6 @@ import hashlib
 import json
 import os
 import platform
-import plistlib
 import shutil
 import subprocess
 import sys
@@ -17,7 +16,6 @@ import urllib.request
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -220,67 +218,28 @@ def build_executable(
         command.extend(["--add-data", f"{source}{separator}{destination}"])
     command.append(str(ROOT / "src" / "geomodeling" / "portable.py"))
     run(command)
-    pyinstaller_output = DIST_ROOT / APP_NAME
+    pyinstaller_output = DIST_ROOT / (
+        resolved_target.app_bundle_name if resolved_target.is_macos else APP_NAME
+    )
     if output.exists():
         shutil.rmtree(output)
-    if resolved_target.is_macos:
-        wrap_macos_app(pyinstaller_output, output, resolved_target)
-    else:
-        pyinstaller_output.rename(output)
+    install_pyinstaller_output(pyinstaller_output, output, resolved_target)
     return output
 
 
-def wrap_macos_app(
+def install_pyinstaller_output(
     pyinstaller_output: Path,
     output: Path,
     target: BuildTarget,
-    *,
-    linker: Callable[..., None] = os.symlink,
 ) -> Path:
-    """Wrap the console-capable onedir payload in a standard Finder app bundle."""
+    """Place PyInstaller's native output inside the platform release folder."""
 
-    if not target.is_macos or target.app_bundle_name is None:
-        raise RuntimeError("仅 macOS ARM64 目标可以生成 .app。")
-    if not (pyinstaller_output / target.executable_name).is_file():
-        raise RuntimeError("PyInstaller macOS 可执行文件缺失。")
-    app = output / target.app_bundle_name
-    contents = app / "Contents"
-    macos = contents / "MacOS"
-    resources = contents / "Resources"
+    if not pyinstaller_output.exists():
+        raise RuntimeError(f"PyInstaller 输出缺失：{pyinstaller_output.name}")
     output.mkdir(parents=True, exist_ok=True)
-    macos.mkdir(parents=True, exist_ok=True)
-    resources.mkdir(parents=True, exist_ok=True)
-    executable = pyinstaller_output / target.executable_name
-    executable.rename(macos / target.executable_name)
-    internal = pyinstaller_output / "_internal"
-    if not internal.is_dir():
-        raise RuntimeError("PyInstaller macOS _internal 目录缺失。")
-    internal.rename(resources / "_internal")
-    for child in list(pyinstaller_output.iterdir()):
-        child.rename(resources / child.name)
-    pyinstaller_output.rmdir()
-    linker(
-        "../Resources/_internal",
-        macos / "_internal",
-        target_is_directory=True,
-    )
-    info = {
-        "CFBundleDevelopmentRegion": "zh_CN",
-        "CFBundleDisplayName": APP_NAME,
-        "CFBundleExecutable": APP_NAME,
-        "CFBundleIdentifier": "com.keleoz.geomodelingplatform",
-        "CFBundleInfoDictionaryVersion": "6.0",
-        "CFBundleName": APP_NAME,
-        "CFBundlePackageType": "APPL",
-        "CFBundleShortVersionString": VERSION,
-        "CFBundleVersion": VERSION,
-        "LSMinimumSystemVersion": "11.0",
-        "LSUIElement": True,
-        "NSHighResolutionCapable": True,
-    }
-    (contents / "Info.plist").write_bytes(plistlib.dumps(info, sort_keys=True))
-    (contents / "PkgInfo").write_text("APPL????", encoding="ascii")
-    return app
+    destination = output / pyinstaller_output.name
+    pyinstaller_output.rename(destination)
+    return destination
 
 
 def pyinstaller_command(
@@ -299,7 +258,7 @@ def pyinstaller_command(
         "--noconfirm",
         "--clean",
         "--onedir",
-        "--console",
+        "--windowed" if resolved_target.is_macos else "--console",
         "--name",
         APP_NAME,
         "--distpath",
@@ -328,6 +287,10 @@ def pyinstaller_command(
     if resolved_target.is_macos:
         command.extend(
             [
+                "--osx-bundle-identifier",
+                "com.keleoz.geomodelingplatform",
+                "--target-arch",
+                "arm64",
                 "--hidden-import",
                 "keyring.backends.macOS",
                 "--copy-metadata",
@@ -480,29 +443,6 @@ def macos_archive_command(output: Path, archive: Path) -> list[str]:
     ]
 
 
-def macos_sign_commands(app: Path, target: BuildTarget) -> list[list[str]]:
-    if not target.is_macos:
-        return []
-    return [
-        ["codesign", "--force", "--sign", "-", str(app)],
-        [
-            "codesign",
-            "--verify",
-            "--strict",
-            "--verbose=2",
-            str(app),
-        ],
-    ]
-
-
-def sign_macos_app(output: Path, target: BuildTarget) -> None:
-    if not target.is_macos or target.app_bundle_name is None:
-        return
-    app = output / target.app_bundle_name
-    for command in macos_sign_commands(app, target):
-        run(command)
-
-
 def create_archive(output: Path, target: BuildTarget | None = None) -> Path:
     resolved_target = target or detect_build_target()
     if not resolved_target.is_macos:
@@ -579,7 +519,6 @@ def main() -> int:
     seed_ids = prepare_runtime_template(template)
     output = build_executable(template, clean=not args.no_clean, target=target)
     add_delivery_files(output, seed_ids, target)
-    sign_macos_app(output, target)
     write_manifest(output, target)
     if not args.skip_smoke:
         smoke_test_moved_package(output, target=target)

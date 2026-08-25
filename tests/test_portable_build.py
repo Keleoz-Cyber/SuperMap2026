@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import plistlib
 import tomllib
 import zipfile
 from pathlib import Path
@@ -76,6 +75,10 @@ def test_macos_pyinstaller_command_collects_keychain_backend(tmp_path: Path) -> 
     joined = " ".join(command)
     assert "--hidden-import keyring.backends.macOS" in joined
     assert "--copy-metadata keyring" in joined
+    assert "--windowed" in command
+    assert "--console" not in command
+    assert "--osx-bundle-identifier com.keleoz.geomodelingplatform" in joined
+    assert "--target-arch arm64" in joined
 
 
 def test_macos_launchers_are_present_and_use_local_executable() -> None:
@@ -88,51 +91,19 @@ def test_macos_launchers_are_present_and_use_local_executable() -> None:
     assert './GeoModelingPlatform.app/Contents/MacOS/GeoModelingPlatform stop' in stop
 
 
-def test_macos_app_bundle_wraps_pyinstaller_onedir_output(tmp_path: Path) -> None:
+def test_macos_app_bundle_uses_official_pyinstaller_output(tmp_path: Path) -> None:
     target = build_portable.detect_build_target(system="Darwin", machine="arm64")
-    pyinstaller_output = tmp_path / "GeoModelingPlatform"
-    pyinstaller_output.mkdir()
-    (pyinstaller_output / "GeoModelingPlatform").write_bytes(b"mach-o")
-    (pyinstaller_output / "_internal").mkdir()
-    (pyinstaller_output / "_internal" / "resource.bin").write_bytes(b"resource")
+    pyinstaller_output = tmp_path / "GeoModelingPlatform.app"
+    executable = pyinstaller_output / "Contents/MacOS/GeoModelingPlatform"
+    executable.parent.mkdir(parents=True)
+    executable.write_bytes(b"mach-o")
     output = tmp_path / "GeoModelingPlatform-1.0.1-macos-arm64"
-    links: list[tuple[str, Path, bool]] = []
 
-    def fake_link(source: str, link: Path, *, target_is_directory: bool) -> None:
-        links.append((source, link, target_is_directory))
-
-    app = build_portable.wrap_macos_app(
-        pyinstaller_output,
-        output,
-        target,
-        linker=fake_link,
-    )
+    app = build_portable.install_pyinstaller_output(pyinstaller_output, output, target)
 
     assert app == output / "GeoModelingPlatform.app"
     assert (app / "Contents/MacOS/GeoModelingPlatform").read_bytes() == b"mach-o"
-    assert (app / "Contents/Resources/_internal/resource.bin").read_bytes() == b"resource"
-    assert links == [
-        (
-            "../Resources/_internal",
-            app / "Contents/MacOS/_internal",
-            True,
-        )
-    ]
-    info = plistlib.loads((app / "Contents/Info.plist").read_bytes())
-    assert info["CFBundleExecutable"] == "GeoModelingPlatform"
-    assert info["CFBundleIdentifier"] == "com.keleoz.geomodelingplatform"
-    assert info["CFBundleShortVersionString"] == "1.0.1"
-    assert info["LSUIElement"] is True
-
-
-def test_macos_app_is_ad_hoc_signed_before_manifest() -> None:
-    target = build_portable.detect_build_target(system="Darwin", machine="arm64")
-    app = Path("release/GeoModelingPlatform.app")
-
-    assert build_portable.macos_sign_commands(app, target) == [
-        ["codesign", "--force", "--sign", "-", str(app)],
-        ["codesign", "--verify", "--strict", "--verbose=2", str(app)],
-    ]
+    assert not pyinstaller_output.exists()
 
 
 def test_moved_package_copy_preserves_app_bundle_symlinks(
