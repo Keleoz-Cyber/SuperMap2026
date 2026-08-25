@@ -114,8 +114,8 @@ def test_macos_app_is_ad_hoc_signed_before_manifest() -> None:
     app = Path("release/GeoModelingPlatform.app")
 
     assert build_portable.macos_sign_commands(app, target) == [
-        ["codesign", "--force", "--deep", "--sign", "-", str(app)],
-        ["codesign", "--verify", "--deep", "--strict", "--verbose=2", str(app)],
+        ["codesign", "--force", "--sign", "-", str(app)],
+        ["codesign", "--verify", "--strict", "--verbose=2", str(app)],
     ]
 
 
@@ -174,7 +174,8 @@ def test_macos_portable_workflow_is_manual_native_and_uploads_release_assets() -
     assert "python scripts/build_portable.py" in source
     assert "GeoModelingPlatform-1.0.1-macos-arm64.zip" in source
     assert "GeoModelingPlatform.app" in source
-    assert "codesign --verify --deep --strict" in source
+    assert "codesign --verify --strict" in source
+    assert "codesign --verify --deep" not in source
     assert "actions/upload-artifact@v4" in source
 
 

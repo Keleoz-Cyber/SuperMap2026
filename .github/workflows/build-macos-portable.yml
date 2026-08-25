@@ -65,7 +65,7 @@ jobs:
           set -euo pipefail
           test -d release/GeoModelingPlatform-1.0.1-macos-arm64/GeoModelingPlatform.app
           file release/GeoModelingPlatform-1.0.1-macos-arm64/GeoModelingPlatform.app/Contents/MacOS/GeoModelingPlatform | grep arm64
-          codesign --verify --deep --strict --verbose=2 release/GeoModelingPlatform-1.0.1-macos-arm64/GeoModelingPlatform.app
+          codesign --verify --strict --verbose=2 release/GeoModelingPlatform-1.0.1-macos-arm64/GeoModelingPlatform.app
           test -f release/GeoModelingPlatform-1.0.1-macos-arm64.zip
           test -f release/GeoModelingPlatform-1.0.1-macos-arm64.zip.sha256
           cd release

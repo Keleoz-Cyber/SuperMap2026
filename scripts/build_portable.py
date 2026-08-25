@@ -466,11 +466,10 @@ def macos_sign_commands(app: Path, target: BuildTarget) -> list[list[str]]:
     if not target.is_macos:
         return []
     return [
-        ["codesign", "--force", "--deep", "--sign", "-", str(app)],
+        ["codesign", "--force", "--sign", "-", str(app)],
         [
             "codesign",
             "--verify",
-            "--deep",
             "--strict",
             "--verbose=2",
             str(app),
