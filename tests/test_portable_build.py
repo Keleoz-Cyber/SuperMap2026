@@ -106,6 +106,24 @@ def test_macos_app_bundle_uses_official_pyinstaller_output(tmp_path: Path) -> No
     assert not pyinstaller_output.exists()
 
 
+def test_windows_onedir_becomes_release_root_without_extra_nesting(tmp_path: Path) -> None:
+    target = build_portable.detect_build_target(system="Windows", machine="AMD64")
+    pyinstaller_output = tmp_path / "GeoModelingPlatform"
+    pyinstaller_output.mkdir()
+    (pyinstaller_output / "GeoModelingPlatform.exe").write_bytes(b"exe")
+    output = tmp_path / "GeoModelingPlatform-1.0.1-win-x64"
+
+    installed = build_portable.install_pyinstaller_output(
+        pyinstaller_output,
+        output,
+        target,
+    )
+
+    assert installed == output
+    assert (output / "GeoModelingPlatform.exe").read_bytes() == b"exe"
+    assert not (output / "GeoModelingPlatform/GeoModelingPlatform.exe").exists()
+
+
 def test_moved_package_copy_preserves_app_bundle_symlinks(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

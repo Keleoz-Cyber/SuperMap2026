@@ -236,6 +236,9 @@ def install_pyinstaller_output(
 
     if not pyinstaller_output.exists():
         raise RuntimeError(f"PyInstaller 输出缺失：{pyinstaller_output.name}")
+    if not target.is_macos:
+        pyinstaller_output.rename(output)
+        return output
     output.mkdir(parents=True, exist_ok=True)
     destination = output / pyinstaller_output.name
     pyinstaller_output.rename(destination)
